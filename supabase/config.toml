@@ -1,0 +1,16 @@
+project_id = "omqjtvqtawduwesbmmgm"
+
+[functions.parse-resume]
+verify_jwt = false
+
+[functions.ats-screening]
+verify_jwt = false
+
+[functions.generate-questions]
+verify_jwt = false
+
+[functions.evaluate-response]
+verify_jwt = false
+
+[functions.final-evaluation]
+verify_jwt = false
