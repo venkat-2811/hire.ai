@@ -35,10 +35,10 @@ export function useJobs(params?: { role?: string; level?: string; is_active?: bo
       let query = supabase.from('job_descriptions').select('*');
       
       if (params?.role) {
-        query = query.eq('role', params.role);
+        query = query.eq('role', params.role as JobRole);
       }
       if (params?.level) {
-        query = query.eq('level', params.level);
+        query = query.eq('level', params.level as RoleLevel);
       }
       if (params?.is_active !== undefined) {
         query = query.eq('is_active', params.is_active);
