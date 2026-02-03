@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Plus, X, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useCreateJob } from '@/hooks/useJobs';
+import { useCreateJob, type JobDescriptionCreate } from '@/hooks/useJobs';
 import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
 
 export default function NewJobPage() {

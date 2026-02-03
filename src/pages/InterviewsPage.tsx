@@ -153,10 +153,10 @@ export default function InterviewsPage() {
                             {new Date(interview.scheduled_at).toLocaleDateString()}
                           </div>
                         )}
-                        {interview.overall_score !== null && interview.overall_score !== undefined && (
+                        {interview.integrity_score !== null && interview.integrity_score !== undefined && (
                           <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground">Score:</span>
-                            <ScoreBadge score={interview.overall_score} size="sm" />
+                            <span className="text-sm text-muted-foreground">Integrity:</span>
+                            <ScoreBadge score={interview.integrity_score} size="sm" />
                           </div>
                         )}
                       </div>
