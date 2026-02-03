@@ -14,8 +14,10 @@ import {
   Eye,
   Play,
   FileText,
+  Loader2,
+  Sparkles,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { RoleBadge } from '@/components/ui/role-badge';
@@ -34,42 +36,32 @@ import {
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
 import type { JobRole, InterviewStatus } from '@/types/database';
-
-interface CandidateRow {
-  id: string;
-  name: string;
-  email: string;
-  role: JobRole;
-  atsScore: number;
-  interviewStatus: InterviewStatus;
-  appliedDate: string;
-}
-
-const mockCandidates: CandidateRow[] = [
-  { id: '1', name: 'Sarah Johnson', email: 'sarah@example.com', role: 'salesforce_developer', atsScore: 87, interviewStatus: 'completed', appliedDate: '2024-01-15' },
-  { id: '2', name: 'Michael Chen', email: 'michael@example.com', role: 'qa_engineer', atsScore: 72, interviewStatus: 'in_progress', appliedDate: '2024-01-14' },
-  { id: '3', name: 'Emily Davis', email: 'emily@example.com', role: 'business_analyst', atsScore: 91, interviewStatus: 'completed', appliedDate: '2024-01-13' },
-  { id: '4', name: 'James Wilson', email: 'james@example.com', role: 'salesforce_developer', atsScore: 65, interviewStatus: 'pending', appliedDate: '2024-01-12' },
-  { id: '5', name: 'Lisa Anderson', email: 'lisa@example.com', role: 'qa_engineer', atsScore: 78, interviewStatus: 'pending', appliedDate: '2024-01-11' },
-  { id: '6', name: 'Robert Taylor', email: 'robert@example.com', role: 'business_analyst', atsScore: 84, interviewStatus: 'in_progress', appliedDate: '2024-01-10' },
-];
+import { useCandidates } from '@/hooks/useCandidates';
+import { useCreateInterview } from '@/hooks/useInterviews';
 
 export default function CandidatesPage() {
-  const { loading } = useRequireAuth();
+  const { loading: authLoading } = useRequireAuth();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [candidates] = useState<CandidateRow[]>(mockCandidates);
+  const { data: candidates, isLoading: candidatesLoading } = useCandidates();
+  const createInterview = useCreateInterview();
 
-  const filteredCandidates = candidates.filter(
+  const filteredCandidates = (candidates || []).filter(
     (c) =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
+  const handleStartInterview = (candidateId: string) => {
+    // For now, navigate to interview page - in production would select job first
+    navigate(`/interviews?candidate=${candidateId}`);
+  };
+
+  if (authLoading || candidatesLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
-          <div className="animate-pulse text-muted-foreground">Loading...</div>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </DashboardLayout>
     );
@@ -140,64 +132,82 @@ export default function CandidatesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCandidates.map((candidate, index) => (
-                  <motion.tr
-                    key={candidate.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="group"
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="text-sm font-medium text-primary">
-                            {candidate.name.split(' ').map(n => n[0]).join('')}
+                {filteredCandidates.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      No candidates found. <Link to="/candidates/new" className="text-primary hover:underline">Add your first candidate</Link>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredCandidates.map((candidate, index) => (
+                    <motion.tr
+                      key={candidate.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="group"
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-sm font-medium text-primary">
+                              {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium">{candidate.full_name}</p>
+                            <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {candidate.resume_parsed_data ? (
+                          <span className="text-xs px-2 py-1 rounded-full bg-success/10 text-success">
+                            Resume Parsed
                           </span>
-                        </div>
-                        <div>
-                          <p className="font-medium">{candidate.name}</p>
-                          <p className="text-sm text-muted-foreground">{candidate.email}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <RoleBadge role={candidate.role} size="sm" />
-                    </TableCell>
-                    <TableCell>
-                      <ScoreBadge score={candidate.atsScore} showLabel />
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={candidate.interviewStatus} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(candidate.appliedDate).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Profile
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <FileText className="mr-2 h-4 w-4" />
-                            View Resume
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Play className="mr-2 h-4 w-4" />
-                            Start Interview
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </motion.tr>
-                ))}
+                        ) : (
+                          <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
+                            No Resume
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {candidate.consent_given ? 'Consent Given' : 'Pending Consent'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status="pending" />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(candidate.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Profile
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                              <FileText className="mr-2 h-4 w-4" />
+                              View Resume
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleStartInterview(candidate.id)}>
+                              <Play className="mr-2 h-4 w-4" />
+                              Start Interview
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </motion.tr>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>

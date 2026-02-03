@@ -13,44 +13,47 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { RoleBadge } from '@/components/ui/role-badge';
-
-const stats = [
-  { name: 'Total Candidates', value: '124', change: '+12%', icon: Users, color: 'text-info' },
-  { name: 'Active Jobs', value: '8', change: '+2', icon: Briefcase, color: 'text-accent' },
-  { name: 'Pending Interviews', value: '23', change: '-5', icon: Clock, color: 'text-warning' },
-  { name: 'Completed Today', value: '7', change: '+3', icon: CheckCircle, color: 'text-success' },
-];
-
-const recentCandidates = [
-  { id: '1', name: 'Sarah Johnson', role: 'salesforce_developer' as const, score: 87, status: 'completed' as const },
-  { id: '2', name: 'Michael Chen', role: 'qa_engineer' as const, score: 72, status: 'in_progress' as const },
-  { id: '3', name: 'Emily Davis', role: 'business_analyst' as const, score: 91, status: 'completed' as const },
-  { id: '4', name: 'James Wilson', role: 'salesforce_developer' as const, score: 65, status: 'pending' as const },
-];
+import { useDashboardStats } from '@/hooks/useAnalytics';
+import { useCandidates } from '@/hooks/useCandidates';
+import { useInterviews } from '@/hooks/useInterviews';
+import type { JobRole, InterviewStatus } from '@/types/database';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
   { name: 'Screen Resume', href: '/candidates/new', icon: FileText, description: 'Upload & analyze' },
-  { name: 'View Reports', href: '/reports', icon: TrendingUp, description: 'Analytics dashboard' },
+  { name: 'View Reports', href: '/analytics', icon: TrendingUp, description: 'Analytics dashboard' },
 ];
 
 export default function DashboardPage() {
-  const { user, loading } = useRequireAuth();
+  const { user, loading: authLoading } = useRequireAuth();
+  const { data: stats, isLoading: statsLoading } = useDashboardStats();
+  const { data: candidates, isLoading: candidatesLoading } = useCandidates({ limit: 5 });
+  const { data: interviews, isLoading: interviewsLoading } = useInterviews({ status: 'completed' });
 
-  if (loading) {
+  const isLoading = authLoading || statsLoading;
+
+  if (authLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
-          <div className="animate-pulse text-muted-foreground">Loading...</div>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </DashboardLayout>
     );
   }
+
+  const dashboardStats = [
+    { name: 'Total Candidates', value: stats?.total_candidates?.toString() || '0', change: '+12%', icon: Users, color: 'text-info' },
+    { name: 'Active Jobs', value: stats?.active_jobs?.toString() || '0', change: '+2', icon: Briefcase, color: 'text-accent' },
+    { name: 'Pending Interviews', value: stats?.pending_interviews?.toString() || '0', change: '-5', icon: Clock, color: 'text-warning' },
+    { name: 'Completed Today', value: stats?.completed_today?.toString() || '0', change: '+3', icon: CheckCircle, color: 'text-success' },
+  ];
 
   return (
     <DashboardLayout>
@@ -86,7 +89,7 @@ export default function DashboardPage() {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((stat, index) => (
+          {dashboardStats.map((stat, index) => (
             <motion.div
               key={stat.name}
               initial={{ opacity: 0, y: 20 }}
@@ -98,7 +101,9 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground">{stat.name}</p>
-                      <p className="text-3xl font-bold mt-1">{stat.value}</p>
+                      <p className="text-3xl font-bold mt-1">
+                        {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stat.value}
+                      </p>
                       <p className={`text-sm mt-1 ${stat.change.startsWith('+') ? 'text-success' : 'text-warning'}`}>
                         {stat.change} from last week
                       </p>
@@ -134,30 +139,41 @@ export default function DashboardPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {recentCandidates.map((candidate) => (
-                    <div
-                      key={candidate.id}
-                      className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="text-sm font-medium text-primary">
-                            {candidate.name.split(' ').map(n => n[0]).join('')}
+                {candidatesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : candidates && candidates.length > 0 ? (
+                  <div className="space-y-4">
+                    {candidates.slice(0, 4).map((candidate) => (
+                      <div
+                        key={candidate.id}
+                        className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-sm font-medium text-primary">
+                              {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium">{candidate.full_name}</p>
+                            <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(candidate.created_at).toLocaleDateString()}
                           </span>
                         </div>
-                        <div>
-                          <p className="font-medium">{candidate.name}</p>
-                          <RoleBadge role={candidate.role} size="sm" />
-                        </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <ScoreBadge score={candidate.score} />
-                        <StatusBadge status={candidate.status} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No candidates yet. <Link to="/candidates/new" className="text-primary hover:underline">Add your first candidate</Link>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </motion.div>

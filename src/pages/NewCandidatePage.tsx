@@ -23,8 +23,9 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
 import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
+import { useCreateCandidate, useRunScreening } from '@/hooks/useCandidates';
+import { useJobs } from '@/hooks/useJobs';
 
 type Step = 'upload' | 'details' | 'job' | 'consent' | 'processing';
 
@@ -45,12 +46,12 @@ export default function NewCandidatePage() {
   const [selectedJob, setSelectedJob] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
 
-  // Mock jobs for now
-  const jobs = [
-    { id: '1', title: 'Senior Salesforce Developer', role: 'salesforce_developer' as JobRole, level: 'senior' as RoleLevel },
-    { id: '2', title: 'QA Engineer', role: 'qa_engineer' as JobRole, level: 'mid' as RoleLevel },
-    { id: '3', title: 'Business Analyst', role: 'business_analyst' as JobRole, level: 'junior' as RoleLevel },
-  ];
+  // API hooks
+  const createCandidate = useCreateCandidate();
+  const runScreening = useRunScreening();
+  const { data: jobsData, isLoading: jobsLoading } = useJobs({ is_active: true });
+  
+  const jobs = jobsData || [];
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -116,15 +117,44 @@ export default function NewCandidatePage() {
     setIsProcessing(true);
     
     try {
-      // Simulate AI processing
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      toast.success('Candidate processed successfully!');
-      navigate('/candidates');
+      // Create candidate with resume upload
+      const formData = new FormData();
+      formData.append('full_name', fullName);
+      formData.append('email', email);
+      if (phone) formData.append('phone', phone);
+      if (portfolioUrl) formData.append('portfolio_url', portfolioUrl);
+      if (githubUrl) formData.append('github_url', githubUrl);
+      formData.append('consent_given', String(consentGiven));
+      if (resumeFile) formData.append('resume', resumeFile);
+
+      createCandidate.mutate(formData, {
+        onSuccess: async (candidate) => {
+          // Run ATS screening if job selected
+          if (selectedJob && candidate?.id) {
+            runScreening.mutate({ candidateId: candidate.id, jobId: selectedJob }, {
+              onSuccess: () => {
+                toast.success('Candidate processed and screened successfully!');
+                navigate('/candidates');
+              },
+              onError: () => {
+                toast.success('Candidate created. Screening will be done later.');
+                navigate('/candidates');
+              }
+            });
+          } else {
+            toast.success('Candidate created successfully!');
+            navigate('/candidates');
+          }
+        },
+        onError: (error) => {
+          toast.error('Failed to create candidate');
+          setCurrentStep('consent');
+          setIsProcessing(false);
+        }
+      });
     } catch (error) {
       toast.error('Failed to process candidate');
       setCurrentStep('consent');
-    } finally {
       setIsProcessing(false);
     }
   };
@@ -338,6 +368,16 @@ export default function NewCandidatePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {jobsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" />
+                  </div>
+                ) : jobs.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>No active jobs found.</p>
+                    <Link to="/jobs/new" className="text-primary hover:underline">Create a job first</Link>
+                  </div>
+                ) : (
                 <div className="space-y-4">
                   {jobs.map((job) => (
                     <div
@@ -356,12 +396,12 @@ export default function NewCandidatePage() {
                           <div className="flex items-center gap-2 mt-1">
                             <span className={cn(
                               "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
-                              ROLE_CONFIG[job.role].color
+                              ROLE_CONFIG[job.role as JobRole]?.color || 'bg-muted'
                             )}>
-                              {ROLE_CONFIG[job.role].icon} {ROLE_CONFIG[job.role].label}
+                              {ROLE_CONFIG[job.role as JobRole]?.icon} {ROLE_CONFIG[job.role as JobRole]?.label || job.role}
                             </span>
                             <span className="text-sm text-muted-foreground">
-                              {LEVEL_CONFIG[job.level].label}
+                              {LEVEL_CONFIG[job.level as RoleLevel]?.label || job.level}
                             </span>
                           </div>
                         </div>
@@ -379,6 +419,7 @@ export default function NewCandidatePage() {
                     </div>
                   ))}
                 </div>
+                )}
               </CardContent>
             </Card>
           )}

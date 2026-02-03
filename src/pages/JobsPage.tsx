@@ -13,6 +13,7 @@ import {
   Eye,
   Edit,
   Archive,
+  Loader2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { RoleBadge } from '@/components/ui/role-badge';
@@ -23,38 +24,27 @@ import {
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
 import { LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
-
-interface JobRow {
-  id: string;
-  title: string;
-  role: JobRole;
-  level: RoleLevel;
-  applicants: number;
-  isActive: boolean;
-  createdAt: string;
-}
-
-const mockJobs: JobRow[] = [
-  { id: '1', title: 'Senior Salesforce Developer', role: 'salesforce_developer', level: 'senior', applicants: 24, isActive: true, createdAt: '2024-01-10' },
-  { id: '2', title: 'QA Automation Engineer', role: 'qa_engineer', level: 'mid', applicants: 18, isActive: true, createdAt: '2024-01-08' },
-  { id: '3', title: 'Junior Business Analyst', role: 'business_analyst', level: 'junior', applicants: 32, isActive: true, createdAt: '2024-01-05' },
-  { id: '4', title: 'Salesforce Developer Intern', role: 'salesforce_developer', level: 'intern', applicants: 45, isActive: false, createdAt: '2023-12-20' },
-];
+import { useJobs, useDeleteJob } from '@/hooks/useJobs';
 
 export default function JobsPage() {
-  const { loading } = useRequireAuth();
+  const { loading: authLoading } = useRequireAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [jobs] = useState<JobRow[]>(mockJobs);
+  const { data: jobs, isLoading: jobsLoading } = useJobs();
+  const deleteJob = useDeleteJob();
 
-  const filteredJobs = jobs.filter(
+  const filteredJobs = (jobs || []).filter(
     (j) => j.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
+  const handleArchive = (jobId: string) => {
+    deleteJob.mutate(jobId);
+  };
+
+  if (authLoading || jobsLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
-          <div className="animate-pulse text-muted-foreground">Loading...</div>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </DashboardLayout>
     );
@@ -105,15 +95,15 @@ export default function JobsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
             >
-              <Card className={`hover:shadow-md transition-shadow ${!job.isActive && 'opacity-60'}`}>
+              <Card className={`hover:shadow-md transition-shadow ${!job.is_active && 'opacity-60'}`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <CardTitle className="text-lg">{job.title}</CardTitle>
                       <div className="flex items-center gap-2">
-                        <RoleBadge role={job.role} size="sm" showIcon={false} />
+                        <RoleBadge role={job.role as JobRole} size="sm" showIcon={false} />
                         <span className="text-sm text-muted-foreground">
-                          {LEVEL_CONFIG[job.level].label}
+                          {LEVEL_CONFIG[job.level as RoleLevel]?.label || job.level}
                         </span>
                       </div>
                     </div>
@@ -132,9 +122,9 @@ export default function JobsPage() {
                           <Edit className="mr-2 h-4 w-4" />
                           Edit Job
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleArchive(job.id)}>
                           <Archive className="mr-2 h-4 w-4" />
-                          {job.isActive ? 'Archive' : 'Activate'}
+                          {job.is_active ? 'Archive' : 'Activate'}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -144,18 +134,18 @@ export default function JobsPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Users className="h-4 w-4" />
-                      <span className="text-sm">{job.applicants} applicants</span>
+                      <span className="text-sm">{job.min_experience_years}+ years exp</span>
                     </div>
                     <span className={`text-xs px-2 py-1 rounded-full ${
-                      job.isActive 
+                      job.is_active 
                         ? 'bg-success/10 text-success' 
                         : 'bg-muted text-muted-foreground'
                     }`}>
-                      {job.isActive ? 'Active' : 'Archived'}
+                      {job.is_active ? 'Active' : 'Archived'}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-3">
-                    Created {new Date(job.createdAt).toLocaleDateString()}
+                    Created {new Date(job.created_at).toLocaleDateString()}
                   </p>
                 </CardContent>
               </Card>

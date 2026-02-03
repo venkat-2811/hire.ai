@@ -7,49 +7,63 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
   Search, 
-  Filter,
-  Calendar,
-  Play,
-  Eye,
+  Filter, 
+  Play, 
+  MoreHorizontal,
   Clock,
+  CheckCircle,
+  XCircle,
+  Eye,
+  Loader2,
+  Plus,
+  Calendar,
 } from 'lucide-react';
-import { ScoreBadge } from '@/components/ui/score-badge';
+import { Link, useNavigate } from 'react-router-dom';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { ScoreBadge } from '@/components/ui/score-badge';
 import { RoleBadge } from '@/components/ui/role-badge';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '@/components/ui/table';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from '@/components/ui/dropdown-menu';
 import type { JobRole, InterviewStatus } from '@/types/database';
-
-interface InterviewRow {
-  id: string;
-  candidateName: string;
-  role: JobRole;
-  status: InterviewStatus;
-  scheduledAt: string | null;
-  overallScore: number | null;
-  integrityScore: number | null;
-}
-
-const mockInterviews: InterviewRow[] = [
-  { id: '1', candidateName: 'Sarah Johnson', role: 'salesforce_developer', status: 'completed', scheduledAt: '2024-01-15T10:00:00', overallScore: 87, integrityScore: 95 },
-  { id: '2', candidateName: 'Michael Chen', role: 'qa_engineer', status: 'in_progress', scheduledAt: '2024-01-16T14:00:00', overallScore: null, integrityScore: 88 },
-  { id: '3', candidateName: 'Emily Davis', role: 'business_analyst', status: 'completed', scheduledAt: '2024-01-14T09:00:00', overallScore: 91, integrityScore: 100 },
-  { id: '4', candidateName: 'James Wilson', role: 'salesforce_developer', status: 'pending', scheduledAt: '2024-01-17T11:00:00', overallScore: null, integrityScore: null },
-  { id: '5', candidateName: 'Lisa Anderson', role: 'qa_engineer', status: 'pending', scheduledAt: null, overallScore: null, integrityScore: null },
-];
+import { useInterviews, useStartInterview } from '@/hooks/useInterviews';
 
 export default function InterviewsPage() {
-  const { loading } = useRequireAuth();
+  const { loading: authLoading } = useRequireAuth();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [interviews] = useState<InterviewRow[]>(mockInterviews);
+  const { data: interviews, isLoading: interviewsLoading } = useInterviews();
+  const startInterview = useStartInterview();
 
-  const filteredInterviews = interviews.filter(
-    (i) => i.candidateName.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredInterviews = (interviews || []).filter(
+    (i) => i.candidate_id?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+           i.job_id?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
+  const handleStartInterview = (sessionId: string) => {
+    startInterview.mutate(sessionId, {
+      onSuccess: () => {
+        navigate(`/interviews/${sessionId}`);
+      }
+    });
+  };
+
+  if (authLoading || interviewsLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
-          <div className="animate-pulse text-muted-foreground">Loading...</div>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </DashboardLayout>
     );
@@ -97,82 +111,81 @@ export default function InterviewsPage() {
 
         {/* Interview Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filteredInterviews.map((interview, index) => (
-            <motion.div
-              key={interview.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
-              <Card className="hover:shadow-md transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-lg font-medium text-primary">
-                          {interview.candidateName.split(' ').map(n => n[0]).join('')}
-                        </span>
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{interview.candidateName}</h3>
-                        <RoleBadge role={interview.role} size="sm" />
-                      </div>
-                    </div>
-                    <StatusBadge status={interview.status} />
-                  </div>
-
-                  <div className="mt-4 pt-4 border-t flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                      {interview.scheduledAt && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="h-4 w-4" />
-                          {new Date(interview.scheduledAt).toLocaleDateString()} at{' '}
-                          {new Date(interview.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
-                      {interview.overallScore !== null && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">Score:</span>
-                          <ScoreBadge score={interview.overallScore} size="sm" />
-                        </div>
-                      )}
-                      {interview.integrityScore !== null && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">Integrity:</span>
-                          <span className={`text-sm font-medium ${
-                            interview.integrityScore >= 90 ? 'text-success' : 
-                            interview.integrityScore >= 70 ? 'text-warning' : 'text-destructive'
-                          }`}>
-                            {interview.integrityScore}%
+          {filteredInterviews.length === 0 ? (
+            <Card className="col-span-full">
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <p>No interviews found.</p>
+                <p className="text-sm mt-2">Create an interview session from a candidate profile.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            filteredInterviews.map((interview, index) => (
+              <motion.div
+                key={interview.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+              >
+                <Card className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                          <span className="text-lg font-medium text-primary">
+                            {interview.id.slice(0, 2).toUpperCase()}
                           </span>
                         </div>
-                      )}
+                        <div>
+                          <h3 className="font-semibold">Session #{interview.id.slice(0, 8)}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Candidate: {interview.candidate_id?.slice(0, 8)}...
+                          </p>
+                        </div>
+                      </div>
+                      <StatusBadge status={interview.status as InterviewStatus} />
                     </div>
-                    <div className="flex gap-2">
-                      {interview.status === 'pending' && (
-                        <Button size="sm">
-                          <Play className="mr-2 h-3 w-3" />
-                          Start
-                        </Button>
-                      )}
-                      {interview.status === 'in_progress' && (
-                        <Button size="sm" variant="outline">
-                          <Eye className="mr-2 h-3 w-3" />
-                          Monitor
-                        </Button>
-                      )}
-                      {interview.status === 'completed' && (
-                        <Button size="sm" variant="outline">
-                          <Eye className="mr-2 h-3 w-3" />
-                          Review
-                        </Button>
-                      )}
+
+                    <div className="mt-4 pt-4 border-t flex items-center justify-between">
+                      <div className="flex items-center gap-6">
+                        {interview.scheduled_at && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="h-4 w-4" />
+                            {new Date(interview.scheduled_at).toLocaleDateString()}
+                          </div>
+                        )}
+                        {interview.overall_score !== null && interview.overall_score !== undefined && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">Score:</span>
+                            <ScoreBadge score={interview.overall_score} size="sm" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {interview.status === 'pending' && (
+                          <Button size="sm" onClick={() => handleStartInterview(interview.id)}>
+                            <Play className="mr-2 h-3 w-3" />
+                            Start
+                          </Button>
+                        )}
+                        {interview.status === 'in_progress' && (
+                          <Button size="sm" variant="outline" onClick={() => navigate(`/interviews/${interview.id}`)}>
+                            <Eye className="mr-2 h-3 w-3" />
+                            Continue
+                          </Button>
+                        )}
+                        {interview.status === 'completed' && (
+                          <Button size="sm" variant="outline" onClick={() => navigate(`/interviews/${interview.id}`)}>
+                            <Eye className="mr-2 h-3 w-3" />
+                            Review
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))
+          )}
         </div>
       </div>
     </DashboardLayout>
