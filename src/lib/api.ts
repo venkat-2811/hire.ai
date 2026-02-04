@@ -4,10 +4,18 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+// Token getter function - will be set by ClerkAuthProvider
+let getAuthToken: (() => Promise<string | null>) | null = null;
+
+export function setAuthTokenGetter(getter: () => Promise<string | null>) {
+  getAuthToken = getter;
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   headers?: Record<string, string>;
+  skipAuth?: boolean;
 }
 
 class APIError extends Error {
@@ -18,12 +26,21 @@ class APIError extends Error {
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {} } = options;
+  const { method = 'GET', body, headers = {}, skipAuth = false } = options;
+
+  const authHeaders: Record<string, string> = {};
+  if (!skipAuth && getAuthToken) {
+    const token = await getAuthToken();
+    if (token) {
+      authHeaders['Authorization'] = `Bearer ${token}`;
+    }
+  }
 
   const config: RequestInit = {
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...headers,
     },
   };
@@ -42,9 +59,18 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   return response.json();
 }
 
-async function uploadFile<T>(endpoint: string, formData: FormData): Promise<T> {
+async function uploadFile<T>(endpoint: string, formData: FormData, skipAuth = false): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (!skipAuth && getAuthToken) {
+    const token = await getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: 'POST',
+    headers,
     body: formData,
   });
 

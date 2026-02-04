@@ -6,7 +6,7 @@ from app.models.schemas import (
     ResumeData, JobDescription, InterviewQuestionGenerated, InterviewQuestion
 )
 from app.models.enums import JobRole, RoleLevel, AssessmentType
-from app.services.openai_client import get_openai_service
+from app.services.gemini_client import get_gemini_service
 
 
 class QuestionGeneratorService:
@@ -16,7 +16,7 @@ class QuestionGeneratorService:
     """
     
     def __init__(self):
-        self.openai = get_openai_service()
+        self.gemini = get_gemini_service()
         
         # Role-specific question templates and focus areas
         self.role_focus_areas = {
@@ -203,12 +203,10 @@ Job Description: {job.description[:500]}
 Generate unique questions that assess their fit for this role."""
 
         try:
-            result = await self.openai.chat_completion_json(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.8  # Higher temperature for variety
+            result = await self.gemini.generate_json(
+                prompt=user_prompt,
+                system_instruction=system_prompt,
+                temperature=0.8
             )
             
             questions = []
@@ -272,11 +270,9 @@ Return JSON:
 }}"""
 
         try:
-            result = await self.openai.chat_completion_json(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Generate {num_questions} behavioral questions."}
-                ],
+            result = await self.gemini.generate_json(
+                prompt=f"Generate {num_questions} behavioral questions.",
+                system_instruction=system_prompt,
                 temperature=0.7
             )
             

@@ -5,7 +5,7 @@ from app.models.schemas import (
     AIEvaluation, CriteriaScore, EvaluationCriterion
 )
 from app.models.enums import JobRole
-from app.services.openai_client import get_openai_service
+from app.services.gemini_client import get_gemini_service
 
 
 class PracticalEvaluatorService:
@@ -15,7 +15,7 @@ class PracticalEvaluatorService:
     """
     
     def __init__(self):
-        self.openai = get_openai_service()
+        self.gemini = get_gemini_service()
         
         # Role-specific practical task templates
         self.task_templates = {
@@ -273,11 +273,9 @@ Time taken: {submission.time_taken_seconds or 'Unknown'} seconds
 Time limit: {assessment.time_limit_minutes} minutes"""
 
         try:
-            result = await self.openai.chat_completion_json(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+            result = await self.gemini.generate_json(
+                prompt=user_prompt,
+                system_instruction=system_prompt,
                 temperature=0.3
             )
             

@@ -5,33 +5,38 @@ import {
   Users,
   Briefcase,
   FileText,
+  TrendingUp,
   Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Trophy,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
   { name: 'Interviews', href: '/interviews', icon: FileText },
+  { name: 'Results', href: '/results', icon: Trophy },
+  { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/auth');
+    await signOut();
+    navigate('/sign-in');
   };
 
   return (

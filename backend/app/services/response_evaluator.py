@@ -3,7 +3,7 @@ from app.models.schemas import (
     InterviewQuestion, CandidateResponse, ResponseEvaluationResult
 )
 from app.models.enums import AssessmentType
-from app.services.openai_client import get_openai_service
+from app.services.gemini_client import get_gemini_service
 
 
 class ResponseEvaluatorService:
@@ -13,7 +13,7 @@ class ResponseEvaluatorService:
     """
     
     def __init__(self):
-        self.openai = get_openai_service()
+        self.gemini = get_gemini_service()
     
     async def evaluate_response(
         self,
@@ -81,11 +81,9 @@ Time taken: {response.time_taken_seconds or 'Unknown'} seconds
 Max score: {question.max_score}"""
 
         try:
-            result = await self.openai.chat_completion_json(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+            result = await self.gemini.generate_json(
+                prompt=user_prompt,
+                system_instruction=system_prompt,
                 temperature=0.3
             )
             
@@ -96,7 +94,7 @@ Max score: {question.max_score}"""
                 improvements=result.get("improvements", [])
             )
             
-        except Exception as e:
+        except Exception:
             return ResponseEvaluationResult(
                 score=50,
                 feedback="Automated evaluation encountered an issue. Manual review recommended.",
@@ -158,11 +156,9 @@ Candidate's Response:
 {response_text[:3000]}"""
 
         try:
-            result = await self.openai.chat_completion_json(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+            result = await self.gemini.generate_json(
+                prompt=user_prompt,
+                system_instruction=system_prompt,
                 temperature=0.3
             )
             
@@ -248,11 +244,9 @@ Consider:
 Return JSON: {"score": 75, "notes": "Brief assessment"}"""
 
         try:
-            result = await self.openai.chat_completion_json(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Responses:\n{all_text[:4000]}"}
-                ],
+            result = await self.gemini.generate_json(
+                prompt=f"Responses:\n{all_text[:4000]}",
+                system_instruction=system_prompt,
                 temperature=0.3
             )
             return min(100, max(0, result.get("score", 50)))

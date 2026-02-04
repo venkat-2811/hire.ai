@@ -7,8 +7,8 @@ load_dotenv()
 
 class Settings:
     def __init__(self):
-        # OpenAI Configuration
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        # Gemini Configuration
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
         
         # Supabase Configuration
         self.supabase_url = os.getenv("SUPABASE_URL", "")
@@ -25,8 +25,17 @@ class Settings:
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
         
         # CORS
-        cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+        cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080")
         self.cors_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+        
+        # Clerk Authentication
+        self.clerk_publishable_key = os.getenv("CLERK_PUBLISHABLE_KEY", "")
+        self.clerk_jwks_url = os.getenv("CLERK_JWKS_URL", "")
+        self.clerk_issuer = os.getenv("CLERK_ISSUER", "")
+        
+        # Resend Email
+        self.resend_api_key = os.getenv("RESEND_API_KEY", "")
+        self.resend_from_email = os.getenv("RESEND_FROM_EMAIL", "noreply@talentscout.ai")
 
 
 def get_settings() -> Settings:

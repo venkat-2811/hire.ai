@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel
 from typing import List, Optional
 import os
 import uuid
@@ -205,6 +206,127 @@ async def get_parsed_resume(candidate_id: str):
         raise HTTPException(status_code=404, detail="No parsed resume data available")
     
     return ResumeData(**parsed_data)
+
+
+class BulkEmailRequest(BaseModel):
+    candidate_ids: List[str]
+    job_id: str
+
+
+class BulkEmailResponse(BaseModel):
+    success: bool
+    emails_sent: int
+    failed: List[str]
+
+
+@router.post("/send-acceptance", response_model=BulkEmailResponse)
+async def send_acceptance_emails(request: BulkEmailRequest):
+    """Send acceptance emails to selected candidates."""
+    from app.services.email_service import get_email_service
+    
+    supabase = get_supabase_admin_client()
+    email_service = get_email_service()
+    
+    # Get job details
+    job_result = supabase.table("job_descriptions").select("id, title").eq("id", request.job_id).execute()
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = job_result.data[0]
+    
+    # Get candidates
+    candidates_result = supabase.table("candidates").select(
+        "id, email, full_name"
+    ).in_("id", request.candidate_ids).execute()
+    
+    if not candidates_result.data:
+        raise HTTPException(status_code=404, detail="No candidates found")
+    
+    emails_sent = 0
+    failed = []
+    
+    for candidate in candidates_result.data:
+        try:
+            await email_service.send_acceptance_email(
+                to=candidate["email"],
+                candidate_name=candidate["full_name"],
+                job_title=job["title"],
+            )
+            
+            # Update candidate status in job_applications
+            supabase.table("job_applications").update({
+                "final_status": "accepted"
+            }).eq("candidate_id", candidate["id"]).eq("job_id", request.job_id).execute()
+            
+            emails_sent += 1
+        except Exception as e:
+            print(f"Failed to send acceptance email to {candidate['email']}: {e}")
+            failed.append(candidate["id"])
+    
+    return BulkEmailResponse(success=emails_sent > 0, emails_sent=emails_sent, failed=failed)
+
+
+@router.post("/send-rejection", response_model=BulkEmailResponse)
+async def send_rejection_emails(request: BulkEmailRequest):
+    """Send rejection emails to selected candidates and optionally delete them."""
+    from app.services.email_service import get_email_service
+    
+    supabase = get_supabase_admin_client()
+    email_service = get_email_service()
+    
+    # Get job details
+    job_result = supabase.table("job_descriptions").select("id, title").eq("id", request.job_id).execute()
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = job_result.data[0]
+    
+    # Get candidates
+    candidates_result = supabase.table("candidates").select(
+        "id, email, full_name"
+    ).in_("id", request.candidate_ids).execute()
+    
+    if not candidates_result.data:
+        raise HTTPException(status_code=404, detail="No candidates found")
+    
+    emails_sent = 0
+    failed = []
+    
+    for candidate in candidates_result.data:
+        try:
+            await email_service.send_rejection_email(
+                to=candidate["email"],
+                candidate_name=candidate["full_name"],
+                job_title=job["title"],
+            )
+            
+            # Update candidate status
+            supabase.table("job_applications").update({
+                "final_status": "rejected"
+            }).eq("candidate_id", candidate["id"]).eq("job_id", request.job_id).execute()
+            
+            emails_sent += 1
+        except Exception as e:
+            print(f"Failed to send rejection email to {candidate['email']}: {e}")
+            failed.append(candidate["id"])
+    
+    return BulkEmailResponse(success=emails_sent > 0, emails_sent=emails_sent, failed=failed)
+
+
+@router.delete("/bulk-delete")
+async def bulk_delete_candidates(candidate_ids: List[str]):
+    """Delete multiple candidates (filtered out candidates)."""
+    supabase = get_supabase_admin_client()
+    
+    deleted = 0
+    for candidate_id in candidate_ids:
+        try:
+            supabase.table("candidates").delete().eq("id", candidate_id).execute()
+            deleted += 1
+        except Exception as e:
+            print(f"Failed to delete candidate {candidate_id}: {e}")
+    
+    return {"success": True, "deleted": deleted}
 
 
 def _row_to_candidate(row: dict) -> Candidate:

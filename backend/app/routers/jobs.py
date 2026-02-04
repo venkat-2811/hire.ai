@@ -29,7 +29,13 @@ async def list_jobs(
     
     query = query.order("created_at", desc=True)
     
-    result = query.execute()
+    try:
+        result = query.execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Supabase query failed: {e}")
+
+    if getattr(result, "error", None):
+        raise HTTPException(status_code=500, detail=str(result.error))
     
     jobs = []
     for row in result.data:
@@ -56,7 +62,13 @@ async def get_job(job_id: str):
     """Get a specific job description."""
     supabase = get_supabase_client()
     
-    result = supabase.table("job_descriptions").select("*").eq("id", job_id).single().execute()
+    try:
+        result = supabase.table("job_descriptions").select("*").eq("id", job_id).single().execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Supabase query failed: {e}")
+
+    if getattr(result, "error", None):
+        raise HTTPException(status_code=500, detail=str(result.error))
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Job not found")

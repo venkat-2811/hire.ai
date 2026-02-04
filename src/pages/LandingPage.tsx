@@ -75,10 +75,10 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-4">
             <Button variant="ghost" asChild>
-              <Link to="/auth">Sign In</Link>
+              <Link to="/sign-in">Sign In</Link>
             </Button>
             <Button asChild>
-              <Link to="/auth">Get Started</Link>
+              <Link to="/sign-up">Get Started</Link>
             </Button>
           </div>
         </div>
@@ -109,7 +109,7 @@ export default function LandingPage() {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" asChild>
-                <Link to="/auth">
+                <Link to="/sign-up">
                   Start Hiring
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
@@ -225,7 +225,7 @@ export default function LandingPage() {
                 Join companies using AI to make faster, fairer, and more accurate hiring decisions.
               </p>
               <Button size="lg" variant="secondary" asChild>
-                <Link to="/auth">
+                <Link to="/sign-up">
                   Get Started Free
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>

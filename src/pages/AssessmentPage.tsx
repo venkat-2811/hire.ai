@@ -1,0 +1,726 @@
+/**
+ * Assessment Page with strict proctoring environment.
+ * Candidates complete MCQ and coding challenges here.
+ */
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertTriangle,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Code,
+  FileQuestion,
+  Loader2,
+  Shield,
+  Maximize,
+  AlertCircle,
+} from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+interface MCQQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  difficulty: string;
+  topic: string;
+  points: number;
+}
+
+interface CodingChallenge {
+  id: string;
+  title: string;
+  description: string;
+  starter_code: string;
+  difficulty: string;
+  time_limit_minutes: number;
+  points: number;
+}
+
+interface AssessmentData {
+  session_id: string;
+  candidate_name: string;
+  job_title: string;
+  mcq_count: number;
+  coding_count: number;
+  total_time_minutes: number;
+  deadline: string;
+}
+
+export default function AssessmentPage() {
+  const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
+
+  // Assessment state
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [assessmentData, setAssessmentData] = useState<AssessmentData | null>(null);
+  const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
+  const [codingChallenges, setCodingChallenges] = useState<CodingChallenge[]>([]);
+  const [currentTab, setCurrentTab] = useState<'mcq' | 'coding'>('mcq');
+  const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
+  const [currentCodingIndex, setCurrentCodingIndex] = useState(0);
+  const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
+  const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [completed, setCompleted] = useState(false);
+
+  // Proctoring state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(true);
+  const [warningCount, setWarningCount] = useState(0);
+  const [showWarning, setShowWarning] = useState(false);
+  const [warningMessage, setWarningMessage] = useState('');
+  const [terminated, setTerminated] = useState(false);
+
+  // Timer
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Report proctoring event to backend
+  const reportProctoringEvent = useCallback(async (eventType: string, details?: object) => {
+    if (!assessmentData) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/proctoring`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_type: eventType,
+          timestamp: new Date().toISOString(),
+          details,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.terminated) {
+        setTerminated(true);
+        setWarningMessage('Assessment terminated due to multiple violations.');
+        setShowWarning(true);
+      } else if (data.warning) {
+        setWarningCount(3 - data.violations_remaining);
+        setWarningMessage(data.message);
+        setShowWarning(true);
+      }
+    } catch (e) {
+      console.error('Failed to report proctoring event:', e);
+    }
+  }, [assessmentData]);
+
+  // Fullscreen handling
+  const enterFullscreen = useCallback(async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+      setShowFullscreenPrompt(false);
+    } catch (e) {
+      toast.error('Failed to enter fullscreen mode');
+    }
+  }, []);
+
+  // Proctoring event listeners
+  useEffect(() => {
+    if (!assessmentData || terminated || completed) return;
+
+    const handleFullscreenChange = () => {
+      const isFs = !!document.fullscreenElement;
+      setIsFullscreen(isFs);
+      if (!isFs && !showFullscreenPrompt) {
+        reportProctoringEvent('fullscreen_exit');
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        reportProctoringEvent('tab_switch');
+      }
+    };
+
+    const handleBlur = () => {
+      reportProctoringEvent('window_blur');
+    };
+
+    const handleCopyPaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      reportProctoringEvent('copy_paste');
+      toast.error('Copy/paste is disabled during the assessment');
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      reportProctoringEvent('right_click');
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Disable common shortcuts
+      if (
+        (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
+        (e.metaKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && e.key === 'I')
+      ) {
+        e.preventDefault();
+        reportProctoringEvent('copy_paste');
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+    document.addEventListener('copy', handleCopyPaste);
+    document.addEventListener('paste', handleCopyPaste);
+    document.addEventListener('cut', handleCopyPaste);
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('copy', handleCopyPaste);
+      document.removeEventListener('paste', handleCopyPaste);
+      document.removeEventListener('cut', handleCopyPaste);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [assessmentData, terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
+
+  // Timer
+  useEffect(() => {
+    if (timeRemaining <= 0 || terminated || completed) return;
+
+    timerRef.current = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev <= 1) {
+          handleSubmitAssessment();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [timeRemaining, terminated, completed]);
+
+  // Load assessment data
+  useEffect(() => {
+    async function loadAssessment() {
+      if (!token) return;
+
+      try {
+        // Start assessment
+        const startResponse = await fetch(`${API_BASE_URL}/assessments/start/${token}`);
+        if (!startResponse.ok) {
+          const error = await startResponse.json();
+          setError(error.detail || 'Failed to load assessment');
+          return;
+        }
+        const data = await startResponse.json();
+        setAssessmentData(data);
+        setTimeRemaining(data.total_time_minutes * 60);
+
+        // Load MCQ questions
+        const mcqResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/mcq`);
+        if (mcqResponse.ok) {
+          const mcqData = await mcqResponse.json();
+          setMcqQuestions(mcqData);
+        }
+
+        // Load coding challenges
+        const codingResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/coding`);
+        if (codingResponse.ok) {
+          const codingData = await codingResponse.json();
+          setCodingChallenges(codingData);
+          // Initialize solutions with starter code
+          const initialSolutions: Record<string, string> = {};
+          codingData.forEach((c: CodingChallenge) => {
+            initialSolutions[c.id] = c.starter_code;
+          });
+          setCodingSolutions(initialSolutions);
+        }
+      } catch (e) {
+        setError('Failed to load assessment. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadAssessment();
+  }, [token]);
+
+  const handleMcqAnswer = (questionId: string, optionIndex: number) => {
+    setMcqAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
+  };
+
+  const handleCodingSolution = (challengeId: string, code: string) => {
+    setCodingSolutions((prev) => ({ ...prev, [challengeId]: code }));
+  };
+
+  const handleSubmitAssessment = async () => {
+    if (!assessmentData || submitting) return;
+
+    setSubmitting(true);
+
+    try {
+      // Submit MCQ answers
+      const mcqSubmissions = Object.entries(mcqAnswers).map(([questionId, selectedIndex]) => ({
+        question_id: questionId,
+        selected_index: selectedIndex,
+        time_taken_seconds: 0, // TODO: Track per-question time
+      }));
+
+      await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mcqSubmissions),
+      });
+
+      // Submit coding solutions
+      for (const [challengeId, code] of Object.entries(codingSolutions)) {
+        await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            challenge_id: challengeId,
+            code,
+            language: 'python',
+            time_taken_seconds: 0,
+          }),
+        });
+      }
+
+      // Complete assessment
+      await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/complete`, {
+        method: 'POST',
+      });
+
+      setCompleted(true);
+
+      // Exit fullscreen
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      }
+    } catch (e) {
+      toast.error('Failed to submit assessment');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Loading assessment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+              <XCircle className="h-6 w-6 text-destructive" />
+            </div>
+            <CardTitle>Assessment Unavailable</CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            <Button variant="outline" onClick={() => navigate('/')}>
+              Return Home
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Terminated state
+  if (terminated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+              <AlertTriangle className="h-6 w-6 text-destructive" />
+            </div>
+            <CardTitle>Assessment Terminated</CardTitle>
+            <CardDescription>
+              Your assessment has been terminated due to multiple proctoring violations.
+              Please contact the hiring team for further instructions.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  // Completed state
+  if (completed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
+          <Card className="max-w-md w-full">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
+                <CheckCircle className="h-8 w-8 text-success" />
+              </div>
+              <CardTitle className="text-2xl">Assessment Completed!</CardTitle>
+              <CardDescription className="text-base">
+                Thank you for completing the technical assessment. Your responses have been
+                submitted for evaluation.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-center">
+              <p className="text-sm text-muted-foreground">
+                The hiring team will review your results and contact you regarding the next steps.
+              </p>
+              <Button onClick={() => navigate('/')}>Return Home</Button>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Fullscreen prompt
+  if (showFullscreenPrompt) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-lg w-full">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <Shield className="h-8 w-8 text-primary" />
+            </div>
+            <CardTitle className="text-2xl">Proctored Assessment</CardTitle>
+            <CardDescription className="text-base">
+              {assessmentData?.job_title} - Technical Assessment
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <h3 className="font-semibold">Before you begin:</h3>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <Maximize className="h-4 w-4 mt-0.5 text-primary" />
+                  <span>The assessment must be completed in fullscreen mode</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 text-warning" />
+                  <span>Exiting fullscreen or switching tabs will be recorded as violations</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
+                  <span>3 violations will result in automatic termination</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Clock className="h-4 w-4 mt-0.5 text-info" />
+                  <span>You have {assessmentData?.total_time_minutes} minutes to complete</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="bg-muted/50 rounded-lg p-4">
+              <p className="text-sm">
+                <strong>Assessment includes:</strong>
+              </p>
+              <div className="flex gap-4 mt-2">
+                <div className="flex items-center gap-2">
+                  <FileQuestion className="h-4 w-4" />
+                  <span className="text-sm">{assessmentData?.mcq_count} MCQ Questions</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Code className="h-4 w-4" />
+                  <span className="text-sm">{assessmentData?.coding_count} Coding Challenges</span>
+                </div>
+              </div>
+            </div>
+
+            <Button className="w-full" size="lg" onClick={enterFullscreen}>
+              <Maximize className="mr-2 h-4 w-4" />
+              Enter Fullscreen & Start
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const currentMcq = mcqQuestions[currentMcqIndex];
+  const currentCoding = codingChallenges[currentCodingIndex];
+  const mcqProgress = (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
+  const codingProgress = (Object.keys(codingSolutions).filter(k => codingSolutions[k] !== codingChallenges.find(c => c.id === k)?.starter_code).length / codingChallenges.length) * 100;
+
+  return (
+    <div className="min-h-screen bg-background select-none">
+      {/* Warning Dialog */}
+      <AlertDialog open={showWarning} onOpenChange={setShowWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-warning">
+              <AlertTriangle className="h-5 w-5" />
+              Proctoring Warning
+            </AlertDialogTitle>
+            <AlertDialogDescription>{warningMessage}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => {
+              setShowWarning(false);
+              if (!isFullscreen) enterFullscreen();
+            }}>
+              I Understand
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              <span className="font-semibold">Proctored Assessment</span>
+            </div>
+            <Badge variant="outline">{assessmentData?.job_title}</Badge>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {/* Warning indicator */}
+            {warningCount > 0 && (
+              <Badge variant="destructive">
+                <AlertTriangle className="mr-1 h-3 w-3" />
+                {warningCount}/3 Warnings
+              </Badge>
+            )}
+
+            {/* Timer */}
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+              timeRemaining < 300 ? 'bg-destructive/10 text-destructive' : 'bg-muted'
+            }`}>
+              <Clock className="h-4 w-4" />
+              <span className="font-mono font-semibold">{formatTime(timeRemaining)}</span>
+            </div>
+
+            <Button onClick={handleSubmitAssessment} disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                'Submit Assessment'
+              )}
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        <Tabs value={currentTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding')}>
+          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
+            <TabsTrigger value="mcq" className="flex items-center gap-2">
+              <FileQuestion className="h-4 w-4" />
+              MCQ ({Object.keys(mcqAnswers).length}/{mcqQuestions.length})
+            </TabsTrigger>
+            <TabsTrigger value="coding" className="flex items-center gap-2">
+              <Code className="h-4 w-4" />
+              Coding ({currentCodingIndex + 1}/{codingChallenges.length})
+            </TabsTrigger>
+          </TabsList>
+
+          {/* MCQ Section */}
+          <TabsContent value="mcq">
+            <div className="max-w-3xl mx-auto space-y-6">
+              <Progress value={mcqProgress} className="h-2" />
+
+              {currentMcq && (
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline">{currentMcq.topic}</Badge>
+                      <Badge variant={
+                        currentMcq.difficulty === 'easy' ? 'secondary' :
+                        currentMcq.difficulty === 'medium' ? 'default' : 'destructive'
+                      }>
+                        {currentMcq.difficulty} ({currentMcq.points} pts)
+                      </Badge>
+                    </div>
+                    <CardTitle className="text-lg mt-4">
+                      Question {currentMcqIndex + 1} of {mcqQuestions.length}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <p className="text-base">{currentMcq.question}</p>
+
+                    <RadioGroup
+                      value={mcqAnswers[currentMcq.id]?.toString()}
+                      onValueChange={(v) => handleMcqAnswer(currentMcq.id, parseInt(v))}
+                    >
+                      {currentMcq.options.map((option, index) => (
+                        <div
+                          key={index}
+                          className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                            mcqAnswers[currentMcq.id] === index
+                              ? 'border-primary bg-primary/5'
+                              : 'hover:bg-muted/50'
+                          }`}
+                          onClick={() => handleMcqAnswer(currentMcq.id, index)}
+                        >
+                          <RadioGroupItem value={index.toString()} id={`option-${index}`} />
+                          <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
+                            {option}
+                          </Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+
+                    <div className="flex justify-between pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setCurrentMcqIndex((prev) => Math.max(0, prev - 1))}
+                        disabled={currentMcqIndex === 0}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        onClick={() => setCurrentMcqIndex((prev) => Math.min(mcqQuestions.length - 1, prev + 1))}
+                        disabled={currentMcqIndex === mcqQuestions.length - 1}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Question Navigator */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Question Navigator</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {mcqQuestions.map((q, index) => (
+                      <Button
+                        key={q.id}
+                        variant={mcqAnswers[q.id] !== undefined ? 'default' : 'outline'}
+                        size="sm"
+                        className={`w-10 h-10 ${currentMcqIndex === index ? 'ring-2 ring-primary' : ''}`}
+                        onClick={() => setCurrentMcqIndex(index)}
+                      >
+                        {index + 1}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Coding Section */}
+          <TabsContent value="coding">
+            <div className="max-w-5xl mx-auto space-y-6">
+              <Progress value={codingProgress} className="h-2" />
+
+              {currentCoding && (
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* Problem Description */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <Badge variant={
+                          currentCoding.difficulty === 'easy' ? 'secondary' :
+                          currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
+                        }>
+                          {currentCoding.difficulty}
+                        </Badge>
+                        <Badge variant="outline">
+                          {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
+                        </Badge>
+                      </div>
+                      <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Code Editor */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Your Solution</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Textarea
+                        className="font-mono text-sm min-h-[400px] resize-none"
+                        value={codingSolutions[currentCoding.id] || ''}
+                        onChange={(e) => handleCodingSolution(currentCoding.id, e.target.value)}
+                        placeholder="Write your code here..."
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              <div className="flex justify-between">
+                <Button
+                  variant="outline"
+                  onClick={() => setCurrentCodingIndex((prev) => Math.max(0, prev - 1))}
+                  disabled={currentCodingIndex === 0}
+                >
+                  Previous Challenge
+                </Button>
+                <Button
+                  onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
+                  disabled={currentCodingIndex === codingChallenges.length - 1}
+                >
+                  Next Challenge
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
+  );
+}

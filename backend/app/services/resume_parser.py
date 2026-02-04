@@ -5,14 +5,14 @@ from io import BytesIO
 import pdfplumber
 from docx import Document
 from app.models.schemas import ResumeData, ExperienceItem, EducationItem, ContactInfo
-from app.services.openai_client import get_openai_service
+from app.services.gemini_client import get_gemini_service
 
 
 class ResumeParserService:
     """Service for parsing resumes using AI-powered semantic extraction."""
     
     def __init__(self):
-        self.openai = get_openai_service()
+        self.gemini = get_gemini_service()
     
     async def parse_resume(self, file_content: bytes, filename: str) -> Tuple[str, ResumeData]:
         """
@@ -58,7 +58,7 @@ class ResumeParserService:
         return "\n".join(text_parts)
     
     async def _ai_parse_resume(self, resume_text: str) -> ResumeData:
-        """Use OpenAI to semantically parse resume content."""
+        """Use Gemini to semantically parse resume content."""
         
         system_prompt = """You are an expert resume parser. Analyze the resume text and extract structured information.
         
@@ -109,13 +109,7 @@ Guidelines:
 Return the parsed data as a JSON object."""
 
         try:
-            result = await self.openai.chat_completion_json(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2
-            )
+            result = await self.gemini.analyze_resume(resume_text[:8000])
             
             # Parse experience items
             experience = []

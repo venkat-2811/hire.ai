@@ -1,122 +1,30 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { SignIn, SignUp } from '@clerk/clerk-react';
 import { useAuth } from '@/hooks/useAuth';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sparkles, Mail, Lock, User, ArrowRight } from 'lucide-react';
-import { toast } from 'sonner';
-import { z } from 'zod';
-
-const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-const signupSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+import { Sparkles } from 'lucide-react';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { signIn, signUp, user } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
-  
-  // Login form state
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
-  
-  // Signup form state
-  const [signupName, setSignupName] = useState('');
-  const [signupEmail, setSignupEmail] = useState('');
-  const [signupPassword, setSignupPassword] = useState('');
-  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
-  const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
+  const location = useLocation();
+  const { isSignedIn, loading } = useAuth();
 
-  // Redirect if already logged in
-  if (user) {
-    navigate('/dashboard');
-    return null;
-  }
+  const isSignUp = location.pathname.startsWith('/sign-up');
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginErrors({});
-    
-    const result = loginSchema.safeParse({ email: loginEmail, password: loginPassword });
-    if (!result.success) {
-      const errors: Record<string, string> = {};
-      result.error.errors.forEach((err) => {
-        if (err.path[0]) errors[err.path[0] as string] = err.message;
-      });
-      setLoginErrors(errors);
-      return;
+  useEffect(() => {
+    if (!loading && isSignedIn) {
+      navigate('/dashboard');
     }
+  }, [isSignedIn, loading, navigate]);
 
-    setIsLoading(true);
-    const { error } = await signIn(loginEmail, loginPassword);
-    setIsLoading(false);
-
-    if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        toast.error('Invalid email or password');
-      } else if (error.message.includes('Email not confirmed')) {
-        toast.error('Please verify your email address');
-      } else {
-        toast.error(error.message);
-      }
-      return;
+  useEffect(() => {
+    if (location.pathname === '/auth') {
+      navigate('/sign-in', { replace: true });
     }
-
-    toast.success('Welcome back!');
-    navigate('/dashboard');
-  };
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSignupErrors({});
-
-    const result = signupSchema.safeParse({
-      fullName: signupName,
-      email: signupEmail,
-      password: signupPassword,
-      confirmPassword: signupConfirmPassword,
-    });
-
-    if (!result.success) {
-      const errors: Record<string, string> = {};
-      result.error.errors.forEach((err) => {
-        if (err.path[0]) errors[err.path[0] as string] = err.message;
-      });
-      setSignupErrors(errors);
-      return;
-    }
-
-    setIsLoading(true);
-    const { error } = await signUp(signupEmail, signupPassword, signupName);
-    setIsLoading(false);
-
-    if (error) {
-      if (error.message.includes('User already registered')) {
-        toast.error('An account with this email already exists');
-      } else {
-        toast.error(error.message);
-      }
-      return;
-    }
-
-    toast.success('Account created! Please check your email to verify your account.');
-  };
+  }, [location.pathname, navigate]);
 
   return (
     <div className="min-h-screen flex">
@@ -173,7 +81,7 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Right Panel - Auth Forms */}
+      {/* Right Panel - Clerk Auth */}
       <div className="flex-1 flex items-center justify-center p-8 bg-background">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
@@ -188,156 +96,45 @@ export default function AuthPage() {
             <span className="text-xl font-bold">HireAI</span>
           </div>
 
-          <Card className="border-0 shadow-lg">
-            <Tabs defaultValue="login" className="w-full">
-              <CardHeader className="space-y-1 pb-2">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="login">Sign In</TabsTrigger>
-                  <TabsTrigger value="signup">Sign Up</TabsTrigger>
-                </TabsList>
-              </CardHeader>
+          <Card className="border-0 shadow-lg p-6">
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <Button variant={isSignUp ? 'outline' : 'default'} asChild>
+                <Link to="/sign-in">Sign In</Link>
+              </Button>
+              <Button variant={isSignUp ? 'default' : 'outline'} asChild>
+                <Link to="/sign-up">Sign Up</Link>
+              </Button>
+            </div>
 
-              <TabsContent value="login">
-                <form onSubmit={handleLogin}>
-                  <CardContent className="space-y-4 pt-4">
-                    <CardDescription className="text-center">
-                      Enter your credentials to access your account
-                    </CardDescription>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="login-email">Email</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="login-email"
-                          type="email"
-                          placeholder="you@company.com"
-                          className="pl-10"
-                          value={loginEmail}
-                          onChange={(e) => setLoginEmail(e.target.value)}
-                        />
-                      </div>
-                      {loginErrors.email && (
-                        <p className="text-sm text-destructive">{loginErrors.email}</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="login-password">Password</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="login-password"
-                          type="password"
-                          placeholder="••••••••"
-                          className="pl-10"
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
-                        />
-                      </div>
-                      {loginErrors.password && (
-                        <p className="text-sm text-destructive">{loginErrors.password}</p>
-                      )}
-                    </div>
-                  </CardContent>
-
-                  <CardFooter>
-                    <Button type="submit" className="w-full" disabled={isLoading}>
-                      {isLoading ? 'Signing in...' : 'Sign In'}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </CardFooter>
-                </form>
-              </TabsContent>
-
-              <TabsContent value="signup">
-                <form onSubmit={handleSignup}>
-                  <CardContent className="space-y-4 pt-4">
-                    <CardDescription className="text-center">
-                      Create an account to get started
-                    </CardDescription>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-name">Full Name</Label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="signup-name"
-                          placeholder="John Doe"
-                          className="pl-10"
-                          value={signupName}
-                          onChange={(e) => setSignupName(e.target.value)}
-                        />
-                      </div>
-                      {signupErrors.fullName && (
-                        <p className="text-sm text-destructive">{signupErrors.fullName}</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-email">Email</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="signup-email"
-                          type="email"
-                          placeholder="you@company.com"
-                          className="pl-10"
-                          value={signupEmail}
-                          onChange={(e) => setSignupEmail(e.target.value)}
-                        />
-                      </div>
-                      {signupErrors.email && (
-                        <p className="text-sm text-destructive">{signupErrors.email}</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password">Password</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="signup-password"
-                          type="password"
-                          placeholder="••••••••"
-                          className="pl-10"
-                          value={signupPassword}
-                          onChange={(e) => setSignupPassword(e.target.value)}
-                        />
-                      </div>
-                      {signupErrors.password && (
-                        <p className="text-sm text-destructive">{signupErrors.password}</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-confirm">Confirm Password</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="signup-confirm"
-                          type="password"
-                          placeholder="••••••••"
-                          className="pl-10"
-                          value={signupConfirmPassword}
-                          onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                        />
-                      </div>
-                      {signupErrors.confirmPassword && (
-                        <p className="text-sm text-destructive">{signupErrors.confirmPassword}</p>
-                      )}
-                    </div>
-                  </CardContent>
-
-                  <CardFooter>
-                    <Button type="submit" className="w-full" disabled={isLoading}>
-                      {isLoading ? 'Creating account...' : 'Create Account'}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </CardFooter>
-                </form>
-              </TabsContent>
-            </Tabs>
+            <div className="flex justify-center">
+              {isSignUp ? (
+                <SignUp
+                  routing="path"
+                  path="/sign-up"
+                  signInUrl="/sign-in"
+                  afterSignUpUrl="/dashboard"
+                  appearance={{
+                    elements: {
+                      rootBox: 'w-full',
+                      card: 'shadow-none border-0 p-0',
+                    },
+                  }}
+                />
+              ) : (
+                <SignIn
+                  routing="path"
+                  path="/sign-in"
+                  signUpUrl="/sign-up"
+                  afterSignInUrl="/dashboard"
+                  appearance={{
+                    elements: {
+                      rootBox: 'w-full',
+                      card: 'shadow-none border-0 p-0',
+                    },
+                  }}
+                />
+              )}
+            </div>
           </Card>
 
           <p className="text-center text-sm text-muted-foreground mt-6">

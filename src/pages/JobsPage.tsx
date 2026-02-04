@@ -14,6 +14,9 @@ import {
   Edit,
   Archive,
   Loader2,
+  Link as LinkIcon,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { RoleBadge } from '@/components/ui/role-badge';
@@ -25,12 +28,30 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
 import { useJobs, useDeleteJob } from '@/hooks/useJobs';
+import { toast } from 'sonner';
 
 export default function JobsPage() {
   const { loading: authLoading } = useRequireAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const { data: jobs, isLoading: jobsLoading } = useJobs();
   const deleteJob = useDeleteJob();
+
+  const getApplicationLink = (jobId: string) => {
+    return `${window.location.origin}/apply/${jobId}`;
+  };
+
+  const copyApplicationLink = async (jobId: string) => {
+    const link = getApplicationLink(jobId);
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedId(jobId);
+      toast.success('Application link copied to clipboard!');
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
 
   const filteredJobs = (jobs || []).filter(
     (j) => j.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -114,6 +135,14 @@ export default function JobsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => copyApplicationLink(job.id)}>
+                          {copiedId === job.id ? (
+                            <Check className="mr-2 h-4 w-4 text-success" />
+                          ) : (
+                            <LinkIcon className="mr-2 h-4 w-4" />
+                          )}
+                          Copy Application Link
+                        </DropdownMenuItem>
                         <DropdownMenuItem>
                           <Eye className="mr-2 h-4 w-4" />
                           View Details

@@ -1,7 +1,9 @@
-from fastapi import FastAPI
+import asyncio
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import get_settings, ensure_directories
+from app.services.gemini_client import get_gemini_service
 from app.routers import (
     jobs_router,
     candidates_router,
@@ -9,6 +11,9 @@ from app.routers import (
     screening_router,
     analytics_router
 )
+from app.routers.applications import router as applications_router
+from app.routers.assessments import router as assessments_router
+from app.routers.ai_interview import router as ai_interview_router
 
 
 @asynccontextmanager
@@ -44,6 +49,9 @@ app.include_router(candidates_router)
 app.include_router(interviews_router)
 app.include_router(screening_router)
 app.include_router(analytics_router)
+app.include_router(applications_router)
+app.include_router(assessments_router)
+app.include_router(ai_interview_router)
 
 
 @app.get("/")
@@ -61,3 +69,25 @@ async def root():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/ai/gemini/ping")
+async def gemini_ping():
+    gemini = get_gemini_service()
+    try:
+        response_text = await asyncio.wait_for(
+            gemini.generate_text(
+                prompt="pong",
+                temperature=0.2,
+                max_tokens=64,
+            ),
+            timeout=20,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini ping failed: {e}")
+
+    return {
+        "ok": True,
+        "model": getattr(gemini, "model_name", None),
+        "response": (response_text or "").strip()[:200],
+    }
