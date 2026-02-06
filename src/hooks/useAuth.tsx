@@ -28,6 +28,7 @@ interface AuthContextValue {
   loading: boolean;
   isSignedIn: boolean;
   signOut: () => Promise<void>;
+  getToken: () => Promise<string | null>;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -83,7 +84,7 @@ function AuthTokenSetter() {
 }
 
 export function useAuth(): AuthContextValue {
-  const { isLoaded, isSignedIn, signOut } = useClerkAuthHook();
+  const { isLoaded, isSignedIn, signOut, getToken } = useClerkAuthHook();
   const { user: clerkUser } = useClerkUser();
 
   const user: ClerkUser | null = clerkUser
@@ -102,6 +103,7 @@ export function useAuth(): AuthContextValue {
     signOut: async () => {
       await signOut();
     },
+    getToken,
   };
 }
 

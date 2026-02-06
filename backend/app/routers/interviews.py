@@ -9,7 +9,7 @@ from app.models.schemas import (
     PracticalAssessment, PracticalSubmission, PracticalSubmissionCreate,
     ProctoringData, APIResponse, ResumeData, JobDescription
 )
-from app.models.enums import InterviewStatus, HireRecommendation, JobRole
+from app.models.enums import InterviewStatus, HireRecommendation
 from app.database import get_supabase_client
 from app.services.question_generator import get_question_generator
 from app.services.response_evaluator import get_response_evaluator
@@ -171,15 +171,15 @@ async def start_interview(session_id: str):
     
     # Generate practical assessments
     practical_evaluator = get_practical_evaluator()
-    practicals = practical_evaluator.get_practical_tasks_for_role(
-        JobRole(job.role), session_id
+    practicals = await practical_evaluator.get_practical_tasks(
+        job, session_id
     )
     
     for p in practicals:
         p_data = {
             "id": p.id,
             "session_id": session_id,
-            "role": p.role.value,
+            "role": p.role,
             "task_title": p.task_title,
             "task_description": p.task_description,
             "starter_code": p.starter_code,
@@ -604,7 +604,7 @@ def _row_to_practical(row: dict) -> PracticalAssessment:
     return PracticalAssessment(
         id=row["id"],
         session_id=row["session_id"],
-        role=JobRole(row["role"]),
+        role=row["role"],
         task_title=row["task_title"],
         task_description=row["task_description"],
         starter_code=row.get("starter_code"),

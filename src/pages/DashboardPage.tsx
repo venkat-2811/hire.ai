@@ -48,11 +48,41 @@ export default function DashboardPage() {
     );
   }
 
+  const formatChange = (n?: number) => {
+    const value = typeof n === 'number' ? n : 0;
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${value}`;
+  };
+
   const dashboardStats = [
-    { name: 'Total Candidates', value: stats?.total_candidates?.toString() || '0', change: '+12%', icon: Users, color: 'text-info' },
-    { name: 'Active Jobs', value: stats?.active_jobs?.toString() || '0', change: '+2', icon: Briefcase, color: 'text-accent' },
-    { name: 'Pending Interviews', value: stats?.pending_interviews?.toString() || '0', change: '-5', icon: Clock, color: 'text-warning' },
-    { name: 'Completed Today', value: stats?.completed_today?.toString() || '0', change: '+3', icon: CheckCircle, color: 'text-success' },
+    {
+      name: 'Total Candidates',
+      value: stats?.total_candidates?.toString() || '0',
+      change: formatChange(stats?.total_candidates_change),
+      icon: Users,
+      color: 'text-info'
+    },
+    {
+      name: 'Active Jobs',
+      value: stats?.active_jobs?.toString() || '0',
+      change: formatChange(stats?.active_jobs_change),
+      icon: Briefcase,
+      color: 'text-accent'
+    },
+    {
+      name: 'Pending Interviews',
+      value: stats?.pending_interviews?.toString() || '0',
+      change: formatChange(stats?.pending_interviews_change),
+      icon: Clock,
+      color: 'text-warning'
+    },
+    {
+      name: 'Completed Today',
+      value: stats?.completed_today?.toString() || '0',
+      change: formatChange(stats?.completed_today_change),
+      icon: CheckCircle,
+      color: 'text-success'
+    },
   ];
 
   return (

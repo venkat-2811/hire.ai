@@ -28,6 +28,14 @@ import {
   Camera,
 } from 'lucide-react';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogContent,
@@ -36,6 +44,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -55,6 +64,17 @@ interface InterviewQuestion {
   expected_duration_seconds: number;
 }
 
+interface InterviewEvaluationResult {
+  overall_score: number;
+  technical_score: number;
+  communication_score: number;
+  confidence_score: number;
+  recommendation: string;
+  strengths: string[];
+  areas_for_improvement: string[];
+  detailed_feedback: string;
+}
+
 export default function AIInterviewPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
@@ -66,6 +86,7 @@ export default function AIInterviewPage() {
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
+  const [finalEvaluation, setFinalEvaluation] = useState<InterviewEvaluationResult | null>(null);
 
   // Media state
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -74,11 +95,18 @@ export default function AIInterviewPage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [recordingTime, setRecordingTime] = useState(0);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [hasRecordedAudio, setHasRecordedAudio] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [speechAvailable, setSpeechAvailable] = useState(true);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [manualMode, setManualMode] = useState(false);
 
   // Proctoring state
   const [showSetupScreen, setShowSetupScreen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
+  const [violationThreshold, setViolationThreshold] = useState(3);
   const [showWarning, setShowWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
 
@@ -88,6 +116,11 @@ export default function AIInterviewPage() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingWantedRef = useRef(false);
+  const isRecordingRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
+  const recordedAudioBlobRef = useRef<Blob | null>(null);
 
   // Speech synthesis - speak the question
   const speakQuestion = useCallback((text: string) => {
@@ -97,72 +130,41 @@ export default function AIInterviewPage() {
       utterance.rate = 0.9;
       utterance.pitch = 1;
       utterance.volume = 1;
-      
+
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => setIsSpeaking(false);
       utterance.onerror = () => setIsSpeaking(false);
-      
+
       synthRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     }
   }, []);
 
-  // Speech recognition - listen to candidate
-  const startRecording = useCallback(() => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      toast.error('Speech recognition not supported in this browser');
-      return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onresult = (event) => {
-      let finalTranscript = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' ';
-        }
-      }
-      if (finalTranscript) {
-        setTranscript((prev) => prev + finalTranscript);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-      if (event.error !== 'no-speech') {
-        toast.error('Speech recognition error. Please try again.');
-      }
-    };
-
-    recognition.onend = () => {
-      if (isRecording) {
-        recognition.start(); // Restart if still recording
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsRecording(true);
-    setTranscript('');
-    setRecordingTime(0);
-
-    // Start timer
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingTime((prev) => prev + 1);
-    }, 1000);
-  }, [isRecording]);
-
   const stopRecording = useCallback(() => {
+    recordingWantedRef.current = false;
+    isRecordingRef.current = false;
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
       recognitionRef.current = null;
+    }
+    if (mediaRecorderRef.current) {
+      try {
+        try {
+          mediaRecorderRef.current.requestData();
+        } catch {
+          // ignore
+        }
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch {
+        // ignore
+      }
+      mediaRecorderRef.current = null;
     }
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
@@ -171,43 +173,144 @@ export default function AIInterviewPage() {
     setIsRecording(false);
   }, []);
 
-  // Submit response
-  const submitResponse = useCallback(async () => {
-    if (!interviewData || !currentQuestion || !transcript.trim()) {
-      toast.error('Please provide a response before submitting');
+  const startLiveTranscription = useCallback(() => {
+    if (!(('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window))) {
+      setSpeechAvailable(false);
       return;
     }
 
-    stopRecording();
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      let text = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        text += event.results[i][0].transcript;
+      }
+      setLiveTranscript(text.trim());
+    };
+
+    recognition.onerror = () => {
+      setSpeechAvailable(false);
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setSpeechAvailable(true);
+    } catch {
+      setSpeechAvailable(false);
+    }
+  }, []);
+
+  // Speech recognition - listen to candidate
+  const startRecording = useCallback(() => {
+    if (!micEnabled) {
+      toast.error('Microphone is not enabled. Please allow microphone access.');
+      setManualMode(true);
+      return;
+    }
+
+    if (!mediaStreamRef.current) {
+      toast.error('Microphone stream is not ready. Please re-enable permissions.');
+      setManualMode(true);
+      return;
+    }
+
+    const stream = mediaStreamRef.current;
+    const audioTracks = stream.getAudioTracks();
+    if (!audioTracks || audioTracks.length === 0) {
+      toast.error('No microphone track available. Please check your device settings.');
+      setManualMode(true);
+      return;
+    }
+
+    recordedChunksRef.current = [];
+    recordedAudioBlobRef.current = null;
+    setHasRecordedAudio(false);
+    setLiveTranscript('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/response`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question_index: currentQuestion.index,
-          transcript: transcript.trim(),
-          audio_duration_seconds: recordingTime,
-          confidence: 0.9,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.is_last_question) {
-        // Complete the interview
-        await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/complete`, {
-          method: 'POST',
-        });
-        setIsCompleted(true);
-      } else {
-        // Load next question
-        await loadCurrentQuestion();
-      }
-    } catch (e) {
-      toast.error('Failed to submit response');
+      const audioOnlyStream = new MediaStream(audioTracks);
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : '';
+      const recorder = mimeType ? new MediaRecorder(audioOnlyStream, { mimeType }) : new MediaRecorder(audioOnlyStream);
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          recordedChunksRef.current.push(e.data);
+          setHasRecordedAudio(true);
+        }
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType || 'audio/webm' });
+        recordedAudioBlobRef.current = blob;
+        if (blob.size > 0) setHasRecordedAudio(true);
+      };
+      recorder.start(250);
+      mediaRecorderRef.current = recorder;
+    } catch {
+      toast.error('Unable to start audio recording. You can type your answer instead.');
+      setManualMode(true);
+      return;
     }
-  }, [interviewData, currentQuestion, transcript, recordingTime, stopRecording]);
+
+    startLiveTranscription();
+
+    recordingWantedRef.current = true;
+    isRecordingRef.current = true;
+    setSpeechAvailable(true);
+    setSpeechError(null);
+    setManualMode(false);
+    setTranscript('');
+    setRecordingTime(0);
+    setIsRecording(true);
+
+    // Start timer
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingTime((prev) => prev + 1);
+    }, 1000);
+  }, [micEnabled, stopRecording]);
+
+  const transcribeLatestRecording = useCallback(async () => {
+    if (!interviewData) return null;
+    const blobFromStop = recordedAudioBlobRef.current;
+    const blobFromChunks = recordedChunksRef.current.length
+      ? new Blob(recordedChunksRef.current, { type: 'audio/webm' })
+      : null;
+    const blob = (blobFromStop && blobFromStop.size > 0) ? blobFromStop : blobFromChunks;
+    if (!blob || blob.size === 0) return null;
+
+    setIsTranscribing(true);
+    try {
+      const form = new FormData();
+      form.append('audio', blob, 'response.webm');
+      form.append('language_code', 'en_us');
+
+      const resp = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/transcribe`, {
+        method: 'POST',
+        body: form,
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data?.detail || 'Failed to transcribe audio');
+      }
+      const text = (data?.transcript || '').toString();
+      return text;
+    } catch (e) {
+      console.error('Transcription failed', e);
+      const msg = e instanceof Error ? e.message : 'Failed to transcribe audio';
+      toast.error(msg);
+      return null;
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [interviewData]);
 
   // Load current question
   const loadCurrentQuestion = useCallback(async () => {
@@ -235,6 +338,73 @@ export default function AIInterviewPage() {
     }
   }, [interviewData, speakQuestion]);
 
+  // Submit response
+  const submitResponse = useCallback(async () => {
+    if (!interviewData || !currentQuestion) {
+      toast.error('Interview session not ready');
+      return;
+    }
+
+    if (isRecording) {
+      toast.error('Stop recording before submitting');
+      return;
+    }
+
+    let finalTranscript = '';
+
+    if (manualMode) {
+      finalTranscript = transcript.trim();
+    } else {
+      // Always prefer AssemblyAI transcript for scoring
+      const transcribed = await transcribeLatestRecording();
+      if (transcribed && transcribed.trim()) {
+        finalTranscript = transcribed.trim();
+        setTranscript(finalTranscript);
+      } else {
+        // fallback to live browser transcript if AssemblyAI is unavailable
+        finalTranscript = (liveTranscript || '').trim();
+        if (finalTranscript) setTranscript(finalTranscript);
+      }
+    }
+
+    if (!finalTranscript) {
+      toast.error('Please provide a response before submitting');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question_index: currentQuestion.index,
+          transcript: finalTranscript,
+          audio_duration_seconds: recordingTime,
+          confidence: 0.9,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.is_last_question) {
+        // Complete the interview
+        const completeResp = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/complete`, {
+          method: 'POST',
+        });
+        if (completeResp.ok) {
+          const evalData = await completeResp.json();
+          setFinalEvaluation(evalData);
+        }
+        setIsCompleted(true);
+      } else {
+        // Load next question
+        await loadCurrentQuestion();
+      }
+    } catch (e) {
+      toast.error('Failed to submit response');
+    }
+  }, [interviewData, currentQuestion, transcript, recordingTime, manualMode, isRecording, transcribeLatestRecording, liveTranscript, loadCurrentQuestion]);
+
   // Camera setup
   const setupCamera = useCallback(async () => {
     try {
@@ -244,7 +414,7 @@ export default function AIInterviewPage() {
       });
 
       mediaStreamRef.current = stream;
-      
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
@@ -289,40 +459,72 @@ export default function AIInterviewPage() {
         setIsTerminated(true);
       } else if (data.warning) {
         setWarningCount(data.violations);
-        setWarningMessage(`Proctoring warning: ${eventType.replace(/_/g, ' ')}. ${10 - data.violations} warnings remaining.`);
+        if (typeof data.threshold === 'number') {
+          setViolationThreshold(data.threshold);
+        }
+        const threshold = (typeof data.threshold === 'number') ? data.threshold : violationThreshold;
+        const remaining = Math.max(0, threshold - data.violations);
+        setWarningMessage(`Proctoring warning: ${eventType.replace(/_/g, ' ')}. ${remaining} warnings remaining.`);
         setShowWarning(true);
       }
     } catch (e) {
       console.error('Failed to report proctoring event:', e);
     }
-  }, [interviewData]);
+  }, [interviewData, violationThreshold]);
+
+  // Fullscreen handler
+  const handleFullscreenChange = () => {
+    const isFs = !!document.fullscreenElement;
+    setIsFullscreen(isFs);
+    if (!isFs && !showSetupScreen) {
+      setShowSetupScreen(true); // Force blocking UI
+      reportProctoringEvent('fullscreen_exit');
+    }
+  };
+
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      reportProctoringEvent('tab_switch');
+    }
+  };
+
+  const handleWindowBlur = () => {
+    if (!showSetupScreen) {
+      reportProctoringEvent('window_blur');
+    }
+  };
 
   // Proctoring listeners
   useEffect(() => {
     if (!interviewData || isTerminated || isCompleted || showSetupScreen) return;
 
-    const handleFullscreenChange = () => {
-      const isFs = !!document.fullscreenElement;
-      setIsFullscreen(isFs);
-      if (!isFs) {
-        reportProctoringEvent('fullscreen_exit');
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        reportProctoringEvent('tab_switch');
-      }
-    };
-
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [interviewData, isTerminated, isCompleted, showSetupScreen, reportProctoringEvent]);
+  }, [interviewData, isTerminated, isCompleted, showSetupScreen, handleFullscreenChange, reportProctoringEvent]);
+
+  // Ensure video stream stays attached after transitioning out of setup screen
+  useEffect(() => {
+    if (showSetupScreen) return;
+    if (!videoRef.current) return;
+    if (!mediaStreamRef.current) return;
+
+    videoRef.current.srcObject = mediaStreamRef.current;
+    videoRef.current.onloadedmetadata = () => {
+      const p = videoRef.current?.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          // ignore
+        });
+      }
+    };
+  }, [showSetupScreen]);
 
   // Load interview data
   useEffect(() => {
@@ -557,14 +759,14 @@ export default function AIInterviewPage() {
             {warningCount > 0 && (
               <Badge variant="destructive">
                 <AlertTriangle className="mr-1 h-3 w-3" />
-                {warningCount}/10 Warnings
+                {warningCount}/{violationThreshold} Violations
               </Badge>
             )}
-            
+
             <Badge variant={cameraEnabled ? 'default' : 'destructive'}>
               {cameraEnabled ? <Video className="h-3 w-3" /> : <VideoOff className="h-3 w-3" />}
             </Badge>
-            
+
             <Badge variant={micEnabled ? 'default' : 'destructive'}>
               {micEnabled ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
             </Badge>
@@ -614,8 +816,8 @@ export default function AIInterviewPage() {
                 <span>Question {(currentQuestion?.index || 0) + 1} of {interviewData?.total_questions}</span>
                 <Badge variant="outline">{currentQuestion?.question_type}</Badge>
               </div>
-              <Progress 
-                value={((currentQuestion?.index || 0) + 1) / (interviewData?.total_questions || 1) * 100} 
+              <Progress
+                value={((currentQuestion?.index || 0) + 1) / (interviewData?.total_questions || 1) * 100}
                 className="h-2"
               />
             </div>
@@ -635,7 +837,7 @@ export default function AIInterviewPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-lg">{currentQuestion?.question_text}</p>
-                
+
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
@@ -661,11 +863,22 @@ export default function AIInterviewPage() {
               <CardContent className="space-y-4">
                 {/* Transcript Display */}
                 <div className="min-h-[120px] p-4 bg-muted/50 rounded-lg">
-                  {transcript ? (
+                  {manualMode ? (
+                    <Textarea
+                      value={transcript}
+                      onChange={(e) => setTranscript(e.target.value)}
+                      placeholder={speechError || 'Type your response here...'}
+                      className="min-h-[120px]"
+                    />
+                  ) : isRecording && liveTranscript ? (
+                    <p className="text-sm">{liveTranscript}</p>
+                  ) : isTranscribing ? (
+                    <p className="text-sm text-muted-foreground italic">Transcribing audio...</p>
+                  ) : transcript ? (
                     <p className="text-sm">{transcript}</p>
                   ) : (
                     <p className="text-sm text-muted-foreground italic">
-                      Your response will appear here as you speak...
+                      Record your answer, then submit to generate a transcript.
                     </p>
                   )}
                 </div>
@@ -673,7 +886,7 @@ export default function AIInterviewPage() {
                 {/* Recording Controls */}
                 <div className="flex items-center justify-center gap-4">
                   {!isRecording ? (
-                    <Button size="lg" onClick={startRecording} className="gap-2">
+                    <Button size="lg" onClick={startRecording} className="gap-2" disabled={isTranscribing}>
                       <Mic className="h-5 w-5" />
                       Start Recording
                     </Button>
@@ -683,11 +896,22 @@ export default function AIInterviewPage() {
                       Stop Recording
                     </Button>
                   )}
-                  
+
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={() => {
+                      stopRecording();
+                      setManualMode(true);
+                    }}
+                  >
+                    Type Answer
+                  </Button>
+
                   <Button
                     size="lg"
                     onClick={submitResponse}
-                    disabled={!transcript.trim() || isRecording}
+                    disabled={isTranscribing || isRecording || (manualMode ? !transcript.trim() : !hasRecordedAudio)}
                     className="gap-2"
                   >
                     <SkipForward className="h-5 w-5" />
@@ -747,7 +971,7 @@ interface SpeechRecognition extends EventTarget {
 }
 
 interface SpeechRecognitionConstructor {
-  new (): SpeechRecognition;
+  new(): SpeechRecognition;
 }
 
 declare global {

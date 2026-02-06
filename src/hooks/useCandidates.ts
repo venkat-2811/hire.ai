@@ -23,7 +23,7 @@ export function useCandidate(id: string) {
 
 export function useCreateCandidate() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (data: FormData) => candidatesApi.create(data),
     onSuccess: () => {
@@ -38,7 +38,7 @@ export function useCreateCandidate() {
 
 export function useUploadResume() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ id, file }: { id: string; file: File }) => {
       return candidatesApi.uploadResume(id, file);
@@ -64,7 +64,7 @@ export function useCandidateScreenings(candidateId: string) {
 
 export function useRunScreening() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ candidateId, jobId }: { candidateId: string; jobId: string }) => {
       return screeningApi.run(candidateId, jobId);
@@ -72,7 +72,7 @@ export function useRunScreening() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['screenings'] });
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
-      
+
       if (result.shortlisted) {
         toast.success(`Candidate shortlisted with score ${result.overall_score}%`);
       } else {
@@ -81,6 +81,21 @@ export function useRunScreening() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to run screening');
+    },
+  });
+}
+
+export function useDeleteCandidate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => candidatesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      toast.success('Candidate deleted successfully');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete candidate');
     },
   });
 }

@@ -1,6 +1,7 @@
 import google.generativeai as genai
 import asyncio
 import json
+import re
 from typing import Optional, Dict, Any, List
 from app.config import get_settings
 
@@ -209,7 +210,9 @@ class GeminiService:
         self,
         prompt: str,
         system_instruction: Optional[str] = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+        raise_on_error: bool = False,
     ) -> Dict[str, Any]:
         """Generate and parse JSON response from Gemini."""
         json_instruction = """
@@ -222,25 +225,75 @@ Just the raw JSON object.
             prompt=prompt,
             system_instruction=full_system,
             temperature=temperature
+            ,
+            max_tokens=max_tokens
         )
         
-        # Clean up response - remove markdown code blocks if present
+        #Clean up response - remove markdown code blocks if present
         cleaned = response_text.strip()
+        
+        # Remove opening markdown blocks
         if cleaned.startswith("```json"):
             cleaned = cleaned[7:]
-        if cleaned.startswith("```"):
+        elif cleaned.startswith("```"):
             cleaned = cleaned[3:]
+        
+        # Remove closing markdown blocks  
         if cleaned.endswith("```"):
             cleaned = cleaned[:-3]
+        
         cleaned = cleaned.strip()
         
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError as e:
-            print(f"JSON parse error: {e}")
-            print(f"Response was: {response_text[:500]}")
-            # Return empty dict on parse failure
-            return {}
+        # Additional cleanup: remove any remaining backticks at start/end
+        while cleaned.startswith("`"):
+            cleaned = cleaned[1:]
+        while cleaned.endswith("`"):
+            cleaned = cleaned[:-1]
+        
+        cleaned = cleaned.strip()
+
+        extracted_candidates: List[str] = []
+        if cleaned:
+            extracted_candidates.append(cleaned)
+
+        first_obj = cleaned.find("{")
+        last_obj = cleaned.rfind("}")
+        if first_obj != -1 and last_obj != -1 and last_obj > first_obj:
+            extracted_candidates.append(cleaned[first_obj : last_obj + 1])
+
+        first_arr = cleaned.find("[")
+        last_arr = cleaned.rfind("]")
+        if first_arr != -1 and last_arr != -1 and last_arr > first_arr:
+            extracted_candidates.append(cleaned[first_arr : last_arr + 1])
+
+        seen = set()
+        unique_candidates: List[str] = []
+        for c in extracted_candidates:
+            if c in seen:
+                continue
+            seen.add(c)
+            unique_candidates.append(c)
+
+        def _cleanup_json_like(text: str) -> str:
+            t = text.strip()
+            t = re.sub(r",\s*(\}|\])", r"\\1", t)
+            return t.strip()
+        
+        last_error: Optional[Exception] = None
+        for candidate in unique_candidates:
+            try:
+                return json.loads(_cleanup_json_like(candidate))
+            except json.JSONDecodeError as e:
+                last_error = e
+
+        # If we couldn't parse anything, optionally raise to let callers fall back.
+        if raise_on_error:
+            raise RuntimeError(f"Failed to parse Gemini JSON response: {last_error}")
+
+        print(f"JSON parse error: {last_error}")
+        print(f"Response was: {response_text}")
+        # Return empty dict on parse failure
+        return {}
     
     async def analyze_resume(self, resume_text: str) -> Dict[str, Any]:
         """Parse and analyze resume content."""

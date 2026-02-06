@@ -107,6 +107,7 @@ async def submit_application(
     # Handle resume upload
     resume_url = None
     resume_parsed_data = None
+    resume_text = ""
     
     if resume:
         file_ext = resume.filename.split(".")[-1] if resume.filename else "pdf"
@@ -124,10 +125,13 @@ async def submit_application(
         # Parse resume
         try:
             parser = get_resume_parser()
-            parsed = await parser.parse_resume(file_path)
+            # parser.parse_resume expects (file_content: bytes, filename: str)
+            resume_text, parsed = await parser.parse_resume(content, resume.filename)
             resume_parsed_data = parsed.model_dump() if parsed else None
         except Exception as e:
             print(f"Resume parsing error: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Create or update candidate
     candidate_data = {
@@ -145,6 +149,7 @@ async def submit_application(
         candidate_data["resume_url"] = resume_url
     if resume_parsed_data:
         candidate_data["resume_parsed_data"] = resume_parsed_data
+        candidate_data["resume_text"] = resume_text
     
     if existing.data:
         # Update existing candidate
@@ -166,6 +171,75 @@ async def submit_application(
     }
     
     supabase.table("job_applications").insert(application_data).execute()
+
+    # Trigger ATS Screening immediately
+    if resume_parsed_data:
+        try:
+            from app.services.ats_screening import get_ats_screening_service
+            from app.models.schemas import ResumeData, JobDescription
+            
+            screening_service = get_ats_screening_service()
+            
+            # Reconstruct models
+            resume_data_model = ResumeData(**resume_parsed_data)
+            
+            job_model = JobDescription(
+                id=job["id"],
+                title=job["title"],
+                # Handle cases where job might fail validation if schema mismatch, but usually safe here
+                role=job.get("role", "custom"), 
+                level=job.get("level", "mid"),
+                description=job.get("description", ""),
+                must_have_skills=job.get("must_have_skills", []),
+                good_to_have_skills=job.get("good_to_have_skills", []),
+                min_experience_years=job.get("min_experience_years", 0),
+                is_active=job.get("is_active", True),
+                created_at=job.get("created_at"), # Optional
+                updated_at=job.get("updated_at")  # Optional
+            )
+            
+            # Execute Screening
+            result = await screening_service.screen_candidate(
+                resume_data_model, 
+                resume_text, 
+                job_model
+            )
+            
+            # Manually save result to DB (Service doesn't save it)
+            screening_data = {
+                "candidate_id": candidate_id,
+                "job_id": job_id,
+                "overall_score": result.overall_score,
+                "skill_relevance_score": result.skill_relevance_score,
+                "experience_score": result.experience_score,
+                "education_score": result.education_score,
+                "credibility_score": result.credibility_score,
+                "shortlisted": result.shortlisted,
+                "shortlist_reason": result.shortlist_reason,
+                "reason_codes": [rc.model_dump() for rc in result.reason_codes],
+                "detailed_analysis": result.detailed_analysis.model_dump() if result.detailed_analysis else None
+            }
+            
+            # Upsert screening result
+            existing_screening = supabase.table("ats_screenings").select("id").eq(
+                "candidate_id", candidate_id
+            ).eq("job_id", job_id).execute()
+            
+            if existing_screening.data:
+                supabase.table("ats_screenings").update(screening_data).eq(
+                    "id", existing_screening.data[0]["id"]
+                ).execute()
+            else:
+                supabase.table("ats_screenings").insert(screening_data).execute()
+                
+            print(f"ATS Screening saved for candidate {candidate_id} on job {job_id}")
+
+        except Exception as e:
+            print(f"Failed to run ATS screening for {candidate_id}: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print("Skipping ATS screening: No resume parsed data available")
     
     # Send confirmation email
     try:
@@ -175,8 +249,11 @@ async def submit_application(
             candidate_name=full_name,
             job_title=job["title"],
         )
+        print(f"Application confirmation email sent to {email}")
     except Exception as e:
-        print(f"Failed to send confirmation email: {e}")
+        print(f"Failed to send confirmation email to {email}: {e}")
+        import traceback
+        traceback.print_exc()
     
     return ApplicationResponse(
         id=application_data["id"],

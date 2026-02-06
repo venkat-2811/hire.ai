@@ -84,6 +84,7 @@ export default function AssessmentPage() {
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -139,51 +140,53 @@ export default function AssessmentPage() {
     }
   }, []);
 
+  // Fullscreen handler
+  const handleFullscreenChange = () => {
+    const isFs = !!document.fullscreenElement;
+    setIsFullscreen(isFs);
+    if (!isFs && !showFullscreenPrompt) {
+      setShowFullscreenPrompt(true);
+      reportProctoringEvent('fullscreen_exit');
+    }
+  };
+
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      reportProctoringEvent('tab_switch');
+    }
+  };
+
+  const handleBlur = () => {
+    reportProctoringEvent('window_blur');
+  };
+
+  const handleCopyPaste = (e: ClipboardEvent) => {
+    e.preventDefault();
+    reportProctoringEvent('copy_paste');
+    toast.error('Copy/paste is disabled during the assessment');
+  };
+
+  const handleContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    reportProctoringEvent('right_click');
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    // Disable common shortcuts
+    if (
+      (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
+      (e.metaKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
+      e.key === 'F12' ||
+      (e.ctrlKey && e.shiftKey && e.key === 'I')
+    ) {
+      e.preventDefault();
+      reportProctoringEvent('copy_paste');
+    }
+  };
+
   // Proctoring event listeners
   useEffect(() => {
     if (!assessmentData || terminated || completed) return;
-
-    const handleFullscreenChange = () => {
-      const isFs = !!document.fullscreenElement;
-      setIsFullscreen(isFs);
-      if (!isFs && !showFullscreenPrompt) {
-        reportProctoringEvent('fullscreen_exit');
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        reportProctoringEvent('tab_switch');
-      }
-    };
-
-    const handleBlur = () => {
-      reportProctoringEvent('window_blur');
-    };
-
-    const handleCopyPaste = (e: ClipboardEvent) => {
-      e.preventDefault();
-      reportProctoringEvent('copy_paste');
-      toast.error('Copy/paste is disabled during the assessment');
-    };
-
-    const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault();
-      reportProctoringEvent('right_click');
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Disable common shortcuts
-      if (
-        (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
-        (e.metaKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
-        e.key === 'F12' ||
-        (e.ctrlKey && e.shiftKey && e.key === 'I')
-      ) {
-        e.preventDefault();
-        reportProctoringEvent('copy_paste');
-      }
-    };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -204,7 +207,8 @@ export default function AssessmentPage() {
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [assessmentData, terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
+  }, [assessmentData, terminated, completed, showFullscreenPrompt, handleFullscreenChange, reportProctoringEvent]);
+
 
   // Timer
   useEffect(() => {
@@ -244,23 +248,37 @@ export default function AssessmentPage() {
 
         // Load MCQ questions
         const mcqResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/mcq`);
-        if (mcqResponse.ok) {
-          const mcqData = await mcqResponse.json();
-          setMcqQuestions(mcqData);
+        if (!mcqResponse.ok) {
+          const error = await mcqResponse.json().catch(() => ({}));
+          setError(error.detail || 'Failed to load MCQ questions');
+          return;
+        }
+        const mcqData = await mcqResponse.json();
+        setMcqQuestions(mcqData);
+        if (!Array.isArray(mcqData) || mcqData.length === 0) {
+          setError('No MCQ questions were generated for this assessment. Please refresh or contact the hiring team.');
+          return;
         }
 
         // Load coding challenges
         const codingResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/coding`);
-        if (codingResponse.ok) {
-          const codingData = await codingResponse.json();
-          setCodingChallenges(codingData);
-          // Initialize solutions with starter code
-          const initialSolutions: Record<string, string> = {};
-          codingData.forEach((c: CodingChallenge) => {
-            initialSolutions[c.id] = c.starter_code;
-          });
-          setCodingSolutions(initialSolutions);
+        if (!codingResponse.ok) {
+          const error = await codingResponse.json().catch(() => ({}));
+          setError(error.detail || 'Failed to load coding challenges');
+          return;
         }
+        const codingData = await codingResponse.json();
+        setCodingChallenges(codingData);
+        if (!Array.isArray(codingData) || codingData.length === 0) {
+          setError('No coding challenges were generated for this assessment. Please refresh or contact the hiring team.');
+          return;
+        }
+        // Initialize solutions with starter code
+        const initialSolutions: Record<string, string> = {};
+        codingData.forEach((c: CodingChallenge) => {
+          initialSolutions[c.id] = c.starter_code;
+        });
+        setCodingSolutions(initialSolutions);
       } catch (e) {
         setError('Failed to load assessment. Please try again.');
       } finally {
@@ -313,9 +331,18 @@ export default function AssessmentPage() {
       }
 
       // Complete assessment
-      await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/complete`, {
+      const completeResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/complete`, {
         method: 'POST',
       });
+
+      const completeData = await completeResp.json().catch(() => ({}));
+      if (completeResp.ok) {
+        setFinalScores({
+          mcq_score: typeof completeData.mcq_score === 'number' ? completeData.mcq_score : undefined,
+          coding_score: typeof completeData.coding_score === 'number' || completeData.coding_score === null ? completeData.coding_score : undefined,
+          total_score: typeof completeData.total_score === 'number' ? completeData.total_score : undefined,
+        });
+      }
 
       setCompleted(true);
 
@@ -410,6 +437,27 @@ export default function AssessmentPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 text-center">
+              {finalScores && typeof finalScores.total_score === 'number' && (
+                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                  <p className="text-sm font-semibold">Your Score</p>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div className="rounded-md border bg-background p-2">
+                      <p className="text-xs text-muted-foreground">MCQ</p>
+                      <p className="font-mono font-semibold">{finalScores.mcq_score?.toFixed(1) ?? '—'}%</p>
+                    </div>
+                    <div className="rounded-md border bg-background p-2">
+                      <p className="text-xs text-muted-foreground">Coding</p>
+                      <p className="font-mono font-semibold">
+                        {typeof finalScores.coding_score === 'number' ? `${finalScores.coding_score.toFixed(1)}%` : 'Pending'}
+                      </p>
+                    </div>
+                    <div className="rounded-md border bg-background p-2">
+                      <p className="text-xs text-muted-foreground">Total</p>
+                      <p className="font-mono font-semibold">{finalScores.total_score.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                </div>
+              )}
               <p className="text-sm text-muted-foreground">
                 The hiring team will review your results and contact you regarding the next steps.
               </p>
@@ -486,8 +534,8 @@ export default function AssessmentPage() {
 
   const currentMcq = mcqQuestions[currentMcqIndex];
   const currentCoding = codingChallenges[currentCodingIndex];
-  const mcqProgress = (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
-  const codingProgress = (Object.keys(codingSolutions).filter(k => codingSolutions[k] !== codingChallenges.find(c => c.id === k)?.starter_code).length / codingChallenges.length) * 100;
+  const mcqProgress = mcqQuestions.length === 0 ? 0 : (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
+  const codingProgress = codingChallenges.length === 0 ? 0 : (Object.keys(codingSolutions).filter(k => codingSolutions[k] !== codingChallenges.find(c => c.id === k)?.starter_code).length / codingChallenges.length) * 100;
 
   return (
     <div className="min-h-screen bg-background select-none">
@@ -533,9 +581,8 @@ export default function AssessmentPage() {
             )}
 
             {/* Timer */}
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-              timeRemaining < 300 ? 'bg-destructive/10 text-destructive' : 'bg-muted'
-            }`}>
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${timeRemaining < 300 ? 'bg-destructive/10 text-destructive' : 'bg-muted'
+              }`}>
               <Clock className="h-4 w-4" />
               <span className="font-mono font-semibold">{formatTime(timeRemaining)}</span>
             </div>
@@ -580,7 +627,7 @@ export default function AssessmentPage() {
                       <Badge variant="outline">{currentMcq.topic}</Badge>
                       <Badge variant={
                         currentMcq.difficulty === 'easy' ? 'secondary' :
-                        currentMcq.difficulty === 'medium' ? 'default' : 'destructive'
+                          currentMcq.difficulty === 'medium' ? 'default' : 'destructive'
                       }>
                         {currentMcq.difficulty} ({currentMcq.points} pts)
                       </Badge>
@@ -599,11 +646,10 @@ export default function AssessmentPage() {
                       {currentMcq.options.map((option, index) => (
                         <div
                           key={index}
-                          className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${
-                            mcqAnswers[currentMcq.id] === index
-                              ? 'border-primary bg-primary/5'
-                              : 'hover:bg-muted/50'
-                          }`}
+                          className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${mcqAnswers[currentMcq.id] === index
+                            ? 'border-primary bg-primary/5'
+                            : 'hover:bg-muted/50'
+                            }`}
                           onClick={() => handleMcqAnswer(currentMcq.id, index)}
                         >
                           <RadioGroupItem value={index.toString()} id={`option-${index}`} />
@@ -670,7 +716,7 @@ export default function AssessmentPage() {
                       <div className="flex items-center justify-between">
                         <Badge variant={
                           currentCoding.difficulty === 'easy' ? 'secondary' :
-                          currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
+                            currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
                         }>
                           {currentCoding.difficulty}
                         </Badge>

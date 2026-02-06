@@ -1,14 +1,14 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Search,
-  Filter,
-  Plus,
+import { 
+  Search, 
+  Filter, 
+  Plus, 
   MoreHorizontal,
   ArrowUpDown,
   Eye,
@@ -29,19 +29,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { RoleBadge } from '@/components/ui/role-badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
 } from '@/components/ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
 import {
   Dialog,
@@ -64,39 +64,27 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import type { JobRole, InterviewStatus } from '@/types/database';
-import { useCandidates, useDeleteCandidate } from '@/hooks/useCandidates';
+import { useCandidates } from '@/hooks/useCandidates';
 import { useCreateInterview, useStartInterview } from '@/hooks/useInterviews';
 import { useJobs } from '@/hooks/useJobs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/hooks/useAuth';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 type SortField = 'name' | 'date' | 'score';
 type SortOrder = 'asc' | 'desc';
 
 export default function CandidatesPage() {
   const { loading: authLoading } = useRequireAuth();
-  const { getToken } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterJobId, setFilterJobId] = useState<string>('all');
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
-
+  
   const { data: candidates, isLoading: candidatesLoading } = useCandidates();
-  const deleteCandidate = useDeleteCandidate();
   const createInterview = useCreateInterview();
   const startInterview = useStartInterview();
   const { data: jobs, isLoading: jobsLoading } = useJobs({ is_active: true });
@@ -108,16 +96,12 @@ export default function CandidatesPage() {
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [sendingInvites, setSendingInvites] = useState(false);
 
-  // Delete Dialog State
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [candidateToDelete, setCandidateToDelete] = useState<string | null>(null);
-
   const activeJobs = useMemo(() => jobs || [], [jobs]);
 
   // Group candidates by job
   const candidatesByJob = useMemo(() => {
     const result = candidates || [];
-
+    
     // Apply search filter
     let filtered = result;
     if (searchQuery) {
@@ -128,13 +112,13 @@ export default function CandidatesPage() {
           c.email.toLowerCase().includes(query)
       );
     }
-
+    
     // Group by job
     const grouped: Record<string, any[]> = {};
-
+    
     // Add "No Job" group for candidates without job assignments
     grouped['no-job'] = [];
-
+    
     filtered.forEach(candidate => {
       // For now, we'll simulate job assignment
       // In a real implementation, candidates would have a job_id field
@@ -146,7 +130,7 @@ export default function CandidatesPage() {
       }
       grouped[jobId].push(candidate);
     });
-
+    
     // Sort within each group
     Object.keys(grouped).forEach(jobId => {
       grouped[jobId] = grouped[jobId].sort((a, b) => {
@@ -165,10 +149,10 @@ export default function CandidatesPage() {
         return sortOrder === 'asc' ? comparison : -comparison;
       });
     });
-
+    
     return grouped;
   }, [candidates, searchQuery, sortField, sortOrder]);
-
+  
   // Get job title by ID
   const getJobTitle = (jobId: string) => {
     if (jobId === 'no-job') return 'No Job Assigned';
@@ -209,34 +193,27 @@ export default function CandidatesPage() {
       toast.error('Please select a job');
       return;
     }
-
+    
     setSendingInvites(true);
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/assessments/invite`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Add Authorization header with Clerk token
-          ...(await getToken() ? { 'Authorization': `Bearer ${await getToken()}` } : {})
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds),
           job_id: startJobId,
           deadline_hours: 72,
         }),
       });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Failed to send invites' }));
-        throw new Error(error.detail || 'Failed to send invites');
-      }
-
+      
+      if (!response.ok) throw new Error('Failed to send invites');
+      
       const data = await response.json();
       toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
       setAssessmentDialogOpen(false);
       setSelectedIds(new Set());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to send assessment invites');
+      toast.error('Failed to send assessment invites');
     } finally {
       setSendingInvites(false);
     }
@@ -255,33 +232,26 @@ export default function CandidatesPage() {
       toast.error('Please select a job');
       return;
     }
-
+    
     setSendingInvites(true);
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/ai-interview/invite`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Add Authorization header with Clerk token
-          ...(await getToken() ? { 'Authorization': `Bearer ${await getToken()}` } : {})
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds),
           job_id: startJobId,
         }),
       });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Failed to send invites' }));
-        throw new Error(error.detail || 'Failed to send invites');
-      }
-
+      
+      if (!response.ok) throw new Error('Failed to send invites');
+      
       const data = await response.json();
       toast.success(`Interview invites sent to ${data.invites_sent} candidate(s)`);
       setInterviewDialogOpen(false);
       setSelectedIds(new Set());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to send interview invites');
+      toast.error('Failed to send interview invites');
     } finally {
       setSendingInvites(false);
     }
@@ -333,7 +303,7 @@ export default function CandidatesPage() {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <motion.h1
+            <motion.h1 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               className="text-2xl lg:text-3xl font-bold"
@@ -366,67 +336,65 @@ export default function CandidatesPage() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowFilters(!showFilters)}
-                >
-                  <Filter className="mr-2 h-4 w-4" />
-                  Filters
-                </Button>
-              </div>
-
-              {showFilters && (
-                <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
-                  <div className="flex items-center gap-2">
-                    <Label>Sort by:</Label>
-                    <Select value={sortField} onValueChange={(v: SortField) => setSortField(v)}>
-                      <SelectTrigger className="w-[140px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="name">Name</SelectItem>
-                        <SelectItem value="date">Date Applied</SelectItem>
-                        <SelectItem value="score">Score</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    >
-                      <ArrowUpDown className="h-4 w-4" />
+                <Select value={filterJobId} onValueChange={setFilterJobId}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Filter by job" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Jobs</SelectItem>
+                    {activeJobs.map((j) => (
+                      <SelectItem key={j.id} value={j.id}>
+                        {j.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      <ArrowUpDown className="mr-2 h-4 w-4" />
+                      Sort: {sortField === 'name' ? 'Name' : sortField === 'date' ? 'Date' : 'Score'}
                     </Button>
-                  </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => { setSortField('name'); setSortOrder('asc'); }}>
+                      Name (A-Z)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setSortField('name'); setSortOrder('desc'); }}>
+                      Name (Z-A)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setSortField('date'); setSortOrder('desc'); }}>
+                      Newest First
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setSortField('date'); setSortOrder('asc'); }}>
+                      Oldest First
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              
+              {/* Bulk Actions */}
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-4 p-3 bg-primary/5 rounded-lg">
+                  <span className="text-sm font-medium">
+                    {selectedIds.size} candidate(s) selected
+                  </span>
+                  <Button size="sm" onClick={handleBulkAssessment}>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send Assessment
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={handleBulkInterview}>
+                    <Play className="mr-2 h-4 w-4" />
+                    Send Interview Invite
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
+                    Clear Selection
+                  </Button>
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
-
-        {/* Bulk Actions */}
-        {selectedIds.size > 0 && (
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-medium">
-                  {selectedIds.size} candidate(s) selected
-                </span>
-                <Button size="sm" onClick={handleBulkAssessment}>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Send Assessment
-                </Button>
-                <Button size="sm" variant="secondary" onClick={handleBulkInterview}>
-                  <Play className="mr-2 h-4 w-4" />
-                  Send Interview Invite
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
-                  Clear Selection
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Grouped Candidates by Job */}
         <div className="space-y-4">
@@ -510,87 +478,77 @@ export default function CandidatesPage() {
                               transition={{ delay: index * 0.05 }}
                               className={`group ${selectedIds.has(candidate.id) ? 'bg-primary/5' : ''}`}
                             >
-                              <TableCell>
-                                <Checkbox
-                                  checked={selectedIds.has(candidate.id)}
-                                  onCheckedChange={() => toggleSelect(candidate.id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                    <span className="text-sm font-medium text-primary">
-                                      {candidate.full_name.split(' ').map(n => n[0]).join('')}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <p className="font-medium">{candidate.full_name}</p>
-                                    <p className="text-sm text-muted-foreground">{candidate.email}</p>
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {candidate.resume_parsed_data ? (
-                                  <span className="text-xs px-2 py-1 rounded-full bg-success/10 text-success">
-                                    Resume Parsed
-                                  </span>
-                                ) : (
-                                  <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
-                                    No Resume
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <span className="text-sm text-muted-foreground">
-                                  {candidate.consent_given ? 'Consent Given' : 'Pending Consent'}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <StatusBadge status="pending" />
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {new Date(candidate.created_at).toLocaleDateString()}
-                              </TableCell>
-                              <TableCell>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => handleStartInterview(candidate.id)}>
-                                      <Play className="mr-2 h-4 w-4" />
-                                      Start Interview
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem>
-                                      <Eye className="mr-2 h-4 w-4" />
-                                      View Details
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      className="text-destructive"
-                                      onClick={() => {
-                                        setCandidateToDelete(candidate.id);
-                                        setDeleteDialogOpen(true);
-                                      }}
-                                    >
-                                      <Trash2 className="mr-2 h-4 w-4" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </TableCell>
-                            </motion.tr>
-                          ))
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.has(candidate.id)}
+                          onCheckedChange={() => toggleSelect(candidate.id)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-sm font-medium text-primary">
+                              {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium">{candidate.full_name}</p>
+                            <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {candidate.resume_parsed_data ? (
+                          <span className="text-xs px-2 py-1 rounded-full bg-success/10 text-success">
+                            Resume Parsed
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
+                            No Resume
+                          </span>
                         )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </CollapsibleContent>
-              </Card>
-            </Collapsible>
-          ))}
-        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {candidate.consent_given ? 'Consent Given' : 'Pending Consent'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status="pending" />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(candidate.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Profile
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                              <FileText className="mr-2 h-4 w-4" />
+                              View Resume
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleStartInterview(candidate.id)}>
+                              <Play className="mr-2 h-4 w-4" />
+                              Start Interview
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </motion.tr>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
         {/* Assessment Invite Dialog */}
         <Dialog open={assessmentDialogOpen} onOpenChange={setAssessmentDialogOpen}>
@@ -618,7 +576,7 @@ export default function CandidatesPage() {
                   </SelectContent>
                 </Select>
               </div>
-
+              
               <div className="text-sm text-muted-foreground">
                 Candidates will receive an email with a link to complete the technical assessment.
                 The assessment includes MCQ and hands-on coding sections with proctoring.
@@ -666,7 +624,7 @@ export default function CandidatesPage() {
                   </SelectContent>
                 </Select>
               </div>
-
+              
               <div className="text-sm text-muted-foreground">
                 Candidates will receive an email with a link to complete an AI-powered interview.
                 The interview uses speech recognition and camera proctoring.
@@ -729,33 +687,17 @@ export default function CandidatesPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the candidate
-                and remove their data from our servers, including any assessment or interview records.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setCandidateToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => {
-                  if (candidateToDelete) {
-                    deleteCandidate.mutate(candidateToDelete);
-                    setCandidateToDelete(null);
-                  }
-                }}
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                            </motion.tr>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          ))}
+        </div>
       </div>
     </DashboardLayout>
   );

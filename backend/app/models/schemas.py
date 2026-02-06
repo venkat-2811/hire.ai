@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from .enums import (
-    JobRole, RoleLevel, InterviewStatus, AssessmentType,
+    RoleLevel, InterviewStatus, AssessmentType,
     HireRecommendation, ReasonCodeType, SkillRelevance
 )
 
@@ -18,7 +18,7 @@ class TimestampMixin(BaseModel):
 
 class JobDescriptionCreate(BaseModel):
     title: str
-    role: JobRole
+    role: str
     level: RoleLevel
     description: str
     must_have_skills: List[str] = Field(default_factory=list)
@@ -28,7 +28,7 @@ class JobDescriptionCreate(BaseModel):
 
 class JobDescriptionUpdate(BaseModel):
     title: Optional[str] = None
-    role: Optional[JobRole] = None
+    role: Optional[str] = None
     level: Optional[RoleLevel] = None
     description: Optional[str] = None
     must_have_skills: Optional[List[str]] = None
@@ -265,7 +265,7 @@ class EvaluationCriterion(BaseModel):
 
 class PracticalAssessmentCreate(BaseModel):
     session_id: str
-    role: JobRole
+    role: str
     task_title: str
     task_description: str
     starter_code: Optional[str] = None
@@ -314,9 +314,13 @@ class PracticalSubmission(PracticalSubmissionCreate):
 
 class DashboardStats(BaseModel):
     total_candidates: int = 0
+    total_candidates_change: int = 0
     active_jobs: int = 0
+    active_jobs_change: int = 0
     pending_interviews: int = 0
+    pending_interviews_change: int = 0
     completed_today: int = 0
+    completed_today_change: int = 0
     average_score: float = 0.0
     shortlist_rate: float = 0.0
 
@@ -325,10 +329,12 @@ class CandidateAnalytics(BaseModel):
     candidate_id: str
     candidate_name: str
     job_title: str
-    ats_score: int
+    ats_score: float
+    assessment_score: Optional[float] = None
+    interview_score: Optional[float] = None
     interview_status: InterviewStatus
-    technical_score: Optional[int] = None
-    overall_score: Optional[int] = None
+    technical_score: Optional[float] = None  # form interview
+    overall_score: Optional[float] = None    # form interview
     recommendation: Optional[HireRecommendation] = None
 
 

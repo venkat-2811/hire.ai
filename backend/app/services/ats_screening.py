@@ -3,7 +3,7 @@ from app.models.schemas import (
     ResumeData, JobDescription, ATSScreeningResult, ReasonCode,
     DetailedAnalysis, SkillMatch
 )
-from app.models.enums import ReasonCodeType, SkillRelevance, JobRole, RoleLevel
+from app.models.enums import ReasonCodeType, SkillRelevance, RoleLevel
 from app.services.gemini_client import get_gemini_service
 import uuid
 from datetime import datetime
@@ -19,16 +19,17 @@ class ATSScreeningService:
         self.gemini = get_gemini_service()
         
         # Role-specific skill weights
+        # Note: These are legacy weights. New dynamic analysis should ideally imply weights from JD.
         self.role_skill_weights = {
-            JobRole.SALESFORCE_DEVELOPER: {
+            "Salesforce Developer": {
                 "apex": 15, "lwc": 12, "lightning": 10, "soql": 10, "salesforce": 15,
                 "visualforce": 8, "integration": 8, "api": 7, "javascript": 6, "html": 4
             },
-            JobRole.QA_ENGINEER: {
+            "QA Engineer": {
                 "selenium": 12, "automation": 15, "testing": 15, "api testing": 10,
                 "test cases": 10, "jira": 6, "agile": 5, "python": 8, "java": 7, "sql": 5
             },
-            JobRole.BUSINESS_ANALYST: {
+            "Business Analyst": {
                 "requirements": 15, "user stories": 12, "stakeholder": 10, "analysis": 12,
                 "documentation": 8, "agile": 8, "scrum": 6, "sql": 7, "jira": 5, "communication": 8
             }
@@ -251,7 +252,7 @@ class ATSScreeningService:
                 score = min(100, score + 15)
                 analysis_parts.append(f"Relevant degree: {edu.degree}")
             elif any(term in degree_lower for term in ["business", "management", "mba"]):
-                if job.role == JobRole.BUSINESS_ANALYST:
+                if job.role == "Business Analyst":
                     score = min(100, score + 15)
                     analysis_parts.append(f"Relevant business degree: {edu.degree}")
                 else:

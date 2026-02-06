@@ -8,19 +8,30 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 import uuid
 import secrets
+import traceback
 
 from app.database.supabase_client import get_supabase_admin_client
 from app.services.email_service import get_email_service
+from app.services.question_generator import get_question_generator
 from app.auth import get_current_user, get_optional_user, ClerkUser
 from app.config import get_settings
+from app.models.schemas import JobDescription
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
+
+# In-memory cache for storing generated questions (session_id -> questions)
+# TODO: Replace with Redis or database storage for production
+_mcq_cache: dict = {}
+_coding_cache: dict = {}
 
 
 class AssessmentInviteRequest(BaseModel):
     candidate_ids: List[str]
     job_id: str
     deadline_hours: Optional[int] = 72  # Default 72 hours to complete
+    mcq_question_count: Optional[int] = 20
+    coding_challenge_count: Optional[int] = 2
+    total_time_minutes: Optional[int] = 90
 
 
 class AssessmentInviteResponse(BaseModel):
@@ -121,6 +132,7 @@ async def send_assessment_invites(
     
     invites_sent = 0
     failed = []
+    failure_reasons: List[str] = []
     deadline = datetime.utcnow() + timedelta(hours=request.deadline_hours)
     
     for candidate in candidates_result.data:
@@ -136,6 +148,9 @@ async def send_assessment_invites(
                 "token": token,
                 "status": "pending",
                 "deadline": deadline.isoformat(),
+                "mcq_question_count": request.mcq_question_count or 20,
+                "coding_challenge_count": request.coding_challenge_count or 2,
+                "total_time_minutes": request.total_time_minutes or 90,
                 "proctoring_data": {
                     "tab_switches": 0,
                     "fullscreen_exits": 0,
@@ -149,8 +164,7 @@ async def send_assessment_invites(
             supabase.table("assessment_sessions").insert(session_data).execute()
             
             # Generate assessment link
-            frontend_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:5173"
-            assessment_link = f"{frontend_url}/assessment/{token}"
+            assessment_link = f"{settings.frontend_url}/assessment/{token}"
             
             # Send email
             await email_service.send_assessment_invite(
@@ -165,8 +179,23 @@ async def send_assessment_invites(
             
         except Exception as e:
             print(f"Failed to send invite to {candidate['email']}: {e}")
+            traceback.print_exc()
+            try:
+                # Best-effort cleanup so we don't keep unusable links/sessions
+                if 'session_data' in locals() and session_data.get('id'):
+                    supabase.table("assessment_sessions").delete().eq("id", session_data["id"]).execute()
+            except Exception as cleanup_err:
+                print(f"Failed to cleanup assessment session for {candidate['email']}: {cleanup_err}")
             failed.append(candidate["id"])
-    
+            failure_reasons.append(str(e))
+
+    if invites_sent == 0 and failed:
+        first_error = failure_reasons[0] if failure_reasons else "Unknown error"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send assessment invites. First error: {first_error}",
+        )
+
     return AssessmentInviteResponse(
         success=invites_sent > 0,
         invites_sent=invites_sent,
@@ -206,13 +235,17 @@ async def start_assessment(token: str):
             "started_at": datetime.utcnow().isoformat(),
         }).eq("id", session["id"]).execute()
     
+    mcq_count = session.get("mcq_question_count") or 20
+    coding_count = session.get("coding_challenge_count") or 2
+    total_time_minutes = session.get("total_time_minutes") or 90
+
     return AssessmentStartResponse(
         session_id=session["id"],
         candidate_name=session["candidates"]["full_name"],
         job_title=session["job_descriptions"]["title"],
-        mcq_count=20,  # Will be dynamic based on job role
-        coding_count=2,
-        total_time_minutes=90,
+        mcq_count=mcq_count,
+        coding_count=coding_count,
+        total_time_minutes=total_time_minutes,
         deadline=session["deadline"],
     )
 
@@ -224,7 +257,7 @@ async def get_mcq_questions(session_id: str):
     
     # Verify session
     session = supabase.table("assessment_sessions").select(
-        "id, status, job_descriptions(role, level)"
+        "id, status, job_id, job_descriptions(role, level)"
     ).eq("id", session_id).execute()
     
     if not session.data:
@@ -233,12 +266,54 @@ async def get_mcq_questions(session_id: str):
     if session.data[0]["status"] not in ["in_progress"]:
         raise HTTPException(status_code=400, detail="Assessment not in progress")
     
-    # Get or generate MCQ questions based on role
-    role = session.data[0]["job_descriptions"]["role"]
-    level = session.data[0]["job_descriptions"]["level"]
-    
-    # For now, return sample questions - will be replaced with AI-generated questions
-    questions = generate_sample_mcq(role, level)
+    # If already generated for this session, return stored questions
+    session_row = supabase.table("assessment_sessions").select(
+        "id, mcq_questions, mcq_question_count"
+    ).eq("id", session_id).single().execute()
+
+    stored_questions = (session_row.data or {}).get("mcq_questions") or []
+    if stored_questions:
+        return [
+            {
+                "id": q.get("id"),
+                "question": q.get("question"),
+                "options": q.get("options", []),
+                "difficulty": q.get("difficulty"),
+                "topic": q.get("topic"),
+                "points": q.get("points", 5),
+            }
+            for q in stored_questions
+        ]
+
+    # Otherwise, generate and persist
+    job_result = supabase.table("job_descriptions").select("*").eq(
+        "id", session.data[0]["job_id"]
+    ).single().execute()
+
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_data = job_result.data
+    job = JobDescription(
+        id=job_data["id"],
+        title=job_data["title"],
+        role=job_data["role"],
+        level=job_data["level"],
+        description=job_data["description"],
+        must_have_skills=job_data.get("must_have_skills", []),
+        good_to_have_skills=job_data.get("good_to_have_skills", []),
+        min_experience_years=job_data.get("min_experience_years", 0),
+        is_active=job_data.get("is_active", True),
+    )
+
+    mcq_count = (session_row.data or {}).get("mcq_question_count") or 20
+    question_generator = get_question_generator()
+    questions = await question_generator.generate_mcq_questions(job, count=mcq_count)
+
+    supabase.table("assessment_sessions").update({
+        "mcq_questions": questions,
+        "updated_at": datetime.utcnow().isoformat(),
+    }).eq("id", session_id).execute()
     
     # Return questions without correct answers
     return [{
@@ -258,7 +333,7 @@ async def get_coding_challenges(session_id: str):
     
     # Verify session
     session = supabase.table("assessment_sessions").select(
-        "id, status, job_descriptions(role, level)"
+        "id, status, job_id, job_descriptions(role, level)"
     ).eq("id", session_id).execute()
     
     if not session.data:
@@ -267,12 +342,45 @@ async def get_coding_challenges(session_id: str):
     if session.data[0]["status"] not in ["in_progress"]:
         raise HTTPException(status_code=400, detail="Assessment not in progress")
     
-    role = session.data[0]["job_descriptions"]["role"]
-    level = session.data[0]["job_descriptions"]["level"]
-    
-    # Return sample coding challenges
-    challenges = generate_sample_coding_challenges(role, level)
-    
+    # If already generated for this session, return stored challenges
+    session_row = supabase.table("assessment_sessions").select(
+        "id, coding_challenges, coding_challenge_count"
+    ).eq("id", session_id).single().execute()
+
+    stored_challenges = (session_row.data or {}).get("coding_challenges") or []
+    if stored_challenges:
+        return stored_challenges
+
+    # Otherwise, generate and persist
+    job_result = supabase.table("job_descriptions").select("*").eq(
+        "id", session.data[0]["job_id"]
+    ).single().execute()
+
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_data = job_result.data
+    job = JobDescription(
+        id=job_data["id"],
+        title=job_data["title"],
+        role=job_data["role"],
+        level=job_data["level"],
+        description=job_data["description"],
+        must_have_skills=job_data.get("must_have_skills", []),
+        good_to_have_skills=job_data.get("good_to_have_skills", []),
+        min_experience_years=job_data.get("min_experience_years", 0),
+        is_active=job_data.get("is_active", True),
+    )
+
+    coding_count = (session_row.data or {}).get("coding_challenge_count") or 2
+    question_generator = get_question_generator()
+    challenges = await question_generator.generate_coding_challenges(job, count=coding_count)
+
+    supabase.table("assessment_sessions").update({
+        "coding_challenges": challenges,
+        "updated_at": datetime.utcnow().isoformat(),
+    }).eq("id", session_id).execute()
+
     return challenges
 
 
@@ -289,18 +397,38 @@ async def submit_mcq_answers(
     if not session.data or session.data[0]["status"] != "in_progress":
         raise HTTPException(status_code=400, detail="Invalid session")
     
-    # Calculate score (simplified - will use stored correct answers)
-    # For now, assume 50% correct as placeholder
-    total_points = len(submissions) * 5
-    score = total_points * 0.5  # Placeholder
+    session_data = session.data[0]
+    
+    # Retrieve stored questions from DB
+    stored_questions = session_data.get("mcq_questions") or []
+    
+    if not stored_questions:
+        raise HTTPException(status_code=400, detail="Questions not found for this session.")
+    
+    # Calculate actual score by comparing answers
+    correct_count = 0
+    total_points = 0
+    
+    # Create a map of question_id -> correct_index
+    question_map = {q["id"]: q for q in stored_questions}
+    
+    for submission in submissions:
+        question = question_map.get(submission.question_id)
+        if question:
+            total_points += question.get("points", 5)
+            if submission.selected_index == question.get("correct_index"):
+                correct_count += question.get("points", 5)
+    
+    score = correct_count if total_points > 0 else 0
+    percentage = (score / total_points * 100) if total_points > 0 else 0
     
     # Store submissions
     supabase.table("assessment_sessions").update({
         "mcq_submissions": [s.model_dump() for s in submissions],
-        "mcq_score": score,
+        "mcq_score": percentage,
     }).eq("id", session_id).execute()
     
-    return {"success": True, "score": score, "total": total_points}
+    return {"success": True, "score": percentage, "total": total_points, "correct_points": score}
 
 
 @router.post("/{session_id}/coding/submit")
@@ -406,20 +534,32 @@ async def complete_assessment(session_id: str):
         raise HTTPException(status_code=400, detail="Assessment not in progress")
     
     # Calculate total score
-    mcq_score = session_data.get("mcq_score", 0) or 0
-    coding_score = session_data.get("coding_score", 0) or 0
-    total_score = (mcq_score + coding_score) / 2  # Simple average for now
+    mcq_score = session_data.get("mcq_score")
+    coding_score = session_data.get("coding_score")
+
+    mcq_score_value = float(mcq_score) if mcq_score is not None else 0.0
+    coding_score_value = float(coding_score) if coding_score is not None else 0.0
+
+    # If coding_score isn't implemented yet (None), don't penalize candidates by averaging with 0.
+    if coding_score is None:
+        total_score = mcq_score_value
+    elif mcq_score is None:
+        total_score = coding_score_value
+    else:
+        total_score = (mcq_score_value + coding_score_value) / 2
     
     supabase.table("assessment_sessions").update({
         "status": "completed",
         "completed_at": datetime.utcnow().isoformat(),
+        "mcq_score": mcq_score_value,
+        "coding_score": coding_score_value if coding_score is not None else None,
         "total_score": total_score,
     }).eq("id", session_id).execute()
     
     return {
         "success": True,
-        "mcq_score": mcq_score,
-        "coding_score": coding_score,
+        "mcq_score": mcq_score_value,
+        "coding_score": coding_score_value if coding_score is not None else None,
         "total_score": total_score,
     }
 

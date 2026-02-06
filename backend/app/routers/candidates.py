@@ -7,7 +7,7 @@ from datetime import datetime
 from app.models.schemas import (
     Candidate, CandidateCreate, CandidateUpdate, APIResponse, ResumeData
 )
-from app.database import get_supabase_client
+from app.database import get_supabase_client, get_supabase_admin_client
 from app.services.resume_parser import get_resume_parser
 from app.config import get_settings
 
@@ -134,6 +134,27 @@ async def update_candidate(candidate_id: str, candidate: CandidateUpdate):
     return _row_to_candidate(result.data[0])
 
 
+@router.delete("/{candidate_id}", response_model=APIResponse)
+async def delete_candidate(candidate_id: str):
+    """Delete a candidate."""
+    supabase = get_supabase_client()
+    
+    # Check if candidate exists first
+    existing = supabase.table("candidates").select("id").eq("id", candidate_id).single().execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    try:
+        # DB is expected to have ON DELETE CASCADE for related tables (interviews, assessments, etc.)
+        # If not, we would need to manually delete them here.
+        # Assuming CASCADE is configured for now based on existing bulk logic.
+        supabase.table("candidates").delete().eq("id", candidate_id).execute()
+        return APIResponse(success=True, message="Candidate deleted successfully")
+    except Exception as e:
+        print(f"Error deleting candidate {candidate_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete candidate: {str(e)}")
+
+
 @router.post("/{candidate_id}/upload-resume", response_model=Candidate)
 async def upload_resume(
     candidate_id: str,
@@ -217,6 +238,7 @@ class BulkEmailResponse(BaseModel):
     success: bool
     emails_sent: int
     failed: List[str]
+    error_messages: Optional[List[str]] = None
 
 
 @router.post("/send-acceptance", response_model=BulkEmailResponse)
@@ -244,6 +266,7 @@ async def send_acceptance_emails(request: BulkEmailRequest):
     
     emails_sent = 0
     failed = []
+    error_messages: List[str] = []
     
     for candidate in candidates_result.data:
         try:
@@ -262,8 +285,17 @@ async def send_acceptance_emails(request: BulkEmailRequest):
         except Exception as e:
             print(f"Failed to send acceptance email to {candidate['email']}: {e}")
             failed.append(candidate["id"])
+
+            msg = str(e)
+            if msg:
+                error_messages.append(f"{candidate.get('email')}: {msg}")
     
-    return BulkEmailResponse(success=emails_sent > 0, emails_sent=emails_sent, failed=failed)
+    return BulkEmailResponse(
+        success=emails_sent > 0 and len(failed) == 0,
+        emails_sent=emails_sent,
+        failed=failed,
+        error_messages=error_messages or None,
+    )
 
 
 @router.post("/send-rejection", response_model=BulkEmailResponse)
@@ -291,6 +323,7 @@ async def send_rejection_emails(request: BulkEmailRequest):
     
     emails_sent = 0
     failed = []
+    error_messages: List[str] = []
     
     for candidate in candidates_result.data:
         try:
@@ -300,17 +333,33 @@ async def send_rejection_emails(request: BulkEmailRequest):
                 job_title=job["title"],
             )
             
-            # Update candidate status
+            # Update candidate status (Audit trail) - Optional since we delete, but good for logs if delete fails
             supabase.table("job_applications").update({
                 "final_status": "rejected"
             }).eq("candidate_id", candidate["id"]).eq("job_id", request.job_id).execute()
             
             emails_sent += 1
+            
+            # Auto-delete candidate as per privacy requirements
+            try:
+                supabase.table("candidates").delete().eq("id", candidate["id"]).execute()
+            except Exception as e:
+                print(f"Failed to auto-delete candidate {candidate['id']}: {e}")
+                
         except Exception as e:
             print(f"Failed to send rejection email to {candidate['email']}: {e}")
             failed.append(candidate["id"])
+
+            msg = str(e)
+            if msg:
+                error_messages.append(f"{candidate.get('email')}: {msg}")
     
-    return BulkEmailResponse(success=emails_sent > 0, emails_sent=emails_sent, failed=failed)
+    return BulkEmailResponse(
+        success=emails_sent > 0 and len(failed) == 0,
+        emails_sent=emails_sent,
+        failed=failed,
+        error_messages=error_messages or None,
+    )
 
 
 @router.delete("/bulk-delete")

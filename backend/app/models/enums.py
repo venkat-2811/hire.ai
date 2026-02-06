@@ -1,10 +1,6 @@
 from enum import Enum
 
 
-class JobRole(str, Enum):
-    SALESFORCE_DEVELOPER = "salesforce_developer"
-    QA_ENGINEER = "qa_engineer"
-    BUSINESS_ANALYST = "business_analyst"
 
 
 class RoleLevel(str, Enum):

@@ -1,14 +1,17 @@
 import os
 from typing import List
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 
 class Settings:
     def __init__(self):
         # Gemini Configuration
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+
+        # AssemblyAI (Speech-to-text)
+        self.assemblyai_api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
         
         # Supabase Configuration
         self.supabase_url = os.getenv("SUPABASE_URL", "")
@@ -23,6 +26,9 @@ class Settings:
         self.host = os.getenv("HOST", "0.0.0.0")
         self.port = int(os.getenv("PORT", "8000"))
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
+
+        # Frontend URL (used for email links)
+        self.frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
         
         # CORS
         cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080")
@@ -35,7 +41,7 @@ class Settings:
         
         # Resend Email
         self.resend_api_key = os.getenv("RESEND_API_KEY", "")
-        self.resend_from_email = os.getenv("RESEND_FROM_EMAIL", "noreply@talentscout.ai")
+        self.resend_from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
 
 def get_settings() -> Settings:

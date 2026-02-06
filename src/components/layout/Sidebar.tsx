@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Users,
   Briefcase,
-  FileText,
   TrendingUp,
   Settings,
   LogOut,
@@ -22,7 +21,6 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
-  { name: 'Interviews', href: '/interviews', icon: FileText },
   { name: 'Results', href: '/results', icon: Trophy },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Settings', href: '/settings', icon: Settings },
@@ -95,7 +93,7 @@ export function Sidebar() {
           <LogOut className="h-5 w-5" />
           {!collapsed && <span>Logout</span>}
         </Button>
-        
+
         <Button
           variant="ghost"
           size="icon"

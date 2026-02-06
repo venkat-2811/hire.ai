@@ -9,8 +9,13 @@ interface RoleBadgeProps {
 }
 
 export function RoleBadge({ role, size = 'md', showIcon = true, className }: RoleBadgeProps) {
-  const config = ROLE_CONFIG[role];
-  
+  const config = ROLE_CONFIG[role] || {
+    label: role, // Use the role string itself as label
+    color: 'bg-primary/10 text-primary', // Default color
+    icon: 'briefcase', // Default icon
+    practicalTypes: []
+  };
+
   const sizeClasses = {
     sm: 'px-2 py-0.5 text-xs',
     md: 'px-3 py-1 text-sm',
@@ -26,7 +31,7 @@ export function RoleBadge({ role, size = 'md', showIcon = true, className }: Rol
         className
       )}
     >
-      {showIcon && <span>{config.icon}</span>}
+      {showIcon && <span>{config.icon === 'briefcase' ? '💼' : config.icon}</span>}
       {config.label}
     </span>
   );

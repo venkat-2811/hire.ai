@@ -1,11 +1,11 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { 
-  Sparkles, 
-  ArrowRight, 
-  Users, 
-  FileText, 
+import {
+  Sparkles,
+  ArrowRight,
+  Users,
+  FileText,
   Brain,
   Shield,
   BarChart3,
@@ -96,14 +96,14 @@ export default function LandingPage() {
               <Sparkles className="h-4 w-4" />
               AI-Powered Interview Platform
             </div>
-            
+
             <h1 className="text-4xl md:text-6xl font-bold text-foreground leading-tight mb-6">
               Hire the Right Talent with
               <span className="block text-gradient">Explainable AI</span>
             </h1>
-            
+
             <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-              Semantic resume screening, adaptive interviews, and transparent hiring decisions. 
+              Semantic resume screening, adaptive interviews, and transparent hiring decisions.
               Built for international hiring committee standards.
             </p>
 
@@ -150,7 +150,7 @@ export default function LandingPage() {
               Role-specific evaluation criteria and practical assessments
             </p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {roles.map((role, index) => (
               <motion.div
@@ -183,7 +183,7 @@ export default function LandingPage() {
               Everything you need for unbiased, efficient hiring
             </p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {features.map((feature, index) => (
               <motion.div
@@ -207,8 +207,89 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* How It Works Section */}
+      <section className="py-20 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-5xl">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold mb-4">How HireAI Works</h2>
+            <p className="text-muted-foreground">
+              Streamline your hiring process in three simple steps
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8 relative">
+            {[
+              { title: 'Create Job', desc: 'Define role requirements and AI will generate custom assessments.', icon: '1' },
+              { title: 'AI Screening', desc: 'Candidates take proctored assessments and AI interviews.', icon: '2' },
+              { title: 'Hire Top Talent', desc: 'Review detailed reports and hire the best fits with confidence.', icon: '3' }
+            ].map((step, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.2 }}
+                className="relative z-10"
+              >
+                <div className="bg-card border rounded-2xl p-8 text-center h-full hover:shadow-lg transition-all">
+                  <div className="w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-6">
+                    {step.icon}
+                  </div>
+                  <h3 className="text-xl font-bold mb-3">{step.title}</h3>
+                  <p className="text-muted-foreground">{step.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+            {/* Connecting line for desktop */}
+            <div className="hidden md:block absolute top-14 left-0 w-full h-0.5 bg-border -z-0 transform scale-x-75" />
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonials Section */}
       <section className="py-20 px-4">
+        <div className="container mx-auto max-w-5xl">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold mb-4">Trusted by Market Leaders</h2>
+            <p className="text-muted-foreground">
+              See what hiring managers are saying
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8">
+            {[
+              {
+                q: "HireAI cut our screening time by 70%. The AI interviews are surprisingly insightful.",
+                author: "Sarah J.",
+                role: "CTO, TechFlow"
+              },
+              {
+                q: "The proctoring features give us total confidence in our remote hiring process.",
+                author: "Michael R.",
+                role: "HR Director, GlobalCorp"
+              }
+            ].map((t, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                className="bg-card p-8 rounded-2xl border relative"
+              >
+                <div className="text-4xl text-primary/20 font-serif absolute top-6 left-6">"</div>
+                <p className="text-lg relative z-10 mb-6 pt-4">{t.q}</p>
+                <div>
+                  <div className="font-bold">{t.author}</div>
+                  <div className="text-sm text-muted-foreground">{t.role}</div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-20 px-4 bg-muted/30">
         <div className="container mx-auto max-w-4xl">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}

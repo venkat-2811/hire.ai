@@ -2,7 +2,7 @@
 AI Interview endpoints for speech-based interviews with camera proctoring.
 The AI asks questions via text-to-speech and evaluates verbal responses.
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Form
 from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime
@@ -12,10 +12,22 @@ import secrets
 from app.database.supabase_client import get_supabase_admin_client
 from app.services.email_service import get_email_service
 from app.services.gemini_client import get_gemini_service
+from app.services.assemblyai_service import get_assemblyai_service
 from app.auth import get_current_user, get_optional_user, ClerkUser
 from app.config import get_settings
 
 router = APIRouter(prefix="/ai-interview", tags=["ai-interview"])
+
+
+@router.get("/health/assemblyai")
+async def assemblyai_health():
+    """Health check for AssemblyAI configuration."""
+    try:
+        svc = get_assemblyai_service()
+        configured = bool(getattr(svc, "api_key", ""))
+    except Exception:
+        configured = False
+    return {"configured": configured}
 
 
 class InterviewInviteRequest(BaseModel):
@@ -146,8 +158,7 @@ async def send_interview_invites(
             supabase.table("ai_interview_sessions").insert(session_data).execute()
             
             # Generate interview link
-            frontend_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:5173"
-            interview_link = f"{frontend_url}/ai-interview/{token}"
+            interview_link = f"{settings.frontend_url}/ai-interview/{token}"
             
             # Send email
             await email_service.send_interview_invite(
@@ -235,6 +246,43 @@ async def get_current_question(session_id: str):
     )
 
 
+@router.post("/{session_id}/transcribe")
+async def transcribe_interview_audio(
+    session_id: str,
+    audio: UploadFile = File(...),
+    language_code: str = Form("en_us"),
+):
+    """Transcribe an interview audio clip using AssemblyAI."""
+    supabase = get_supabase_admin_client()
+    assembly = get_assemblyai_service()
+
+    session = supabase.table("ai_interview_sessions").select("id, status").eq("id", session_id).execute()
+    if not session.data:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session_data = session.data[0]
+    if session_data.get("status") not in ["in_progress", "completed"]:
+        raise HTTPException(status_code=400, detail="Interview not in progress")
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio upload")
+
+    try:
+        transcript = await assembly.transcribe(audio_bytes, language_code=language_code)
+    except RuntimeError as e:
+        # Most common: ASSEMBLYAI_API_KEY missing
+        if "ASSEMBLYAI_API_KEY" in str(e):
+            raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Transcription timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+    return {"transcript": transcript}
+
+
 @router.post("/{session_id}/response")
 async def submit_speech_response(
     session_id: str,
@@ -316,6 +364,12 @@ async def report_camera_proctoring_event(
         proctoring_data["looking_away_count"] = proctoring_data.get("looking_away_count", 0) + 1
     elif event.event_type == "audio_anomaly":
         proctoring_data["audio_anomalies"] = proctoring_data.get("audio_anomalies", 0) + 1
+    elif event.event_type == "fullscreen_exit":
+        proctoring_data["fullscreen_exits"] = proctoring_data.get("fullscreen_exits", 0) + 1
+    elif event.event_type == "tab_switch":
+        proctoring_data["tab_switches"] = proctoring_data.get("tab_switches", 0) + 1
+    elif event.event_type == "window_blur":
+        proctoring_data["window_blurs"] = proctoring_data.get("window_blurs", 0) + 1
     
     # Log warning
     warnings = proctoring_data.get("warnings", [])
@@ -325,15 +379,31 @@ async def report_camera_proctoring_event(
         "details": event.details,
     })
     proctoring_data["warnings"] = warnings
+
+    # Strict violations that terminate immediately
+    if event.event_type in {"fullscreen_exit", "tab_switch"}:
+        supabase.table("ai_interview_sessions").update({
+            "proctoring_data": proctoring_data,
+            "status": "terminated",
+            "completed_at": datetime.utcnow().isoformat(),
+        }).eq("id", session_id).execute()
+
+        return {"warning": False, "terminated": True, "violations": 999, "threshold": 0}
     
-    # Check termination threshold (more lenient for interviews)
+    # Stricter thresholds for interviews
+    threshold = 2
     total_violations = (
         proctoring_data.get("face_detection_failures", 0) +
-        proctoring_data.get("looking_away_count", 0)
+        proctoring_data.get("looking_away_count", 0) +
+        proctoring_data.get("multiple_faces_detected", 0) +
+        proctoring_data.get("audio_anomalies", 0) +
+        proctoring_data.get("fullscreen_exits", 0) +
+        proctoring_data.get("tab_switches", 0) +
+        proctoring_data.get("window_blurs", 0)
     )
     
-    should_warn = total_violations >= 5
-    should_terminate = total_violations >= 10
+    should_warn = total_violations >= 1
+    should_terminate = total_violations >= threshold
     
     if should_terminate:
         supabase.table("ai_interview_sessions").update({
@@ -342,7 +412,7 @@ async def report_camera_proctoring_event(
             "completed_at": datetime.utcnow().isoformat(),
         }).eq("id", session_id).execute()
         
-        return {"warning": False, "terminated": True}
+        return {"warning": False, "terminated": True, "violations": total_violations, "threshold": threshold}
     
     supabase.table("ai_interview_sessions").update({
         "proctoring_data": proctoring_data,
@@ -352,7 +422,7 @@ async def report_camera_proctoring_event(
         "warning": should_warn,
         "terminated": False,
         "violations": total_violations,
-        "threshold": 10,
+        "threshold": threshold,
     }
 
 

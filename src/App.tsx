@@ -11,7 +11,7 @@ import CandidatesPage from "./pages/CandidatesPage";
 import NewCandidatePage from "./pages/NewCandidatePage";
 import JobsPage from "./pages/JobsPage";
 import NewJobPage from "./pages/NewJobPage";
-import InterviewsPage from "./pages/InterviewsPage";
+// InterviewsPage removed - scores available in Results dashboard
 import InterviewSessionPage from "./pages/InterviewSessionPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -40,7 +40,7 @@ const App = () => (
             <Route path="/candidates/new" element={<NewCandidatePage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/jobs/new" element={<NewJobPage />} />
-            <Route path="/interviews" element={<InterviewsPage />} />
+            {/* Interviews section removed - scores available in Results dashboard */}
             <Route path="/interviews/:sessionId" element={<InterviewSessionPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

@@ -118,15 +118,15 @@ export const jobsApi = {
     const query = searchParams.toString();
     return request<JobDescription[]>(`/jobs${query ? `?${query}` : ''}`);
   },
-  
+
   get: (id: string) => request<JobDescription>(`/jobs/${id}`),
-  
-  create: (data: JobDescriptionCreate) => 
+
+  create: (data: JobDescriptionCreate) =>
     request<JobDescription>('/jobs', { method: 'POST', body: data }),
-  
+
   update: (id: string, data: Partial<JobDescriptionCreate>) =>
     request<JobDescription>(`/jobs/${id}`, { method: 'PATCH', body: data }),
-  
+
   delete: (id: string) =>
     request<{ success: boolean; message: string }>(`/jobs/${id}`, { method: 'DELETE' }),
 };
@@ -176,21 +176,24 @@ export const candidatesApi = {
     const query = searchParams.toString();
     return request<Candidate[]>(`/candidates${query ? `?${query}` : ''}`);
   },
-  
+
   get: (id: string) => request<Candidate>(`/candidates/${id}`),
-  
+
   create: (data: FormData) => uploadFile<Candidate>('/candidates', data),
-  
+
   update: (id: string, data: Partial<Candidate>) =>
     request<Candidate>(`/candidates/${id}`, { method: 'PATCH', body: data }),
-  
+
   uploadResume: (id: string, file: File) => {
     const formData = new FormData();
     formData.append('resume', file);
     return uploadFile<Candidate>(`/candidates/${id}/upload-resume`, formData);
   },
-  
+
   getParsedResume: (id: string) => request<ResumeData>(`/candidates/${id}/parsed-resume`),
+
+  delete: (id: string) =>
+    request<{ success: boolean; message: string }>(`/candidates/${id}`, { method: 'DELETE' }),
 };
 
 // ============== Screening API ==============
@@ -240,10 +243,10 @@ export const screeningApi = {
       method: 'POST',
       body: { candidate_id: candidateId, job_id: jobId },
     }),
-  
+
   getForCandidate: (candidateId: string) =>
     request<ATSScreeningResult[]>(`/screening/candidate/${candidateId}`),
-  
+
   getForJob: (jobId: string, params?: { shortlisted_only?: boolean; min_score?: number }) => {
     const searchParams = new URLSearchParams();
     if (params?.shortlisted_only) searchParams.set('shortlisted_only', 'true');
@@ -251,7 +254,7 @@ export const screeningApi = {
     const query = searchParams.toString();
     return request<ATSScreeningResult[]>(`/screening/job/${jobId}${query ? `?${query}` : ''}`);
   },
-  
+
   get: (id: string) => request<ATSScreeningResult>(`/screening/${id}`),
 };
 
@@ -367,18 +370,18 @@ export const interviewsApi = {
     const query = searchParams.toString();
     return request<InterviewSession[]>(`/interviews${query ? `?${query}` : ''}`);
   },
-  
+
   get: (id: string) => request<InterviewSession>(`/interviews/${id}`),
-  
+
   create: (data: { candidate_id: string; job_id: string; screening_id?: string; scheduled_at?: string }) =>
     request<InterviewSession>('/interviews', { method: 'POST', body: data }),
-  
+
   start: (id: string) =>
     request<InterviewSession>(`/interviews/${id}/start`, { method: 'POST' }),
-  
+
   getQuestions: (id: string) =>
     request<InterviewQuestion[]>(`/interviews/${id}/questions`),
-  
+
   submitResponse: (sessionId: string, data: {
     question_id: string;
     response_text?: string;
@@ -389,10 +392,10 @@ export const interviewsApi = {
       method: 'POST',
       body: { session_id: sessionId, ...data },
     }),
-  
+
   getPracticals: (id: string) =>
     request<PracticalAssessment[]>(`/interviews/${id}/practicals`),
-  
+
   submitPractical: (sessionId: string, assessmentId: string, data: {
     submitted_code?: string;
     submitted_answer?: string;
@@ -402,16 +405,16 @@ export const interviewsApi = {
       method: 'POST',
       body: { assessment_id: assessmentId, session_id: sessionId, ...data },
     }),
-  
+
   updateProctoring: (id: string, data: ProctoringData) =>
     request<{ success: boolean }>(`/interviews/${id}/proctoring`, {
       method: 'POST',
       body: data,
     }),
-  
+
   complete: (id: string) =>
     request<InterviewEvaluation>(`/interviews/${id}/complete`, { method: 'POST' }),
-  
+
   getEvaluation: (id: string) =>
     request<InterviewEvaluation>(`/interviews/${id}/evaluation`),
 };
@@ -420,9 +423,13 @@ export const interviewsApi = {
 
 export interface DashboardStats {
   total_candidates: number;
+  total_candidates_change: number;
   active_jobs: number;
+  active_jobs_change: number;
   pending_interviews: number;
+  pending_interviews_change: number;
   completed_today: number;
+  completed_today_change: number;
   average_score: number;
   shortlist_rate: number;
 }
@@ -440,7 +447,7 @@ export interface CandidateAnalytics {
 
 export const analyticsApi = {
   getDashboard: () => request<DashboardStats>('/analytics/dashboard'),
-  
+
   getCandidates: (params?: { job_id?: string; status?: string; recommendation?: string }) => {
     const searchParams = new URLSearchParams();
     if (params?.job_id) searchParams.set('job_id', params.job_id);
@@ -449,7 +456,7 @@ export const analyticsApi = {
     const query = searchParams.toString();
     return request<CandidateAnalytics[]>(`/analytics/candidates${query ? `?${query}` : ''}`);
   },
-  
+
   getJobSummary: (jobId: string) =>
     request<{
       job: { id: string; title: string; role: string; level: string };
@@ -458,7 +465,7 @@ export const analyticsApi = {
       recommendations: Record<string, number>;
       average_score: number;
     }>(`/analytics/job/${jobId}/summary`),
-  
+
   getTrends: (days?: number) => {
     const query = days ? `?days=${days}` : '';
     return request<{

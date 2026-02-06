@@ -1,7 +1,7 @@
 // Custom type definitions for the hiring platform
 // These extend the auto-generated Supabase types
 
-export type JobRole = 'salesforce_developer' | 'qa_engineer' | 'business_analyst';
+export type JobRole = string;
 export type RoleLevel = 'intern' | 'junior' | 'mid' | 'senior';
 export type InterviewStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 export type AssessmentType = 'technical' | 'practical' | 'behavioral';
@@ -229,6 +229,20 @@ export interface DashboardStats {
   averageScore: number;
   shortlistRate: number;
 }
+
+export interface CandidateAnalytics {
+  candidate_id: string;
+  candidate_name: string;
+  job_title: string;
+  ats_score: number;
+  assessment_score: number | null;
+  interview_score: number | null;
+  interview_status: InterviewStatus;
+  technical_score: number | null;
+  overall_score: number | null;
+  recommendation: HireRecommendation | null;
+}
+
 
 // Role-specific configurations
 export const ROLE_CONFIG: Record<JobRole, {

@@ -2,9 +2,9 @@ from typing import Optional, List, Dict, Any
 import uuid
 from app.models.schemas import (
     PracticalAssessment, PracticalSubmission, PracticalAssessmentCreate,
-    AIEvaluation, CriteriaScore, EvaluationCriterion
+    AIEvaluation, CriteriaScore, EvaluationCriterion, JobDescription
 )
-from app.models.enums import JobRole
+from app.models.enums import RoleLevel
 from app.services.gemini_client import get_gemini_service
 
 
@@ -19,7 +19,7 @@ class PracticalEvaluatorService:
         
         # Role-specific practical task templates
         self.task_templates = {
-            JobRole.SALESFORCE_DEVELOPER: [
+            "salesforce_developer": [
                 {
                     "title": "Apex Trigger Handler",
                     "description": """Write an Apex trigger handler for the Account object that:
@@ -73,7 +73,7 @@ export default class ContactList extends LightningElement {
                     "time_limit": 45
                 }
             ],
-            JobRole.QA_ENGINEER: [
+            "qa_engineer": [
                 {
                     "title": "Test Case Design",
                     "description": """Design comprehensive test cases for a Login functionality with:
@@ -126,7 +126,7 @@ class TestShoppingCart:
                     "time_limit": 35
                 }
             ],
-            JobRole.BUSINESS_ANALYST: [
+            "business_analyst": [
                 {
                     "title": "User Story Writing",
                     "description": """Based on this requirement, write detailed user stories:
@@ -182,33 +182,114 @@ Identify gaps, prioritize them, and recommend solutions.""",
             ]
         }
     
-    def get_practical_tasks_for_role(
+    async def get_practical_tasks(
         self,
-        role: JobRole,
+        job: JobDescription,
         session_id: str
     ) -> List[PracticalAssessment]:
-        """Get practical assessment tasks for a role."""
-        templates = self.task_templates.get(role, [])
-        assessments = []
+        """Get practical assessment tasks for a role (async, dynamic)."""
         
-        for i, template in enumerate(templates):
-            criteria = [
-                EvaluationCriterion(**c) for c in template["criteria"]
+        # 1. Try to generate with AI
+        try:
+            return await self._generate_tasks_with_ai(job, session_id)
+        except Exception as e:
+            # 2. Fallback to generic if AI fails
+            print(f"Error generating practical tasks: {e}")
+            return self._get_fallback_tasks(job.role, session_id)
+
+    async def _generate_tasks_with_ai(self, job: JobDescription, session_id: str) -> List[PracticalAssessment]:
+        system_prompt = f"""You are an expert technical interviewer creating a practical assessment for a {job.role} position.
+Level: {job.level.value}
+Job Description: {job.description[:500]}
+Skills: {', '.join(job.must_have_skills)}
+
+Create 2 practical tasks that can be done in a browser-based coding environment or text editor.
+1. A Coding Task (Algorithm/Function/Script)
+2. A Design/Scenario Task (System Design/Test Case/process flow)
+
+For each task provide:
+- Title
+- Clear Description
+- Starter Code (or template)
+- Evaluation Criteria (rubric)
+
+Return JSON format:
+{{
+    "tasks": [
+        {{
+            "title": "Title",
+            "description": "Full markdown description",
+            "starter_code": "code...",
+            "time_limit": 30,
+            "criteria": [
+                {{"name": "Criteria 1", "description": "desc", "max_points": 25}}
             ]
-            
+        }}
+    ]
+}}"""
+
+        result = await self.gemini.generate_json(
+            prompt="Generate 2 practical assessments.",
+            system_instruction=system_prompt,
+            temperature=0.7
+        )
+        
+        assessments = []
+        for i, task in enumerate(result.get("tasks", [])):
+            criteria = [
+                EvaluationCriterion(**c) for c in task.get("criteria", [])
+            ]
             assessments.append(PracticalAssessment(
                 id=str(uuid.uuid4()),
                 session_id=session_id,
-                role=role,
-                task_title=template["title"],
-                task_description=template["description"],
-                starter_code=template.get("starter_code"),
+                role=job.role,
+                task_title=task.get("title", "Practical Task"),
+                task_description=task.get("description", ""),
+                starter_code=task.get("starter_code", ""),
                 evaluation_criteria=criteria,
-                time_limit_minutes=template["time_limit"],
+                time_limit_minutes=task.get("time_limit", 30),
                 order_index=i
             ))
         
         return assessments
+
+    def _get_fallback_tasks(self, role: str, session_id: str) -> List[PracticalAssessment]:
+        """Fallback tasks if AI generation fails."""
+        # Generic coding task
+        coding_task = PracticalAssessment(
+            id=str(uuid.uuid4()),
+            session_id=session_id,
+            role=role,
+            task_title="Coding Challenge",
+            task_description="Write a function to process a list of data entries and return validated results. Handle edge cases.",
+            starter_code="def process_data(data):\n    # Your code here\n    pass",
+            evaluation_criteria=[
+                EvaluationCriterion(name="Correctness", description="Function works as expected", max_points=40),
+                EvaluationCriterion(name="Code Quality", description="Clean and readable code", max_points=30),
+                EvaluationCriterion(name="Edge Cases", description="Handles empty/invalid input", max_points=30)
+            ],
+            time_limit_minutes=30,
+            order_index=0
+        )
+        
+        # Generic design task
+        design_task = PracticalAssessment(
+            id=str(uuid.uuid4()),
+            session_id=session_id,
+            role=role,
+            task_title="System/Process Design",
+            task_description="Describe how you would design a system or process to handle high-volume requests for this role's context.",
+            starter_code="## Design Proposal\n\n1. Overview\n2. Key Components\n3. Challenges & Solutions",
+            evaluation_criteria=[
+                EvaluationCriterion(name="Feasibility", description="Solution is realistic", max_points=40),
+                EvaluationCriterion(name="Completeness", description="Covers all aspects", max_points=30),
+                EvaluationCriterion(name="Clarity", description="Clear explanation", max_points=30)
+            ],
+            time_limit_minutes=30,
+            order_index=1
+        )
+        
+        return [coding_task, design_task]
     
     async def evaluate_submission(
         self,
@@ -238,7 +319,7 @@ Identify gaps, prioritize them, and recommend solutions.""",
             for c in assessment.evaluation_criteria
         ])
         
-        system_prompt = f"""You are an expert evaluator for {assessment.role.value.replace('_', ' ')} practical assessments.
+        system_prompt = f"""You are an expert evaluator for {assessment.role.replace('_', ' ')} practical assessments.
 
 Evaluate the submission against these criteria:
 {criteria_text}

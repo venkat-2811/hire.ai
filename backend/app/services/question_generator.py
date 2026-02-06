@@ -5,7 +5,7 @@ from datetime import datetime
 from app.models.schemas import (
     ResumeData, JobDescription, InterviewQuestionGenerated, InterviewQuestion
 )
-from app.models.enums import JobRole, RoleLevel, AssessmentType
+from app.models.enums import RoleLevel, AssessmentType
 from app.services.gemini_client import get_gemini_service
 
 
@@ -18,60 +18,6 @@ class QuestionGeneratorService:
     def __init__(self):
         self.gemini = get_gemini_service()
         
-        # Role-specific question templates and focus areas
-        self.role_focus_areas = {
-            JobRole.SALESFORCE_DEVELOPER: {
-                "technical": [
-                    "Apex programming and best practices",
-                    "Lightning Web Components (LWC)",
-                    "SOQL and SOSL queries",
-                    "Triggers and automation",
-                    "Integration patterns (REST/SOAP)",
-                    "Governor limits and optimization",
-                    "Security and sharing model"
-                ],
-                "practical": [
-                    "Debug Apex code",
-                    "Write LWC component",
-                    "Optimize SOQL query",
-                    "Design trigger handler"
-                ]
-            },
-            JobRole.QA_ENGINEER: {
-                "technical": [
-                    "Test case design techniques",
-                    "Automation frameworks (Selenium, Cypress)",
-                    "API testing (Postman, REST Assured)",
-                    "Performance testing concepts",
-                    "CI/CD integration",
-                    "Bug lifecycle management",
-                    "Test planning and strategy"
-                ],
-                "practical": [
-                    "Write test cases for a feature",
-                    "Create automation script",
-                    "Design API test suite",
-                    "Analyze bug report"
-                ]
-            },
-            JobRole.BUSINESS_ANALYST: {
-                "technical": [
-                    "Requirements elicitation techniques",
-                    "User story writing (INVEST criteria)",
-                    "Process modeling (BPMN)",
-                    "Gap analysis methodology",
-                    "Stakeholder management",
-                    "Data analysis and SQL",
-                    "Agile/Scrum practices"
-                ],
-                "practical": [
-                    "Write user stories from requirements",
-                    "Create process flow diagram",
-                    "Perform gap analysis",
-                    "Prioritize backlog items"
-                ]
-            }
-        }
         
         # Difficulty scaling by level
         self.level_difficulty = {
@@ -155,22 +101,23 @@ class QuestionGeneratorService:
     ) -> List[InterviewQuestionGenerated]:
         """Generate role-specific technical questions."""
         
-        focus_areas = self.role_focus_areas.get(job.role, {}).get("technical", [])
         candidate_skills = ", ".join(resume_data.skills[:15])
         must_have_skills = ", ".join(job.must_have_skills)
+        good_to_have_skills = ", ".join(job.good_to_have_skills)
         
         previous_q_text = ""
         if previous_questions:
             previous_q_text = f"\n\nDO NOT generate questions similar to these (already asked to other candidates):\n" + \
                              "\n".join([f"- {q}" for q in previous_questions[:20]])
         
-        system_prompt = f"""You are an expert technical interviewer for {job.role.value.replace('_', ' ')} positions.
-Generate unique, challenging technical interview questions.
+        system_prompt = f"""You are an expert technical interviewer for {job.role.replace('_', ' ')} positions.
+Generate unique, challenging technical interview questions based strictly on the Job Description and Skills provided.
 
-Role: {job.role.value.replace('_', ' ')}
+Role: {job.role.replace('_', ' ')}
 Level: {job.level.value}
-Focus Areas: {', '.join(focus_areas)}
+Job Description Summary: {job.description[:800]}
 Must-Have Skills: {must_have_skills}
+Good-to-Have Skills: {good_to_have_skills}
 
 Guidelines:
 - Questions should be specific and test real-world knowledge
@@ -245,7 +192,7 @@ Generate unique questions that assess their fit for this role."""
         system_prompt = f"""You are an expert behavioral interviewer.
 Generate STAR-format behavioral questions that assess soft skills and cultural fit.
 
-Role: {job.role.value.replace('_', ' ')}
+Role: {job.role.replace('_', ' ')}
 Level: {job.level.value}
 {experience_context}
 
@@ -293,31 +240,277 @@ Return JSON:
         except Exception:
             return self._get_fallback_behavioral_questions(num_questions)
     
+    async def generate_mcq_questions(
+        self,
+        job: JobDescription,
+        count: int = 20
+    ) -> List[dict]:
+        """Generate MCQ questions for technical assessment based on job description."""
+        
+        must_have_skills = ", ".join(job.must_have_skills)
+        good_to_have_skills = ", ".join(job.good_to_have_skills)
+        
+        system_prompt = f"""You are creating a multiple-choice technical assessment for a {job.role} position at {job.level} level.
+
+Job Description: {job.description[:800]}
+Must-Have Skills: {must_have_skills}
+Good-to-Have Skills: {good_to_have_skills}
+
+Generate {count} multiple-choice questions that:
+- Test practical knowledge of the required skills
+- Range from easy to hard difficulty
+- Have 4 options each with exactly ONE correct answer
+- Are specific to this role and level
+- Cover a variety of topics from the job description
+
+Return a JSON object:
+{{
+    "questions": [
+        {{
+            "question": "Question text here",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correct_index": 0,
+            "difficulty": "easy|medium|hard",
+            "topic": "Topic name",
+            "points": 5
+        }}
+    ]
+}}"""
+
+        try:
+            result = await self.gemini.generate_json(
+                prompt=f"Generate {count} MCQ questions for this {job.role} position.",
+                system_instruction=system_prompt,
+                temperature=0.7,
+                max_tokens=8192,
+                raise_on_error=True,
+            )
+            
+            questions = []
+            for q in result.get("questions", [])[:count]:
+                options = q.get("options", [])
+                if not isinstance(options, list):
+                    options = []
+                options = [str(o) for o in options][:4]
+                if len(options) != 4:
+                    continue
+
+                correct_index = q.get("correct_index", 0)
+                try:
+                    correct_index = int(correct_index)
+                except Exception:
+                    correct_index = 0
+                if correct_index < 0 or correct_index > 3:
+                    correct_index = 0
+
+                questions.append({
+                    "id": str(uuid.uuid4()),
+                    "question": q.get("question", ""),
+                    "options": options,
+                    "correct_index": correct_index,
+                    "difficulty": q.get("difficulty", "medium"),
+                    "topic": q.get("topic", "General"),
+                    "points": q.get("points", 5),
+                })
+            
+            if not questions:
+                raise RuntimeError("Gemini returned no valid MCQ questions")
+
+            return questions
+            
+        except Exception as e:
+            print(f"Error generating MCQ questions: {e}")
+            # Return generic fallback questions
+            return self._get_fallback_mcq_questions(count)
+    
+    async def generate_coding_challenges(
+        self,
+        job: JobDescription,
+        count: int = 2
+    ) -> List[dict]:
+        """Generate coding challenges for practical assessment."""
+        
+        must_have_skills = ", ".join(job.must_have_skills)
+        
+        system_prompt = f"""You are creating coding challenges for a {job.role} position at {job.level} level.
+
+Job Description: {job.description[:800]}
+Key Skills: {must_have_skills}
+
+Generate {count} coding challenges that:
+- Test practical coding ability relevant to this role
+- Are solvable in 15-25 minutes each
+- Include clear problem descriptions
+- Provide starter code templates
+- Have specific test cases with inputs and expected outputs
+- Difficulty appropriate for {job.level} level
+
+Return JSON:
+{{
+    "challenges": [
+        {{
+            "title": "Challenge Title",
+            "description": "Detailed problem description with examples",
+            "starter_code": "def solution():\\n    pass",
+            "test_cases": [
+                {{"input": {{"param": "value"}}, "expected": "result"}}
+            ],
+            "difficulty": "easy|medium|hard",
+            "time_limit_minutes": 15,
+            "points": 25
+        }}
+    ]
+}}"""
+
+        try:
+            result = await self.gemini.generate_json(
+                prompt=f"Generate {count} coding challenges for {job.role}.",
+                system_instruction=system_prompt,
+                temperature=0.7,
+                max_tokens=8192,
+                raise_on_error=True,
+            )
+            
+            challenges = []
+            for c in result.get("challenges", [])[:count]:
+                test_cases = c.get("test_cases", [])
+                if not isinstance(test_cases, list):
+                    test_cases = []
+                challenges.append({
+                    "id": str(uuid.uuid4()),
+                    "title": c.get("title", ""),
+                    "description": c.get("description", ""),
+                    "starter_code": c.get("starter_code", ""),
+                    "test_cases": test_cases,
+                    "difficulty": c.get("difficulty", "medium"),
+                    "time_limit_minutes": c.get("time_limit_minutes", 20),
+                    "points": c.get("points", 25),
+                })
+            
+            if not challenges:
+                raise RuntimeError("Gemini returned no coding challenges")
+
+            return challenges
+            
+        except Exception as e:
+            print(f"Error generating coding challenges: {e}")
+            return self._get_fallback_coding_challenges(count)
+    
+    def _get_fallback_mcq_questions(self, count: int) -> List[dict]:
+        """Fallback MCQ questions if AI generation fails."""
+        fallbacks = [
+            {
+                "id": str(uuid.uuid4()),
+                "question": "What is the primary purpose of version control systems like Git?",
+                "options": [
+                    "To compile code faster",
+                    "To track changes and collaborate on code",
+                    "To deploy applications",
+                    "To write documentation"
+                ],
+                "correct_index": 1,
+                "difficulty": "easy",
+                "topic": "Version Control",
+                "points": 5,
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "question": "Which data structure uses LIFO (Last In, First Out) principle?",
+                "options": ["Queue", "Stack", "Array", "Linked List"],
+                "correct_index": 1,
+                "difficulty": "easy",
+                "topic": "Data Structures",
+                "points": 5,
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "question": "What is the time complexity of binary search?",
+                "options": ["O(n)", "O(log n)", "O(n²)", "O(1)"],
+                "correct_index": 1,
+                "difficulty": "medium",
+                "topic": "Algorithms",
+                "points": 10,
+            },
+        ]
+        
+        # Repeat to reach count
+        result = []
+        while len(result) < count:
+            for q in fallbacks:
+                if len(result) >= count:
+                    break
+                result.append(q.copy())
+        
+        return result[:count]
+    
+    def _get_fallback_coding_challenges(self, count: int) -> List[dict]:
+        """Fallback coding challenges if AI generation fails."""
+        fallbacks = [
+            {
+                "id": str(uuid.uuid4()),
+                "title": "Two Sum",
+                "description": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.",
+                "starter_code": "def two_sum(nums, target):\n    # Your code here\n    pass",
+                "test_cases": [
+                    {"input": {"nums": [2, 7, 11, 15], "target": 9}, "expected": [0, 1]},
+                    {"input": {"nums": [3, 2, 4], "target": 6}, "expected": [1, 2]},
+                ],
+                "difficulty": "easy",
+                "time_limit_minutes": 15,
+                "points": 25,
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "title": "Valid Parentheses",
+                "description": "Given a string s containing just the characters '(', ')', '{', '}', '[' and ']', determine if the input string is valid.",
+                "starter_code": "def is_valid(s):\n    # Your code here\n    pass",
+                "test_cases": [
+                    {"input": {"s": "()"}, "expected": True},
+                    {"input": {"s": "()[]{}"}, "expected": True},
+                    {"input": {"s": "(]"}, "expected": False},
+                ],
+                "difficulty": "medium",
+                "time_limit_minutes": 20,
+                "points": 35,
+            },
+        ]
+        
+        return fallbacks[:count]
+    
     def _get_fallback_technical_questions(
         self,
-        role: JobRole,
+        role: str,
         num_questions: int
     ) -> List[InterviewQuestionGenerated]:
         """Fallback questions if AI generation fails."""
-        fallbacks = {
-            JobRole.SALESFORCE_DEVELOPER: [
-                ("Explain the difference between before and after triggers in Apex.", 3),
-                ("How do you handle governor limits in bulk operations?", 4),
-                ("Describe the Lightning Web Components lifecycle hooks.", 3),
-            ],
-            JobRole.QA_ENGINEER: [
-                ("What is the difference between verification and validation?", 2),
-                ("Explain your approach to creating a test automation framework.", 4),
-                ("How do you prioritize test cases for regression testing?", 3),
-            ],
-            JobRole.BUSINESS_ANALYST: [
-                ("How do you handle conflicting requirements from stakeholders?", 3),
-                ("Explain the INVEST criteria for user stories.", 2),
-                ("Describe your approach to conducting a gap analysis.", 3),
-            ]
-        }
+        # Since we don't have hardcoded roles anymore, we return generic technical questions 
+        # that fit most software/business roles, or we could try to infer from role string, 
+        # but for safety we use broad categories.
         
-        role_questions = fallbacks.get(role, fallbacks[JobRole.SALESFORCE_DEVELOPER])
+        generic_fallbacks = [
+            ("Describe a challenging technical problem you solved recently.", 3),
+            ("How do you stay updated with the latest trends in your field?", 2),
+            ("Explain a complex concept to someone without a technical background.", 3),
+            ("How do you ensure quality in your work?", 3),
+            ("Describe your workflow when starting a new project.", 2)
+        ]
+        
+        # Try to give slightly more specific fallbacks if standard roles match strings
+        role_lower = role.lower()
+        if "salesforce" in role_lower:
+             generic_fallbacks = [
+                ("Explain the difference between before and after triggers in Apex.", 3),
+                ("How do you handle governor limits?", 4),
+                ("Describe the LWC lifecycle.", 3),
+            ]
+        elif "qa" in role_lower or "test" in role_lower:
+             generic_fallbacks = [
+                ("Difference between verification and validation?", 2),
+                ("How do you prioritize test cases?", 3),
+                ("Explain your bug reporting process.", 3),
+            ]
+        
+        role_questions = generic_fallbacks
         questions = []
         
         for i, (text, diff) in enumerate(role_questions[:num_questions]):

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Plus, X, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCreateJob, type JobDescriptionCreate } from '@/hooks/useJobs';
-import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
+import { LEVEL_CONFIG, type RoleLevel } from '@/types/database';
 
 export default function NewJobPage() {
   const { loading: authLoading } = useRequireAuth();
@@ -19,7 +19,7 @@ export default function NewJobPage() {
   const createJob = useCreateJob();
 
   const [title, setTitle] = useState('');
-  const [role, setRole] = useState<JobRole | ''>('');
+  const [role, setRole] = useState('');
   const [level, setLevel] = useState<RoleLevel | ''>('');
   const [description, setDescription] = useState('');
   const [minExperience, setMinExperience] = useState(0);
@@ -52,14 +52,14 @@ export default function NewJobPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!title || !role || !level || !description) {
       return;
     }
 
     createJob.mutate({
       title,
-      role: role as JobRole,
+      role: role,
       level: level as RoleLevel,
       description,
       must_have_skills: mustHaveSkills,
@@ -120,19 +120,14 @@ export default function NewJobPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label>Role Type *</Label>
-                    <Select value={role} onValueChange={(v) => setRole(v as JobRole)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(ROLE_CONFIG).map(([key, config]) => (
-                          <SelectItem key={key} value={key}>
-                            {config.icon} {config.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="role">Role Type *</Label>
+                    <Input
+                      id="role"
+                      placeholder="e.g. React Developer, Project Manager"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      required
+                    />
                   </div>
 
                   <div className="space-y-2">

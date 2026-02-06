@@ -3,7 +3,7 @@ from typing import List, Optional
 from app.models.schemas import (
     JobDescription, JobDescriptionCreate, JobDescriptionUpdate, APIResponse
 )
-from app.models.enums import JobRole, RoleLevel
+from app.models.enums import RoleLevel
 from app.database import get_supabase_client, get_supabase_admin_client
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 @router.get("", response_model=List[JobDescription])
 async def list_jobs(
-    role: Optional[JobRole] = None,
+    role: Optional[str] = None,
     level: Optional[RoleLevel] = None,
     is_active: Optional[bool] = True
 ):
@@ -21,7 +21,7 @@ async def list_jobs(
     query = supabase.table("job_descriptions").select("*")
     
     if role:
-        query = query.eq("role", role.value)
+        query = query.ilike("role", f"%{role}%")
     if level:
         query = query.eq("level", level.value)
     if is_active is not None:
@@ -97,7 +97,7 @@ async def create_job(job: JobDescriptionCreate):
     
     data = {
         "title": job.title,
-        "role": job.role.value,
+        "role": job.role,
         "level": job.level.value,
         "description": job.description,
         "must_have_skills": job.must_have_skills,
@@ -139,7 +139,7 @@ async def update_job(job_id: str, job: JobDescriptionUpdate):
     
     # Convert enums to values
     if "role" in update_data and update_data["role"]:
-        update_data["role"] = update_data["role"].value
+        update_data["role"] = update_data["role"]
     if "level" in update_data and update_data["level"]:
         update_data["level"] = update_data["level"].value
     

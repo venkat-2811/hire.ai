@@ -8,6 +8,8 @@ interface ScoreBadgeProps {
 }
 
 export function ScoreBadge({ score, size = 'md', showLabel = false, className }: ScoreBadgeProps) {
+  const normalizedScore = Math.round(score);
+
   const getScoreCategory = (score: number) => {
     if (score >= 85) return { label: 'Excellent', class: 'score-excellent' };
     if (score >= 70) return { label: 'Good', class: 'score-good' };
@@ -15,7 +17,7 @@ export function ScoreBadge({ score, size = 'md', showLabel = false, className }:
     return { label: 'Poor', class: 'score-poor' };
   };
 
-  const category = getScoreCategory(score);
+  const category = getScoreCategory(normalizedScore);
   
   const sizeClasses = {
     sm: 'h-6 w-6 text-xs',
@@ -32,7 +34,7 @@ export function ScoreBadge({ score, size = 'md', showLabel = false, className }:
           category.class
         )}
       >
-        {score}
+        {normalizedScore}
       </div>
       {showLabel && (
         <span className="text-sm text-muted-foreground">{category.label}</span>

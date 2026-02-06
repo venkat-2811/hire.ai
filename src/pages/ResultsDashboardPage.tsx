@@ -1,8 +1,8 @@
 /**
  * Results Dashboard for Hiring Managers.
- * View assessment and interview results, send acceptance/rejection emails.
+ * View aggregated assessment scores (Resume, Technical, Interview) for candidates.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useAuth';
@@ -10,8 +10,6 @@ import { useJobs } from '@/hooks/useJobs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -36,106 +34,76 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Loader2,
   Trophy,
   Users,
   CheckCircle,
-  XCircle,
-  Clock,
   TrendingUp,
   Mail,
   ThumbsUp,
   ThumbsDown,
   Eye,
   BarChart3,
+  Filter,
+  ArrowUpDown,
+  Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { CandidateAnalytics, HireRecommendation } from '@/types/database';
+import { ScoreBadge } from '@/components/ui/score-badge';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-interface AssessmentResult {
-  id: string;
-  candidate_id: string;
-  status: string;
-  mcq_score: number | null;
-  coding_score: number | null;
-  total_score: number | null;
-  proctoring_data: {
-    tab_switches: number;
-    fullscreen_exits: number;
-    warnings: any[];
-  };
-  completed_at: string | null;
-  candidates: {
-    id: string;
-    full_name: string;
-    email: string;
-  };
-}
-
-interface InterviewResult {
-  id: string;
-  candidate_id: string;
-  status: string;
-  final_evaluation: {
-    overall_score: number;
-    technical_score: number;
-    communication_score: number;
-    confidence_score: number;
-    recommendation: string;
-    strengths: string[];
-    areas_for_improvement: string[];
-    detailed_feedback: string;
-  } | null;
-  completed_at: string | null;
-  candidates: {
-    id: string;
-    full_name: string;
-    email: string;
-  };
-}
+type SortField = 'name' | 'ats_score' | 'assessment_score' | 'interview_score' | 'total_score';
+type SortOrder = 'asc' | 'desc';
 
 export default function ResultsDashboardPage() {
   const { loading: authLoading } = useRequireAuth();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
 
   const [selectedJobId, setSelectedJobId] = useState<string>('');
-  const [assessmentResults, setAssessmentResults] = useState<AssessmentResult[]>([]);
-  const [interviewResults, setInterviewResults] = useState<InterviewResult[]>([]);
+  const [candidates, setCandidates] = useState<CandidateAnalytics[]>([]);
   const [loadingResults, setLoadingResults] = useState(false);
   const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
+
+  // Filtering & Sorting State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<SortField>('total_score');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [minScore, setMinScore] = useState<number>(0);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Dialog States
   const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [selectedResult, setSelectedResult] = useState<InterviewResult | null>(null);
+  const [selectedCandidateForDetail, setSelectedCandidateForDetail] = useState<CandidateAnalytics | null>(null);
 
   // Load results when job is selected
   useEffect(() => {
     if (!selectedJobId) {
-      setAssessmentResults([]);
-      setInterviewResults([]);
+      setCandidates([]);
       return;
     }
 
     async function loadResults() {
       setLoadingResults(true);
       try {
-        // Load assessment results
-        const assessmentRes = await fetch(`${API_BASE_URL}/assessments/results/${selectedJobId}`);
-        if (assessmentRes.ok) {
-          const data = await assessmentRes.json();
-          setAssessmentResults(data);
-        }
-
-        // Load interview results
-        const interviewRes = await fetch(`${API_BASE_URL}/ai-interview/results/${selectedJobId}`);
-        if (interviewRes.ok) {
-          const data = await interviewRes.json();
-          setInterviewResults(data);
+        const response = await fetch(`${API_BASE_URL}/analytics/candidates?job_id=${selectedJobId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setCandidates(data);
+        } else {
+          console.error("Failed to load candidates", await response.text());
+          toast.error('Failed to load candidate data');
         }
       } catch (e) {
+        console.error("Error loading candidates", e);
         toast.error('Failed to load results');
       } finally {
         setLoadingResults(false);
@@ -144,6 +112,81 @@ export default function ResultsDashboardPage() {
 
     loadResults();
   }, [selectedJobId]);
+
+  // Derived state for filtered & sorted candidates
+  const processedCandidates = useMemo(() => {
+    let result = [...candidates];
+
+    // 1. Search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(c =>
+        c.candidate_name.toLowerCase().includes(q)
+      );
+    }
+
+    // 2. Filter by Score (Weighted Average or specific threshold)
+    // Simple filter: Check if ANY score is below threshold if specific filter logic isn't complex
+    // Or just check an approximate total average
+    if (minScore > 0) {
+      result = result.filter(c => {
+        // Calculate a simple average of available scores
+        const scores = [c.ats_score, c.assessment_score, c.interview_score].filter(s => s !== null) as number[];
+        if (scores.length === 0) return false;
+        const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+        return avg >= minScore;
+      });
+    }
+
+    // 3. Status Filter
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'recommended') {
+        result = result.filter(c => c.recommendation === 'strong_hire' || c.recommendation === 'hire');
+      } else {
+        // Map other statuses if needed, or filter by interview status
+        result = result.filter(c => c.interview_status === statusFilter);
+      }
+    }
+
+    // 4. Sort
+    result.sort((a, b) => {
+      let valA: number | string = 0;
+      let valB: number | string = 0;
+
+      switch (sortField) {
+        case 'name':
+          valA = a.candidate_name;
+          valB = b.candidate_name;
+          break;
+        case 'ats_score':
+          valA = a.ats_score || 0;
+          valB = b.ats_score || 0;
+          break;
+        case 'assessment_score':
+          valA = a.assessment_score || 0;
+          valB = b.assessment_score || 0;
+          break;
+        case 'interview_score':
+          valA = a.interview_score || 0;
+          valB = b.interview_score || 0;
+          break;
+        case 'total_score':
+          // Calculate average
+          const scoresA = [a.ats_score, a.assessment_score, a.interview_score].filter(s => s !== null) as number[];
+          valA = scoresA.length ? Math.round(scoresA.reduce((sum, s) => sum + s, 0) / scoresA.length) : 0;
+
+          const scoresB = [b.ats_score, b.assessment_score, b.interview_score].filter(s => s !== null) as number[];
+          valB = scoresB.length ? Math.round(scoresB.reduce((sum, s) => sum + s, 0) / scoresB.length) : 0;
+          break;
+      }
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [candidates, searchQuery, sortField, sortOrder, minScore, statusFilter]);
 
   const toggleSelectCandidate = (candidateId: string) => {
     const newSet = new Set(selectedCandidates);
@@ -155,13 +198,33 @@ export default function ResultsDashboardPage() {
     setSelectedCandidates(newSet);
   };
 
+  const toggleSelectAll = () => {
+    if (selectedCandidates.size === processedCandidates.length) {
+      setSelectedCandidates(new Set());
+    } else {
+      setSelectedCandidates(new Set(processedCandidates.map(c => c.candidate_id)));
+    }
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+  };
+
   const sendAcceptanceEmails = async () => {
     if (selectedCandidates.size === 0) return;
+    if (!selectedJobId) {
+      toast.error('Please select a job first');
+      return;
+    }
 
     setSendingEmails(true);
     try {
       const candidateIds = Array.from(selectedCandidates);
-
       const response = await fetch(`${API_BASE_URL}/candidates/send-acceptance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -172,7 +235,17 @@ export default function ResultsDashboardPage() {
       });
 
       const data = await response.json();
-      toast.success(`Acceptance emails sent to ${data.emails_sent} candidate(s)`);
+      if (!response.ok) {
+        const msg = data?.detail || 'Failed to send acceptance emails';
+        toast.error(msg);
+        return;
+      }
+
+      if (data?.error_messages?.length) {
+        toast.error(`Some emails failed: ${data.error_messages[0]}`);
+      } else {
+        toast.success(`Acceptance emails sent to ${data.emails_sent} candidate(s)`);
+      }
       setAcceptDialogOpen(false);
       setSelectedCandidates(new Set());
     } catch (e) {
@@ -184,11 +257,14 @@ export default function ResultsDashboardPage() {
 
   const sendRejectionEmails = async () => {
     if (selectedCandidates.size === 0) return;
+    if (!selectedJobId) {
+      toast.error('Please select a job first');
+      return;
+    }
 
     setSendingEmails(true);
     try {
       const candidateIds = Array.from(selectedCandidates);
-
       const response = await fetch(`${API_BASE_URL}/candidates/send-rejection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -199,19 +275,22 @@ export default function ResultsDashboardPage() {
       });
 
       const data = await response.json();
-      toast.success(`Rejection emails sent to ${data.emails_sent} candidate(s)`);
-      
-      // Auto-delete rejected candidates from the database
-      await fetch(`${API_BASE_URL}/candidates/bulk-delete`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(candidateIds),
-      });
-      
-      // Refresh results
-      setInterviewResults(prev => prev.filter(r => !candidateIds.includes(r.candidate_id)));
-      setAssessmentResults(prev => prev.filter(r => !candidateIds.includes(r.candidate_id)));
-      
+      if (!response.ok) {
+        const msg = data?.detail || 'Failed to send rejection emails';
+        toast.error(msg);
+        return;
+      }
+
+      if (data?.error_messages?.length) {
+        toast.error(`Some emails failed: ${data.error_messages[0]}`);
+      } else {
+        toast.success('Rejection emails sent');
+      }
+
+      // Auto-delete rejected candidates locally (and backend handles DB)
+      // Note: Backend might delete, here we just refresh or filter out
+      setCandidates(prev => prev.filter(c => !candidateIds.includes(c.candidate_id)));
+
       setRejectDialogOpen(false);
       setSelectedCandidates(new Set());
     } catch (e) {
@@ -221,12 +300,8 @@ export default function ResultsDashboardPage() {
     }
   };
 
-  const viewDetails = (result: InterviewResult) => {
-    setSelectedResult(result);
-    setDetailDialogOpen(true);
-  };
-
-  const getRecommendationBadge = (recommendation: string) => {
+  const getRecommendationBadge = (recommendation: HireRecommendation | null) => {
+    if (!recommendation) return <Badge variant="outline">Pending</Badge>;
     switch (recommendation) {
       case 'strong_hire':
         return <Badge className="bg-success text-success-foreground">Strong Hire</Badge>;
@@ -241,23 +316,22 @@ export default function ResultsDashboardPage() {
     }
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-success';
-    if (score >= 60) return 'text-info';
-    if (score >= 40) return 'text-warning';
-    return 'text-destructive';
-  };
+  // Stats
+  const avgTotalScore = useMemo(() => {
+    if (!processedCandidates.length) return 0;
+    let sum = 0;
+    let count = 0;
+    processedCandidates.forEach(c => {
+      const scores = [c.ats_score, c.assessment_score, c.interview_score].filter(s => s !== null) as number[];
+      if (scores.length) {
+        sum += scores.reduce((a, b) => a + b, 0) / scores.length;
+        count++;
+      }
+    });
+    return count ? sum / count : 0;
+  }, [processedCandidates]);
 
-  // Stats calculations
-  const completedAssessments = assessmentResults.filter(r => r.status === 'completed').length;
-  const completedInterviews = interviewResults.filter(r => r.status === 'completed').length;
-  const avgAssessmentScore = assessmentResults.length > 0
-    ? assessmentResults.reduce((sum, r) => sum + (r.total_score || 0), 0) / assessmentResults.length
-    : 0;
-  const avgInterviewScore = interviewResults.length > 0
-    ? interviewResults.reduce((sum, r) => sum + (r.final_evaluation?.overall_score || 0), 0) / interviewResults.length
-    : 0;
-  const strongHires = interviewResults.filter(r => r.final_evaluation?.recommendation === 'strong_hire').length;
+  const strongHiresCount = processedCandidates.filter(c => c.recommendation === 'strong_hire').length;
 
   if (authLoading || jobsLoading) {
     return (
@@ -283,7 +357,7 @@ export default function ResultsDashboardPage() {
               Results Dashboard
             </motion.h1>
             <p className="text-muted-foreground mt-1">
-              View assessment and interview results, manage candidate outcomes
+              Unified view of candidate performance across all hiring stages
             </p>
           </div>
 
@@ -305,7 +379,7 @@ export default function ResultsDashboardPage() {
           <Card>
             <CardContent className="py-12 text-center">
               <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Select a job to view results</p>
+              <p className="text-muted-foreground">Select a job to view candidate results</p>
             </CardContent>
           </Card>
         ) : loadingResults ? (
@@ -315,7 +389,7 @@ export default function ResultsDashboardPage() {
         ) : (
           <>
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-4">
@@ -323,22 +397,8 @@ export default function ResultsDashboardPage() {
                       <Users className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold">{assessmentResults.length}</p>
-                      <p className="text-xs text-muted-foreground">Total Assessments</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-success/10 rounded-lg">
-                      <CheckCircle className="h-5 w-5 text-success" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold">{completedInterviews}</p>
-                      <p className="text-xs text-muted-foreground">Completed Interviews</p>
+                      <p className="text-2xl font-bold">{candidates.length}</p>
+                      <p className="text-xs text-muted-foreground">Total Candidates</p>
                     </div>
                   </div>
                 </CardContent>
@@ -351,22 +411,8 @@ export default function ResultsDashboardPage() {
                       <TrendingUp className="h-5 w-5 text-info" />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold">{avgAssessmentScore.toFixed(0)}%</p>
-                      <p className="text-xs text-muted-foreground">Avg Assessment Score</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-warning/10 rounded-lg">
-                      <BarChart3 className="h-5 w-5 text-warning" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold">{avgInterviewScore.toFixed(0)}%</p>
-                      <p className="text-xs text-muted-foreground">Avg Interview Score</p>
+                      <p className="text-2xl font-bold">{avgTotalScore.toFixed(0)}%</p>
+                      <p className="text-xs text-muted-foreground">Avg Overall Score</p>
                     </div>
                   </div>
                 </CardContent>
@@ -379,340 +425,217 @@ export default function ResultsDashboardPage() {
                       <Trophy className="h-5 w-5 text-success" />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold">{strongHires}</p>
-                      <p className="text-xs text-muted-foreground">Strong Hire Recommendations</p>
+                      <p className="text-2xl font-bold">{strongHiresCount}</p>
+                      <p className="text-xs text-muted-foreground">Strong Hires</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Bulk Actions */}
-            {selectedCandidates.size > 0 && (
-              <Card>
-                <CardContent className="py-4">
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium">
-                      {selectedCandidates.size} candidate(s) selected
-                    </span>
-                    <Button size="sm" onClick={() => setAcceptDialogOpen(true)}>
-                      <ThumbsUp className="mr-2 h-4 w-4" />
-                      Send Acceptance
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => setRejectDialogOpen(true)}>
-                      <ThumbsDown className="mr-2 h-4 w-4" />
-                      Send Rejection
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setSelectedCandidates(new Set())}>
-                      Clear Selection
-                    </Button>
+            {/* Filters & Actions */}
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+                    <div className="relative w-full sm:w-1/3">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search candidates..."
+                        className="pl-10"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                        <Filter className="mr-2 h-4 w-4" />
+                        Filters
+                      </Button>
+                      {selectedCandidates.size > 0 && (
+                        <>
+                          <Button size="sm" onClick={() => setAcceptDialogOpen(true)}>
+                            <ThumbsUp className="mr-2 h-4 w-4" />
+                            Accept
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => setRejectDialogOpen(true)}>
+                            <ThumbsDown className="mr-2 h-4 w-4" />
+                            Reject
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            )}
 
-            {/* Results Tabs */}
-            <Tabs defaultValue="interviews" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="interviews">
-                  Interview Results ({interviewResults.length})
-                </TabsTrigger>
-                <TabsTrigger value="assessments">
-                  Assessment Results ({assessmentResults.length})
-                </TabsTrigger>
-              </TabsList>
+                  {showFilters && (
+                    <div className="flex flex-wrap gap-4 pt-4 border-t items-center">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Min Score (%)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          className="w-[100px]"
+                          value={minScore}
+                          onChange={(e) => setMinScore(Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Recommendation</Label>
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                          <SelectTrigger className="w-[150px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="recommended">Recommended (Hire+)</SelectItem>
+                            <SelectItem value="completed">Interview Completed</SelectItem>
+                            <SelectItem value="pending">Pending</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
-              {/* Interview Results */}
-              <TabsContent value="interviews">
-                <Card>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12"></TableHead>
-                          <TableHead>Candidate</TableHead>
-                          <TableHead>Overall Score</TableHead>
-                          <TableHead>Technical</TableHead>
-                          <TableHead>Communication</TableHead>
-                          <TableHead>Recommendation</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="w-12"></TableHead>
+            {/* Unified Table */}
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={processedCandidates.length > 0 && selectedCandidates.size === processedCandidates.length}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('name')}>
+                          Candidate <ArrowUpDown className="ml-2 h-3 w-3" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('ats_score')}>
+                          Resume Score <ArrowUpDown className="ml-2 h-3 w-3" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('assessment_score')}>
+                          Tech. Assessment <ArrowUpDown className="ml-2 h-3 w-3" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('interview_score')}>
+                          Interview Score <ArrowUpDown className="ml-2 h-3 w-3" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('total_score')}>
+                          Total Avg <ArrowUpDown className="ml-2 h-3 w-3" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Recommendation</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {processedCandidates.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          No candidates found matching filters.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      processedCandidates.map((candidate) => (
+                        <TableRow key={candidate.candidate_id} className={selectedCandidates.has(candidate.candidate_id) ? 'bg-primary/5' : ''}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedCandidates.has(candidate.candidate_id)}
+                              onCheckedChange={() => toggleSelectCandidate(candidate.candidate_id)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{candidate.candidate_name}</p>
+                              <p className="text-xs text-muted-foreground uppercase tracking-wider">{candidate.job_title}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {typeof candidate.ats_score === 'number' ? <ScoreBadge score={candidate.ats_score} /> : <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                          <TableCell>
+                            {typeof candidate.assessment_score === 'number' ? <ScoreBadge score={candidate.assessment_score} /> : <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                          <TableCell>
+                            {typeof candidate.interview_score === 'number' ? <ScoreBadge score={candidate.interview_score} /> : <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const scores = [candidate.ats_score, candidate.assessment_score, candidate.interview_score].filter(s => s !== null) as number[];
+                              const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+                              return scores.length ? <ScoreBadge score={Math.round(avg)} /> : <span className="text-muted-foreground">-</span>;
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            {getRecommendationBadge(candidate.recommendation)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {/* Placeholder for view details action - could open a candidate profile modal */}
+                            <Button variant="ghost" size="sm">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {interviewResults.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                              No interview results yet
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          interviewResults.map((result) => (
-                            <TableRow key={result.id} className={selectedCandidates.has(result.candidate_id) ? 'bg-primary/5' : ''}>
-                              <TableCell>
-                                <Checkbox
-                                  checked={selectedCandidates.has(result.candidate_id)}
-                                  onCheckedChange={() => toggleSelectCandidate(result.candidate_id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div>
-                                  <p className="font-medium">{result.candidates.full_name}</p>
-                                  <p className="text-sm text-muted-foreground">{result.candidates.email}</p>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <span className={`text-lg font-bold ${getScoreColor(result.final_evaluation?.overall_score || 0)}`}>
-                                  {result.final_evaluation?.overall_score?.toFixed(0) || '-'}%
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                {result.final_evaluation?.technical_score?.toFixed(0) || '-'}%
-                              </TableCell>
-                              <TableCell>
-                                {result.final_evaluation?.communication_score?.toFixed(0) || '-'}%
-                              </TableCell>
-                              <TableCell>
-                                {result.final_evaluation?.recommendation
-                                  ? getRecommendationBadge(result.final_evaluation.recommendation)
-                                  : <Badge variant="outline">Pending</Badge>
-                                }
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={result.status === 'completed' ? 'default' : 'secondary'}>
-                                  {result.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => viewDetails(result)}
-                                  disabled={!result.final_evaluation}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              </TabsContent>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
 
-              {/* Assessment Results */}
-              <TabsContent value="assessments">
-                <Card>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12"></TableHead>
-                          <TableHead>Candidate</TableHead>
-                          <TableHead>MCQ Score</TableHead>
-                          <TableHead>Coding Score</TableHead>
-                          <TableHead>Total Score</TableHead>
-                          <TableHead>Proctoring</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {assessmentResults.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                              No assessment results yet
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          assessmentResults.map((result) => (
-                            <TableRow key={result.id} className={selectedCandidates.has(result.candidate_id) ? 'bg-primary/5' : ''}>
-                              <TableCell>
-                                <Checkbox
-                                  checked={selectedCandidates.has(result.candidate_id)}
-                                  onCheckedChange={() => toggleSelectCandidate(result.candidate_id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div>
-                                  <p className="font-medium">{result.candidates.full_name}</p>
-                                  <p className="text-sm text-muted-foreground">{result.candidates.email}</p>
-                                </div>
-                              </TableCell>
-                              <TableCell>{result.mcq_score?.toFixed(0) || '-'}%</TableCell>
-                              <TableCell>{result.coding_score?.toFixed(0) || '-'}%</TableCell>
-                              <TableCell>
-                                <span className={`font-bold ${getScoreColor(result.total_score || 0)}`}>
-                                  {result.total_score?.toFixed(0) || '-'}%
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                {result.proctoring_data?.warnings?.length > 0 ? (
-                                  <Badge variant="destructive">
-                                    {result.proctoring_data.warnings.length} warnings
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline">Clean</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={result.status === 'completed' ? 'default' : 'secondary'}>
-                                  {result.status}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
+            {/* Dialogs */}
+            <Dialog open={acceptDialogOpen} onOpenChange={setAcceptDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Send Acceptance Emails</DialogTitle>
+                  <DialogDescription>
+                    Send acceptance/offer emails to {selectedCandidates.size} selected candidate(s).
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setAcceptDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={sendAcceptanceEmails} disabled={sendingEmails}>
+                    {sendingEmails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                    Send Emails
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Send Rejection Emails</DialogTitle>
+                  <DialogDescription>
+                    Send rejection emails to {selectedCandidates.size} selected candidate(s).
+                    This will also remove them from the active pipeline.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
+                  <Button variant="destructive" onClick={sendRejectionEmails} disabled={sendingEmails}>
+                    {sendingEmails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                    Send Rejection
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
           </>
         )}
-
-        {/* Acceptance Dialog */}
-        <Dialog open={acceptDialogOpen} onOpenChange={setAcceptDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Send Acceptance Emails</DialogTitle>
-              <DialogDescription>
-                Send acceptance/offer emails to {selectedCandidates.size} selected candidate(s).
-                They will be notified that they have been selected for the position.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setAcceptDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={sendAcceptanceEmails} disabled={sendingEmails}>
-                {sendingEmails ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</>
-                ) : (
-                  <><Mail className="mr-2 h-4 w-4" />Send Acceptance Emails</>
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Rejection Dialog */}
-        <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Send Rejection Emails</DialogTitle>
-              <DialogDescription>
-                Send rejection emails to {selectedCandidates.size} selected candidate(s).
-                They will be notified that they were not selected for the position.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={sendRejectionEmails} disabled={sendingEmails}>
-                {sendingEmails ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</>
-                ) : (
-                  <><Mail className="mr-2 h-4 w-4" />Send Rejection Emails</>
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Detail Dialog */}
-        <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Interview Evaluation Details</DialogTitle>
-              <DialogDescription>
-                {selectedResult?.candidates.full_name} - Detailed evaluation
-              </DialogDescription>
-            </DialogHeader>
-
-            {selectedResult?.final_evaluation && (
-              <div className="space-y-6">
-                {/* Scores */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">Overall Score</p>
-                    <p className={`text-3xl font-bold ${getScoreColor(selectedResult.final_evaluation.overall_score)}`}>
-                      {selectedResult.final_evaluation.overall_score.toFixed(0)}%
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">Recommendation</p>
-                    {getRecommendationBadge(selectedResult.final_evaluation.recommendation)}
-                  </div>
-                </div>
-
-                {/* Score Breakdown */}
-                <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span>Technical</span>
-                    <span>{selectedResult.final_evaluation.technical_score.toFixed(0)}%</span>
-                  </div>
-                  <Progress value={selectedResult.final_evaluation.technical_score} className="h-2" />
-
-                  <div className="flex justify-between text-sm">
-                    <span>Communication</span>
-                    <span>{selectedResult.final_evaluation.communication_score.toFixed(0)}%</span>
-                  </div>
-                  <Progress value={selectedResult.final_evaluation.communication_score} className="h-2" />
-
-                  <div className="flex justify-between text-sm">
-                    <span>Confidence</span>
-                    <span>{selectedResult.final_evaluation.confidence_score.toFixed(0)}%</span>
-                  </div>
-                  <Progress value={selectedResult.final_evaluation.confidence_score} className="h-2" />
-                </div>
-
-                {/* Strengths & Improvements */}
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="font-semibold mb-2 text-success">Strengths</h4>
-                    <ul className="space-y-1 text-sm">
-                      {selectedResult.final_evaluation.strengths.map((s, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <CheckCircle className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-                          {s}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold mb-2 text-warning">Areas for Improvement</h4>
-                    <ul className="space-y-1 text-sm">
-                      {selectedResult.final_evaluation.areas_for_improvement.map((a, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <Clock className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
-                          {a}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                {/* Detailed Feedback */}
-                <div>
-                  <h4 className="font-semibold mb-2">Detailed Feedback</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedResult.final_evaluation.detailed_feedback}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </DashboardLayout>
   );
