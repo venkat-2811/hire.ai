@@ -2,7 +2,7 @@
  * API Client for Talent Scout AI Backend
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 
 // Token getter function - will be set by ClerkAuthProvider
 let getAuthToken: (() => Promise<string | null>) | null = null;
