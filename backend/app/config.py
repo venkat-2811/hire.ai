@@ -34,6 +34,15 @@ class Settings:
         cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080")
         self.cors_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
         
+        # Auto-add Vercel deployment URLs to CORS
+        vercel_url = os.getenv("VERCEL_URL", "")
+        if vercel_url and f"https://{vercel_url}" not in self.cors_origins:
+            self.cors_origins.append(f"https://{vercel_url}")
+        # Allow all *.vercel.app subdomains in production
+        frontend_url = os.getenv("FRONTEND_URL", "")
+        if frontend_url and frontend_url not in self.cors_origins:
+            self.cors_origins.append(frontend_url)
+        
         # Clerk Authentication
         self.clerk_publishable_key = os.getenv("CLERK_PUBLISHABLE_KEY", "")
         self.clerk_jwks_url = os.getenv("CLERK_JWKS_URL", "")
