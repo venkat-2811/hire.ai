@@ -24,7 +24,12 @@ import {
   Shield,
   Maximize,
   AlertCircle,
+  Camera,
+  Mic,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
+import { useFaceDetection } from '@/hooks/useFaceDetection';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -94,9 +99,114 @@ export default function AssessmentPage() {
   const [warningMessage, setWarningMessage] = useState('');
   const [terminated, setTerminated] = useState(false);
 
+  // Webcam & face detection state
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const noFaceCountRef = useRef(0);
+  const MAX_NO_FACE_VIOLATIONS = 3;
+
   // Timer
   const [timeRemaining, setTimeRemaining] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── Webcam initialization ──
+  const startCamera = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 320, height: 240 },
+        audio: true,
+      });
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
+      setCameraReady(true);
+      setCameraError(null);
+    } catch (err: any) {
+      console.error('[Camera] Failed to start:', err);
+      setCameraError(
+        err.name === 'NotAllowedError'
+          ? 'Camera permission denied. Please allow camera access for proctoring.'
+          : 'Could not access camera/microphone.',
+      );
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    setCameraReady(false);
+  }, []);
+
+  // Start camera when assessment loads and fullscreen is entered
+  useEffect(() => {
+    if (assessmentData && !showFullscreenPrompt && !terminated && !completed) {
+      startCamera();
+    }
+    return () => stopCamera();
+  }, [assessmentData, showFullscreenPrompt, terminated, completed, startCamera, stopCamera]);
+
+  // Re-attach stream to video element if ref becomes available
+  useEffect(() => {
+    if (videoRef.current && mediaStreamRef.current && !videoRef.current.srcObject) {
+      videoRef.current.srcObject = mediaStreamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  });
+
+  // ── Face detection via MediaPipe ──
+  const handleNoFace = useCallback(() => {
+    noFaceCountRef.current += 1;
+    const count = noFaceCountRef.current;
+    console.warn(`[FaceDetection] No face detected (${count}/${MAX_NO_FACE_VIOLATIONS})`);
+
+    if (count >= MAX_NO_FACE_VIOLATIONS) {
+      setTerminated(true);
+      setWarningMessage('Assessment terminated: face not visible 3 times.');
+      setShowWarning(true);
+      // Also report to backend
+      if (assessmentData) {
+        fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/proctoring`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_type: 'face_not_detected',
+            timestamp: new Date().toISOString(),
+            details: { violation_count: count, auto_terminated: true },
+          }),
+        }).catch(() => {});
+      }
+    } else {
+      toast.error(
+        `Face not visible! Warning ${count}/${MAX_NO_FACE_VIOLATIONS}. Your exam will be terminated if this happens again.`,
+        { duration: 5000 },
+      );
+      setWarningCount((prev) => Math.max(prev, count));
+      // Report to backend
+      if (assessmentData) {
+        fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/proctoring`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_type: 'face_not_detected',
+            timestamp: new Date().toISOString(),
+            details: { violation_count: count },
+          }),
+        }).catch(() => {});
+      }
+    }
+  }, [assessmentData]);
+
+  const { ready: faceDetectorReady, faceVisible } = useFaceDetection(videoRef, {
+    intervalMs: 2000,
+    onNoFace: handleNoFace,
+    enabled: cameraReady && !terminated && !completed && !showFullscreenPrompt,
+  });
 
   // Report proctoring event to backend
   const reportProctoringEvent = useCallback(async (eventType: string, details?: object) => {
@@ -345,6 +455,7 @@ export default function AssessmentPage() {
       }
 
       setCompleted(true);
+      stopCamera();
 
       // Exit fullscreen
       if (document.fullscreenElement) {
@@ -488,6 +599,14 @@ export default function AssessmentPage() {
               <h3 className="font-semibold">Before you begin:</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
+                  <Camera className="h-4 w-4 mt-0.5 text-primary" />
+                  <span>Your webcam and microphone will be active throughout the assessment for proctoring</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Eye className="h-4 w-4 mt-0.5 text-primary" />
+                  <span>AI face detection will monitor your presence — keep your face visible at all times</span>
+                </li>
+                <li className="flex items-start gap-2">
                   <Maximize className="h-4 w-4 mt-0.5 text-primary" />
                   <span>The assessment must be completed in fullscreen mode</span>
                 </li>
@@ -497,7 +616,7 @@ export default function AssessmentPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
-                  <span>3 violations will result in automatic termination</span>
+                  <span>If your face is not visible 3 times, the exam will be automatically terminated</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Clock className="h-4 w-4 mt-0.5 text-info" />
@@ -560,6 +679,55 @@ export default function AssessmentPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Floating webcam feed (bottom-right corner) */}
+      <div className="fixed bottom-4 right-4 z-[60]">
+        <div className="relative rounded-lg overflow-hidden border-2 border-border shadow-lg bg-black" style={{ width: 200, height: 150 }}>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover mirror"
+            style={{ transform: 'scaleX(-1)' }}
+          />
+          {/* Face detection status overlay */}
+          <div className="absolute top-1 left-1">
+            {!cameraReady ? (
+              <Badge variant="outline" className="bg-background/80 text-xs">
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                Camera...
+              </Badge>
+            ) : !faceDetectorReady ? (
+              <Badge variant="outline" className="bg-background/80 text-xs">
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                Loading AI...
+              </Badge>
+            ) : faceVisible ? (
+              <Badge className="bg-success/90 text-success-foreground text-xs">
+                <Eye className="mr-1 h-3 w-3" />
+                Face OK
+              </Badge>
+            ) : (
+              <Badge variant="destructive" className="text-xs animate-pulse">
+                <EyeOff className="mr-1 h-3 w-3" />
+                No Face!
+              </Badge>
+            )}
+          </div>
+          {/* Mic indicator */}
+          <div className="absolute bottom-1 right-1">
+            <Badge variant="outline" className="bg-background/80 text-xs">
+              <Mic className="h-3 w-3 text-success" />
+            </Badge>
+          </div>
+        </div>
+        {cameraError && (
+          <div className="mt-1 bg-destructive/90 text-destructive-foreground text-xs rounded px-2 py-1 max-w-[200px]">
+            {cameraError}
+          </div>
+        )}
+      </div>
+
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
@@ -572,6 +740,14 @@ export default function AssessmentPage() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Face detection warning indicator */}
+            {noFaceCountRef.current > 0 && (
+              <Badge variant="destructive">
+                <EyeOff className="mr-1 h-3 w-3" />
+                Face {noFaceCountRef.current}/{MAX_NO_FACE_VIOLATIONS}
+              </Badge>
+            )}
+
             {/* Warning indicator */}
             {warningCount > 0 && (
               <Badge variant="destructive">
