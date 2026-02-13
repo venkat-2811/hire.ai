@@ -121,27 +121,36 @@ export default function ApplyPage() {
     setSubmitting(true);
 
     try {
-      const formData = new FormData();
-      formData.append('job_id', jobId!);
-      formData.append('full_name', fullName);
-      formData.append('email', email);
-      formData.append('phone', phone);
-      formData.append('portfolio_url', portfolioUrl);
-      formData.append('github_url', githubUrl);
-      formData.append('consent_given', String(consentGiven));
-
+      // Read resume file as text if provided
+      let resumeText: string | null = null;
       if (resumeFile) {
-        formData.append('resume', resumeFile);
+        try {
+          resumeText = await resumeFile.text();
+        } catch {
+          // If we can't read as text, skip it
+        }
       }
 
       const response = await fetch(`${API_BASE_URL}/apply/submit`, {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          job_id: jobId,
+          full_name: fullName,
+          email: email,
+          phone: phone || null,
+          portfolio_url: portfolioUrl || null,
+          github_url: githubUrl || null,
+          consent_given: consentGiven,
+          resume_text: resumeText,
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to submit application');
+        throw new Error(errorData.error || errorData.detail || errorData.message || 'Failed to submit application');
       }
 
       setSubmitted(true);
