@@ -763,11 +763,18 @@ Return JSON:
       if (jobError) return res.status(500).json({ error: jobError.message, step: 'fetch_job' });
       if (!job) return notFound(res, 'Job not found or no longer accepting applications');
 
-      // Parse resume text (optional)
+      // Sanitize and parse resume text (optional)
+      let resumeText: string | null = null;
       let resumeParsedData: any = null;
       if (body.resume_text) {
+        // Sanitize: remove null bytes and invalid Unicode escape sequences
+        resumeText = String(body.resume_text)
+          .replace(/\x00/g, '') // Remove null bytes
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // Remove control characters
+          .slice(0, 50000); // Limit size
+        
         try {
-          resumeParsedData = await generateJSON<any>(`Parse resume into JSON: ${String(body.resume_text).slice(0, 5000)}`);
+          resumeParsedData = await generateJSON<any>(`Parse resume into JSON: ${resumeText.slice(0, 5000)}`);
         } catch {
           resumeParsedData = null;
         }
@@ -790,7 +797,7 @@ Return JSON:
           github_url: body.github_url || null,
           consent_given: true,
           consent_timestamp: new Date().toISOString(),
-          resume_text: body.resume_text || null,
+          resume_text: resumeText,
           resume_parsed_data: resumeParsedData,
         }).eq('id', candidateId);
         if (updateError) return res.status(500).json({ error: updateError.message, step: 'update_candidate' });
@@ -805,7 +812,7 @@ Return JSON:
           github_url: body.github_url || null,
           consent_given: true,
           consent_timestamp: new Date().toISOString(),
-          resume_text: body.resume_text || null,
+          resume_text: resumeText,
           resume_parsed_data: resumeParsedData,
         });
         if (insertError) return res.status(500).json({ error: insertError.message, step: 'insert_candidate' });
