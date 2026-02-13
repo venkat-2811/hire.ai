@@ -633,6 +633,28 @@ Return JSON:
     // GET /api/apply/job/:jobId
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'job') {
       const jobId = segments[2];
+      
+      // First check if job exists at all (for debugging)
+      const { data: anyJob, error: anyError } = await supabase
+        .from('job_descriptions')
+        .select('id, title, is_active')
+        .eq('id', jobId)
+        .maybeSingle();
+      
+      if (anyError) {
+        console.error('Apply job fetch error:', anyError);
+        return res.status(500).json({ error: anyError.message, code: anyError.code, details: anyError.details });
+      }
+      
+      if (!anyJob) {
+        return notFound(res, 'Job not found - ID does not exist in database');
+      }
+      
+      if (!anyJob.is_active) {
+        return res.status(410).json({ error: 'This job is no longer accepting applications', job_title: anyJob.title });
+      }
+      
+      // Job exists and is active, fetch full details
       const { data, error } = await supabase
         .from('job_descriptions')
         .select('id, title, role, level, description, must_have_skills, good_to_have_skills, min_experience_years')
@@ -641,7 +663,6 @@ Return JSON:
         .maybeSingle();
 
       if (error) {
-        console.error('Apply job fetch error:', error);
         return res.status(500).json({ error: error.message, code: error.code, details: error.details });
       }
       if (!data) return notFound(res, 'Job not found or no longer accepting applications');
