@@ -142,8 +142,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function routeRequest(req: VercelRequest, res: VercelResponse) {
-  const pathParam = (req.query.path ?? []) as string[] | string;
-  const segments = Array.isArray(pathParam) ? pathParam : [pathParam];
+  // Parse path segments — try query.path first (Vercel catch-all), fall back to URL parsing
+  let segments: string[];
+  const pathParam = req.query.path;
+  if (pathParam) {
+    segments = Array.isArray(pathParam) ? pathParam : [pathParam];
+  } else {
+    // Fallback: parse from req.url (e.g. "/api/health?foo=bar" → ["health"])
+    const urlPath = (req.url || '').split('?')[0].replace(/^\/api\//, '').replace(/\/$/, '');
+    segments = urlPath ? urlPath.split('/') : [];
+  }
 
   // /api/health
   if (segments.length === 1 && segments[0] === 'health') {
