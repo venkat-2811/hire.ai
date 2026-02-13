@@ -5,8 +5,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useRequireAuth, useAuth } from '@/hooks/useAuth';
+import { useRequireAuth } from '@/hooks/useAuth';
 import { useJobs } from '@/hooks/useJobs';
+import { analyticsApi } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -62,7 +63,6 @@ type SortOrder = 'asc' | 'desc';
 
 export default function ResultsDashboardPage() {
   const { loading: authLoading } = useRequireAuth();
-  const { getToken } = useAuth();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
 
   const [selectedJobId, setSelectedJobId] = useState<string>('');
@@ -95,29 +95,18 @@ export default function ResultsDashboardPage() {
     async function loadResults() {
       setLoadingResults(true);
       try {
-        const token = await getToken();
-        const response = await fetch(`${API_BASE_URL}/analytics/candidates?job_id=${selectedJobId}`, {
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setCandidates(data);
-        } else {
-          console.error("Failed to load candidates", await response.text());
-          toast.error('Failed to load candidate data');
-        }
+        const data = await analyticsApi.getCandidates({ job_id: selectedJobId });
+        setCandidates(data);
       } catch (e) {
         console.error("Error loading candidates", e);
-        toast.error('Failed to load results');
+        toast.error('Failed to load candidate data');
       } finally {
         setLoadingResults(false);
       }
     }
 
     loadResults();
-  }, [selectedJobId, getToken]);
+  }, [selectedJobId]);
 
   // Derived state for filtered & sorted candidates
   const processedCandidates = useMemo(() => {
