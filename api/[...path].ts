@@ -948,7 +948,20 @@ Return JSON:
       if (!job) return notFound(res, 'Job not found');
 
       const count = session.mcq_question_count || 20;
-      const prompt = `Generate ${count} MCQ questions for role ${job.role}, level ${job.level}. Return JSON array with fields: id, question, options (4), correct_index, difficulty, topic, points.`;
+      const prompt = `Generate exactly ${count} multiple choice questions for a ${job.level} ${job.role} position.
+Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+
+Return a JSON array where each object has:
+- "id": unique string like "q1", "q2", etc.
+- "question": the question text
+- "options": array of exactly 4 answer choices as strings
+- "correct_index": integer 0-3 indicating correct answer
+- "difficulty": "easy", "medium", or "hard"
+- "topic": the skill/topic being tested
+- "points": 5 for easy, 10 for medium, 15 for hard
+
+Example format:
+[{"id":"q1","question":"What is...?","options":["A","B","C","D"],"correct_index":0,"difficulty":"medium","topic":"JavaScript","points":10}]`;
       const questions = await generateJSON<any[]>(prompt);
 
       await supabase.from('assessment_sessions').update({
@@ -985,7 +998,21 @@ Return JSON:
       if (!job) return notFound(res, 'Job not found');
 
       const count = session.coding_challenge_count || 2;
-      const prompt = `Generate ${count} coding challenges for role ${job.role}, level ${job.level}. Return JSON array with id,title,description,starter_code,test_cases,difficulty,time_limit_minutes,points.`;
+      const prompt = `Generate exactly ${count} coding challenges for a ${job.level} ${job.role} position.
+Skills: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+
+Return a JSON array where each object has:
+- "id": unique string like "c1", "c2"
+- "title": short challenge title
+- "description": detailed problem description with examples
+- "starter_code": code template to start with (use appropriate language)
+- "test_cases": array of {"input":"...","expected_output":"..."}
+- "difficulty": "easy", "medium", or "hard"
+- "time_limit_minutes": 15 for easy, 25 for medium, 35 for hard
+- "points": 25 for easy, 50 for medium, 75 for hard
+
+Example:
+[{"id":"c1","title":"Two Sum","description":"Given an array...","starter_code":"function twoSum(nums, target) {\\n  // your code\\n}","test_cases":[{"input":"[2,7,11], 9","expected_output":"[0,1]"}],"difficulty":"medium","time_limit_minutes":25,"points":50}]`;
       const challenges = await generateJSON<any[]>(prompt);
 
       await supabase.from('assessment_sessions').update({

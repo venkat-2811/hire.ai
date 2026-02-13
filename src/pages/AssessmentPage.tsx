@@ -348,8 +348,8 @@ export default function AssessmentPage() {
         // Start assessment
         const startResponse = await fetch(`${API_BASE_URL}/assessments/start/${token}`);
         if (!startResponse.ok) {
-          const error = await startResponse.json();
-          setError(error.detail || 'Failed to load assessment');
+          const error = await startResponse.json().catch(() => ({}));
+          setError(error.error || error.detail || 'Failed to load assessment');
           return;
         }
         const data = await startResponse.json();
@@ -360,7 +360,7 @@ export default function AssessmentPage() {
         const mcqResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/mcq`);
         if (!mcqResponse.ok) {
           const error = await mcqResponse.json().catch(() => ({}));
-          setError(error.detail || 'Failed to load MCQ questions');
+          setError(error.error || error.detail || 'Failed to load MCQ questions');
           return;
         }
         const mcqData = await mcqResponse.json();
@@ -374,7 +374,7 @@ export default function AssessmentPage() {
         const codingResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/coding`);
         if (!codingResponse.ok) {
           const error = await codingResponse.json().catch(() => ({}));
-          setError(error.detail || 'Failed to load coding challenges');
+          setError(error.error || error.detail || 'Failed to load coding challenges');
           return;
         }
         const codingData = await codingResponse.json();

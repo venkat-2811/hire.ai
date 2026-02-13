@@ -534,8 +534,8 @@ export default function AIInterviewPage() {
       try {
         const response = await fetch(`${API_BASE_URL}/ai-interview/start/${token}`);
         if (!response.ok) {
-          const error = await response.json();
-          setError(error.detail || 'Failed to load interview');
+          const error = await response.json().catch(() => ({}));
+          setError(error.error || error.detail || 'Failed to load interview');
           return;
         }
         const data = await response.json();
