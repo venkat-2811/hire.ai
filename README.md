@@ -4,33 +4,30 @@ An intelligent hiring platform that automates resume screening, generates adapti
 
 ## Features
 
-- **Semantic Resume Parsing**: AI-powered extraction of skills, experience, and qualifications from PDF/DOCX resumes
-- **Explainable ATS Screening**: Transparent scoring with detailed reason codes for shortlisting decisions
-- **Adaptive Question Generation**: Role-specific, JD-driven interview questions that adapt to candidate profiles
-- **AI Response Evaluation**: Automated scoring of technical and behavioral responses with detailed feedback
-- **Practical Assessments**: Role-specific coding/analysis tasks with AI evaluation
-- **AI Voice Interview**: Speech-based AI interviews with real-time transcription
-- **Basic Proctoring**: Tab switch detection, copy-paste monitoring, and integrity scoring
-- **Analytics Dashboard**: Real-time hiring metrics and candidate insights
+- **Semantic Resume Parsing**: AI-powered extraction of skills, experience, and qualifications
+- **Explainable ATS Screening**: Transparent scoring with detailed reason codes
+- **Adaptive Question Generation**: Role-specific interview questions
+- **AI Response Evaluation**: Automated scoring with detailed feedback
+- **Practical Assessments**: Role-specific coding/analysis tasks
+- **AI Voice Interview**: Speech-based AI interviews with transcription
+- **Basic Proctoring**: Tab switch detection and integrity scoring
+- **Analytics Dashboard**: Real-time hiring metrics and insights
 
 ## Tech Stack
 
 ### Frontend
 - **React 18** with TypeScript
-- **Vite** for fast development and production builds
+- **Vite** for development and builds
 - **TailwindCSS** + **shadcn/ui** for styling
 - **Clerk** for authentication
 - **React Query** for data fetching
-- **Framer Motion** for animations
 
-### Backend
-- **Python FastAPI** for REST API
+### Backend (Vercel Serverless Functions)
+- **TypeScript** serverless functions
 - **Google Gemini** for AI services
-- **Supabase** for database
+- **Supabase** for database & storage
 - **Clerk** for JWT authentication
 - **Resend** for transactional emails
-- **AssemblyAI** for speech-to-text
-- **Pydantic** for data validation
 
 ## Project Structure
 
@@ -43,92 +40,76 @@ talent-scout-ai/
 │   ├── lib/                # API client and utilities
 │   ├── pages/              # Page components
 │   └── types/              # TypeScript types
-├── backend/                # Python FastAPI backend
-│   ├── app/
-│   │   ├── auth/           # Clerk JWT verification
-│   │   ├── models/         # Pydantic schemas and enums
-│   │   ├── routers/        # API route handlers
-│   │   ├── services/       # AI service implementations
-│   │   └── database/       # Supabase client
-│   ├── requirements.txt    # Python dependencies
-│   └── run.py              # Server entry point
-├── supabase/               # Database migrations and edge functions
+├── api/                    # Vercel Serverless Functions
+│   ├── _lib/               # Shared utilities (supabase, clerk, gemini)
+│   ├── jobs.ts             # Jobs CRUD endpoints
+│   ├── candidates.ts       # Candidates management
+│   ├── screening.ts        # ATS screening
+│   ├── analytics.ts        # Dashboard analytics
+│   ├── apply.ts            # Public job applications
+│   ├── assessments.ts      # Technical assessments
+│   ├── interviews.ts       # Interview sessions
+│   └── ai-interview.ts     # AI voice interviews
+├── supabase/               # Database migrations
 ├── vercel.json             # Vercel deployment config
-└── .env.example            # Frontend environment template
+└── .env.example            # Environment variables template
 ```
 
 ---
 
-## Deployment Guide
+## Deployment Guide (Vercel Only)
 
 ### Architecture Overview
 
-This project uses a **split deployment** model:
-- **Frontend** (React/Vite) → **Vercel**
-- **Backend** (FastAPI/Python) → **Railway / Render / Fly.io** (any Python host)
+This project is deployed **entirely on Vercel**:
+- **Frontend** (React/Vite) → Vercel Static Hosting
+- **Backend** (TypeScript) → Vercel Serverless Functions
+- **Database** → Supabase (PostgreSQL)
 
-### Step 1: Deploy the Backend
+### Step 1: Set Up Supabase
 
-The FastAPI backend must be deployed to a Python-compatible hosting platform.
+1. Create a new project at [supabase.com](https://supabase.com)
+2. Run the database migrations from `supabase/migrations/`
+3. Create a storage bucket named `resumes` (public read access)
+4. Copy your project URL and keys from Settings → API
 
-#### Option A: Railway (Recommended)
+### Step 2: Set Up Clerk
 
-1. Push the `backend/` folder to a separate repo or use Railway's monorepo support
-2. Set the root directory to `backend/`
-3. Railway will auto-detect Python and use `requirements.txt`
-4. Set the start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-5. Add all environment variables from `backend/.env.example`
+1. Create a new application at [clerk.com](https://clerk.com)
+2. Enable Email/Password sign-in method
+3. Copy your Publishable Key and JWKS URL
+4. The JWKS URL format: `https://your-instance.clerk.accounts.dev/.well-known/jwks.json`
 
-#### Option B: Render
+### Step 3: Deploy to Vercel
 
-1. Create a new **Web Service** on Render
-2. Set root directory to `backend/`
-3. Build command: `pip install -r requirements.txt`
-4. Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-5. Add all environment variables from `backend/.env.example`
+1. Push your code to GitHub
+2. Import the repository in [Vercel](https://vercel.com)
+3. Vercel will auto-detect the Vite framework
+4. Add the following environment variables:
 
-#### Backend Environment Variables
+#### Environment Variables
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `GEMINI_API_KEY` | Google Gemini API key | Yes |
-| `SUPABASE_URL` | Supabase project URL | Yes |
-| `SUPABASE_KEY` | Supabase anon key | Yes |
+| `VITE_SUPABASE_URL` | Supabase project URL | Yes |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase anon key | Yes |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key | Yes |
+| `SUPABASE_URL` | Supabase project URL (for API) | Yes |
 | `SUPABASE_SERVICE_KEY` | Supabase service role key | Yes |
-| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key | Yes |
 | `CLERK_JWKS_URL` | Clerk JWKS endpoint | Yes |
 | `CLERK_ISSUER` | Clerk issuer URL | Yes |
-| `RESEND_API_KEY` | Resend API key for emails | Yes |
-| `RESEND_FROM_EMAIL` | Sender email address | Yes |
-| `ASSEMBLYAI_API_KEY` | AssemblyAI key for speech-to-text | Yes |
-| `FRONTEND_URL` | Your Vercel frontend URL | Yes |
-| `CORS_ORIGINS` | Comma-separated allowed origins (include your Vercel URL) | Yes |
-| `PORT` | Server port (auto-set by most hosts) | No |
-| `DEBUG` | Set to `false` in production | No |
+| `GEMINI_API_KEY` | Google Gemini API key | Yes |
+| `RESEND_API_KEY` | Resend email API key | Yes |
+| `FRONTEND_URL` | Your Vercel deployment URL | Yes |
+| `ASSEMBLYAI_API_KEY` | AssemblyAI key (optional) | No |
+| `RESEND_FROM_EMAIL` | Sender email address | No |
 
-### Step 2: Deploy the Frontend on Vercel
+5. **Deploy** — Vercel will build and deploy automatically
 
-1. **Import your repository** on [vercel.com](https://vercel.com)
-2. Vercel will auto-detect the Vite framework
-3. **Set environment variables** in Vercel project settings:
+### Step 4: Post-Deployment
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `VITE_API_URL` | Your deployed backend URL | `https://your-backend.railway.app` |
-| `VITE_SUPABASE_URL` | Supabase project URL | `https://xxx.supabase.co` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase anon key | `eyJ...` |
-| `VITE_SUPABASE_PROJECT_ID` | Supabase project ID | `omqjtvqtawduwesbmmgm` |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key | `pk_test_...` |
-
-4. **Deploy** — Vercel will run `npm run build` and serve the `dist/` folder
-5. The `vercel.json` handles SPA routing (all paths → `index.html`)
-
-### Step 3: Post-Deployment Configuration
-
-1. **Update backend CORS**: Add your Vercel URL to `CORS_ORIGINS` env var on your backend host
-2. **Update backend FRONTEND_URL**: Set to your Vercel URL (used in email links)
-3. **Update Clerk**: Add your Vercel domain to Clerk's allowed redirect URLs in the Clerk dashboard
-4. **Test**: Visit your Vercel URL and verify all features work
+1. **Update Clerk**: Add your Vercel domain to Clerk's allowed redirect URLs
+2. **Test**: Visit your Vercel URL and verify all features work
 
 ---
 
@@ -136,145 +117,73 @@ The FastAPI backend must be deployed to a Python-compatible hosting platform.
 
 ### Prerequisites
 - Node.js 18+ and npm
-- Python 3.10+
 - Supabase account
 - Google Gemini API key
 - Clerk account
 
-### 1. Clone and Install Frontend
+### Setup
 
 ```bash
+# Clone and install
 git clone <repository-url>
 cd talent-scout-ai
 npm install
-```
 
-### 2. Configure Frontend Environment
+# Copy environment file
+cp .env.example .env
+# Fill in your values
 
-Copy `.env.example` to `.env` and fill in values:
-
-```env
-VITE_SUPABASE_PROJECT_ID=your_supabase_project_id
-VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_API_URL=http://localhost:8000
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_your_clerk_key
-```
-
-### 3. Setup Backend
-
-```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 4. Configure Backend Environment
-
-Copy `backend/.env.example` to `backend/.env` and fill in values.
-
-### 5. Setup Database
-
-```bash
-supabase db push
-```
-
-Or manually run the SQL migrations from `supabase/migrations/`.
-
-### 6. Run the Application
-
-**Start Backend:**
-```bash
-cd backend
-python run.py
-```
-
-**Start Frontend (in a new terminal):**
-```bash
+# Run development server
 npm run dev
 ```
 
-Access the application at `http://localhost:8080`
+Access the application at `http://localhost:5173`
+
+**Note:** For local development, the API routes in `/api` won't work directly with Vite. You can either:
+1. Deploy to Vercel for testing
+2. Use `vercel dev` locally (requires Vercel CLI)
 
 ## API Endpoints
 
-### Jobs
-- `GET /jobs` - List all jobs
-- `POST /jobs` - Create a job
-- `GET /jobs/{id}` - Get job details
-- `PATCH /jobs/{id}` - Update job
-- `DELETE /jobs/{id}` - Archive job
+All endpoints are at `/api/*`:
 
-### Candidates
-- `GET /candidates` - List candidates
-- `POST /candidates` - Create candidate with resume
-- `GET /candidates/{id}` - Get candidate details
-- `GET /candidates/{id}/parsed-resume` - Get parsed resume data
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/health` | GET | Health check |
+| `/api/jobs` | GET, POST | List/create jobs |
+| `/api/jobs/:jobId` | GET, PATCH, DELETE | Get/update/archive job |
+| `/api/candidates` | GET, POST | List/create candidates |
+| `/api/candidates/:candidateId` | GET, PATCH, DELETE | Get/update/delete candidate |
+| `/api/candidates/:candidateId/parsed-resume` | GET | Parsed resume data |
+| `/api/screening/run` | POST | Run ATS screening |
+| `/api/screening/candidate/:candidateId` | GET | Screenings for candidate |
+| `/api/screening/job/:jobId` | GET | Screenings for job |
+| `/api/analytics/dashboard` | GET | Dashboard statistics |
+| `/api/analytics/candidates` | GET | Candidate analytics |
+| `/api/apply/job/:jobId` | GET | Public job details |
+| `/api/apply/submit` | POST | Submit job application |
+| `/api/assessments/invite` | POST | Send assessment invites |
+| `/api/assessments/start/:token` | GET | Candidate starts assessment |
+| `/api/assessments/:sessionId/mcq` | GET | Get MCQ questions |
+| `/api/assessments/:sessionId/coding` | GET | Get coding challenges |
+| `/api/assessments/:sessionId/mcq/submit` | POST | Submit MCQ answers |
+| `/api/assessments/:sessionId/coding/submit` | POST | Submit coding solution |
+| `/api/assessments/:sessionId/proctoring` | POST | Report proctoring event |
+| `/api/assessments/:sessionId/complete` | POST | Complete assessment |
+| `/api/ai-interview/invite` | POST | Send AI interview invites |
+| `/api/ai-interview/start/:token` | GET | Candidate starts interview |
+| `/api/ai-interview/:sessionId/question` | GET | Get current question |
+| `/api/ai-interview/:sessionId/response` | POST | Submit response |
+| `/api/ai-interview/:sessionId/proctoring` | POST | Report proctoring event |
+| `/api/ai-interview/:sessionId/complete` | POST | Complete interview |
+| `/api/interviews` | GET, POST | List/create interview sessions |
 
-### Applications (Public)
-- `GET /apply/job/{id}` - Get public job details
-- `POST /apply/submit` - Submit job application
+## Running Tests
 
-### Screening
-- `POST /screening/run` - Run ATS screening
-- `GET /screening/candidate/{id}` - Get screening results
-- `GET /screening/job/{id}` - Get screenings for a job
-
-### Assessments
-- `POST /assessments/invite` - Send assessment invitation
-- `GET /assessments/{token}` - Load assessment session
-- `POST /assessments/{token}/submit` - Submit assessment
-
-### AI Interview
-- `POST /ai-interview/invite` - Send interview invitation
-- `GET /ai-interview/{token}` - Load interview session
-
-### Analytics
-- `GET /analytics/dashboard` - Dashboard statistics
-- `GET /analytics/candidates` - Candidate analytics
-- `GET /analytics/job/{id}/summary` - Job summary
-- `GET /analytics/trends` - Hiring trends
-
-## Environment Variables Summary
-
-### Frontend (Vercel)
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `VITE_API_URL` | Backend API URL | Yes |
-| `VITE_SUPABASE_URL` | Supabase project URL | Yes |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase anon key | Yes |
-| `VITE_SUPABASE_PROJECT_ID` | Supabase project ID | Yes |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key | Yes |
-
-### Backend (Railway/Render)
-
-See `backend/.env.example` for the full list.
-
-## Development
-
-### Running Tests
 ```bash
-# Frontend tests
 npm test
-
-# Watch mode
 npm run test:watch
 ```
-
-### Code Style
-- Frontend: ESLint + TypeScript
-- Backend: Python type hints + Pydantic validation
 
 ## License
 

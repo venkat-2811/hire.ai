@@ -44,7 +44,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground">
-              {import.meta.env.VITE_API_URL || 'http://localhost:8000'}
+              /api (Vercel Serverless Functions)
             </div>
           </CardContent>
         </Card>

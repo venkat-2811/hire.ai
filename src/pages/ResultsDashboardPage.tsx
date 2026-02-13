@@ -55,7 +55,7 @@ import { toast } from 'sonner';
 import { CandidateAnalytics, HireRecommendation } from '@/types/database';
 import { ScoreBadge } from '@/components/ui/score-badge';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+const API_BASE_URL = '/api';
 
 type SortField = 'name' | 'ats_score' | 'assessment_score' | 'interview_score' | 'total_score';
 type SortOrder = 'asc' | 'desc';

@@ -212,7 +212,7 @@ export default function CandidatesPage() {
 
     setSendingInvites(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/assessments/invite`, {
+      const response = await fetch(`/api/assessments/invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -258,7 +258,7 @@ export default function CandidatesPage() {
 
     setSendingInvites(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/ai-interview/invite`, {
+      const response = await fetch(`/api/ai-interview/invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
