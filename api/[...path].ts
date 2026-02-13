@@ -45,16 +45,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  try {
+    return await routeRequest(req, res);
+  } catch (err: any) {
+    console.error('Unhandled API error:', err);
+    return res.status(500).json({
+      error: err.message || 'Internal server error',
+      hint: 'Check Vercel function logs and environment variables.',
+    });
+  }
+}
+
+async function routeRequest(req: VercelRequest, res: VercelResponse) {
   const pathParam = (req.query.path ?? []) as string[] | string;
   const segments = Array.isArray(pathParam) ? pathParam : [pathParam];
-
-  const supabase = getSupabaseAdmin();
 
   // /api/health
   if (segments.length === 1 && segments[0] === 'health') {
     if (req.method !== 'GET') return methodNotAllowed(res);
-    return ok(res, { status: 'healthy', timestamp: new Date().toISOString(), version: '1.0.0' });
+
+    // Check env vars availability
+    const envStatus = {
+      SUPABASE_URL: !!(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL),
+      SUPABASE_SERVICE_KEY: !!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
+      CLERK_JWKS_URL: !!process.env.CLERK_JWKS_URL,
+      CLERK_ISSUER: !!process.env.CLERK_ISSUER,
+      GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+      RESEND_API_KEY: !!process.env.RESEND_API_KEY,
+      FRONTEND_URL: !!process.env.FRONTEND_URL,
+    };
+
+    return ok(res, {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+      env: envStatus,
+    });
   }
+
+  const supabase = getSupabaseAdmin();
 
   // /api/jobs and /api/jobs/:id
   if (segments[0] === 'jobs') {
@@ -1130,6 +1159,7 @@ Return JSON:
 
   return notFound(res);
 }
+
 
 async function generateInterviewQuestions(job: { title: string; role: string; level: string; must_have_skills?: string[] }) {
   try {
