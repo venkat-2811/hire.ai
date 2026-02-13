@@ -638,9 +638,13 @@ Return JSON:
         .select('id, title, role, level, description, must_have_skills, good_to_have_skills, min_experience_years')
         .eq('id', jobId)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
-      if (error || !data) return notFound(res, 'Job not found or no longer accepting applications');
+      if (error) {
+        console.error('Apply job fetch error:', error);
+        return res.status(500).json({ error: error.message, code: error.code, details: error.details });
+      }
+      if (!data) return notFound(res, 'Job not found or no longer accepting applications');
       return ok(res, data);
     }
 
