@@ -212,12 +212,12 @@ export default function CandidatesPage() {
 
     setSendingInvites(true);
     try {
+      const token = await getToken();
       const response = await fetch(`/api/assessments/invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Add Authorization header with Clerk token
-          ...(await getToken() ? { 'Authorization': `Bearer ${await getToken()}` } : {})
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds),
@@ -227,8 +227,8 @@ export default function CandidatesPage() {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Failed to send invites' }));
-        throw new Error(error.detail || 'Failed to send invites');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || error.detail || 'Failed to send invites');
       }
 
       const data = await response.json();
@@ -258,12 +258,12 @@ export default function CandidatesPage() {
 
     setSendingInvites(true);
     try {
+      const token = await getToken();
       const response = await fetch(`/api/ai-interview/invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Add Authorization header with Clerk token
-          ...(await getToken() ? { 'Authorization': `Bearer ${await getToken()}` } : {})
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds),
@@ -272,8 +272,8 @@ export default function CandidatesPage() {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Failed to send invites' }));
-        throw new Error(error.detail || 'Failed to send invites');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || error.detail || 'Failed to send invites');
       }
 
       const data = await response.json();
