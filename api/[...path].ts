@@ -50,7 +50,7 @@ function getGeminiModel(): GenerativeModel {
   if (!_gemini) {
     const k = process.env.GEMINI_API_KEY;
     if (!k) throw new Error('GEMINI_API_KEY not configured');
-    _gemini = new GoogleGenerativeAI(k).getGenerativeModel({ model: 'gemini-1.5-flash' });
+    _gemini = new GoogleGenerativeAI(k).getGenerativeModel({ model: 'gemini-2.5-pro' });
   }
   return _gemini;
 }
