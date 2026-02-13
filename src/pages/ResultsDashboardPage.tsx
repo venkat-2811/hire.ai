@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useRequireAuth } from '@/hooks/useAuth';
+import { useRequireAuth, useAuth } from '@/hooks/useAuth';
 import { useJobs } from '@/hooks/useJobs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -62,6 +62,7 @@ type SortOrder = 'asc' | 'desc';
 
 export default function ResultsDashboardPage() {
   const { loading: authLoading } = useRequireAuth();
+  const { getToken } = useAuth();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
 
   const [selectedJobId, setSelectedJobId] = useState<string>('');
@@ -94,7 +95,12 @@ export default function ResultsDashboardPage() {
     async function loadResults() {
       setLoadingResults(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/analytics/candidates?job_id=${selectedJobId}`);
+        const token = await getToken();
+        const response = await fetch(`${API_BASE_URL}/analytics/candidates?job_id=${selectedJobId}`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
         if (response.ok) {
           const data = await response.json();
           setCandidates(data);
@@ -111,7 +117,7 @@ export default function ResultsDashboardPage() {
     }
 
     loadResults();
-  }, [selectedJobId]);
+  }, [selectedJobId, getToken]);
 
   // Derived state for filtered & sorted candidates
   const processedCandidates = useMemo(() => {
