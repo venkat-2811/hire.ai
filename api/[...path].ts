@@ -197,7 +197,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         if (!user) return;
 
         const body = req.body;
-        const jobData = {
+        const jobData: Record<string, any> = {
           title: body.title,
           role: body.role,
           level: body.level,
@@ -206,7 +206,6 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           good_to_have_skills: body.good_to_have_skills || [],
           min_experience_years: body.min_experience_years || 0,
           is_active: true,
-          created_by: user.id,
         };
 
         const { data, error } = await supabase
@@ -308,7 +307,6 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           github_url: body.github_url || null,
           consent_given: !!body.consent_given,
           consent_timestamp: body.consent_given ? new Date().toISOString() : null,
-          user_id: body.user_id || null,
           resume_url: body.resume_url || null,
           resume_text: body.resume_text || null,
           resume_parsed_data: body.resume_parsed_data || null,
@@ -693,7 +691,6 @@ Return JSON:
           github_url: body.github_url || null,
           consent_given: true,
           consent_timestamp: new Date().toISOString(),
-          user_id: user?.id || null,
           resume_text: body.resume_text || null,
           resume_parsed_data: resumeParsedData,
         }).eq('id', candidateId);
@@ -708,7 +705,6 @@ Return JSON:
           github_url: body.github_url || null,
           consent_given: true,
           consent_timestamp: new Date().toISOString(),
-          user_id: user?.id || null,
           resume_text: body.resume_text || null,
           resume_parsed_data: resumeParsedData,
         });
