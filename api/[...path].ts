@@ -142,15 +142,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function routeRequest(req: VercelRequest, res: VercelResponse) {
-  // Parse path segments — try query.path first (Vercel catch-all), fall back to URL parsing
-  let segments: string[];
-  const pathParam = req.query.path;
-  if (pathParam) {
-    segments = Array.isArray(pathParam) ? pathParam : [pathParam];
-  } else {
-    // Fallback: parse from req.url (e.g. "/api/health?foo=bar" → ["health"])
-    const urlPath = (req.url || '').split('?')[0].replace(/^\/api\//, '').replace(/\/$/, '');
-    segments = urlPath ? urlPath.split('/') : [];
+  // Parse path segments from URL (most reliable method)
+  // req.url will be something like "/api/apply/job/123" or "/api/[...path]?path=apply&path=job&path=123"
+  const urlPath = (req.url || '').split('?')[0].replace(/^\/api\//, '').replace(/^\[\.\.\.path\]/, '').replace(/\/$/, '');
+  let segments: string[] = urlPath ? urlPath.split('/').filter(Boolean) : [];
+  
+  // If segments are empty, try query.path (Vercel catch-all populates this)
+  if (segments.length === 0) {
+    const pathParam = req.query.path;
+    if (pathParam) {
+      if (Array.isArray(pathParam)) {
+        segments = pathParam;
+      } else if (typeof pathParam === 'string') {
+        // Could be "apply/job/123" or just "apply"
+        segments = pathParam.split('/').filter(Boolean);
+      }
+    }
   }
 
   // /api/health
