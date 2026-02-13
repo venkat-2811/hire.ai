@@ -62,10 +62,22 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
   return r.response.text();
 }
 async function generateJSON<T>(prompt: string): Promise<T> {
-  const text = await generateText(prompt, { temperature: 0.3 });
-  const m = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/) || [null, text];
-  try { return JSON.parse((m[1] || text).trim()) as T; }
-  catch { throw new Error('Failed to parse AI response as JSON'); }
+  const fullPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, no explanation.`;
+  const text = await generateText(fullPrompt, { temperature: 0.3, maxTokens: 8192 });
+  // Try to extract JSON from various formats
+  let jsonStr = text.trim();
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+  // Try to find JSON array or object
+  const arrayMatch = jsonStr.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
+  if (arrayMatch) jsonStr = arrayMatch[0];
+  else if (objectMatch && !jsonStr.startsWith('[')) jsonStr = objectMatch[0];
+  try { return JSON.parse(jsonStr) as T; }
+  catch (e) { 
+    console.error('JSON parse error:', e, 'Raw text:', text.slice(0, 500));
+    throw new Error('Failed to parse AI response as JSON'); 
+  }
 }
 
 // ============== INLINE: Email ==============
@@ -588,115 +600,120 @@ Return JSON:
       const jobId = (req.query.job_id as string) || null;
       const limit = parseInt((req.query.limit as string) || '50');
 
-      // Fetch candidates with their screenings
-      let query = supabase
-        .from('candidates')
-        .select('id, full_name, email, created_at')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      // If job_id provided, get candidates who applied for that job
+      let candidateIds: string[] = [];
+      let applicationsMap: Record<string, any> = {};
+      
+      if (jobId) {
+        const { data: applications } = await supabase
+          .from('job_applications')
+          .select('candidate_id, job_id, status, applied_at')
+          .eq('job_id', jobId)
+          .order('applied_at', { ascending: false })
+          .limit(limit);
+        
+        candidateIds = (applications || []).map((a: any) => a.candidate_id);
+        for (const app of applications || []) {
+          applicationsMap[app.candidate_id] = app;
+        }
+      }
 
-      const { data: candidates, error } = await query;
-      if (error) return res.status(500).json({ error: error.message });
+      // Fetch candidates
+      let candidates: any[] = [];
+      if (jobId && candidateIds.length > 0) {
+        const { data, error } = await supabase
+          .from('candidates')
+          .select('id, full_name, email, created_at')
+          .in('id', candidateIds);
+        if (error) return res.status(500).json({ error: error.message });
+        candidates = data || [];
+      } else if (!jobId) {
+        const { data, error } = await supabase
+          .from('candidates')
+          .select('id, full_name, email, created_at')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (error) return res.status(500).json({ error: error.message });
+        candidates = data || [];
+        candidateIds = candidates.map((c: any) => c.id);
+      }
 
-      // Fetch related data separately to avoid join issues with missing tables
-      const candidateIds = (candidates || []).map((c: any) => c.id);
+      if (candidates.length === 0) {
+        return ok(res, []);
+      }
+
+      // Fetch job title
+      let jobTitle = 'N/A';
+      if (jobId) {
+        const { data: job } = await supabase.from('job_descriptions').select('title').eq('id', jobId).single();
+        if (job) jobTitle = job.title;
+      }
       
       // Fetch ATS screenings
-      let screeningsMap: Record<string, any[]> = {};
-      if (candidateIds.length > 0) {
-        const { data: screenings } = await supabase
-          .from('ats_screenings')
-          .select('candidate_id, overall_score, job_id, shortlisted')
+      let screeningsMap: Record<string, any> = {};
+      const { data: screenings } = await supabase
+        .from('ats_screenings')
+        .select('candidate_id, overall_score, job_id, shortlisted')
+        .in('candidate_id', candidateIds);
+      
+      for (const s of screenings || []) {
+        if (jobId && s.job_id !== jobId) continue;
+        screeningsMap[s.candidate_id] = s;
+      }
+
+      // Fetch assessment sessions
+      let assessmentsMap: Record<string, any> = {};
+      try {
+        const { data: assessments } = await supabase
+          .from('assessment_sessions')
+          .select('candidate_id, total_score, status, job_id, completed_at')
           .in('candidate_id', candidateIds);
         
-        for (const s of screenings || []) {
-          if (!screeningsMap[s.candidate_id]) screeningsMap[s.candidate_id] = [];
-          screeningsMap[s.candidate_id].push(s);
-        }
-      }
-
-      // Fetch assessment sessions (may not exist yet)
-      let assessmentsMap: Record<string, any[]> = {};
-      try {
-        if (candidateIds.length > 0) {
-          const { data: assessments } = await supabase
-            .from('assessment_sessions')
-            .select('candidate_id, total_score, status, job_id, completed_at')
-            .in('candidate_id', candidateIds);
-          
-          for (const a of assessments || []) {
-            if (!assessmentsMap[a.candidate_id]) assessmentsMap[a.candidate_id] = [];
-            assessmentsMap[a.candidate_id].push(a);
-          }
+        for (const a of assessments || []) {
+          if (jobId && a.job_id !== jobId) continue;
+          assessmentsMap[a.candidate_id] = a;
         }
       } catch { /* table may not exist */ }
 
-      // Fetch AI interview sessions (may not exist yet)
-      let interviewsMap: Record<string, any[]> = {};
+      // Fetch AI interview sessions
+      let interviewsMap: Record<string, any> = {};
       try {
-        if (candidateIds.length > 0) {
-          const { data: interviews } = await supabase
-            .from('ai_interview_sessions')
-            .select('candidate_id, status, job_id, completed_at, final_evaluation')
-            .in('candidate_id', candidateIds);
-          
-          for (const i of interviews || []) {
-            if (!interviewsMap[i.candidate_id]) interviewsMap[i.candidate_id] = [];
-            interviewsMap[i.candidate_id].push(i);
-          }
+        const { data: interviews } = await supabase
+          .from('ai_interview_sessions')
+          .select('candidate_id, status, job_id, completed_at, final_evaluation')
+          .in('candidate_id', candidateIds);
+        
+        for (const i of interviews || []) {
+          if (jobId && i.job_id !== jobId) continue;
+          interviewsMap[i.candidate_id] = i;
         }
       } catch { /* table may not exist */ }
 
-      // Fetch job titles
-      let jobTitles: Record<string, string> = {};
-      if (jobId) {
-        const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', jobId).single();
-        if (job) jobTitles[job.id] = job.title;
-      }
-
-      const analytics = (candidates || []).map((row: any) => {
-        const screenings = screeningsMap[row.id] || [];
-        const assessments = assessmentsMap[row.id] || [];
-        const aiSessions = interviewsMap[row.id] || [];
-
-        const latestScreening = jobId
-          ? screenings.find((s: any) => s.job_id === jobId) || screenings[0]
-          : screenings[0];
-
-        const latestAssessment = jobId
-          ? assessments.find((a: any) => a.job_id === jobId) || assessments[0]
-          : assessments[0];
-
-        const latestAiSession = jobId
-          ? aiSessions.find((s: any) => s.job_id === jobId) || aiSessions[0]
-          : aiSessions[0];
-
-        const finalEval = latestAiSession?.final_evaluation || {};
+      const analytics = candidates.map((row: any) => {
+        const screening = screeningsMap[row.id];
+        const assessment = assessmentsMap[row.id];
+        const interview = interviewsMap[row.id];
+        const finalEval = interview?.final_evaluation || {};
+        const application = applicationsMap[row.id];
 
         return {
           candidate_id: row.id,
           candidate_name: row.full_name,
           candidate_email: row.email,
-          job_title: jobTitles[latestScreening?.job_id] || 'N/A',
-          ats_score: latestScreening?.overall_score || 0,
-          assessment_score: latestAssessment?.total_score || null,
-          assessment_status: latestAssessment?.status || null,
-          interview_status: latestAiSession?.status || 'pending',
-          technical_score: finalEval.technical_score || null,
-          overall_score: finalEval.overall_score || null,
-          recommendation: finalEval.recommendation || null,
+          job_title: jobTitle,
+          application_status: application?.status || 'applied',
+          ats_score: screening?.overall_score ?? null,
+          shortlisted: screening?.shortlisted ?? null,
+          assessment_score: assessment?.total_score ?? null,
+          assessment_status: assessment?.status ?? null,
+          interview_status: interview?.status ?? null,
+          technical_score: finalEval.technical_score ?? null,
+          overall_score: finalEval.overall_score ?? null,
+          recommendation: finalEval.recommendation ?? null,
         };
       });
 
-      // Filter by job_id if provided
-      const filtered = jobId 
-        ? analytics.filter((a: any) => {
-            const screenings = screeningsMap[a.candidate_id] || [];
-            return screenings.some((s: any) => s.job_id === jobId);
-          })
-        : analytics;
-
-      return ok(res, filtered);
+      return ok(res, analytics);
     }
 
     return notFound(res);

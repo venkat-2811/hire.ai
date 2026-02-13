@@ -559,13 +559,27 @@ export default function CandidatesPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => handleStartInterview(candidate.id)}>
-                                      <Play className="mr-2 h-4 w-4" />
-                                      Start Interview
+                                    <DropdownMenuItem asChild>
+                                      <Link to={`/candidates/${candidate.id}`}>
+                                        <Eye className="mr-2 h-4 w-4" />
+                                        View Details
+                                      </Link>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem>
-                                      <Eye className="mr-2 h-4 w-4" />
-                                      View Details
+                                    <DropdownMenuItem onClick={() => {
+                                      setSelectedIds(new Set([candidate.id]));
+                                      setStartJobId(activeJobs[0]?.id || '');
+                                      setAssessmentDialogOpen(true);
+                                    }}>
+                                      <FileText className="mr-2 h-4 w-4" />
+                                      Send Assessment
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      setSelectedIds(new Set([candidate.id]));
+                                      setStartJobId(activeJobs[0]?.id || '');
+                                      setInterviewDialogOpen(true);
+                                    }}>
+                                      <Play className="mr-2 h-4 w-4" />
+                                      Send Interview
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"

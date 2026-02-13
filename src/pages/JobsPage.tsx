@@ -143,13 +143,17 @@ export default function JobsPage() {
                           )}
                           Copy Application Link
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Eye className="mr-2 h-4 w-4" />
-                          View Details
+                        <DropdownMenuItem asChild>
+                          <Link to={`/jobs/${job.id}`}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            View Details
+                          </Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit Job
+                        <DropdownMenuItem asChild>
+                          <Link to={`/jobs/${job.id}/edit`}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit Job
+                          </Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleArchive(job.id)}>
                           <Archive className="mr-2 h-4 w-4" />

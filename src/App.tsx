@@ -9,9 +9,11 @@ import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
 import CandidatesPage from "./pages/CandidatesPage";
 import NewCandidatePage from "./pages/NewCandidatePage";
+import CandidateDetailsPage from "./pages/CandidateDetailsPage";
 import JobsPage from "./pages/JobsPage";
 import NewJobPage from "./pages/NewJobPage";
-// InterviewsPage removed - scores available in Results dashboard
+import JobDetailsPage from "./pages/JobDetailsPage";
+import EditJobPage from "./pages/EditJobPage";
 import InterviewSessionPage from "./pages/InterviewSessionPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -38,9 +40,11 @@ const App = () => (
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/candidates" element={<CandidatesPage />} />
             <Route path="/candidates/new" element={<NewCandidatePage />} />
+            <Route path="/candidates/:candidateId" element={<CandidateDetailsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/jobs/new" element={<NewJobPage />} />
-            {/* Interviews section removed - scores available in Results dashboard */}
+            <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
+            <Route path="/jobs/:jobId/edit" element={<EditJobPage />} />
             <Route path="/interviews/:sessionId" element={<InterviewSessionPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
