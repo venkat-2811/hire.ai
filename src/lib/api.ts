@@ -54,7 +54,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new APIError(response.status, error.detail || 'Request failed');
+    throw new APIError(response.status, error.error || error.detail || 'Request failed');
   }
 
   return response.json();
