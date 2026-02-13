@@ -588,28 +588,84 @@ Return JSON:
       const jobId = (req.query.job_id as string) || null;
       const limit = parseInt((req.query.limit as string) || '50');
 
-      const { data: candidates, error } = await supabase
+      // Fetch candidates with their screenings
+      let query = supabase
         .from('candidates')
-        .select(
-          `
-          id, full_name,
-          ats_screenings(overall_score, job_id, job_descriptions(title)),
-          assessment_sessions(total_score, status, job_id, completed_at),
-          ai_interview_sessions(status, job_id, completed_at, final_evaluation)
-        `
-        )
+        .select('id, full_name, email, created_at')
+        .order('created_at', { ascending: false })
         .limit(limit);
 
+      const { data: candidates, error } = await query;
       if (error) return res.status(500).json({ error: error.message });
 
+      // Fetch related data separately to avoid join issues with missing tables
+      const candidateIds = (candidates || []).map((c: any) => c.id);
+      
+      // Fetch ATS screenings
+      let screeningsMap: Record<string, any[]> = {};
+      if (candidateIds.length > 0) {
+        const { data: screenings } = await supabase
+          .from('ats_screenings')
+          .select('candidate_id, overall_score, job_id, shortlisted')
+          .in('candidate_id', candidateIds);
+        
+        for (const s of screenings || []) {
+          if (!screeningsMap[s.candidate_id]) screeningsMap[s.candidate_id] = [];
+          screeningsMap[s.candidate_id].push(s);
+        }
+      }
+
+      // Fetch assessment sessions (may not exist yet)
+      let assessmentsMap: Record<string, any[]> = {};
+      try {
+        if (candidateIds.length > 0) {
+          const { data: assessments } = await supabase
+            .from('assessment_sessions')
+            .select('candidate_id, total_score, status, job_id, completed_at')
+            .in('candidate_id', candidateIds);
+          
+          for (const a of assessments || []) {
+            if (!assessmentsMap[a.candidate_id]) assessmentsMap[a.candidate_id] = [];
+            assessmentsMap[a.candidate_id].push(a);
+          }
+        }
+      } catch { /* table may not exist */ }
+
+      // Fetch AI interview sessions (may not exist yet)
+      let interviewsMap: Record<string, any[]> = {};
+      try {
+        if (candidateIds.length > 0) {
+          const { data: interviews } = await supabase
+            .from('ai_interview_sessions')
+            .select('candidate_id, status, job_id, completed_at, final_evaluation')
+            .in('candidate_id', candidateIds);
+          
+          for (const i of interviews || []) {
+            if (!interviewsMap[i.candidate_id]) interviewsMap[i.candidate_id] = [];
+            interviewsMap[i.candidate_id].push(i);
+          }
+        }
+      } catch { /* table may not exist */ }
+
+      // Fetch job titles
+      let jobTitles: Record<string, string> = {};
+      if (jobId) {
+        const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', jobId).single();
+        if (job) jobTitles[job.id] = job.title;
+      }
+
       const analytics = (candidates || []).map((row: any) => {
-        const screenings = row.ats_screenings || [];
-        const assessments = row.assessment_sessions || [];
-        const aiSessions = row.ai_interview_sessions || [];
+        const screenings = screeningsMap[row.id] || [];
+        const assessments = assessmentsMap[row.id] || [];
+        const aiSessions = interviewsMap[row.id] || [];
 
         const latestScreening = jobId
           ? screenings.find((s: any) => s.job_id === jobId) || screenings[0]
           : screenings[0];
+
+        const latestAssessment = jobId
+          ? assessments.find((a: any) => a.job_id === jobId) || assessments[0]
+          : assessments[0];
 
         const latestAiSession = jobId
           ? aiSessions.find((s: any) => s.job_id === jobId) || aiSessions[0]
@@ -620,8 +676,11 @@ Return JSON:
         return {
           candidate_id: row.id,
           candidate_name: row.full_name,
-          job_title: latestScreening?.job_descriptions?.title || 'N/A',
+          candidate_email: row.email,
+          job_title: jobTitles[latestScreening?.job_id] || 'N/A',
           ats_score: latestScreening?.overall_score || 0,
+          assessment_score: latestAssessment?.total_score || null,
+          assessment_status: latestAssessment?.status || null,
           interview_status: latestAiSession?.status || 'pending',
           technical_score: finalEval.technical_score || null,
           overall_score: finalEval.overall_score || null,
@@ -629,7 +688,15 @@ Return JSON:
         };
       });
 
-      return ok(res, analytics);
+      // Filter by job_id if provided
+      const filtered = jobId 
+        ? analytics.filter((a: any) => {
+            const screenings = screeningsMap[a.candidate_id] || [];
+            return screenings.some((s: any) => s.job_id === jobId);
+          })
+        : analytics;
+
+      return ok(res, filtered);
     }
 
     return notFound(res);
@@ -686,14 +753,15 @@ Return JSON:
       if (!body.consent_given) return badRequest(res, 'Consent is required');
       if (!jobId || !fullName || !email) return badRequest(res, 'job_id, full_name, email required');
 
-      const { data: job } = await supabase
+      const { data: job, error: jobError } = await supabase
         .from('job_descriptions')
         .select('id, title, is_active')
         .eq('id', jobId)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
-      if (!job) return notFound(res, 'Job not found');
+      if (jobError) return res.status(500).json({ error: jobError.message, step: 'fetch_job' });
+      if (!job) return notFound(res, 'Job not found or no longer accepting applications');
 
       // Parse resume text (optional)
       let resumeParsedData: any = null;
@@ -705,18 +773,17 @@ Return JSON:
         }
       }
 
-      const user = await getOptionalUser(req);
-
+      // Check for existing candidate
       const { data: existingCandidate } = await supabase
         .from('candidates')
         .select('id')
         .eq('email', email)
-        .single();
+        .maybeSingle();
 
       let candidateId: string;
       if (existingCandidate) {
         candidateId = existingCandidate.id;
-        await supabase.from('candidates').update({
+        const { error: updateError } = await supabase.from('candidates').update({
           full_name: fullName,
           phone: body.phone || null,
           portfolio_url: body.portfolio_url || null,
@@ -726,9 +793,10 @@ Return JSON:
           resume_text: body.resume_text || null,
           resume_parsed_data: resumeParsedData,
         }).eq('id', candidateId);
+        if (updateError) return res.status(500).json({ error: updateError.message, step: 'update_candidate' });
       } else {
         candidateId = uuidv4();
-        await supabase.from('candidates').insert({
+        const { error: insertError } = await supabase.from('candidates').insert({
           id: candidateId,
           full_name: fullName,
           email,
@@ -740,21 +808,37 @@ Return JSON:
           resume_text: body.resume_text || null,
           resume_parsed_data: resumeParsedData,
         });
+        if (insertError) return res.status(500).json({ error: insertError.message, step: 'insert_candidate' });
       }
 
+      // Create job application
       const applicationId = uuidv4();
-      await supabase.from('job_applications').insert({
+      const { error: appError } = await supabase.from('job_applications').insert({
         id: applicationId,
         candidate_id: candidateId,
         job_id: jobId,
         status: 'applied',
         applied_at: new Date().toISOString(),
       });
+      if (appError) {
+        // If duplicate application, that's okay
+        if (appError.code === '23505') {
+          return ok(res, {
+            job_id: jobId,
+            candidate_id: candidateId,
+            status: 'already_applied',
+            message: `You have already applied for ${job.title}.`,
+          });
+        }
+        return res.status(500).json({ error: appError.message, step: 'insert_application' });
+      }
 
+      // Send confirmation email
       try {
         await sendApplicationReceived(email, fullName, job.title);
-      } catch {
-        // ignore
+      } catch (emailErr: any) {
+        console.error('Failed to send application email:', emailErr);
+        // Don't fail the request, just log
       }
 
       return ok(res, {
