@@ -1,14 +1,99 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
-import { getSupabaseAdmin } from './_lib/supabase';
-import { getOptionalUser, verifyClerkToken } from './_lib/clerk';
-import { generateJSON } from './_lib/gemini';
-import {
-  sendApplicationReceived,
-  sendAssessmentInvite,
-  sendInterviewInvite,
-} from './_lib/email';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
+import * as jose from 'jose';
+import crypto from 'node:crypto';
+
+// ============== INLINE: Supabase ==============
+let _supabaseAdmin: SupabaseClient | null = null;
+function getSupabaseAdmin(): SupabaseClient {
+  if (!_supabaseAdmin) {
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      const m: string[] = [];
+      if (!url) m.push('SUPABASE_URL');
+      if (!key) m.push('SUPABASE_SERVICE_KEY');
+      throw new Error(`Missing env vars: ${m.join(', ')}. Set in Vercel project settings.`);
+    }
+    _supabaseAdmin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  }
+  return _supabaseAdmin;
+}
+
+// ============== INLINE: Clerk ==============
+interface ClerkUser { id: string; sessionId: string; azp: string; }
+let _jwks: jose.JWTVerifyGetKey | null = null;
+let _jwksTime = 0;
+async function getJWKS(): Promise<jose.JWTVerifyGetKey> {
+  if (_jwks && Date.now() - _jwksTime < 3600000) return _jwks;
+  const url = process.env.CLERK_JWKS_URL;
+  if (!url) throw new Error('CLERK_JWKS_URL not configured');
+  _jwks = jose.createRemoteJWKSet(new URL(url));
+  _jwksTime = Date.now();
+  return _jwks;
+}
+async function verifyClerkToken(req: VercelRequest): Promise<ClerkUser> {
+  const h = req.headers.authorization;
+  if (!h || !h.startsWith('Bearer ')) throw new Error('Missing authorization header');
+  const jwks = await getJWKS();
+  const { payload } = await jose.jwtVerify(h.substring(7), jwks, { issuer: process.env.CLERK_ISSUER });
+  return { id: payload.sub as string, sessionId: payload.sid as string, azp: payload.azp as string };
+}
+async function getOptionalUser(req: VercelRequest): Promise<ClerkUser | null> {
+  try { return await verifyClerkToken(req); } catch { return null; }
+}
+
+// ============== INLINE: Gemini ==============
+let _gemini: GenerativeModel | null = null;
+function getGeminiModel(): GenerativeModel {
+  if (!_gemini) {
+    const k = process.env.GEMINI_API_KEY;
+    if (!k) throw new Error('GEMINI_API_KEY not configured');
+    _gemini = new GoogleGenerativeAI(k).getGenerativeModel({ model: 'gemini-1.5-flash' });
+  }
+  return _gemini;
+}
+async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const r = await getGeminiModel().generateContent({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: opts.temperature ?? 0.7, maxOutputTokens: opts.maxTokens ?? 2048 },
+  });
+  return r.response.text();
+}
+async function generateJSON<T>(prompt: string): Promise<T> {
+  const text = await generateText(prompt, { temperature: 0.3 });
+  const m = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/) || [null, text];
+  try { return JSON.parse((m[1] || text).trim()) as T; }
+  catch { throw new Error('Failed to parse AI response as JSON'); }
+}
+
+// ============== INLINE: Email ==============
+async function sendEmail(to: string, subject: string, html: string) {
+  const k = process.env.RESEND_API_KEY;
+  if (!k) { console.warn('RESEND_API_KEY missing, skipping email'); return; }
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${k}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev', to, subject, html }),
+  });
+  if (!r.ok) throw new Error(`Email failed: ${await r.text()}`);
+}
+async function sendApplicationReceived(to: string, name: string, job: string) {
+  await sendEmail(to, `Application Received - ${job}`,
+    `<h2>Thank you, ${name}!</h2><p>We received your application for <strong>${job}</strong>.</p><p>We'll review and get back to you soon.</p>`);
+}
+async function sendAssessmentInvite(to: string, name: string, job: string, link: string, deadline: string) {
+  await sendEmail(to, `Assessment Invitation - ${job}`,
+    `<h2>Congratulations, ${name}!</h2><p>You've been shortlisted for <strong>${job}</strong>.</p><p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Start Assessment</a></p><p><strong>Deadline:</strong> ${deadline}</p>`);
+}
+async function sendInterviewInvite(to: string, name: string, job: string, link: string, time?: string) {
+  await sendEmail(to, `AI Interview Invitation - ${job}`,
+    `<h2>Great news, ${name}!</h2><p>You've been invited to an AI interview for <strong>${job}</strong>.</p><p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Start Interview</a></p>${time ? `<p><strong>Scheduled:</strong> ${time}</p>` : ''}`);
+}
+
+// ============== Helpers ==============
+function uuidv4(): string { return crypto.randomUUID(); }
 
 function setCors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
