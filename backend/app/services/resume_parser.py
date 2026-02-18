@@ -58,7 +58,7 @@ class ResumeParserService:
         return "\n".join(text_parts)
     
     async def _ai_parse_resume(self, resume_text: str) -> ResumeData:
-        """Use Gemini to semantically parse resume content."""
+        """Use AI to semantically parse resume content."""
         
         system_prompt = """You are an expert resume parser. Analyze the resume text and extract structured information.
         

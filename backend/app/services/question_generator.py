@@ -314,7 +314,7 @@ Return a JSON object:
                 })
             
             if not questions:
-                raise RuntimeError("Gemini returned no valid MCQ questions")
+                raise RuntimeError("Groq returned no valid MCQ questions")
 
             return questions
             
@@ -388,7 +388,7 @@ Return JSON:
                 })
             
             if not challenges:
-                raise RuntimeError("Gemini returned no coding challenges")
+                raise RuntimeError("Groq returned no coding challenges")
 
             return challenges
             

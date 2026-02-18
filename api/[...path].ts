@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 import * as jose from 'jose';
 import crypto from 'node:crypto';
 
@@ -44,22 +44,25 @@ async function getOptionalUser(req: VercelRequest): Promise<ClerkUser | null> {
   try { return await verifyClerkToken(req); } catch { return null; }
 }
 
-// ============== INLINE: Gemini ==============
-let _gemini: GenerativeModel | null = null;
-function getGeminiModel(): GenerativeModel {
-  if (!_gemini) {
-    const k = process.env.GEMINI_API_KEY;
-    if (!k) throw new Error('GEMINI_API_KEY not configured');
-    _gemini = new GoogleGenerativeAI(k).getGenerativeModel({ model: 'gemini-2.0-flash' });
+// ============== INLINE: Groq ==============
+let _groq: Groq | null = null;
+function getGroqClient(): Groq {
+  if (!_groq) {
+    const k = process.env.GROQ_API_KEY;
+    if (!k) throw new Error('GROQ_API_KEY not configured');
+    _groq = new Groq({ apiKey: k });
   }
-  return _gemini;
+  return _groq;
 }
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  const r = await getGeminiModel().generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: opts.temperature ?? 0.7, maxOutputTokens: opts.maxTokens ?? 2048 },
+  const client = getGroqClient();
+  const completion = await client.chat.completions.create({
+    model: 'llama-3.1-8b-instant',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: opts.temperature ?? 0.7,
+    max_tokens: opts.maxTokens ?? 2048,
   });
-  return r.response.text();
+  return completion.choices[0]?.message?.content || '';
 }
 async function generateJSON<T>(prompt: string): Promise<T> {
   const fullPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, no explanation.`;
@@ -182,7 +185,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       SUPABASE_SERVICE_KEY: !!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
       CLERK_JWKS_URL: !!process.env.CLERK_JWKS_URL,
       CLERK_ISSUER: !!process.env.CLERK_ISSUER,
-      GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+      GROQ_API_KEY: !!process.env.GROQ_API_KEY,
       RESEND_API_KEY: !!process.env.RESEND_API_KEY,
       FRONTEND_URL: !!process.env.FRONTEND_URL,
     };

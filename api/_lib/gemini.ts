@@ -1,37 +1,32 @@
-import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 
-let geminiModel: GenerativeModel | null = null;
+let groqClient: Groq | null = null;
 
-export function getGeminiModel(): GenerativeModel {
-  if (!geminiModel) {
-    const apiKey = process.env.GEMINI_API_KEY;
+function getGroqClient(): Groq {
+  if (!groqClient) {
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY not configured');
+      throw new Error('GROQ_API_KEY not configured');
     }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    groqClient = new Groq({ apiKey });
   }
-
-  return geminiModel;
+  return groqClient;
 }
 
 export async function generateText(
   prompt: string,
   options: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
-  const model = getGeminiModel();
+  const client = getGroqClient();
 
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: options.temperature ?? 0.7,
-      maxOutputTokens: options.maxTokens ?? 2048,
-    },
+  const completion = await client.chat.completions.create({
+    model: 'llama-3.1-8b-instant',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: options.temperature ?? 0.7,
+    max_tokens: options.maxTokens ?? 2048,
   });
 
-  const response = result.response;
-  return response.text();
+  return completion.choices[0]?.message?.content || '';
 }
 
 export async function generateJSON<T>(prompt: string): Promise<T> {
@@ -50,3 +45,6 @@ export async function generateJSON<T>(prompt: string): Promise<T> {
     throw new Error('Failed to parse AI response as JSON');
   }
 }
+
+// Keep backward-compatible exports
+export const getGeminiModel = getGroqClient;
