@@ -917,12 +917,11 @@ Return JSON with BOTH parsed resume and screening scores:
           }
         } catch (parseErr: any) {
           console.error('Resume parse+screen failed:', parseErr.message, parseErr.stack);
+          // Store error for debugging in response
+          (res as any)._parseError = parseErr.message;
           resumeParsedData = { skills: [], experience: [], education: [], summary: resumeText?.slice(0, 200) || '', total_experience_years: 0, certifications: [] };
         }
       }
-
-      console.log('autoScreenResult:', autoScreenResult ? JSON.stringify(autoScreenResult).slice(0, 200) : 'null');
-      console.log('resumeParsedData keys:', resumeParsedData ? Object.keys(resumeParsedData) : 'null');
 
       // Check for existing candidate
       const { data: existingCandidate } = await supabase
@@ -1044,6 +1043,7 @@ Return JSON with BOTH parsed resume and screening scores:
         ats_score: atsScore,
         resume_parsed: !!resumeParsedData?.skills?.length,
         screening_saved: atsScore != null,
+        _debug_error: (res as any)._parseError || null,
         message: `Application submitted successfully for ${job.title}.`,
       });
     }
