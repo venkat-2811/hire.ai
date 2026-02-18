@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 from datetime import datetime, timedelta
 from app.models.schemas import (
@@ -6,43 +6,42 @@ from app.models.schemas import (
 )
 from app.models.enums import InterviewStatus, HireRecommendation
 from app.database import get_supabase_admin_client
-from app.auth import get_current_user, ClerkUser
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
 @router.get("/dashboard", response_model=DashboardStats)
-async def get_dashboard_stats(user: ClerkUser = Depends(get_current_user)):
+async def get_dashboard_stats():
     """Get dashboard statistics."""
     supabase = get_supabase_admin_client()
     now = datetime.utcnow()
     start_7d = (now - timedelta(days=7)).isoformat()
     start_14d = (now - timedelta(days=14)).isoformat()
     
-    # Total candidates (owned by this user)
-    candidates_result = supabase.table("candidates").select("id", count="exact").eq("user_id", user.id).execute()
+    # Total candidates
+    candidates_result = supabase.table("candidates").select("id", count="exact").execute()
     total_candidates = candidates_result.count or 0
 
-    candidates_last_7d = supabase.table("candidates").select("id", count="exact").eq("user_id", user.id).gte(
+    candidates_last_7d = supabase.table("candidates").select("id", count="exact").gte(
         "created_at", start_7d
     ).execute().count or 0
-    candidates_prev_7d = supabase.table("candidates").select("id", count="exact").eq("user_id", user.id).gte(
+    candidates_prev_7d = supabase.table("candidates").select("id", count="exact").gte(
         "created_at", start_14d
     ).lt("created_at", start_7d).execute().count or 0
     total_candidates_change = candidates_last_7d - candidates_prev_7d
     
-    # Active jobs (owned by this user)
+    # Active jobs
     jobs_result = supabase.table("job_descriptions").select("id", count="exact").eq(
         "is_active", True
-    ).eq("created_by", user.id).execute()
+    ).execute()
     active_jobs = jobs_result.count or 0
 
     active_jobs_last_7d = supabase.table("job_descriptions").select("id", count="exact").eq(
         "is_active", True
-    ).eq("created_by", user.id).gte("created_at", start_7d).execute().count or 0
+    ).gte("created_at", start_7d).execute().count or 0
     active_jobs_prev_7d = supabase.table("job_descriptions").select("id", count="exact").eq(
         "is_active", True
-    ).eq("created_by", user.id).gte("created_at", start_14d).lt("created_at", start_7d).execute().count or 0
+    ).gte("created_at", start_14d).lt("created_at", start_7d).execute().count or 0
     active_jobs_change = active_jobs_last_7d - active_jobs_prev_7d
     
     # Pending interviews
@@ -106,19 +105,18 @@ async def get_candidate_analytics(
     job_id: Optional[str] = None,
     status: Optional[InterviewStatus] = None,
     recommendation: Optional[HireRecommendation] = None,
-    limit: int = 50,
-    user: ClerkUser = Depends(get_current_user),
+    limit: int = 50
 ):
     """Get candidate analytics with optional filters."""
     supabase = get_supabase_admin_client()
     
-    # Only get candidates owned by this user
+    # Get candidates with their screenings, assessments, and AI interviews
     query = supabase.table("candidates").select(
         "id, full_name, "
         "ats_screenings(overall_score, job_id, job_descriptions(title)), "
         "assessment_sessions(total_score, status, job_id, completed_at, created_at), "
         "ai_interview_sessions(status, job_id, completed_at, created_at, final_evaluation)"
-    ).eq("user_id", user.id)
+    )
     
     result = query.limit(limit).execute()
     
@@ -211,13 +209,12 @@ async def get_candidate_analytics(
 
 
 @router.get("/job/{job_id}/summary")
-async def get_job_analytics_summary(job_id: str, user: ClerkUser = Depends(get_current_user)):
+async def get_job_analytics_summary(job_id: str):
     """Get analytics summary for a specific job."""
     supabase = get_supabase_admin_client()
     
     # Get job details
-    # Verify user owns this job
-    job_result = supabase.table("job_descriptions").select("*").eq("id", job_id).eq("created_by", user.id).single().execute()
+    job_result = supabase.table("job_descriptions").select("*").eq("id", job_id).single().execute()
     if not job_result.data:
         raise HTTPException(status_code=404, detail="Job not found")
     
@@ -287,7 +284,7 @@ async def get_job_analytics_summary(job_id: str, user: ClerkUser = Depends(get_c
 
 
 @router.get("/trends")
-async def get_hiring_trends(days: int = 30, user: ClerkUser = Depends(get_current_user)):
+async def get_hiring_trends(days: int = 30):
     """Get hiring trends over time."""
     supabase = get_supabase_admin_client()
     

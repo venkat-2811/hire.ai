@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -10,7 +10,6 @@ from app.models.schemas import (
 from app.database import get_supabase_client, get_supabase_admin_client
 from app.services.resume_parser import get_resume_parser
 from app.config import get_settings
-from app.auth import get_current_user, ClerkUser
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
 
@@ -18,17 +17,12 @@ router = APIRouter(prefix="/candidates", tags=["Candidates"])
 @router.get("", response_model=List[Candidate])
 async def list_candidates(
     limit: int = 50,
-    offset: int = 0,
-    user: ClerkUser = Depends(get_current_user),
+    offset: int = 0
 ):
     """List all candidates with pagination."""
     supabase = get_supabase_client()
     
-    result = supabase.table("candidates").select(
-        "*, ats_screenings(job_id)"
-    ).eq(
-        "user_id", user.id
-    ).order(
+    result = supabase.table("candidates").select("*").order(
         "created_at", desc=True
     ).range(offset, offset + limit - 1).execute()
     
@@ -40,11 +34,11 @@ async def list_candidates(
 
 
 @router.get("/{candidate_id}", response_model=Candidate)
-async def get_candidate(candidate_id: str, user: ClerkUser = Depends(get_current_user)):
+async def get_candidate(candidate_id: str):
     """Get a specific candidate."""
     supabase = get_supabase_client()
     
-    result = supabase.table("candidates").select("*").eq("id", candidate_id).eq("user_id", user.id).single().execute()
+    result = supabase.table("candidates").select("*").eq("id", candidate_id).single().execute()
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -60,8 +54,7 @@ async def create_candidate(
     portfolio_url: Optional[str] = Form(None),
     github_url: Optional[str] = Form(None),
     consent_given: bool = Form(False),
-    resume: Optional[UploadFile] = File(None),
-    user: ClerkUser = Depends(get_current_user),
+    resume: Optional[UploadFile] = File(None)
 ):
     """Create a new candidate with optional resume upload."""
     supabase = get_supabase_client()
@@ -115,8 +108,7 @@ async def create_candidate(
         "consent_timestamp": datetime.utcnow().isoformat() if consent_given else None,
         "resume_url": resume_url,
         "resume_text": resume_text,
-        "resume_parsed_data": resume_parsed_data,
-        "user_id": user.id,
+        "resume_parsed_data": resume_parsed_data
     }
     
     result = supabase.table("candidates").insert(data).execute()
@@ -128,14 +120,13 @@ async def create_candidate(
 
 
 @router.patch("/{candidate_id}", response_model=Candidate)
-async def update_candidate(candidate_id: str, candidate: CandidateUpdate, user: ClerkUser = Depends(get_current_user)):
+async def update_candidate(candidate_id: str, candidate: CandidateUpdate):
     """Update a candidate."""
     supabase = get_supabase_client()
     
     update_data = candidate.model_dump(exclude_unset=True)
     
-    # Verify ownership
-    result = supabase.table("candidates").update(update_data).eq("id", candidate_id).eq("user_id", user.id).execute()
+    result = supabase.table("candidates").update(update_data).eq("id", candidate_id).execute()
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -144,13 +135,12 @@ async def update_candidate(candidate_id: str, candidate: CandidateUpdate, user: 
 
 
 @router.delete("/{candidate_id}", response_model=APIResponse)
-async def delete_candidate(candidate_id: str, user: ClerkUser = Depends(get_current_user)):
+async def delete_candidate(candidate_id: str):
     """Delete a candidate."""
     supabase = get_supabase_client()
     
     # Check if candidate exists first
-    # Verify ownership
-    existing = supabase.table("candidates").select("id").eq("id", candidate_id).eq("user_id", user.id).single().execute()
+    existing = supabase.table("candidates").select("id").eq("id", candidate_id).single().execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -158,7 +148,7 @@ async def delete_candidate(candidate_id: str, user: ClerkUser = Depends(get_curr
         # DB is expected to have ON DELETE CASCADE for related tables (interviews, assessments, etc.)
         # If not, we would need to manually delete them here.
         # Assuming CASCADE is configured for now based on existing bulk logic.
-        supabase.table("candidates").delete().eq("id", candidate_id).eq("user_id", user.id).execute()
+        supabase.table("candidates").delete().eq("id", candidate_id).execute()
         return APIResponse(success=True, message="Candidate deleted successfully")
     except Exception as e:
         print(f"Error deleting candidate {candidate_id}: {e}")
@@ -397,16 +387,9 @@ def _row_to_candidate(row: dict) -> Candidate:
         except Exception:
             pass
     
-    # Extract job_id from ats_screenings join if available
-    job_id = None
-    screenings = row.get("ats_screenings", [])
-    if screenings and isinstance(screenings, list) and len(screenings) > 0:
-        job_id = screenings[0].get("job_id")
-    
     return Candidate(
         id=row["id"],
         user_id=row.get("user_id"),
-        job_id=job_id,
         email=row["email"],
         full_name=row["full_name"],
         phone=row.get("phone"),

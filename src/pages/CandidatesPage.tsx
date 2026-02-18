@@ -136,8 +136,11 @@ export default function CandidatesPage() {
     grouped['no-job'] = [];
 
     filtered.forEach(candidate => {
-      // Use real job_id from ATS screening data (populated by backend join)
-      const jobId = (candidate as any).job_id || 'no-job';
+      // For now, we'll simulate job assignment
+      // In a real implementation, candidates would have a job_id field
+      // We'll use a simple hash to assign candidates to jobs for demo
+      const candidateHash = candidate.id.charCodeAt(0) % (activeJobs.length || 1);
+      const jobId = (candidate as any).job_id || (activeJobs[candidateHash]?.id || 'no-job');
       if (!grouped[jobId]) {
         grouped[jobId] = [];
       }

@@ -108,29 +108,88 @@ export default function CandidateDetailsPage() {
               </CardContent>
             </Card>
 
-            {/* Resume */}
-            {candidate.resume_text && (
+            {/* Parsed Resume Data - Formatted */}
+            {candidate.resume_parsed_data && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Resume</CardTitle>
+                  <CardTitle>Resume Summary</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg max-h-96 overflow-auto">
-                    {candidate.resume_text}
-                  </pre>
+                <CardContent className="space-y-6">
+                  {/* Summary */}
+                  {candidate.resume_parsed_data.summary && (
+                    <div>
+                      <h4 className="font-semibold text-sm text-muted-foreground mb-1">Summary</h4>
+                      <p className="text-sm">{candidate.resume_parsed_data.summary}</p>
+                    </div>
+                  )}
+
+                  {/* Skills */}
+                  {candidate.resume_parsed_data.skills?.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-sm text-muted-foreground mb-2">Skills</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {candidate.resume_parsed_data.skills.map((skill: string, i: number) => (
+                          <Badge key={i} variant="secondary">{skill}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Experience */}
+                  {candidate.resume_parsed_data.experience?.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-sm text-muted-foreground mb-2">Experience ({candidate.resume_parsed_data.total_experience_years || 0} years)</h4>
+                      <div className="space-y-3">
+                        {candidate.resume_parsed_data.experience.map((exp: any, i: number) => (
+                          <div key={i} className="p-3 rounded-lg bg-muted/50">
+                            <p className="font-medium">{exp.title}</p>
+                            <p className="text-sm text-muted-foreground">{exp.company} · {exp.duration}</p>
+                            {exp.description && <p className="text-sm mt-1">{exp.description}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Education */}
+                  {candidate.resume_parsed_data.education?.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-sm text-muted-foreground mb-2">Education</h4>
+                      <div className="space-y-2">
+                        {candidate.resume_parsed_data.education.map((edu: any, i: number) => (
+                          <div key={i} className="p-3 rounded-lg bg-muted/50">
+                            <p className="font-medium">{edu.degree}</p>
+                            <p className="text-sm text-muted-foreground">{edu.institution} · {edu.year}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Certifications */}
+                  {candidate.resume_parsed_data.certifications?.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-sm text-muted-foreground mb-2">Certifications</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {candidate.resume_parsed_data.certifications.map((cert: string, i: number) => (
+                          <Badge key={i} variant="outline">{cert}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
 
-            {/* Parsed Resume Data */}
-            {candidate.resume_parsed_data && (
+            {/* Raw Resume Text (collapsible) */}
+            {candidate.resume_text && !candidate.resume_parsed_data && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Parsed Resume Data</CardTitle>
+                  <CardTitle>Resume Text</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg max-h-96 overflow-auto">
-                    {JSON.stringify(candidate.resume_parsed_data, null, 2)}
+                    {candidate.resume_text}
                   </pre>
                 </CardContent>
               </Card>

@@ -5,7 +5,6 @@ from app.models.schemas import (
 )
 from app.models.enums import RoleLevel
 from app.database import get_supabase_client, get_supabase_admin_client
-from app.auth import get_current_user, ClerkUser
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
@@ -14,16 +13,12 @@ router = APIRouter(prefix="/jobs", tags=["Jobs"])
 async def list_jobs(
     role: Optional[str] = None,
     level: Optional[RoleLevel] = None,
-    is_active: Optional[bool] = True,
-    user: ClerkUser = Depends(get_current_user),
+    is_active: Optional[bool] = True
 ):
     """List all job descriptions with optional filters."""
     supabase = get_supabase_client()
     
     query = supabase.table("job_descriptions").select("*")
-    
-    # HR user isolation: only show jobs created by this user
-    query = query.eq("created_by", user.id)
     
     if role:
         query = query.ilike("role", f"%{role}%")
@@ -96,7 +91,7 @@ async def get_job(job_id: str):
 
 
 @router.post("", response_model=JobDescription)
-async def create_job(job: JobDescriptionCreate, user: ClerkUser = Depends(get_current_user)):
+async def create_job(job: JobDescriptionCreate):
     """Create a new job description."""
     supabase = get_supabase_admin_client()
     
@@ -108,8 +103,7 @@ async def create_job(job: JobDescriptionCreate, user: ClerkUser = Depends(get_cu
         "must_have_skills": job.must_have_skills,
         "good_to_have_skills": job.good_to_have_skills,
         "min_experience_years": job.min_experience_years,
-        "is_active": True,
-        "created_by": user.id,
+        "is_active": True
     }
     
     result = supabase.table("job_descriptions").insert(data).execute()
@@ -137,7 +131,7 @@ async def create_job(job: JobDescriptionCreate, user: ClerkUser = Depends(get_cu
 
 
 @router.patch("/{job_id}", response_model=JobDescription)
-async def update_job(job_id: str, job: JobDescriptionUpdate, user: ClerkUser = Depends(get_current_user)):
+async def update_job(job_id: str, job: JobDescriptionUpdate):
     """Update a job description."""
     supabase = get_supabase_admin_client()
     
@@ -149,8 +143,7 @@ async def update_job(job_id: str, job: JobDescriptionUpdate, user: ClerkUser = D
     if "level" in update_data and update_data["level"]:
         update_data["level"] = update_data["level"].value
     
-    # Verify ownership
-    result = supabase.table("job_descriptions").update(update_data).eq("id", job_id).eq("created_by", user.id).execute()
+    result = supabase.table("job_descriptions").update(update_data).eq("id", job_id).execute()
 
     if getattr(result, "error", None):
         raise HTTPException(status_code=500, detail=str(result.error))
@@ -176,12 +169,11 @@ async def update_job(job_id: str, job: JobDescriptionUpdate, user: ClerkUser = D
 
 
 @router.delete("/{job_id}", response_model=APIResponse)
-async def delete_job(job_id: str, user: ClerkUser = Depends(get_current_user)):
+async def delete_job(job_id: str):
     """Archive a job (soft delete)."""
     supabase = get_supabase_admin_client()
     
-    # Verify ownership
-    result = supabase.table("job_descriptions").update({"is_active": False}).eq("id", job_id).eq("created_by", user.id).execute()
+    result = supabase.table("job_descriptions").update({"is_active": False}).eq("id", job_id).execute()
 
     if getattr(result, "error", None):
         raise HTTPException(status_code=500, detail=str(result.error))

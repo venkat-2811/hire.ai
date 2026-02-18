@@ -204,8 +204,11 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
   if (segments[0] === 'jobs') {
     if (segments.length === 1) {
       if (req.method === 'GET') {
+        const user = await requireAuth(req, res);
+        if (!user) return;
+
         const { role, level, is_active } = req.query;
-        let q = supabase.from('job_descriptions').select('*');
+        let q = supabase.from('job_descriptions').select('*').eq('created_by', user.id);
         if (role) q = q.ilike('role', `%${role}%`);
         if (level) q = q.eq('level', level);
         if (is_active !== 'false') q = q.eq('is_active', true);
@@ -228,6 +231,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           good_to_have_skills: body.good_to_have_skills || [],
           min_experience_years: body.min_experience_years || 0,
           is_active: true,
+          created_by: user.id,
         };
 
         const { data, error } = await supabase
@@ -265,6 +269,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           .from('job_descriptions')
           .update(req.body)
           .eq('id', jobId)
+          .eq('created_by', user.id)
           .select()
           .single();
 
@@ -281,6 +286,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           .from('job_descriptions')
           .update({ is_active: false })
           .eq('id', jobId)
+          .eq('created_by', user.id)
           .select()
           .single();
 
@@ -304,10 +310,36 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
         const limit = parseInt((req.query.limit as string) || '50');
         const offset = parseInt((req.query.offset as string) || '0');
+        const jobIdFilter = req.query.job_id as string | undefined;
+
+        // Get this user's job IDs to scope candidates
+        const { data: userJobs } = await supabase
+          .from('job_descriptions')
+          .select('id')
+          .eq('created_by', user.id);
+
+        const userJobIds = (userJobs || []).map((j: any) => j.id);
+        if (userJobIds.length === 0) return ok(res, []);
+
+        // Get candidate IDs who applied to this user's jobs
+        let appQuery = supabase
+          .from('job_applications')
+          .select('candidate_id, job_id, status, applied_at')
+          .in('job_id', userJobIds);
+
+        if (jobIdFilter) appQuery = appQuery.eq('job_id', jobIdFilter);
+
+        const { data: applications } = await appQuery
+          .order('applied_at', { ascending: false })
+          .limit(limit);
+
+        const candidateIds = [...new Set((applications || []).map((a: any) => a.candidate_id))];
+        if (candidateIds.length === 0) return ok(res, []);
 
         const { data, error } = await supabase
           .from('candidates')
           .select('*')
+          .in('id', candidateIds)
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1);
 
@@ -436,6 +468,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         .from('job_descriptions')
         .select('*')
         .eq('id', job_id)
+        .eq('created_by', user.id)
         .single();
 
       if (!job) return notFound(res, 'Job not found');
@@ -552,46 +585,78 @@ Return JSON:
 
     // GET /api/analytics/dashboard
     if (segments.length === 2 && segments[1] === 'dashboard') {
-      const { count: totalCandidates } = await supabase
-        .from('candidates')
-        .select('id', { count: 'exact', head: true });
+      // Scope everything to this user's jobs
+      const { data: userJobs } = await supabase
+        .from('job_descriptions')
+        .select('id')
+        .eq('created_by', user.id);
+      const userJobIds = (userJobs || []).map((j: any) => j.id);
 
       const { count: activeJobs } = await supabase
         .from('job_descriptions')
         .select('id', { count: 'exact', head: true })
+        .eq('created_by', user.id)
         .eq('is_active', true);
 
-      const { count: pendingInterviews } = await supabase
-        .from('interview_sessions')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
+      let totalCandidates = 0;
+      let pendingInterviews = 0;
+      let averageScore = 0;
+      let shortlistRate = 0;
+      let completedToday = 0;
 
-      const { data: scores } = await supabase.from('ats_screenings').select('overall_score');
-      const validScores = (scores || [])
-        .map((s: any) => s.overall_score)
-        .filter((s: unknown): s is number => typeof s === 'number');
+      if (userJobIds.length > 0) {
+        const { count: candCount } = await supabase
+          .from('job_applications')
+          .select('candidate_id', { count: 'exact', head: true })
+          .in('job_id', userJobIds);
+        totalCandidates = candCount || 0;
 
-      const averageScore = validScores.length
-        ? Math.round(validScores.reduce((a: number, b: number) => a + b, 0) / validScores.length)
-        : 0;
+        try {
+          const { count: pendCount } = await supabase
+            .from('ai_interview_sessions')
+            .select('id', { count: 'exact', head: true })
+            .in('job_id', userJobIds)
+            .eq('status', 'pending');
+          pendingInterviews = pendCount || 0;
+        } catch { /* table may not exist */ }
 
-      const { count: shortlistedCount } = await supabase
-        .from('ats_screenings')
-        .select('id', { count: 'exact', head: true })
-        .eq('shortlisted', true);
+        const { data: scores } = await supabase
+          .from('ats_screenings')
+          .select('overall_score, shortlisted')
+          .in('job_id', userJobIds);
+        const validScores = (scores || [])
+          .map((s: any) => s.overall_score)
+          .filter((s: unknown): s is number => typeof s === 'number');
+        averageScore = validScores.length
+          ? Math.round(validScores.reduce((a: number, b: number) => a + b, 0) / validScores.length)
+          : 0;
+        const shortlistedCount = (scores || []).filter((s: any) => s.shortlisted).length;
+        shortlistRate = validScores.length > 0
+          ? Math.round((shortlistedCount / validScores.length) * 100)
+          : 0;
 
-      const shortlistRate = validScores.length > 0
-        ? Math.round(((shortlistedCount || 0) / validScores.length) * 100)
-        : 0;
+        // Completed today
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        try {
+          const { count: todayCount } = await supabase
+            .from('ai_interview_sessions')
+            .select('id', { count: 'exact', head: true })
+            .in('job_id', userJobIds)
+            .eq('status', 'completed')
+            .gte('completed_at', todayStart.toISOString());
+          completedToday = todayCount || 0;
+        } catch { /* table may not exist */ }
+      }
 
       return ok(res, {
-        total_candidates: totalCandidates || 0,
+        total_candidates: totalCandidates,
         total_candidates_change: 0,
         active_jobs: activeJobs || 0,
         active_jobs_change: 0,
-        pending_interviews: pendingInterviews || 0,
+        pending_interviews: pendingInterviews,
         pending_interviews_change: 0,
-        completed_today: 0,
+        completed_today: completedToday,
         completed_today_change: 0,
         average_score: averageScore,
         shortlist_rate: shortlistRate,
@@ -603,107 +668,98 @@ Return JSON:
       const jobId = (req.query.job_id as string) || null;
       const limit = parseInt((req.query.limit as string) || '50');
 
-      // If job_id provided, get candidates who applied for that job
-      let candidateIds: string[] = [];
-      let applicationsMap: Record<string, any> = {};
+      // Scope to user's jobs
+      const { data: userJobs } = await supabase
+        .from('job_descriptions')
+        .select('id, title')
+        .eq('created_by', user.id);
+      const userJobIds = (userJobs || []).map((j: any) => j.id);
+      const jobTitleMap: Record<string, string> = {};
+      for (const j of userJobs || []) jobTitleMap[j.id] = j.title;
 
-      if (jobId) {
-        const { data: applications } = await supabase
-          .from('job_applications')
-          .select('candidate_id, job_id, status, applied_at')
-          .eq('job_id', jobId)
-          .order('applied_at', { ascending: false })
-          .limit(limit);
+      if (userJobIds.length === 0) return ok(res, []);
 
-        candidateIds = (applications || []).map((a: any) => a.candidate_id);
-        for (const app of applications || []) {
-          applicationsMap[app.candidate_id] = app;
-        }
+      // Validate that requested jobId belongs to this user
+      if (jobId && !userJobIds.includes(jobId)) return ok(res, []);
+
+      // Get applications scoped to user's jobs
+      let appQuery = supabase
+        .from('job_applications')
+        .select('candidate_id, job_id, status, applied_at')
+        .in('job_id', jobId ? [jobId] : userJobIds)
+        .order('applied_at', { ascending: false })
+        .limit(limit);
+
+      const { data: applications } = await appQuery;
+      const applicationsMap: Record<string, any> = {};
+      for (const app of applications || []) {
+        applicationsMap[app.candidate_id] = app;
       }
+
+      const candidateIds = [...new Set((applications || []).map((a: any) => a.candidate_id))];
+      if (candidateIds.length === 0) return ok(res, []);
 
       // Fetch candidates
-      let candidates: any[] = [];
-      if (jobId && candidateIds.length > 0) {
-        const { data, error } = await supabase
-          .from('candidates')
-          .select('id, full_name, email, created_at')
-          .in('id', candidateIds);
-        if (error) return res.status(500).json({ error: error.message });
-        candidates = data || [];
-      } else if (!jobId) {
-        const { data, error } = await supabase
-          .from('candidates')
-          .select('id, full_name, email, created_at')
-          .order('created_at', { ascending: false })
-          .limit(limit);
-        if (error) return res.status(500).json({ error: error.message });
-        candidates = data || [];
-        candidateIds = candidates.map((c: any) => c.id);
-      }
+      const { data: candidates, error } = await supabase
+        .from('candidates')
+        .select('id, full_name, email, created_at')
+        .in('id', candidateIds);
+      if (error) return res.status(500).json({ error: error.message });
+      if (!candidates?.length) return ok(res, []);
 
-      if (candidates.length === 0) {
-        return ok(res, []);
-      }
-
-      // Fetch job title
-      let jobTitle = 'N/A';
-      if (jobId) {
-        const { data: job } = await supabase.from('job_descriptions').select('title').eq('id', jobId).single();
-        if (job) jobTitle = job.title;
-      }
+      const effectiveJobIds = jobId ? [jobId] : userJobIds;
 
       // Fetch ATS screenings
-      let screeningsMap: Record<string, any> = {};
+      const screeningsMap: Record<string, any> = {};
       const { data: screenings } = await supabase
         .from('ats_screenings')
         .select('candidate_id, overall_score, job_id, shortlisted')
-        .in('candidate_id', candidateIds);
-
+        .in('candidate_id', candidateIds)
+        .in('job_id', effectiveJobIds);
       for (const s of screenings || []) {
-        if (jobId && s.job_id !== jobId) continue;
         screeningsMap[s.candidate_id] = s;
       }
 
       // Fetch assessment sessions
-      let assessmentsMap: Record<string, any> = {};
+      const assessmentsMap: Record<string, any> = {};
       try {
         const { data: assessments } = await supabase
           .from('assessment_sessions')
           .select('candidate_id, total_score, status, job_id, completed_at')
-          .in('candidate_id', candidateIds);
-
+          .in('candidate_id', candidateIds)
+          .in('job_id', effectiveJobIds);
         for (const a of assessments || []) {
-          if (jobId && a.job_id !== jobId) continue;
           assessmentsMap[a.candidate_id] = a;
         }
       } catch { /* table may not exist */ }
 
       // Fetch AI interview sessions
-      let interviewsMap: Record<string, any> = {};
+      const interviewsMap: Record<string, any> = {};
       try {
         const { data: interviews } = await supabase
           .from('ai_interview_sessions')
           .select('candidate_id, status, job_id, completed_at, final_evaluation')
-          .in('candidate_id', candidateIds);
-
+          .in('candidate_id', candidateIds)
+          .in('job_id', effectiveJobIds);
         for (const i of interviews || []) {
-          if (jobId && i.job_id !== jobId) continue;
           interviewsMap[i.candidate_id] = i;
         }
       } catch { /* table may not exist */ }
 
       const analytics = candidates.map((row: any) => {
+        const application = applicationsMap[row.id];
         const screening = screeningsMap[row.id];
         const assessment = assessmentsMap[row.id];
         const interview = interviewsMap[row.id];
         const finalEval = interview?.final_evaluation || {};
-        const application = applicationsMap[row.id];
+        const appliedJobId = application?.job_id || jobId;
 
         return {
           candidate_id: row.id,
           candidate_name: row.full_name,
           candidate_email: row.email,
-          job_title: jobTitle,
+          job_title: appliedJobId ? (jobTitleMap[appliedJobId] || 'N/A') : 'N/A',
+          job_id: appliedJobId,
           application_status: application?.status || 'applied',
           ats_score: screening?.overall_score ?? null,
           shortlisted: screening?.shortlisted ?? null,
@@ -789,14 +845,28 @@ Return JSON:
       if (body.resume_text) {
         // Sanitize: remove null bytes and invalid Unicode escape sequences
         resumeText = String(body.resume_text)
-          .replace(/\x00/g, '') // Remove null bytes
-          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // Remove control characters
-          .slice(0, 50000); // Limit size
+          .replace(/\x00/g, '')
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+          .slice(0, 50000);
 
         try {
-          resumeParsedData = await generateJSON<any>(`Parse resume into JSON: ${resumeText.slice(0, 5000)}`);
+          const parsePrompt = `Parse this resume text into structured JSON.
+
+Resume text:
+${resumeText.slice(0, 8000)}
+
+Return JSON with this exact structure:
+{
+  "skills": ["skill1", "skill2"],
+  "experience": [{"title": "Job Title", "company": "Company", "duration": "2 years", "description": "What they did"}],
+  "education": [{"degree": "BS Computer Science", "institution": "University", "year": "2020"}],
+  "summary": "Brief professional summary",
+  "total_experience_years": 3,
+  "certifications": ["cert1"]
+}`;
+          resumeParsedData = await generateJSON<any>(parsePrompt);
         } catch {
-          resumeParsedData = null;
+          resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
         }
       }
 
@@ -860,12 +930,88 @@ Return JSON:
         return res.status(500).json({ error: appError.message, step: 'insert_application' });
       }
 
-      // Send confirmation email
+      // Send confirmation email (non-blocking)
       try {
         await sendApplicationReceived(email, fullName, job.title);
       } catch (emailErr: any) {
         console.error('Failed to send application email:', emailErr);
-        // Don't fail the request, just log
+      }
+
+      // Auto-run ATS screening if resume was parsed
+      let atsScore: number | null = null;
+      if (resumeParsedData && resumeParsedData.skills) {
+        try {
+          // Fetch full job details for screening
+          const { data: fullJob } = await supabase
+            .from('job_descriptions')
+            .select('*')
+            .eq('id', jobId)
+            .single();
+
+          if (fullJob) {
+            const screenPrompt = `Analyze this candidate's resume against the job requirements and provide ATS screening scores.
+
+Job: ${fullJob.title} (${fullJob.role}, ${fullJob.level})
+Required Skills: ${(fullJob.must_have_skills || []).join(', ')}
+Nice-to-have Skills: ${(fullJob.good_to_have_skills || []).join(', ')}
+Min Experience: ${fullJob.min_experience_years} years
+
+Candidate Resume:
+${JSON.stringify(resumeParsedData)}
+
+Return JSON:
+{
+  "overall_score": 0-100,
+  "skill_relevance_score": 0-100,
+  "experience_score": 0-100,
+  "education_score": 0-100,
+  "credibility_score": 0-100,
+  "shortlisted": true or false (true if overall_score >= 60),
+  "shortlist_reason": "brief reason",
+  "reason_codes": [{"code":"SKILL_MATCH","type":"positive","description":"...","impact":10}]
+}`;
+            const screenResult = await generateJSON<any>(screenPrompt);
+            atsScore = screenResult.overall_score;
+
+            const screeningData = {
+              candidate_id: candidateId,
+              job_id: jobId,
+              overall_score: screenResult.overall_score,
+              skill_relevance_score: screenResult.skill_relevance_score ?? null,
+              experience_score: screenResult.experience_score ?? null,
+              education_score: screenResult.education_score ?? null,
+              credibility_score: screenResult.credibility_score ?? null,
+              shortlisted: !!screenResult.shortlisted,
+              shortlist_reason: screenResult.shortlist_reason ?? null,
+              reason_codes: screenResult.reason_codes ?? [],
+              screened_at: new Date().toISOString(),
+            };
+
+            // Upsert screening
+            const { data: existingScreen } = await supabase
+              .from('ats_screenings')
+              .select('id')
+              .eq('candidate_id', candidateId)
+              .eq('job_id', jobId)
+              .maybeSingle();
+
+            if (existingScreen) {
+              await supabase.from('ats_screenings').update(screeningData).eq('id', existingScreen.id);
+            } else {
+              await supabase.from('ats_screenings').insert(screeningData);
+            }
+
+            // Update application status based on screening
+            const newStatus = screenResult.shortlisted ? 'screened' : 'rejected';
+            await supabase.from('job_applications').update({
+              status: newStatus,
+              screening_status: screenResult.shortlisted ? 'shortlisted' : 'rejected',
+              updated_at: new Date().toISOString(),
+            }).eq('id', applicationId);
+          }
+        } catch (screenErr: any) {
+          console.error('Auto-screening failed (non-blocking):', screenErr.message);
+        }
       }
 
       return ok(res, {
@@ -873,6 +1019,7 @@ Return JSON:
         job_id: jobId,
         candidate_id: candidateId,
         status: 'applied',
+        ats_score: atsScore,
         message: `Application submitted successfully for ${job.title}.`,
       });
     }
@@ -1150,7 +1297,7 @@ Example:
       const jobId = body.job_id as string;
       const deadlineHours = body.deadline_hours ?? 72;
 
-      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', jobId).single();
+      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', jobId).eq('created_by', user.id).single();
       if (!job) return notFound(res, 'Job not found');
 
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
@@ -1291,20 +1438,57 @@ Example:
     // POST /api/ai-interview/:sessionId/complete
     if (req.method === 'POST' && segments.length === 3 && segments[2] === 'complete') {
       const sessionId = segments[1];
-      const { data: session } = await supabase.from('ai_interview_sessions').select('*').eq('id', sessionId).single();
+      const { data: session } = await supabase
+        .from('ai_interview_sessions')
+        .select('*, candidates(full_name), job_descriptions(title, role, level, must_have_skills)')
+        .eq('id', sessionId)
+        .single();
       if (!session) return notFound(res, 'Session not found');
 
-      // Minimal placeholder evaluation
-      const finalEvaluation = {
-        overall_score: 70,
-        technical_score: 70,
-        communication_score: 70,
-        confidence_score: 70,
-        recommendation: 'hire',
-        strengths: ['Good communication'],
-        areas_for_improvement: ['More depth on technicals'],
-        detailed_feedback: 'Automated evaluation placeholder.',
-      };
+      // AI-powered evaluation based on actual responses
+      let finalEvaluation: any;
+      const questions = session.questions || [];
+      const responses = session.responses || [];
+
+      try {
+        const qaPairs = questions.map((q: any, i: number) => {
+          const resp = responses.find((r: any) => r.question_index === i);
+          return `Q${i + 1} (${q.type}): ${q.text}\nA${i + 1}: ${resp?.transcript || '[No response]'}`;
+        }).join('\n\n');
+
+        const evalPrompt = `Evaluate this AI interview for a ${session.job_descriptions?.level} ${session.job_descriptions?.role} position (${session.job_descriptions?.title}).
+Required skills: ${(session.job_descriptions?.must_have_skills || []).join(', ')}
+
+Interview Q&A:
+${qaPairs}
+
+Evaluate and return JSON:
+{
+  "overall_score": 0-100,
+  "technical_score": 0-100,
+  "communication_score": 0-100,
+  "confidence_score": 0-100,
+  "recommendation": "strong_hire" or "hire" or "maybe" or "no_hire",
+  "strengths": ["strength1", "strength2"],
+  "areas_for_improvement": ["area1", "area2"],
+  "detailed_feedback": "2-3 sentence summary of candidate performance"
+}`;
+        finalEvaluation = await generateJSON<any>(evalPrompt);
+      } catch {
+        // Fallback if AI evaluation fails
+        const answeredCount = responses.filter((r: any) => r.transcript && r.transcript.trim()).length;
+        const completionRate = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
+        finalEvaluation = {
+          overall_score: Math.round(completionRate * 0.7),
+          technical_score: Math.round(completionRate * 0.6),
+          communication_score: Math.round(completionRate * 0.8),
+          confidence_score: Math.round(completionRate * 0.7),
+          recommendation: completionRate >= 70 ? 'maybe' : 'no_hire',
+          strengths: answeredCount > 0 ? ['Completed interview responses'] : [],
+          areas_for_improvement: ['Could not perform AI evaluation - scores are approximate'],
+          detailed_feedback: `Candidate answered ${answeredCount} of ${questions.length} questions.`,
+        };
+      }
 
       await supabase.from('ai_interview_sessions').update({
         status: 'completed',
@@ -1326,6 +1510,7 @@ Example:
         .from('job_descriptions')
         .select('id, title, role, level, must_have_skills')
         .eq('id', job_id)
+        .eq('created_by', user.id)
         .single();
 
       if (!job) return notFound(res, 'Job not found');

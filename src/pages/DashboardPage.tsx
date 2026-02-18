@@ -26,8 +26,8 @@ import type { JobRole, InterviewStatus } from '@/types/database';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
-  { name: 'Screen Resume', href: '/candidates/new', icon: FileText, description: 'Upload & analyze' },
-  { name: 'View Reports', href: '/analytics', icon: TrendingUp, description: 'Analytics dashboard' },
+  { name: 'Screen Resume', href: '/candidates', icon: FileText, description: 'View & screen candidates' },
+  { name: 'View Results', href: '/results', icon: TrendingUp, description: 'Scores & recommendations' },
 ];
 
 export default function DashboardPage() {
