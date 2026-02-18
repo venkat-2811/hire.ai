@@ -842,6 +842,7 @@ Return JSON:
       // Sanitize and parse resume text (optional)
       let resumeText: string | null = null;
       let resumeParsedData: any = null;
+      let autoScreenResult: any = null;
       if (body.resume_text) {
         // Sanitize: remove null bytes and invalid Unicode escape sequences
         resumeText = String(body.resume_text)
@@ -849,23 +850,56 @@ Return JSON:
           .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
           .slice(0, 50000);
 
+        // Fetch full job for combined parse+screen
+        const { data: fullJob } = await supabase
+          .from('job_descriptions')
+          .select('*')
+          .eq('id', jobId)
+          .single();
+
         try {
-          const parsePrompt = `Parse this resume text into structured JSON.
+          // Combined: parse resume AND screen against job in ONE AI call
+          const combinedPrompt = `You are an ATS system. Parse this resume and score it against the job.
 
-Resume text:
-${resumeText.slice(0, 8000)}
+RESUME TEXT:
+${resumeText.slice(0, 6000)}
 
-Return JSON with this exact structure:
+JOB: ${fullJob?.title || job.title} (${fullJob?.role || 'N/A'}, ${fullJob?.level || 'N/A'})
+Required Skills: ${(fullJob?.must_have_skills || []).join(', ')}
+Nice-to-have: ${(fullJob?.good_to_have_skills || []).join(', ')}
+Min Experience: ${fullJob?.min_experience_years || 0} years
+
+Return JSON with BOTH parsed resume and screening scores:
 {
-  "skills": ["skill1", "skill2"],
-  "experience": [{"title": "Job Title", "company": "Company", "duration": "2 years", "description": "What they did"}],
-  "education": [{"degree": "BS Computer Science", "institution": "University", "year": "2020"}],
-  "summary": "Brief professional summary",
-  "total_experience_years": 3,
-  "certifications": ["cert1"]
+  "parsed_resume": {
+    "skills": ["skill1", "skill2"],
+    "experience": [{"title": "Job Title", "company": "Company", "duration": "2 years", "description": "Brief desc"}],
+    "education": [{"degree": "Degree", "institution": "School", "year": "2020"}],
+    "summary": "Brief professional summary",
+    "total_experience_years": 3,
+    "certifications": ["cert1"]
+  },
+  "screening": {
+    "overall_score": 75,
+    "skill_relevance_score": 80,
+    "experience_score": 70,
+    "education_score": 60,
+    "credibility_score": 75,
+    "shortlisted": true,
+    "shortlist_reason": "Strong skill match",
+    "reason_codes": [{"code": "SKILL_MATCH", "type": "positive", "description": "Has required skills", "impact": 10}]
+  }
 }`;
-          resumeParsedData = await generateJSON<any>(parsePrompt);
-        } catch {
+          const combined = await generateJSON<any>(combinedPrompt);
+          resumeParsedData = combined.parsed_resume || combined;
+          autoScreenResult = combined.screening || null;
+
+          // Ensure parsed_resume has required fields
+          if (!resumeParsedData.skills) {
+            resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
+          }
+        } catch (parseErr: any) {
+          console.error('Resume parse+screen failed:', parseErr.message);
           resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
         }
       }
@@ -937,80 +971,48 @@ Return JSON with this exact structure:
         console.error('Failed to send application email:', emailErr);
       }
 
-      // Auto-run ATS screening if resume was parsed
+      // Save ATS screening from combined result (already computed above)
       let atsScore: number | null = null;
-      if (resumeParsedData && resumeParsedData.skills) {
+      if (autoScreenResult && autoScreenResult.overall_score != null) {
         try {
-          // Fetch full job details for screening
-          const { data: fullJob } = await supabase
-            .from('job_descriptions')
-            .select('*')
-            .eq('id', jobId)
-            .single();
+          atsScore = autoScreenResult.overall_score;
+          const screeningData = {
+            candidate_id: candidateId,
+            job_id: jobId,
+            overall_score: autoScreenResult.overall_score,
+            skill_relevance_score: autoScreenResult.skill_relevance_score ?? null,
+            experience_score: autoScreenResult.experience_score ?? null,
+            education_score: autoScreenResult.education_score ?? null,
+            credibility_score: autoScreenResult.credibility_score ?? null,
+            shortlisted: !!autoScreenResult.shortlisted,
+            shortlist_reason: autoScreenResult.shortlist_reason ?? null,
+            reason_codes: autoScreenResult.reason_codes ?? [],
+            screened_at: new Date().toISOString(),
+          };
 
-          if (fullJob) {
-            const screenPrompt = `Analyze this candidate's resume against the job requirements and provide ATS screening scores.
+          // Upsert screening
+          const { data: existingScreen } = await supabase
+            .from('ats_screenings')
+            .select('id')
+            .eq('candidate_id', candidateId)
+            .eq('job_id', jobId)
+            .maybeSingle();
 
-Job: ${fullJob.title} (${fullJob.role}, ${fullJob.level})
-Required Skills: ${(fullJob.must_have_skills || []).join(', ')}
-Nice-to-have Skills: ${(fullJob.good_to_have_skills || []).join(', ')}
-Min Experience: ${fullJob.min_experience_years} years
-
-Candidate Resume:
-${JSON.stringify(resumeParsedData)}
-
-Return JSON:
-{
-  "overall_score": 0-100,
-  "skill_relevance_score": 0-100,
-  "experience_score": 0-100,
-  "education_score": 0-100,
-  "credibility_score": 0-100,
-  "shortlisted": true or false (true if overall_score >= 60),
-  "shortlist_reason": "brief reason",
-  "reason_codes": [{"code":"SKILL_MATCH","type":"positive","description":"...","impact":10}]
-}`;
-            const screenResult = await generateJSON<any>(screenPrompt);
-            atsScore = screenResult.overall_score;
-
-            const screeningData = {
-              candidate_id: candidateId,
-              job_id: jobId,
-              overall_score: screenResult.overall_score,
-              skill_relevance_score: screenResult.skill_relevance_score ?? null,
-              experience_score: screenResult.experience_score ?? null,
-              education_score: screenResult.education_score ?? null,
-              credibility_score: screenResult.credibility_score ?? null,
-              shortlisted: !!screenResult.shortlisted,
-              shortlist_reason: screenResult.shortlist_reason ?? null,
-              reason_codes: screenResult.reason_codes ?? [],
-              screened_at: new Date().toISOString(),
-            };
-
-            // Upsert screening
-            const { data: existingScreen } = await supabase
-              .from('ats_screenings')
-              .select('id')
-              .eq('candidate_id', candidateId)
-              .eq('job_id', jobId)
-              .maybeSingle();
-
-            if (existingScreen) {
-              await supabase.from('ats_screenings').update(screeningData).eq('id', existingScreen.id);
-            } else {
-              await supabase.from('ats_screenings').insert(screeningData);
-            }
-
-            // Update application status based on screening
-            const newStatus = screenResult.shortlisted ? 'screened' : 'rejected';
-            await supabase.from('job_applications').update({
-              status: newStatus,
-              screening_status: screenResult.shortlisted ? 'shortlisted' : 'rejected',
-              updated_at: new Date().toISOString(),
-            }).eq('id', applicationId);
+          if (existingScreen) {
+            await supabase.from('ats_screenings').update(screeningData).eq('id', existingScreen.id);
+          } else {
+            await supabase.from('ats_screenings').insert(screeningData);
           }
+
+          // Update application status based on screening
+          const newStatus = autoScreenResult.shortlisted ? 'screened' : 'rejected';
+          await supabase.from('job_applications').update({
+            status: newStatus,
+            screening_status: autoScreenResult.shortlisted ? 'shortlisted' : 'rejected',
+            updated_at: new Date().toISOString(),
+          }).eq('id', applicationId);
         } catch (screenErr: any) {
-          console.error('Auto-screening failed (non-blocking):', screenErr.message);
+          console.error('Screening save failed (non-blocking):', screenErr.message);
         }
       }
 
