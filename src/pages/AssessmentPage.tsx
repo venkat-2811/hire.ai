@@ -364,8 +364,13 @@ export default function AssessmentPage() {
           return;
         }
         const mcqData = await mcqResponse.json();
-        setMcqQuestions(mcqData);
-        if (!Array.isArray(mcqData) || mcqData.length === 0) {
+        const mcqList = Array.isArray(mcqData)
+          ? mcqData
+          : Array.isArray(mcqData?.questions)
+            ? mcqData.questions
+            : [];
+        setMcqQuestions(mcqList);
+        if (!mcqList.length) {
           setError('No MCQ questions were generated for this assessment. Please refresh or contact the hiring team.');
           return;
         }
@@ -378,14 +383,19 @@ export default function AssessmentPage() {
           return;
         }
         const codingData = await codingResponse.json();
-        setCodingChallenges(codingData);
-        if (!Array.isArray(codingData) || codingData.length === 0) {
+        const codingList = Array.isArray(codingData)
+          ? codingData
+          : Array.isArray(codingData?.challenges)
+            ? codingData.challenges
+            : [];
+        setCodingChallenges(codingList);
+        if (!codingList.length) {
           setError('No coding challenges were generated for this assessment. Please refresh or contact the hiring team.');
           return;
         }
         // Initialize solutions with starter code
         const initialSolutions: Record<string, string> = {};
-        codingData.forEach((c: CodingChallenge) => {
+        codingList.forEach((c: CodingChallenge) => {
           initialSolutions[c.id] = c.starter_code;
         });
         setCodingSolutions(initialSolutions);

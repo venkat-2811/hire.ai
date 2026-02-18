@@ -76,10 +76,6 @@ export default function NewCandidatePage() {
   });
 
   const handleNext = () => {
-    if (currentStep === 'upload' && !resumeFile) {
-      toast.error('Please upload a resume');
-      return;
-    }
     if (currentStep === 'details' && (!fullName || !email)) {
       toast.error('Please fill in required fields');
       return;
@@ -117,17 +113,18 @@ export default function NewCandidatePage() {
     setIsProcessing(true);
     
     try {
-      // Create candidate with resume upload
-      const formData = new FormData();
-      formData.append('full_name', fullName);
-      formData.append('email', email);
-      if (phone) formData.append('phone', phone);
-      if (portfolioUrl) formData.append('portfolio_url', portfolioUrl);
-      if (githubUrl) formData.append('github_url', githubUrl);
-      formData.append('consent_given', String(consentGiven));
-      if (resumeFile) formData.append('resume', resumeFile);
-
-      createCandidate.mutate(formData, {
+      // Create candidate (JSON payload)
+      createCandidate.mutate({
+        full_name: fullName,
+        email,
+        phone: phone || undefined,
+        portfolio_url: portfolioUrl || undefined,
+        github_url: githubUrl || undefined,
+        consent_given: consentGiven,
+        // Until binary resume upload endpoint is implemented, store uploaded filename as a note.
+        resume_text: resumeFile ? `Uploaded resume file: ${resumeFile.name}` : undefined,
+        job_id: selectedJob,
+      }, {
         onSuccess: async (candidate) => {
           // Run ATS screening if job selected
           if (selectedJob && candidate?.id) {
@@ -146,7 +143,7 @@ export default function NewCandidatePage() {
             navigate('/candidates');
           }
         },
-        onError: (error) => {
+        onError: () => {
           toast.error('Failed to create candidate');
           setCurrentStep('consent');
           setIsProcessing(false);
@@ -237,7 +234,7 @@ export default function NewCandidatePage() {
               <CardHeader>
                 <CardTitle>Upload Resume</CardTitle>
                 <CardDescription>
-                  Upload the candidate's resume in PDF or Word format
+                  Optional: upload the candidate's resume in PDF or Word format
                 </CardDescription>
               </CardHeader>
               <CardContent>

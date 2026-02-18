@@ -4,6 +4,7 @@ import {
   candidatesApi,
   screeningApi,
   type Candidate,
+  type CandidateCreatePayload,
 } from '@/lib/api';
 
 export function useCandidates(params?: { limit?: number; offset?: number }) {
@@ -25,7 +26,7 @@ export function useCreateCandidate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: FormData) => candidatesApi.create(data),
+    mutationFn: (data: CandidateCreatePayload) => candidatesApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
       toast.success('Candidate created successfully');

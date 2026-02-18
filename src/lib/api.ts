@@ -100,6 +100,19 @@ export interface JobDescription {
   updated_at: string;
 }
 
+export interface CandidateCreatePayload {
+  full_name: string;
+  email: string;
+  phone?: string;
+  portfolio_url?: string;
+  github_url?: string;
+  consent_given: boolean;
+  resume_url?: string;
+  resume_text?: string;
+  resume_parsed_data?: unknown;
+  job_id?: string;
+}
+
 export interface JobDescriptionCreate {
   title: string;
   role: 'salesforce_developer' | 'qa_engineer' | 'business_analyst';
@@ -180,7 +193,8 @@ export const candidatesApi = {
 
   get: (id: string) => request<Candidate>(`/candidates/${id}`),
 
-  create: (data: FormData) => uploadFile<Candidate>('/candidates', data),
+  create: (data: CandidateCreatePayload) =>
+    request<Candidate>('/candidates', { method: 'POST', body: data }),
 
   update: (id: string, data: Partial<Candidate>) =>
     request<Candidate>(`/candidates/${id}`, { method: 'PATCH', body: data }),

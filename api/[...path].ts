@@ -365,8 +365,22 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const user = await requireAuth(req, res);
         if (!user) return;
 
-        // For now: accept JSON-only candidate creation (resume upload via Storage can be added later)
-        const body = req.body;
+        // JSON-only candidate creation
+        const body = req.body || {};
+        if (!body.full_name || !body.email) return badRequest(res, 'full_name and email are required');
+
+        // Optional: ensure provided job belongs to current user
+        const jobId = body.job_id ? String(body.job_id) : null;
+        if (jobId) {
+          const { data: job } = await supabase
+            .from('job_descriptions')
+            .select('id')
+            .eq('id', jobId)
+            .eq('created_by', user.id)
+            .single();
+          if (!job) return badRequest(res, 'Invalid job_id');
+        }
+
         const candidateData = {
           full_name: body.full_name,
           email: body.email,
@@ -387,6 +401,23 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           .single();
 
         if (error) return res.status(500).json({ error: error.message });
+
+        // Create application mapping so user-scoped candidate lists include this candidate
+        if (jobId) {
+          const { error: appError } = await supabase
+            .from('job_applications')
+            .insert({
+              job_id: jobId,
+              candidate_id: data.id,
+              status: 'applied',
+              applied_at: new Date().toISOString(),
+              screening_status: 'pending',
+            });
+          if (appError) {
+            return res.status(500).json({ error: appError.message });
+          }
+        }
+
         return ok(res, data, 201);
       }
 
@@ -1146,7 +1177,27 @@ Return a JSON array where each object has:
 
 Example format:
 [{"id":"q1","question":"What is...?","options":["A","B","C","D"],"correct_index":0,"difficulty":"medium","topic":"JavaScript","points":10}]`;
-      const questions = await generateJSON<any[]>(prompt);
+      const generated = await generateJSON<any>(prompt);
+      const questionsRaw = Array.isArray(generated)
+        ? generated
+        : Array.isArray(generated?.questions)
+          ? generated.questions
+          : [];
+      const questions = questionsRaw
+        .map((q: any, idx: number) => ({
+          id: String(q?.id || `q${idx + 1}`),
+          question: String(q?.question || ''),
+          options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
+          correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
+          difficulty: String(q?.difficulty || 'medium'),
+          topic: String(q?.topic || 'General'),
+          points: typeof q?.points === 'number' ? q.points : 5,
+        }))
+        .filter((q: any) => q.question && q.options.length === 4);
+
+      if (!questions.length) {
+        return badRequest(res, 'Failed to generate MCQ questions');
+      }
 
       await supabase.from('assessment_sessions').update({
         mcq_questions: questions,
@@ -1196,8 +1247,29 @@ Return a JSON array where each object has:
 - "points": 25 for easy, 50 for medium, 75 for hard
 
 Example:
-[{"id":"c1","title":"Two Sum","description":"Given an array...","starter_code":"function twoSum(nums, target) {\\n  // your code\\n}","test_cases":[{"input":"[2,7,11], 9","expected_output":"[0,1]"}],"difficulty":"medium","time_limit_minutes":25,"points":50}]`;
-      const challenges = await generateJSON<any[]>(prompt);
+[{"id":"c1","title":"Two Sum","description":"Given an array...","starter_code":"function twoSum(nums, target) {\n  // your code\n}","test_cases":[{"input":"[2,7,11], 9","expected_output":"[0,1]"}],"difficulty":"medium","time_limit_minutes":25,"points":50}]`;
+      const generated = await generateJSON<any>(prompt);
+      const challengesRaw = Array.isArray(generated)
+        ? generated
+        : Array.isArray(generated?.challenges)
+          ? generated.challenges
+          : [];
+      const challenges = challengesRaw
+        .map((c: any, idx: number) => ({
+          id: String(c?.id || `c${idx + 1}`),
+          title: String(c?.title || ''),
+          description: String(c?.description || ''),
+          starter_code: String(c?.starter_code || ''),
+          test_cases: Array.isArray(c?.test_cases) ? c.test_cases : [],
+          difficulty: String(c?.difficulty || 'medium'),
+          time_limit_minutes: typeof c?.time_limit_minutes === 'number' ? c.time_limit_minutes : 25,
+          points: typeof c?.points === 'number' ? c.points : 50,
+        }))
+        .filter((c: any) => c.title && c.description);
+
+      if (!challenges.length) {
+        return badRequest(res, 'Failed to generate coding challenges');
+      }
 
       await supabase.from('assessment_sessions').update({
         coding_challenges: challenges,
