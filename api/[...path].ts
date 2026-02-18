@@ -916,10 +916,13 @@ Return JSON with BOTH parsed resume and screening scores:
             resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
           }
         } catch (parseErr: any) {
-          console.error('Resume parse+screen failed:', parseErr.message);
-          resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
+          console.error('Resume parse+screen failed:', parseErr.message, parseErr.stack);
+          resumeParsedData = { skills: [], experience: [], education: [], summary: resumeText?.slice(0, 200) || '', total_experience_years: 0, certifications: [] };
         }
       }
+
+      console.log('autoScreenResult:', autoScreenResult ? JSON.stringify(autoScreenResult).slice(0, 200) : 'null');
+      console.log('resumeParsedData keys:', resumeParsedData ? Object.keys(resumeParsedData) : 'null');
 
       // Check for existing candidate
       const { data: existingCandidate } = await supabase
