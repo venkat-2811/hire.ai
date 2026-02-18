@@ -891,8 +891,25 @@ Return JSON with BOTH parsed resume and screening scores:
   }
 }`;
           const combined = await generateJSON<any>(combinedPrompt);
-          resumeParsedData = combined.parsed_resume || combined;
-          autoScreenResult = combined.screening || null;
+          console.log('Combined AI result keys:', Object.keys(combined));
+
+          // Extract parsed resume - handle various response shapes
+          if (combined.parsed_resume) {
+            resumeParsedData = combined.parsed_resume;
+          } else if (combined.skills) {
+            // AI returned flat resume without nesting
+            resumeParsedData = combined;
+          } else {
+            resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
+          }
+
+          // Extract screening - handle various response shapes
+          if (combined.screening) {
+            autoScreenResult = combined.screening;
+          } else if (combined.overall_score != null) {
+            // AI returned flat screening without nesting
+            autoScreenResult = combined;
+          }
 
           // Ensure parsed_resume has required fields
           if (!resumeParsedData.skills) {
