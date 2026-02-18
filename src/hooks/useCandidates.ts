@@ -28,6 +28,7 @@ export function useCreateCandidate() {
     mutationFn: (data: FormData) => candidatesApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
       toast.success('Candidate created successfully');
     },
     onError: (error: Error) => {
@@ -72,6 +73,7 @@ export function useRunScreening() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['screenings'] });
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
 
       if (result.shortlisted) {
         toast.success(`Candidate shortlisted with score ${result.overall_score}%`);
@@ -92,6 +94,7 @@ export function useDeleteCandidate() {
     mutationFn: (id: string) => candidatesApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
       toast.success('Candidate deleted successfully');
     },
     onError: (error: Error) => {

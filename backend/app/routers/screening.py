@@ -1,16 +1,17 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 from app.models.schemas import (
     ATSScreeningResult, ATSScreeningRequest, ResumeData, JobDescription, APIResponse
 )
 from app.database import get_supabase_client
 from app.services.ats_screening import get_ats_screening_service
+from app.auth import get_current_user, ClerkUser
 
 router = APIRouter(prefix="/screening", tags=["ATS Screening"])
 
 
 @router.post("/run", response_model=ATSScreeningResult)
-async def run_ats_screening(request: ATSScreeningRequest):
+async def run_ats_screening(request: ATSScreeningRequest, user: ClerkUser = Depends(get_current_user)):
     """
     Run ATS screening for a candidate against a job.
     Returns detailed scoring with explainable AI reason codes.
@@ -27,6 +28,10 @@ async def run_ats_screening(request: ATSScreeningRequest):
     
     candidate = candidate_result.data
     
+    # Verify ownership
+    if candidate.get("user_id") and candidate["user_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to screen this candidate")
+    
     # Check if resume is parsed
     if not candidate.get("resume_parsed_data"):
         raise HTTPException(
@@ -41,6 +46,10 @@ async def run_ats_screening(request: ATSScreeningRequest):
     
     if not job_result.data:
         raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Verify job ownership
+    if job_result.data.get("created_by") and job_result.data["created_by"] != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to use this job for screening")
     
     job_row = job_result.data
     job = JobDescription(

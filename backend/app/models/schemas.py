@@ -98,6 +98,7 @@ class CandidateUpdate(BaseModel):
 class Candidate(CandidateCreate, TimestampMixin):
     id: str
     user_id: Optional[str] = None
+    job_id: Optional[str] = None
     resume_url: Optional[str] = None
     resume_text: Optional[str] = None
     resume_parsed_data: Optional[ResumeData] = None

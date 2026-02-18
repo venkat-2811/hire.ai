@@ -121,31 +121,23 @@ export default function ApplyPage() {
     setSubmitting(true);
 
     try {
-      // Read resume file as text if provided
-      let resumeText: string | null = null;
+      // Build FormData to match backend's multipart/form-data expectation
+      const formData = new FormData();
+      formData.append('job_id', jobId || '');
+      formData.append('full_name', fullName);
+      formData.append('email', email);
+      if (phone) formData.append('phone', phone);
+      if (portfolioUrl) formData.append('portfolio_url', portfolioUrl);
+      if (githubUrl) formData.append('github_url', githubUrl);
+      formData.append('consent_given', String(consentGiven));
       if (resumeFile) {
-        try {
-          resumeText = await resumeFile.text();
-        } catch {
-          // If we can't read as text, skip it
-        }
+        formData.append('resume', resumeFile);
       }
 
       const response = await fetch(`${API_BASE_URL}/apply/submit`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          job_id: jobId,
-          full_name: fullName,
-          email: email,
-          phone: phone || null,
-          portfolio_url: portfolioUrl || null,
-          github_url: githubUrl || null,
-          consent_given: consentGiven,
-          resume_text: resumeText,
-        }),
+        // No Content-Type header — browser auto-sets multipart boundary
+        body: formData,
       });
 
       if (!response.ok) {
@@ -385,11 +377,10 @@ export default function ApplyPage() {
                   <Label>Resume</Label>
                   <div
                     {...getRootProps()}
-                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                      isDragActive
+                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${isDragActive
                         ? 'border-primary bg-primary/5'
                         : 'border-muted-foreground/25 hover:border-primary/50'
-                    }`}
+                      }`}
                   >
                     <input {...getInputProps()} />
                     {resumeFile ? (

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  interviewsApi, 
-  InterviewSession, 
+import {
+  interviewsApi,
+  InterviewSession,
   InterviewQuestion,
   CandidateResponse,
   PracticalAssessment,
@@ -28,7 +28,7 @@ export function useInterview(id: string) {
 
 export function useCreateInterview() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (data: { candidate_id: string; job_id: string; screening_id?: string; scheduled_at?: string }) =>
       interviewsApi.create(data),
@@ -44,7 +44,7 @@ export function useCreateInterview() {
 
 export function useStartInterview() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (id: string) => interviewsApi.start(id),
     onSuccess: (_, id) => {
@@ -68,14 +68,15 @@ export function useInterviewQuestions(sessionId: string) {
 
 export function useSubmitResponse() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: ({ sessionId, data }: { 
-      sessionId: string; 
+    mutationFn: ({ sessionId, data }: {
+      sessionId: string;
       data: { question_id: string; response_text?: string; response_code?: string; time_taken_seconds?: number }
     }) => interviewsApi.submitResponse(sessionId, data),
     onSuccess: (response, { sessionId }) => {
       queryClient.invalidateQueries({ queryKey: ['interviews', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
       if (response.ai_score !== null) {
         toast.success(`Response evaluated: ${response.ai_score}%`);
       }
@@ -96,7 +97,7 @@ export function usePracticalAssessments(sessionId: string) {
 
 export function useSubmitPractical() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({ sessionId, assessmentId, data }: {
       sessionId: string;
@@ -124,13 +125,14 @@ export function useUpdateProctoring() {
 
 export function useCompleteInterview() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (id: string) => interviewsApi.complete(id),
     onSuccess: (evaluation, id) => {
       queryClient.invalidateQueries({ queryKey: ['interviews'] });
       queryClient.invalidateQueries({ queryKey: ['interviews', id] });
-      
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+
       const recText = evaluation.recommendation?.replace('_', ' ').toUpperCase() || 'PENDING';
       toast.success(`Interview completed - Recommendation: ${recText}`);
     },

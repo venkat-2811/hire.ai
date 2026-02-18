@@ -106,7 +106,8 @@ async def send_interview_invites(
     email_service = get_email_service()
     
     # Verify job exists
-    job_result = supabase.table("job_descriptions").select("id, title, role, level").eq("id", request.job_id).execute()
+    # Verify job exists and belongs to user
+    job_result = supabase.table("job_descriptions").select("id, title, role, level").eq("id", request.job_id).eq("created_by", user.id).execute()
     if not job_result.data:
         raise HTTPException(status_code=404, detail="Job not found")
     
