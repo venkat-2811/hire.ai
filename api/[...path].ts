@@ -65,21 +65,35 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
   return completion.choices[0]?.message?.content || '';
 }
 async function generateJSON<T>(prompt: string): Promise<T> {
-  const fullPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, no explanation.`;
-  const text = await generateText(fullPrompt, { temperature: 0.3, maxTokens: 8192 });
-  // Try to extract JSON from various formats
-  let jsonStr = text.trim();
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
-  // Try to find JSON array or object
-  const arrayMatch = jsonStr.match(/\[\s*\{[\s\S]*\}\s*\]/);
-  const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
-  if (arrayMatch) jsonStr = arrayMatch[0];
-  else if (objectMatch && !jsonStr.startsWith('[')) jsonStr = objectMatch[0];
-  try { return JSON.parse(jsonStr) as T; }
+  const client = getGroqClient();
+  // Use Groq's native JSON mode for reliable JSON output
+  const completion = await client.chat.completions.create({
+    model: 'llama-3.1-8b-instant',
+    messages: [
+      { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
+      { role: 'user', content: prompt },
+    ],
+    temperature: 0.3,
+    max_tokens: 8192,
+    response_format: { type: 'json_object' },
+  });
+  const text = (completion.choices[0]?.message?.content || '').trim();
+  if (!text) throw new Error('Empty AI response');
+  try { return JSON.parse(text) as T; }
   catch (e) {
-    console.error('JSON parse error:', e, 'Raw text:', text.slice(0, 500));
-    throw new Error('Failed to parse AI response as JSON');
+    // Fallback: try to extract JSON from response
+    let jsonStr = text;
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) jsonStr = jsonMatch[1].trim();
+    const arrayMatch = jsonStr.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (arrayMatch) jsonStr = arrayMatch[0];
+    else if (objectMatch && !jsonStr.startsWith('[')) jsonStr = objectMatch[0];
+    try { return JSON.parse(jsonStr) as T; }
+    catch (e2) {
+      console.error('JSON parse error. Raw text:', text.slice(0, 500));
+      throw new Error('Failed to parse AI response as JSON');
+    }
   }
 }
 
