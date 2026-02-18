@@ -18,6 +18,7 @@ class GeminiService:
         # Some API keys/regions only expose a subset of models under the v1beta API.
         # We'll start with a preferred model, but fall back automatically if it isn't available.
         self._model_candidates = [
+            "gemini-2.0-flash",
             "gemini-1.5-flash",
             "gemini-1.5-flash-latest",
             "gemini-1.5-pro",

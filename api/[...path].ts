@@ -50,7 +50,7 @@ function getGeminiModel(): GenerativeModel {
   if (!_gemini) {
     const k = process.env.GEMINI_API_KEY;
     if (!k) throw new Error('GEMINI_API_KEY not configured');
-    _gemini = new GoogleGenerativeAI(k).getGenerativeModel({ model: 'gemini-2.5-pro' });
+    _gemini = new GoogleGenerativeAI(k).getGenerativeModel({ model: 'gemini-2.0-flash' });
   }
   return _gemini;
 }
@@ -74,9 +74,9 @@ async function generateJSON<T>(prompt: string): Promise<T> {
   if (arrayMatch) jsonStr = arrayMatch[0];
   else if (objectMatch && !jsonStr.startsWith('[')) jsonStr = objectMatch[0];
   try { return JSON.parse(jsonStr) as T; }
-  catch (e) { 
+  catch (e) {
     console.error('JSON parse error:', e, 'Raw text:', text.slice(0, 500));
-    throw new Error('Failed to parse AI response as JSON'); 
+    throw new Error('Failed to parse AI response as JSON');
   }
 }
 
@@ -158,7 +158,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
   // req.url will be something like "/api/apply/job/123" or "/api/[...path]?path=apply&path=job&path=123"
   const urlPath = (req.url || '').split('?')[0].replace(/^\/api\//, '').replace(/^\[\.\.\.path\]/, '').replace(/\/$/, '');
   let segments: string[] = urlPath ? urlPath.split('/').filter(Boolean) : [];
-  
+
   // If segments are empty, try query.path (Vercel catch-all populates this)
   if (segments.length === 0) {
     const pathParam = req.query.path;
@@ -603,7 +603,7 @@ Return JSON:
       // If job_id provided, get candidates who applied for that job
       let candidateIds: string[] = [];
       let applicationsMap: Record<string, any> = {};
-      
+
       if (jobId) {
         const { data: applications } = await supabase
           .from('job_applications')
@@ -611,7 +611,7 @@ Return JSON:
           .eq('job_id', jobId)
           .order('applied_at', { ascending: false })
           .limit(limit);
-        
+
         candidateIds = (applications || []).map((a: any) => a.candidate_id);
         for (const app of applications || []) {
           applicationsMap[app.candidate_id] = app;
@@ -648,14 +648,14 @@ Return JSON:
         const { data: job } = await supabase.from('job_descriptions').select('title').eq('id', jobId).single();
         if (job) jobTitle = job.title;
       }
-      
+
       // Fetch ATS screenings
       let screeningsMap: Record<string, any> = {};
       const { data: screenings } = await supabase
         .from('ats_screenings')
         .select('candidate_id, overall_score, job_id, shortlisted')
         .in('candidate_id', candidateIds);
-      
+
       for (const s of screenings || []) {
         if (jobId && s.job_id !== jobId) continue;
         screeningsMap[s.candidate_id] = s;
@@ -668,7 +668,7 @@ Return JSON:
           .from('assessment_sessions')
           .select('candidate_id, total_score, status, job_id, completed_at')
           .in('candidate_id', candidateIds);
-        
+
         for (const a of assessments || []) {
           if (jobId && a.job_id !== jobId) continue;
           assessmentsMap[a.candidate_id] = a;
@@ -682,7 +682,7 @@ Return JSON:
           .from('ai_interview_sessions')
           .select('candidate_id, status, job_id, completed_at, final_evaluation')
           .in('candidate_id', candidateIds);
-        
+
         for (const i of interviews || []) {
           if (jobId && i.job_id !== jobId) continue;
           interviewsMap[i.candidate_id] = i;
@@ -724,27 +724,27 @@ Return JSON:
     // GET /api/apply/job/:jobId
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'job') {
       const jobId = segments[2];
-      
+
       // First check if job exists at all (for debugging)
       const { data: anyJob, error: anyError } = await supabase
         .from('job_descriptions')
         .select('id, title, is_active')
         .eq('id', jobId)
         .maybeSingle();
-      
+
       if (anyError) {
         console.error('Apply job fetch error:', anyError);
         return res.status(500).json({ error: anyError.message, code: anyError.code, details: anyError.details });
       }
-      
+
       if (!anyJob) {
         return notFound(res, 'Job not found - ID does not exist in database');
       }
-      
+
       if (!anyJob.is_active) {
         return res.status(410).json({ error: 'This job is no longer accepting applications', job_title: anyJob.title });
       }
-      
+
       // Job exists and is active, fetch full details
       const { data, error } = await supabase
         .from('job_descriptions')
@@ -789,7 +789,7 @@ Return JSON:
           .replace(/\x00/g, '') // Remove null bytes
           .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // Remove control characters
           .slice(0, 50000); // Limit size
-        
+
         try {
           resumeParsedData = await generateJSON<any>(`Parse resume into JSON: ${resumeText.slice(0, 5000)}`);
         } catch {

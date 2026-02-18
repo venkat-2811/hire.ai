@@ -10,7 +10,7 @@ export function getGeminiModel(): GenerativeModel {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   }
 
   return geminiModel;
@@ -21,7 +21,7 @@ export async function generateText(
   options: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
   const model = getGeminiModel();
-  
+
   const result = await model.generateContent({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
@@ -36,13 +36,13 @@ export async function generateText(
 
 export async function generateJSON<T>(prompt: string): Promise<T> {
   const text = await generateText(prompt, { temperature: 0.3 });
-  
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || 
-                    text.match(/```\s*([\s\S]*?)\s*```/) ||
-                    [null, text];
-  
+
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ||
+    text.match(/```\s*([\s\S]*?)\s*```/) ||
+    [null, text];
+
   const jsonStr = jsonMatch[1] || text;
-  
+
   try {
     return JSON.parse(jsonStr.trim()) as T;
   } catch (error) {
