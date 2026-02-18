@@ -780,6 +780,7 @@ Return JSON:
           assessment_score: assessment?.total_score ?? null,
           assessment_status: assessment?.status ?? null,
           interview_status: interview?.status ?? null,
+          interview_score: finalEval.overall_score ?? null,
           technical_score: finalEval.technical_score ?? null,
           overall_score: finalEval.overall_score ?? null,
           recommendation: finalEval.recommendation ?? null,

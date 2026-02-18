@@ -5,7 +5,7 @@ export type JobRole = string;
 export type RoleLevel = 'intern' | 'junior' | 'mid' | 'senior';
 export type InterviewStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 export type AssessmentType = 'technical' | 'practical' | 'behavioral';
-export type HireRecommendation = 'strong_hire' | 'hire' | 'borderline' | 'no_hire';
+export type HireRecommendation = 'strong_hire' | 'hire' | 'borderline' | 'maybe' | 'no_hire';
 export type AppRole = 'admin' | 'recruiter' | 'interviewer' | 'candidate';
 
 export interface JobDescription {
@@ -233,11 +233,16 @@ export interface DashboardStats {
 export interface CandidateAnalytics {
   candidate_id: string;
   candidate_name: string;
+  candidate_email?: string;
   job_title: string;
-  ats_score: number;
+  job_id?: string;
+  application_status?: string;
+  ats_score: number | null;
+  shortlisted?: boolean | null;
   assessment_score: number | null;
+  assessment_status?: string | null;
   interview_score: number | null;
-  interview_status: InterviewStatus;
+  interview_status: InterviewStatus | null;
   technical_score: number | null;
   overall_score: number | null;
   recommendation: HireRecommendation | null;

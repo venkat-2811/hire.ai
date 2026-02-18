@@ -304,6 +304,8 @@ export default function ResultsDashboardPage() {
         return <Badge className="bg-info text-info-foreground">Hire</Badge>;
       case 'borderline':
         return <Badge variant="secondary">Borderline</Badge>;
+      case 'maybe':
+        return <Badge variant="secondary">Maybe</Badge>;
       case 'no_hire':
         return <Badge variant="destructive">No Hire</Badge>;
       default:
