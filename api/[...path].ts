@@ -1042,6 +1042,8 @@ Return JSON with BOTH parsed resume and screening scores:
         candidate_id: candidateId,
         status: 'applied',
         ats_score: atsScore,
+        resume_parsed: !!resumeParsedData?.skills?.length,
+        screening_saved: atsScore != null,
         message: `Application submitted successfully for ${job.title}.`,
       });
     }
