@@ -44,6 +44,55 @@ async function getOptionalUser(req: VercelRequest): Promise<ClerkUser | null> {
   try { return await verifyClerkToken(req); } catch { return null; }
 }
 
+// ============== INLINE: AssemblyAI ==============
+async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): Promise<string> {
+  const apiKey = process.env.ASSEMBLYAI_API_KEY;
+  if (!apiKey) throw new Error('ASSEMBLYAI_API_KEY is not configured in Vercel environment variables.');
+
+  // 1. Upload audio
+  const uploadResp = await fetch('https://api.assemblyai.com/v2/upload', {
+    method: 'POST',
+    headers: { authorization: apiKey, 'content-type': 'application/octet-stream' },
+    body: audioBuffer,
+  });
+  if (!uploadResp.ok) {
+    const errText = await uploadResp.text();
+    throw new Error(`AssemblyAI upload failed (${uploadResp.status}): ${errText}`);
+  }
+  const { upload_url } = await uploadResp.json() as { upload_url: string };
+  if (!upload_url) throw new Error('AssemblyAI upload failed: missing upload_url');
+
+  // 2. Create transcript
+  const transcriptResp = await fetch('https://api.assemblyai.com/v2/transcript', {
+    method: 'POST',
+    headers: { authorization: apiKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ audio_url: upload_url, language_code: 'en_us' }),
+  });
+  if (!transcriptResp.ok) {
+    const errText = await transcriptResp.text();
+    throw new Error(`AssemblyAI transcript create failed (${transcriptResp.status}): ${errText}`);
+  }
+  const { id: transcriptId } = await transcriptResp.json() as { id: string };
+  if (!transcriptId) throw new Error('AssemblyAI transcript create failed: missing id');
+
+  // 3. Poll until complete (max 120s)
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const pollResp = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+      headers: { authorization: apiKey },
+    });
+    if (!pollResp.ok) {
+      const errText = await pollResp.text();
+      throw new Error(`AssemblyAI poll failed (${pollResp.status}): ${errText}`);
+    }
+    const pollData = await pollResp.json() as { status: string; text?: string; error?: string };
+    if (pollData.status === 'completed') return pollData.text || '';
+    if (pollData.status === 'error') throw new Error(`AssemblyAI transcription error: ${pollData.error}`);
+  }
+  throw new Error('AssemblyAI transcription timed out after 120 seconds');
+}
+
 // ============== INLINE: Groq ==============
 let _groq: Groq | null = null;
 function getGroqClient(): Groq {
@@ -1567,34 +1616,58 @@ Example:
       if (!session) return notFound(res, 'Session not found');
 
       const proctoring = session.proctoring_data || {};
-      if (event.event_type === 'tab_switch') proctoring.tab_switches = (proctoring.tab_switches || 0) + 1;
-      if (event.event_type === 'fullscreen_exit') proctoring.fullscreen_exits = (proctoring.fullscreen_exits || 0) + 1;
-      if (event.event_type === 'copy_paste') proctoring.copy_paste_attempts = (proctoring.copy_paste_attempts || 0) + 1;
 
+      // Update counters
+      if (event.event_type === 'tab_switch') proctoring.tab_switches = (proctoring.tab_switches || 0) + 1;
+      else if (event.event_type === 'fullscreen_exit') proctoring.fullscreen_exits = (proctoring.fullscreen_exits || 0) + 1;
+      else if (event.event_type === 'window_blur') proctoring.window_blurs = (proctoring.window_blurs || 0) + 1;
+      else if (event.event_type === 'copy_paste') proctoring.copy_paste_attempts = (proctoring.copy_paste_attempts || 0) + 1;
+      else if (event.event_type === 'right_click') proctoring.right_click_attempts = (proctoring.right_click_attempts || 0) + 1;
+      else if (event.event_type === 'face_not_detected') proctoring.face_detection_failures = (proctoring.face_detection_failures || 0) + 1;
+      else if (event.event_type === 'devtools_open') proctoring.devtools_attempts = (proctoring.devtools_attempts || 0) + 1;
+
+      const isCritical = ['tab_switch', 'fullscreen_exit', 'window_blur'].includes(event.event_type);
       const warnings = proctoring.warnings || [];
-      warnings.push({ type: event.event_type, timestamp: event.timestamp, details: event.details });
+      warnings.push({ type: event.event_type, timestamp: event.timestamp, details: event.details, severity: isCritical ? 'critical' : 'warning' });
       proctoring.warnings = warnings;
 
-      const totalViolations = (proctoring.tab_switches || 0) + (proctoring.fullscreen_exits || 0);
-      const shouldTerminate = totalViolations >= 3;
+      // STRICT: immediate termination for critical events
+      let shouldTerminate = false;
+      let terminationReason = '';
+
+      if (isCritical) {
+        shouldTerminate = true;
+        terminationReason = `Assessment terminated: ${event.event_type.replace(/_/g, ' ')} detected. This is a strict proctoring violation.`;
+      } else if ((proctoring.face_detection_failures || 0) >= 3) {
+        shouldTerminate = true;
+        terminationReason = 'Assessment terminated: Face not visible 3 times.';
+      } else {
+        const minorViolations = (proctoring.copy_paste_attempts || 0) + (proctoring.right_click_attempts || 0) + (proctoring.devtools_attempts || 0);
+        if (minorViolations >= 3) {
+          shouldTerminate = true;
+          terminationReason = 'Assessment terminated: Too many proctoring violations.';
+        }
+      }
 
       if (shouldTerminate) {
         proctoring.terminated = true;
+        proctoring.termination_reason = terminationReason;
         await supabase.from('assessment_sessions').update({
           proctoring_data: proctoring,
           status: 'terminated',
           completed_at: new Date().toISOString(),
         }).eq('id', sessionId);
-
-        return ok(res, { warning: false, terminated: true, message: 'Assessment terminated due to multiple violations' });
+        return ok(res, { warning: false, terminated: true, message: terminationReason, violations_remaining: 0 });
       }
 
+      const minorViolations = (proctoring.copy_paste_attempts || 0) + (proctoring.right_click_attempts || 0) + (proctoring.devtools_attempts || 0);
       await supabase.from('assessment_sessions').update({ proctoring_data: proctoring }).eq('id', sessionId);
       return ok(res, {
         warning: true,
         terminated: false,
-        violations_remaining: 3 - totalViolations,
-        message: `Warning: ${3 - totalViolations} violations remaining before termination`,
+        violations_remaining: Math.max(0, 3 - minorViolations),
+        message: 'Warning: Proctoring violation recorded. Repeated violations will terminate your assessment.',
+        event_type: event.event_type,
       });
     }
 
@@ -1726,6 +1799,50 @@ Example:
       });
     }
 
+    // POST /api/ai-interview/:sessionId/transcribe
+    // Accepts JSON body: { audio_base64: string, mime_type?: string }
+    if (req.method === 'POST' && segments.length === 3 && segments[2] === 'transcribe') {
+      const sessionId = segments[1];
+
+      const { data: session } = await supabase
+        .from('ai_interview_sessions')
+        .select('id, status')
+        .eq('id', sessionId)
+        .single();
+
+      if (!session) return notFound(res, 'Session not found');
+      if (!['in_progress', 'completed'].includes(session.status)) {
+        return badRequest(res, 'Interview not in progress');
+      }
+
+      const body = req.body as { audio_base64?: string; mime_type?: string };
+      if (!body?.audio_base64) {
+        return badRequest(res, 'Missing audio_base64 in request body.');
+      }
+
+      let audioBuffer: Buffer;
+      try {
+        audioBuffer = Buffer.from(body.audio_base64, 'base64');
+      } catch {
+        return badRequest(res, 'Invalid base64 audio data.');
+      }
+
+      if (audioBuffer.length === 0) {
+        return badRequest(res, 'Empty audio data received.');
+      }
+
+      try {
+        const transcript = await transcribeWithAssemblyAI(audioBuffer, body.mime_type || 'audio/webm');
+        return ok(res, { transcript });
+      } catch (e: any) {
+        console.error('Transcription error:', e.message);
+        if (e.message.includes('ASSEMBLYAI_API_KEY')) {
+          return res.status(503).json({ error: e.message });
+        }
+        return res.status(500).json({ error: `Transcription failed: ${e.message}` });
+      }
+    }
+
     // POST /api/ai-interview/:sessionId/response
     if (req.method === 'POST' && segments.length === 3 && segments[2] === 'response') {
       const sessionId = segments[1];
@@ -1764,12 +1881,51 @@ Example:
       if (!session) return notFound(res, 'Session not found');
 
       const proctoring = session.proctoring_data || {};
+
+      // Update counters
+      if (event.event_type === 'tab_switch') proctoring.tab_switches = (proctoring.tab_switches || 0) + 1;
+      else if (event.event_type === 'fullscreen_exit') proctoring.fullscreen_exits = (proctoring.fullscreen_exits || 0) + 1;
+      else if (event.event_type === 'window_blur') proctoring.window_blurs = (proctoring.window_blurs || 0) + 1;
+      else if (event.event_type === 'face_not_detected') proctoring.face_detection_failures = (proctoring.face_detection_failures || 0) + 1;
+      else if (event.event_type === 'copy_paste') proctoring.copy_paste_attempts = (proctoring.copy_paste_attempts || 0) + 1;
+      else if (event.event_type === 'devtools_open') proctoring.devtools_attempts = (proctoring.devtools_attempts || 0) + 1;
+
       const warnings = proctoring.warnings || [];
-      warnings.push({ type: event.event_type, timestamp: event.timestamp, details: event.details });
+      const isCritical = ['tab_switch', 'fullscreen_exit', 'window_blur'].includes(event.event_type);
+      warnings.push({ type: event.event_type, timestamp: event.timestamp, details: event.details, severity: isCritical ? 'critical' : 'warning' });
       proctoring.warnings = warnings;
 
+      // STRICT: immediate termination for critical events
+      let shouldTerminate = false;
+      let terminationReason = '';
+
+      if (isCritical) {
+        shouldTerminate = true;
+        terminationReason = `Interview terminated: ${event.event_type.replace(/_/g, ' ')} detected. This is a strict proctoring violation.`;
+      } else if ((proctoring.face_detection_failures || 0) >= 3) {
+        shouldTerminate = true;
+        terminationReason = 'Interview terminated: Face not visible 3 times.';
+      } else {
+        const minorViolations = (proctoring.copy_paste_attempts || 0) + (proctoring.devtools_attempts || 0);
+        if (minorViolations >= 3) {
+          shouldTerminate = true;
+          terminationReason = 'Interview terminated: Too many proctoring violations.';
+        }
+      }
+
+      if (shouldTerminate) {
+        proctoring.terminated = true;
+        proctoring.termination_reason = terminationReason;
+        await supabase.from('ai_interview_sessions').update({
+          proctoring_data: proctoring,
+          status: 'terminated',
+          completed_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+        return ok(res, { terminated: true, message: terminationReason });
+      }
+
       await supabase.from('ai_interview_sessions').update({ proctoring_data: proctoring }).eq('id', sessionId);
-      return ok(res, { success: true });
+      return ok(res, { success: true, terminated: false, warning: true, message: 'Proctoring violation recorded.' });
     }
 
     // POST /api/ai-interview/:sessionId/complete
