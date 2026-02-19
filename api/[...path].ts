@@ -170,6 +170,102 @@ async function sendInterviewInvite(to: string, name: string, job: string, link: 
     `<h2>Great news, ${name}!</h2><p>You've been invited to an AI interview for <strong>${job}</strong>.</p><p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Start Interview</a></p>${time ? `<p><strong>Scheduled:</strong> ${time}</p>` : ''}`);
 }
 
+async function sendAcceptanceEmail(to: string, name: string, job: string) {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offer Letter</title></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%);padding:40px 48px;text-align:center;">
+          <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">Congratulations!</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">You have been selected</p>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:48px;">
+          <p style="margin:0 0 20px;font-size:16px;color:#374151;">Dear <strong>${name}</strong>,</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
+            We are thrilled to inform you that after a thorough evaluation of your application, technical assessment, and interview performance, you have been <strong style="color:#059669;">selected</strong> for the position of:
+          </p>
+          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:20px 24px;margin:0 0 28px;text-align:center;">
+            <p style="margin:0;font-size:20px;font-weight:700;color:#065F46;">${job}</p>
+          </div>
+          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
+            Our HR team will be reaching out to you shortly with the formal offer letter, onboarding details, and next steps. Please keep an eye on your inbox.
+          </p>
+          <p style="margin:0 0 32px;font-size:15px;color:#4B5563;line-height:1.7;">
+            We look forward to welcoming you to the team and are excited about the contributions you will bring.
+          </p>
+          <div style="border-top:1px solid #E5E7EB;padding-top:28px;">
+            <p style="margin:0;font-size:14px;color:#6B7280;line-height:1.6;">
+              If you have any questions in the meantime, please do not hesitate to reach out to our HR department.
+            </p>
+          </div>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="background:#F9FAFB;padding:24px 48px;text-align:center;border-top:1px solid #E5E7EB;">
+          <p style="margin:0;font-size:13px;color:#9CA3AF;">This email was sent by Hire.AI &mdash; Intelligent Hiring Platform</p>
+          <p style="margin:4px 0 0;font-size:13px;color:#9CA3AF;">&copy; ${new Date().getFullYear()} Hire.AI. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+  await sendEmail(to, `Congratulations! You've been selected — ${job}`, html);
+}
+
+async function sendRejectionEmail(to: string, name: string, job: string) {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Application Update</title></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#1F2937 0%,#374151 100%);padding:40px 48px;text-align:center;">
+          <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-0.5px;">Application Update</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.7);font-size:15px;">Regarding your application at Hire.AI</p>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:48px;">
+          <p style="margin:0 0 20px;font-size:16px;color:#374151;">Dear <strong>${name}</strong>,</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
+            Thank you for taking the time to apply for the position of <strong>${job}</strong> and for the effort you invested throughout our hiring process.
+          </p>
+          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
+            After careful consideration of all candidates, we regret to inform you that we will not be moving forward with your application at this time. This was a highly competitive process, and the decision was not easy.
+          </p>
+          <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:20px 24px;margin:0 0 28px;">
+            <p style="margin:0;font-size:14px;color:#92400E;line-height:1.6;">
+              <strong>Please note:</strong> This decision does not reflect negatively on your skills or potential. We encourage you to continue pursuing opportunities that align with your experience and goals.
+            </p>
+          </div>
+          <p style="margin:0 0 32px;font-size:15px;color:#4B5563;line-height:1.7;">
+            We genuinely appreciate your interest in our organisation and wish you every success in your career journey ahead.
+          </p>
+          <div style="border-top:1px solid #E5E7EB;padding-top:28px;">
+            <p style="margin:0;font-size:14px;color:#6B7280;line-height:1.6;">
+              Thank you once again for your time and interest. We hope our paths cross again in the future.
+            </p>
+          </div>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="background:#F9FAFB;padding:24px 48px;text-align:center;border-top:1px solid #E5E7EB;">
+          <p style="margin:0;font-size:13px;color:#9CA3AF;">This email was sent by Hire.AI &mdash; Intelligent Hiring Platform</p>
+          <p style="margin:4px 0 0;font-size:13px;color:#9CA3AF;">&copy; ${new Date().getFullYear()} Hire.AI. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+  await sendEmail(to, `Update on your application — ${job}`, html);
+}
+
 // ============== Helpers ==============
 function uuidv4(): string { return crypto.randomUUID(); }
 
@@ -601,6 +697,64 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         started_at: completedSession.started_at,
         completed_at: completedSession.completed_at,
       });
+    }
+
+    // POST /api/candidates/send-acceptance
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'send-acceptance') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const { candidate_ids, job_id } = req.body as { candidate_ids?: string[]; job_id?: string };
+      if (!candidate_ids?.length || !job_id) return badRequest(res, 'candidate_ids and job_id are required');
+
+      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidate_ids);
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
+      let emailsSent = 0;
+      const errorMessages: string[] = [];
+
+      for (const c of candidates) {
+        try {
+          await sendAcceptanceEmail(c.email, c.full_name, job.title);
+          emailsSent++;
+        } catch (e: any) {
+          errorMessages.push(`${c.full_name}: ${e.message}`);
+        }
+      }
+
+      return ok(res, { success: emailsSent > 0, emails_sent: emailsSent, error_messages: errorMessages });
+    }
+
+    // POST /api/candidates/send-rejection
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'send-rejection') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const { candidate_ids, job_id } = req.body as { candidate_ids?: string[]; job_id?: string };
+      if (!candidate_ids?.length || !job_id) return badRequest(res, 'candidate_ids and job_id are required');
+
+      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidate_ids);
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
+      let emailsSent = 0;
+      const errorMessages: string[] = [];
+
+      for (const c of candidates) {
+        try {
+          await sendRejectionEmail(c.email, c.full_name, job.title);
+          emailsSent++;
+        } catch (e: any) {
+          errorMessages.push(`${c.full_name}: ${e.message}`);
+        }
+      }
+
+      return ok(res, { success: emailsSent > 0, emails_sent: emailsSent, error_messages: errorMessages });
     }
 
     return notFound(res);
