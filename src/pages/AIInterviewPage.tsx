@@ -527,27 +527,38 @@ export default function AIInterviewPage() {
     }
   }, [interviewData, violationThreshold]);
 
-  // Fullscreen handler
-  const handleFullscreenChange = () => {
+  // STRICT PROCTORING: Fullscreen exit = immediate termination
+  const handleFullscreenChange = useCallback(() => {
     const isFs = !!document.fullscreenElement;
     setIsFullscreen(isFs);
-    if (!isFs && !showSetupScreen) {
-      setShowSetupScreen(true); // Force blocking UI
+    if (!isFs && !showSetupScreen && !isTerminated && !isCompleted) {
+      // Immediate termination for fullscreen exit
+      setIsTerminated(true);
+      setWarningMessage('Interview terminated: You exited fullscreen mode. This is a strict proctoring violation.');
+      setShowWarning(true);
       reportProctoringEvent('fullscreen_exit');
     }
-  };
+  }, [showSetupScreen, isTerminated, isCompleted, reportProctoringEvent]);
 
-  const handleVisibilityChange = () => {
-    if (document.hidden) {
+  // STRICT PROCTORING: Tab switch = immediate termination
+  const handleVisibilityChange = useCallback(() => {
+    if (document.hidden && !isTerminated && !isCompleted && !showSetupScreen) {
+      setIsTerminated(true);
+      setWarningMessage('Interview terminated: You switched tabs or minimized the window. This is a strict proctoring violation.');
+      setShowWarning(true);
       reportProctoringEvent('tab_switch');
     }
-  };
+  }, [isTerminated, isCompleted, showSetupScreen, reportProctoringEvent]);
 
-  const handleWindowBlur = () => {
-    if (!showSetupScreen) {
+  // STRICT PROCTORING: Window blur = immediate termination
+  const handleWindowBlur = useCallback(() => {
+    if (!showSetupScreen && !isTerminated && !isCompleted) {
+      setIsTerminated(true);
+      setWarningMessage('Interview terminated: You clicked outside the interview window. This is a strict proctoring violation.');
+      setShowWarning(true);
       reportProctoringEvent('window_blur');
     }
-  };
+  }, [showSetupScreen, isTerminated, isCompleted, reportProctoringEvent]);
 
   // Proctoring listeners
   useEffect(() => {
@@ -738,11 +749,31 @@ export default function AIInterviewPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
-              <h3 className="font-semibold">Before you begin:</h3>
+              <h3 className="font-semibold text-destructive">⚠️ STRICT PROCTORING - READ CAREFULLY:</h3>
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+                <ul className="space-y-3 text-sm">
+                  <li className="flex items-start gap-3">
+                    <XCircle className="h-5 w-5 mt-0.5 text-destructive flex-shrink-0" />
+                    <span className="font-medium">Exiting fullscreen = <span className="text-destructive">IMMEDIATE TERMINATION</span></span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <XCircle className="h-5 w-5 mt-0.5 text-destructive flex-shrink-0" />
+                    <span className="font-medium">Switching tabs = <span className="text-destructive">IMMEDIATE TERMINATION</span></span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <XCircle className="h-5 w-5 mt-0.5 text-destructive flex-shrink-0" />
+                    <span className="font-medium">Clicking outside window = <span className="text-destructive">IMMEDIATE TERMINATION</span></span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 mt-0.5 text-warning flex-shrink-0" />
+                    <span className="font-medium">Face not visible 3 times = <span className="text-destructive">TERMINATION</span></span>
+                  </li>
+                </ul>
+              </div>
               <ul className="space-y-3 text-sm text-muted-foreground">
                 <li className="flex items-start gap-3">
                   <Camera className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
-                  <span>Your camera will be on throughout the interview for proctoring</span>
+                  <span>Your camera will be on throughout the interview for AI face detection</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <Mic className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
@@ -750,11 +781,7 @@ export default function AIInterviewPage() {
                 </li>
                 <li className="flex items-start gap-3">
                   <Maximize className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
-                  <span>Fullscreen mode is required throughout</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 mt-0.5 text-warning flex-shrink-0" />
-                  <span>Looking away or leaving the screen will be recorded</span>
+                  <span>Fullscreen mode is <strong>mandatory</strong> throughout the entire interview</span>
                 </li>
               </ul>
             </div>

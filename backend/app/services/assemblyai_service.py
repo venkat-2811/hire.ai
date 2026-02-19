@@ -10,13 +10,19 @@ class AssemblyAIService:
     BASE_URL = "https://api.assemblyai.com/v2"
 
     def __init__(self):
+        # API key is fetched fresh each time to support runtime configuration
+        pass
+
+    def _get_api_key(self) -> str:
+        """Get API key fresh from settings each time."""
         settings = get_settings()
-        self.api_key = settings.assemblyai_api_key
+        api_key = settings.assemblyai_api_key
+        if not api_key:
+            raise RuntimeError("ASSEMBLYAI_API_KEY is not configured. Please set the ASSEMBLYAI_API_KEY environment variable.")
+        return api_key
 
     def _headers(self) -> dict:
-        if not self.api_key:
-            raise RuntimeError("ASSEMBLYAI_API_KEY is not configured")
-        return {"authorization": self.api_key}
+        return {"authorization": self._get_api_key()}
 
     async def upload_audio(self, audio_bytes: bytes) -> str:
         async with httpx.AsyncClient(timeout=60.0) as client:

@@ -13,6 +13,7 @@ import traceback
 from app.database.supabase_client import get_supabase_admin_client
 from app.services.email_service import get_email_service
 from app.services.question_generator import get_question_generator
+from app.services.code_executor import get_code_executor
 from app.auth import get_current_user, get_optional_user, ClerkUser
 from app.config import get_settings
 from app.models.schemas import JobDescription
@@ -97,6 +98,12 @@ class CodingSubmission(BaseModel):
     code: str
     language: str
     time_taken_seconds: int
+
+
+class CodeRunRequest(BaseModel):
+    challenge_id: str
+    code: str
+    language: str = "python"
 
 
 class ProctoringEvent(BaseModel):
@@ -431,6 +438,67 @@ async def submit_mcq_answers(
     return {"success": True, "score": percentage, "total": total_points, "correct_points": score}
 
 
+@router.post("/{session_id}/coding/run")
+async def run_code_against_tests(
+    session_id: str,
+    request: CodeRunRequest,
+):
+    """Run code against test cases and return results (without submitting)."""
+    supabase = get_supabase_admin_client()
+    executor = get_code_executor()
+    
+    # Verify session
+    session = supabase.table("assessment_sessions").select("*").eq("id", session_id).execute()
+    if not session.data or session.data[0]["status"] != "in_progress":
+        raise HTTPException(status_code=400, detail="Invalid session")
+    
+    session_data = session.data[0]
+    
+    # Find the challenge
+    challenges = session_data.get("coding_challenges", []) or []
+    challenge = None
+    for c in challenges:
+        if c.get("id") == request.challenge_id:
+            challenge = c
+            break
+    
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    
+    test_cases = challenge.get("test_cases", [])
+    if not test_cases:
+        return {
+            "success": False,
+            "error": "No test cases available for this challenge",
+            "results": [],
+            "passed": 0,
+            "total": 0,
+            "score_percentage": 0,
+        }
+    
+    # Execute code against test cases
+    result = executor.execute_python(request.code, test_cases)
+    
+    return {
+        "success": result.success,
+        "compilation_error": result.compilation_error,
+        "runtime_error": result.runtime_error,
+        "results": [
+            {
+                "passed": tr.passed,
+                "input": tr.input_data,
+                "expected": tr.expected,
+                "actual": tr.actual,
+                "error": tr.error,
+            }
+            for tr in result.test_results
+        ],
+        "passed": result.passed_count,
+        "total": result.total_count,
+        "score_percentage": result.score_percentage,
+    }
+
+
 @router.post("/{session_id}/coding/submit")
 async def submit_coding_solution(
     session_id: str,
@@ -438,23 +506,84 @@ async def submit_coding_solution(
 ):
     """Submit a coding solution for evaluation."""
     supabase = get_supabase_admin_client()
+    executor = get_code_executor()
     
     # Verify session
     session = supabase.table("assessment_sessions").select("*").eq("id", session_id).execute()
     if not session.data or session.data[0]["status"] != "in_progress":
         raise HTTPException(status_code=400, detail="Invalid session")
     
-    # TODO: Run code against test cases using a sandboxed executor
-    # For now, return placeholder evaluation
+    session_data = session.data[0]
     
-    existing_submissions = session.data[0].get("coding_submissions", []) or []
-    existing_submissions.append(submission.model_dump())
+    # Find the challenge
+    challenges = session_data.get("coding_challenges", []) or []
+    challenge = None
+    for c in challenges:
+        if c.get("id") == submission.challenge_id:
+            challenge = c
+            break
+    
+    # Run code against test cases
+    score_percentage = 0
+    test_results = []
+    
+    if challenge:
+        test_cases = challenge.get("test_cases", [])
+        if test_cases:
+            result = executor.execute_python(submission.code, test_cases)
+            score_percentage = result.score_percentage
+            test_results = [
+                {
+                    "passed": tr.passed,
+                    "input": tr.input_data,
+                    "expected": tr.expected,
+                    "actual": tr.actual,
+                    "error": tr.error,
+                }
+                for tr in result.test_results
+            ]
+    
+    # Store submission with results
+    existing_submissions = session_data.get("coding_submissions", []) or []
+    
+    # Update or add submission for this challenge
+    submission_data = {
+        **submission.model_dump(),
+        "score_percentage": score_percentage,
+        "test_results": test_results,
+        "submitted_at": datetime.utcnow().isoformat(),
+    }
+    
+    # Replace existing submission for same challenge or add new
+    updated = False
+    for i, sub in enumerate(existing_submissions):
+        if sub.get("challenge_id") == submission.challenge_id:
+            existing_submissions[i] = submission_data
+            updated = True
+            break
+    
+    if not updated:
+        existing_submissions.append(submission_data)
+    
+    # Calculate overall coding score
+    total_score = 0
+    for sub in existing_submissions:
+        total_score += sub.get("score_percentage", 0)
+    
+    avg_coding_score = total_score / len(existing_submissions) if existing_submissions else 0
     
     supabase.table("assessment_sessions").update({
         "coding_submissions": existing_submissions,
+        "coding_score": avg_coding_score,
     }).eq("id", session_id).execute()
     
-    return {"success": True, "message": "Solution submitted for evaluation"}
+    return {
+        "success": True,
+        "score_percentage": score_percentage,
+        "passed": len([r for r in test_results if r.get("passed")]),
+        "total": len(test_results),
+        "message": "Solution submitted and evaluated",
+    }
 
 
 @router.post("/{session_id}/proctoring")
@@ -462,7 +591,7 @@ async def report_proctoring_event(
     session_id: str,
     event: ProctoringEvent,
 ):
-    """Report a proctoring violation event."""
+    """Report a proctoring violation event with strict enforcement."""
     supabase = get_supabase_admin_client()
     
     # Get current session
@@ -470,7 +599,11 @@ async def report_proctoring_event(
     if not session.data:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    proctoring_data = session.data[0].get("proctoring_data", {})
+    session_data = session.data[0]
+    proctoring_data = session_data.get("proctoring_data", {})
+    
+    # STRICT: Immediate termination events
+    IMMEDIATE_TERMINATION_EVENTS = {"tab_switch", "fullscreen_exit", "window_blur"}
     
     # Update counters based on event type
     if event.event_type == "tab_switch":
@@ -479,33 +612,79 @@ async def report_proctoring_event(
         proctoring_data["fullscreen_exits"] = proctoring_data.get("fullscreen_exits", 0) + 1
     elif event.event_type == "copy_paste":
         proctoring_data["copy_paste_attempts"] = proctoring_data.get("copy_paste_attempts", 0) + 1
+    elif event.event_type == "right_click":
+        proctoring_data["right_click_attempts"] = proctoring_data.get("right_click_attempts", 0) + 1
+    elif event.event_type == "window_blur":
+        proctoring_data["window_blurs"] = proctoring_data.get("window_blurs", 0) + 1
+    elif event.event_type == "face_not_detected":
+        proctoring_data["face_detection_failures"] = proctoring_data.get("face_detection_failures", 0) + 1
+    elif event.event_type == "devtools_open":
+        proctoring_data["devtools_attempts"] = proctoring_data.get("devtools_attempts", 0) + 1
     
-    # Add to warnings log
+    # Add to warnings log with severity
     warnings = proctoring_data.get("warnings", [])
+    severity = "critical" if event.event_type in IMMEDIATE_TERMINATION_EVENTS else "warning"
     warnings.append({
         "type": event.event_type,
         "timestamp": event.timestamp,
         "details": event.details,
+        "severity": severity,
     })
     proctoring_data["warnings"] = warnings
     
-    # Check for termination threshold
-    total_violations = (
-        proctoring_data.get("tab_switches", 0) +
-        proctoring_data.get("fullscreen_exits", 0)
-    )
+    # STRICT PROCTORING RULES:
+    # 1. Tab switch or fullscreen exit = immediate termination (first offense)
+    # 2. Window blur = immediate termination (first offense)
+    # 3. Face not detected 3 times = termination
+    # 4. Copy/paste, right-click, devtools = warning, 3 total = termination
     
-    should_terminate = total_violations >= 3
+    should_terminate = False
+    termination_reason = ""
+    
+    # Immediate termination for critical violations
+    if event.event_type in IMMEDIATE_TERMINATION_EVENTS:
+        should_terminate = True
+        termination_reason = f"Assessment terminated: {event.event_type.replace('_', ' ')} detected. This is a strict proctoring violation."
+    
+    # Face detection failures (3 strikes)
+    elif proctoring_data.get("face_detection_failures", 0) >= 3:
+        should_terminate = True
+        termination_reason = "Assessment terminated: Face not visible 3 times."
+    
+    # Accumulated minor violations (3 total)
+    else:
+        minor_violations = (
+            proctoring_data.get("copy_paste_attempts", 0) +
+            proctoring_data.get("right_click_attempts", 0) +
+            proctoring_data.get("devtools_attempts", 0)
+        )
+        if minor_violations >= 3:
+            should_terminate = True
+            termination_reason = "Assessment terminated: Too many proctoring violations."
     
     if should_terminate:
         proctoring_data["terminated"] = True
+        proctoring_data["termination_reason"] = termination_reason
         supabase.table("assessment_sessions").update({
             "proctoring_data": proctoring_data,
             "status": "terminated",
             "completed_at": datetime.utcnow().isoformat(),
         }).eq("id", session_id).execute()
         
-        return {"warning": False, "terminated": True, "message": "Assessment terminated due to multiple violations"}
+        return {
+            "warning": False,
+            "terminated": True,
+            "message": termination_reason,
+            "violations_remaining": 0,
+        }
+    
+    # Calculate remaining violations for minor offenses
+    minor_violations = (
+        proctoring_data.get("copy_paste_attempts", 0) +
+        proctoring_data.get("right_click_attempts", 0) +
+        proctoring_data.get("devtools_attempts", 0)
+    )
+    face_violations = proctoring_data.get("face_detection_failures", 0)
     
     supabase.table("assessment_sessions").update({
         "proctoring_data": proctoring_data,
@@ -514,8 +693,9 @@ async def report_proctoring_event(
     return {
         "warning": True,
         "terminated": False,
-        "violations_remaining": 3 - total_violations,
-        "message": f"Warning: {3 - total_violations} violations remaining before termination",
+        "violations_remaining": min(3 - minor_violations, 3 - face_violations),
+        "message": f"Warning: Proctoring violation recorded. Repeated violations will terminate your assessment.",
+        "event_type": event.event_type,
     }
 
 

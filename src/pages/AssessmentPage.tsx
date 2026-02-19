@@ -30,7 +30,6 @@ import {
   EyeOff,
   Play,
   Send,
-  Terminal,
   CheckCircle2,
   XCircle as XCircleIcon,
 } from 'lucide-react';
@@ -58,16 +57,16 @@ interface MCQQuestion {
 }
 
 interface TestCase {
-  input: Record<string, any>;
-  expected: any;
+  input: Record<string, unknown>;
+  expected: unknown;
 }
 
 interface TestResult {
-  input: Record<string, any>;
-  expected: any;
-  actual: string;
   passed: boolean;
-  error: string | null;
+  input: Record<string, unknown>;
+  expected: unknown;
+  actual: unknown;
+  error?: string;
 }
 
 interface CodingChallenge {
@@ -106,14 +105,11 @@ export default function AssessmentPage() {
   const [currentCodingIndex, setCurrentCodingIndex] = useState(0);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
+  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number }>>({});
+  const [runningCode, setRunningCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
-  
-  // Code execution state
-  const [runningCode, setRunningCode] = useState(false);
-  const [testResults, setTestResults] = useState<Record<string, TestResult[]>>({});
-  const [submittedChallenges, setSubmittedChallenges] = useState<Set<string>>(new Set());
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -274,49 +270,70 @@ export default function AssessmentPage() {
     }
   }, []);
 
-  // Fullscreen handler
-  const handleFullscreenChange = () => {
+  // STRICT PROCTORING: Fullscreen exit = immediate termination
+  const handleFullscreenChange = useCallback(() => {
     const isFs = !!document.fullscreenElement;
     setIsFullscreen(isFs);
-    if (!isFs && !showFullscreenPrompt) {
-      setShowFullscreenPrompt(true);
+    if (!isFs && !showFullscreenPrompt && !terminated && !completed) {
+      // Immediate termination for fullscreen exit
+      setTerminated(true);
+      setWarningMessage('Assessment terminated: You exited fullscreen mode. This is a strict proctoring violation.');
+      setShowWarning(true);
       reportProctoringEvent('fullscreen_exit');
     }
-  };
+  }, [showFullscreenPrompt, terminated, completed, reportProctoringEvent]);
 
-  const handleVisibilityChange = () => {
-    if (document.hidden) {
+  // STRICT PROCTORING: Tab switch = immediate termination
+  const handleVisibilityChange = useCallback(() => {
+    if (document.hidden && !terminated && !completed && !showFullscreenPrompt) {
+      setTerminated(true);
+      setWarningMessage('Assessment terminated: You switched tabs or minimized the window. This is a strict proctoring violation.');
+      setShowWarning(true);
       reportProctoringEvent('tab_switch');
     }
-  };
+  }, [terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
 
-  const handleBlur = () => {
-    reportProctoringEvent('window_blur');
-  };
+  // STRICT PROCTORING: Window blur = immediate termination
+  const handleBlur = useCallback(() => {
+    if (!terminated && !completed && !showFullscreenPrompt) {
+      setTerminated(true);
+      setWarningMessage('Assessment terminated: You clicked outside the assessment window. This is a strict proctoring violation.');
+      setShowWarning(true);
+      reportProctoringEvent('window_blur');
+    }
+  }, [terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
 
-  const handleCopyPaste = (e: ClipboardEvent) => {
+  const handleCopyPaste = useCallback((e: ClipboardEvent) => {
     e.preventDefault();
     reportProctoringEvent('copy_paste');
-    toast.error('Copy/paste is disabled during the assessment');
-  };
+    toast.error('Copy/paste is disabled during the assessment. This violation has been recorded.');
+  }, [reportProctoringEvent]);
 
-  const handleContextMenu = (e: MouseEvent) => {
+  const handleContextMenu = useCallback((e: MouseEvent) => {
     e.preventDefault();
     reportProctoringEvent('right_click');
-  };
+    toast.error('Right-click is disabled during the assessment. This violation has been recorded.');
+  }, [reportProctoringEvent]);
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    // Disable common shortcuts
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Disable common shortcuts and DevTools
     if (
       (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
       (e.metaKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
       e.key === 'F12' ||
-      (e.ctrlKey && e.shiftKey && e.key === 'I')
+      (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+      (e.ctrlKey && e.key === 'u') // View source
     ) {
       e.preventDefault();
-      reportProctoringEvent('copy_paste');
+      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey)) {
+        reportProctoringEvent('devtools_open');
+        toast.error('Developer tools are disabled during the assessment. This violation has been recorded.');
+      } else {
+        reportProctoringEvent('copy_paste');
+        toast.error('This keyboard shortcut is disabled during the assessment.');
+      }
     }
-  };
+  }, [reportProctoringEvent]);
 
   // Proctoring event listeners
   useEffect(() => {
@@ -441,17 +458,17 @@ export default function AssessmentPage() {
     setCodingSolutions((prev) => ({ ...prev, [challengeId]: code }));
   };
 
-  // Run code against test cases without submitting
-  const handleRunCode = async (challengeId: string) => {
+  const runCode = async (challengeId: string) => {
     if (!assessmentData || runningCode) return;
 
-    const code = codingSolutions[challengeId] || '';
-    if (!code.trim()) {
-      toast.error('Please write some code before running');
+    const code = codingSolutions[challengeId];
+    if (!code) {
+      toast.error('Please write some code first');
       return;
     }
 
-    setRunningCode(true);
+    setRunningCode(challengeId);
+
     try {
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/run`, {
         method: 'POST',
@@ -464,37 +481,43 @@ export default function AssessmentPage() {
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || data.detail || 'Failed to run code');
+
+      if (data.compilation_error) {
+        toast.error(`Compilation Error: ${data.compilation_error}`);
+        return;
       }
 
-      setTestResults((prev) => ({ ...prev, [challengeId]: data.test_results }));
-      
-      const passed = data.passed_count;
-      const total = data.total_tests;
-      if (passed === total) {
-        toast.success(`All ${total} test cases passed!`);
+      setCodingResults((prev) => ({
+        ...prev,
+        [challengeId]: {
+          results: data.results || [],
+          passed: data.passed || 0,
+          total: data.total || 0,
+          score: data.score_percentage || 0,
+        },
+      }));
+
+      if (data.passed === data.total && data.total > 0) {
+        toast.success(`All ${data.total} test cases passed!`);
       } else {
-        toast.info(`${passed}/${total} test cases passed`);
+        toast.info(`${data.passed}/${data.total} test cases passed`);
       }
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to run code');
+    } catch (e) {
+      toast.error('Failed to run code');
     } finally {
-      setRunningCode(false);
+      setRunningCode(null);
     }
   };
 
-  // Submit a single coding challenge
-  const handleSubmitChallenge = async (challengeId: string) => {
-    if (!assessmentData || runningCode) return;
+  const submitCodingSolution = async (challengeId: string) => {
+    if (!assessmentData) return;
 
-    const code = codingSolutions[challengeId] || '';
-    if (!code.trim()) {
-      toast.error('Please write some code before submitting');
+    const code = codingSolutions[challengeId];
+    if (!code) {
+      toast.error('Please write some code first');
       return;
     }
 
-    setRunningCode(true);
     try {
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
         method: 'POST',
@@ -508,20 +531,20 @@ export default function AssessmentPage() {
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || data.detail || 'Failed to submit');
-      }
 
-      setTestResults((prev) => ({ ...prev, [challengeId]: data.test_results }));
-      setSubmittedChallenges((prev) => new Set([...prev, challengeId]));
-      
-      const passed = data.passed_count;
-      const total = data.total_tests;
-      toast.success(`Challenge submitted! Score: ${passed}/${total} tests passed (${data.score_percentage.toFixed(0)}%)`);
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to submit challenge');
-    } finally {
-      setRunningCode(false);
+      setCodingResults((prev) => ({
+        ...prev,
+        [challengeId]: {
+          results: [],
+          passed: data.passed || 0,
+          total: data.total || 0,
+          score: data.score_percentage || 0,
+        },
+      }));
+
+      toast.success(`Solution submitted! Score: ${data.score_percentage?.toFixed(1)}%`);
+    } catch (e) {
+      toast.error('Failed to submit solution');
     }
   };
 
@@ -714,31 +737,47 @@ export default function AssessmentPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
-              <h3 className="font-semibold">Before you begin:</h3>
+              <h3 className="font-semibold text-destructive">⚠️ STRICT PROCTORING - READ CAREFULLY:</h3>
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+                <ul className="space-y-2 text-sm">
+                  <li className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
+                    <span className="font-medium">Exiting fullscreen = <span className="text-destructive">IMMEDIATE TERMINATION</span></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
+                    <span className="font-medium">Switching tabs = <span className="text-destructive">IMMEDIATE TERMINATION</span></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
+                    <span className="font-medium">Clicking outside window = <span className="text-destructive">IMMEDIATE TERMINATION</span></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 mt-0.5 text-warning" />
+                    <span className="font-medium">Face not visible 3 times = <span className="text-destructive">TERMINATION</span></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 mt-0.5 text-warning" />
+                    <span className="font-medium">Copy/paste, right-click, DevTools (3 total) = <span className="text-destructive">TERMINATION</span></span>
+                  </li>
+                </ul>
+              </div>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <Camera className="h-4 w-4 mt-0.5 text-primary" />
-                  <span>Your webcam and microphone will be active throughout the assessment for proctoring</span>
+                  <span>Your webcam will be active for AI face detection proctoring</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Eye className="h-4 w-4 mt-0.5 text-primary" />
-                  <span>AI face detection will monitor your presence — keep your face visible at all times</span>
+                  <span>Keep your face visible at all times — AI monitors your presence</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Maximize className="h-4 w-4 mt-0.5 text-primary" />
-                  <span>The assessment must be completed in fullscreen mode</span>
+                  <span>Fullscreen mode is <strong>mandatory</strong> throughout the entire assessment</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 mt-0.5 text-warning" />
-                  <span>Exiting fullscreen or switching tabs will be recorded as violations</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
-                  <span>If your face is not visible 3 times, the exam will be automatically terminated</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Clock className="h-4 w-4 mt-0.5 text-info" />
-                  <span>You have {assessmentData?.total_time_minutes} minutes to complete</span>
+                  <Clock className="h-4 w-4 mt-0.5 text-primary" />
+                  <span>You have <strong>{assessmentData?.total_time_minutes} minutes</strong> to complete</span>
                 </li>
               </ul>
             </div>
@@ -1004,134 +1043,70 @@ export default function AssessmentPage() {
 
               {currentCoding && (
                 <div className="grid lg:grid-cols-2 gap-6">
-                  {/* Problem Description & Test Cases */}
-                  <div className="space-y-4">
-                    <Card>
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <Badge variant={
-                            currentCoding.difficulty === 'easy' ? 'secondary' :
-                              currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
-                          }>
-                            {currentCoding.difficulty}
-                          </Badge>
-                          <div className="flex items-center gap-2">
-                            {submittedChallenges.has(currentCoding.id) && (
-                              <Badge variant="outline" className="bg-success/10 text-success border-success">
-                                <CheckCircle2 className="mr-1 h-3 w-3" />
-                                Submitted
-                              </Badge>
+                  {/* Problem Description */}
+                  <Card className="lg:max-h-[600px] overflow-auto">
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <Badge variant={
+                          currentCoding.difficulty === 'easy' ? 'secondary' :
+                            currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
+                        }>
+                          {currentCoding.difficulty}
+                        </Badge>
+                        <Badge variant="outline">
+                          {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
+                        </Badge>
+                      </div>
+                      <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
+                      
+                      {/* Test Cases Preview */}
+                      {currentCoding.test_cases && currentCoding.test_cases.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-sm">Example Test Cases:</h4>
+                          <div className="space-y-2">
+                            {currentCoding.test_cases.slice(0, 2).map((tc, idx) => (
+                              <div key={idx} className="bg-muted/50 rounded p-2 text-xs font-mono">
+                                <div><span className="text-muted-foreground">Input:</span> {JSON.stringify(tc.input)}</div>
+                                <div><span className="text-muted-foreground">Expected:</span> {JSON.stringify(tc.expected)}</div>
+                              </div>
+                            ))}
+                            {currentCoding.test_cases.length > 2 && (
+                              <p className="text-xs text-muted-foreground">+ {currentCoding.test_cases.length - 2} more hidden test cases</p>
                             )}
-                            <Badge variant="outline">
-                              {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
-                            </Badge>
                           </div>
                         </div>
-                        <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
-                      </CardContent>
-                    </Card>
+                      )}
+                    </CardContent>
+                  </Card>
 
-                    {/* Test Cases */}
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Terminal className="h-4 w-4" />
-                          Test Cases ({currentCoding.test_cases?.length || 0})
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {(currentCoding.test_cases || []).map((tc, idx) => {
-                          const result = testResults[currentCoding.id]?.[idx];
-                          return (
-                            <div
-                              key={idx}
-                              className={`p-3 rounded-lg border text-sm ${
-                                result
-                                  ? result.passed
-                                    ? 'border-success/50 bg-success/5'
-                                    : 'border-destructive/50 bg-destructive/5'
-                                  : 'border-border bg-muted/30'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="font-medium">Test Case {idx + 1}</span>
-                                {result && (
-                                  result.passed ? (
-                                    <Badge variant="outline" className="bg-success/10 text-success border-success text-xs">
-                                      <CheckCircle2 className="mr-1 h-3 w-3" />
-                                      Passed
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="destructive" className="text-xs">
-                                      <XCircleIcon className="mr-1 h-3 w-3" />
-                                      Failed
-                                    </Badge>
-                                  )
-                                )}
-                              </div>
-                              <div className="space-y-1 font-mono text-xs">
-                                <div>
-                                  <span className="text-muted-foreground">Input: </span>
-                                  <span className="text-foreground">{JSON.stringify(tc.input)}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Expected: </span>
-                                  <span className="text-foreground">{JSON.stringify(tc.expected)}</span>
-                                </div>
-                                {result && !result.passed && (
-                                  <>
-                                    <div>
-                                      <span className="text-muted-foreground">Actual: </span>
-                                      <span className="text-destructive">{result.actual || 'No output'}</span>
-                                    </div>
-                                    {result.error && (
-                                      <div className="text-destructive mt-1 p-2 bg-destructive/10 rounded">
-                                        {result.error}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Code Editor & Actions */}
+                  {/* Code Editor & Results */}
                   <div className="space-y-4">
                     <Card>
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm">Your Solution (Python)</CardTitle>
-                          <div className="flex items-center gap-2">
+                          <div className="flex gap-2">
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleRunCode(currentCoding.id)}
-                              disabled={runningCode}
+                              onClick={() => runCode(currentCoding.id)}
+                              disabled={runningCode === currentCoding.id}
                             >
-                              {runningCode ? (
+                              {runningCode === currentCoding.id ? (
                                 <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                               ) : (
                                 <Play className="mr-1 h-3 w-3" />
                               )}
-                              Run
+                              Run Tests
                             </Button>
                             <Button
                               size="sm"
-                              onClick={() => handleSubmitChallenge(currentCoding.id)}
-                              disabled={runningCode || submittedChallenges.has(currentCoding.id)}
+                              onClick={() => submitCodingSolution(currentCoding.id)}
                             >
-                              {runningCode ? (
-                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                              ) : (
-                                <Send className="mr-1 h-3 w-3" />
-                              )}
+                              <Send className="mr-1 h-3 w-3" />
                               Submit
                             </Button>
                           </div>
@@ -1139,31 +1114,57 @@ export default function AssessmentPage() {
                       </CardHeader>
                       <CardContent>
                         <Textarea
-                          className="font-mono text-sm min-h-[500px] resize-none bg-muted/30"
+                          className="font-mono text-sm min-h-[300px] resize-none bg-slate-950 text-slate-50 border-slate-800"
                           value={codingSolutions[currentCoding.id] || ''}
                           onChange={(e) => handleCodingSolution(currentCoding.id, e.target.value)}
-                          placeholder="Write your code here..."
-                          disabled={submittedChallenges.has(currentCoding.id)}
+                          placeholder="# Write your Python code here..."
+                          spellCheck={false}
                         />
                       </CardContent>
                     </Card>
 
-                    {/* Test Results Summary */}
-                    {testResults[currentCoding.id] && (
+                    {/* Test Results */}
+                    {codingResults[currentCoding.id] && (
                       <Card>
-                        <CardContent className="py-3">
+                        <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Results</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm">
-                                {testResults[currentCoding.id].filter(r => r.passed).length}/
-                                {testResults[currentCoding.id].length} passed
-                              </span>
-                              <Progress 
-                                value={(testResults[currentCoding.id].filter(r => r.passed).length / testResults[currentCoding.id].length) * 100} 
-                                className="w-24 h-2"
-                              />
-                            </div>
+                            <CardTitle className="text-sm">Test Results</CardTitle>
+                            <Badge variant={codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total ? 'default' : 'destructive'}>
+                              {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} Passed
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2 max-h-[200px] overflow-auto">
+                            {codingResults[currentCoding.id].results.map((result, idx) => (
+                              <div
+                                key={idx}
+                                className={`p-2 rounded text-xs font-mono ${result.passed ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  {result.passed ? (
+                                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                  ) : (
+                                    <XCircleIcon className="h-3 w-3 text-red-500" />
+                                  )}
+                                  <span className="font-semibold">Test Case {idx + 1}</span>
+                                </div>
+                                <div className="text-muted-foreground">
+                                  <div>Input: {JSON.stringify(result.input)}</div>
+                                  <div>Expected: {JSON.stringify(result.expected)}</div>
+                                  {!result.passed && (
+                                    <div className="text-red-400">
+                                      {result.error ? `Error: ${result.error}` : `Got: ${JSON.stringify(result.actual)}`}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 pt-2 border-t">
+                            <p className="text-sm font-medium">
+                              Score: {codingResults[currentCoding.id].score.toFixed(1)}%
+                            </p>
                           </div>
                         </CardContent>
                       </Card>
@@ -1172,8 +1173,7 @@ export default function AssessmentPage() {
                 </div>
               )}
 
-              {/* Challenge Navigator */}
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between">
                 <Button
                   variant="outline"
                   onClick={() => setCurrentCodingIndex((prev) => Math.max(0, prev - 1))}
@@ -1181,23 +1181,6 @@ export default function AssessmentPage() {
                 >
                   Previous Challenge
                 </Button>
-                <div className="flex gap-2">
-                  {codingChallenges.map((c, idx) => (
-                    <Button
-                      key={c.id}
-                      variant={submittedChallenges.has(c.id) ? 'default' : 'outline'}
-                      size="sm"
-                      className={`w-10 h-10 ${currentCodingIndex === idx ? 'ring-2 ring-primary' : ''}`}
-                      onClick={() => setCurrentCodingIndex(idx)}
-                    >
-                      {submittedChallenges.has(c.id) ? (
-                        <CheckCircle2 className="h-4 w-4" />
-                      ) : (
-                        idx + 1
-                      )}
-                    </Button>
-                  ))}
-                </div>
                 <Button
                   onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
                   disabled={currentCodingIndex === codingChallenges.length - 1}

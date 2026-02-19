@@ -24,7 +24,9 @@ async def assemblyai_health():
     """Health check for AssemblyAI configuration."""
     try:
         svc = get_assemblyai_service()
-        configured = bool(getattr(svc, "api_key", ""))
+        # Try to get the API key to verify it's configured
+        api_key = svc._get_api_key()
+        configured = bool(api_key)
     except Exception:
         configured = False
     return {"configured": configured}
