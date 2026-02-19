@@ -207,9 +207,96 @@ export const candidatesApi = {
 
   getParsedResume: (id: string) => request<ResumeData>(`/candidates/${id}/parsed-resume`),
 
+  getAssessmentDetails: (id: string) => request<AssessmentDetails | null>(`/candidates/${id}/assessment-details`),
+
+  getInterviewDetails: (id: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details`),
+
   delete: (id: string) =>
     request<{ success: boolean; message: string }>(`/candidates/${id}`, { method: 'DELETE' }),
 };
+
+// ============== Assessment Details ==============
+
+export interface MCQSubmission {
+  question_id: string;
+  question: string;
+  options: string[];
+  selected_index: number;
+  correct_index: number;
+  is_correct: boolean;
+  difficulty: string;
+  topic: string;
+  points_possible: number;
+  points_earned: number;
+}
+
+export interface CodingSubmission {
+  challenge_id: string;
+  code: string;
+  language: string;
+  test_results: {
+    input: string;
+    expected: string;
+    actual: string;
+    passed: boolean;
+    error: string | null;
+  }[];
+  passed_count: number;
+  total_tests: number;
+  score_percentage: number;
+  points_earned: number;
+  max_points: number;
+  submitted_at: string;
+}
+
+export interface AssessmentDetails {
+  session_id: string;
+  status: string;
+  mcq_score: number | null;
+  coding_score: number | null;
+  total_score: number | null;
+  mcq_submissions: MCQSubmission[];
+  coding_submissions: CodingSubmission[];
+  mcq_questions: any[];
+  coding_challenges: any[];
+  proctoring_data: any;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+// ============== Interview Details ==============
+
+export interface InterviewResponseRecord {
+  question_index: number;
+  transcript: string;
+  audio_duration_seconds: number;
+  confidence: number;
+  submitted_at: string;
+}
+
+export interface InterviewFinalEvaluation {
+  overall_score: number;
+  technical_score: number;
+  communication_score: number;
+  confidence_score: number;
+  integrity_score: number;
+  role_fit_index: number;
+  recommendation: string;
+  strengths: string[];
+  weaknesses: string[];
+  detailed_feedback: string;
+}
+
+export interface InterviewDetails {
+  session_id: string;
+  status: string;
+  questions: { question_text: string; question_type: string }[];
+  responses: InterviewResponseRecord[];
+  final_evaluation: InterviewFinalEvaluation | null;
+  proctoring_data: any;
+  started_at: string | null;
+  completed_at: string | null;
+}
 
 // ============== Screening API ==============
 

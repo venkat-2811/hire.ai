@@ -26,7 +26,10 @@ import {
   Square,
   SkipForward,
   Camera,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
+import { useFaceDetection } from '@/hooks/useFaceDetection';
 import {
   Dialog,
   DialogContent,
@@ -109,6 +112,10 @@ export default function AIInterviewPage() {
   const [violationThreshold, setViolationThreshold] = useState(3);
   const [showWarning, setShowWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
+
+  // Face detection state
+  const noFaceCountRef = useRef(0);
+  const MAX_NO_FACE_VIOLATIONS = 3;
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -437,6 +444,54 @@ export default function AIInterviewPage() {
       toast.error('Failed to enter fullscreen');
     }
   }, []);
+
+  // Face detection handler
+  const handleNoFace = useCallback(() => {
+    noFaceCountRef.current += 1;
+    const count = noFaceCountRef.current;
+    console.warn(`[FaceDetection] No face detected (${count}/${MAX_NO_FACE_VIOLATIONS})`);
+
+    if (count >= MAX_NO_FACE_VIOLATIONS) {
+      setIsTerminated(true);
+      setWarningMessage('Interview terminated: face not visible 3 times.');
+      setShowWarning(true);
+      if (interviewData) {
+        fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/proctoring`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_type: 'face_not_detected',
+            timestamp: new Date().toISOString(),
+            details: { violation_count: count, auto_terminated: true },
+          }),
+        }).catch(() => {});
+      }
+    } else {
+      toast.error(
+        `Face not visible! Warning ${count}/${MAX_NO_FACE_VIOLATIONS}. Your interview will be terminated if this happens again.`,
+        { duration: 5000 },
+      );
+      setWarningCount((prev) => Math.max(prev, count));
+      if (interviewData) {
+        fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/proctoring`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_type: 'face_not_detected',
+            timestamp: new Date().toISOString(),
+            details: { violation_count: count },
+          }),
+        }).catch(() => {});
+      }
+    }
+  }, [interviewData]);
+
+  // Face detection hook
+  const { ready: faceDetectorReady, faceVisible } = useFaceDetection(videoRef, {
+    intervalMs: 2000,
+    onNoFace: handleNoFace,
+    enabled: cameraEnabled && !isTerminated && !isCompleted && !showSetupScreen,
+  });
 
   // Report proctoring event
   const reportProctoringEvent = useCallback(async (eventType: string, details?: object) => {
@@ -791,10 +846,44 @@ export default function AIInterviewPage() {
                     playsInline
                     muted
                     className="w-full h-full object-cover"
+                    style={{ transform: 'scaleX(-1)' }}
                   />
                   {!cameraEnabled && (
                     <div className="absolute inset-0 flex items-center justify-center bg-muted">
                       <VideoOff className="h-12 w-12 text-muted-foreground" />
+                    </div>
+                  )}
+                  {/* Face detection status overlay */}
+                  <div className="absolute top-2 left-2">
+                    {!cameraEnabled ? (
+                      <Badge variant="outline" className="bg-background/80 text-xs">
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        Camera...
+                      </Badge>
+                    ) : !faceDetectorReady ? (
+                      <Badge variant="outline" className="bg-background/80 text-xs">
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        Loading AI...
+                      </Badge>
+                    ) : faceVisible ? (
+                      <Badge className="bg-success/90 text-success-foreground text-xs">
+                        <Eye className="mr-1 h-3 w-3" />
+                        Face OK
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive" className="text-xs animate-pulse">
+                        <EyeOff className="mr-1 h-3 w-3" />
+                        No Face!
+                      </Badge>
+                    )}
+                  </div>
+                  {/* Face violation counter */}
+                  {noFaceCountRef.current > 0 && (
+                    <div className="absolute bottom-2 left-2">
+                      <Badge variant="destructive" className="text-xs">
+                        <EyeOff className="mr-1 h-3 w-3" />
+                        Face {noFaceCountRef.current}/{MAX_NO_FACE_VIOLATIONS}
+                      </Badge>
                     </div>
                   )}
                   {isRecording && (

@@ -486,6 +486,74 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       return ok(res, data.resume_parsed_data || null);
     }
 
+    // GET /api/candidates/:id/assessment-details
+    if (segments.length === 3 && segments[2] === 'assessment-details') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const candidateId = segments[1];
+      if (req.method !== 'GET') return methodNotAllowed(res);
+
+      // Get assessment sessions for this candidate
+      const { data: sessions } = await supabase
+        .from('assessment_sessions')
+        .select('*')
+        .eq('candidate_id', candidateId)
+        .order('created_at', { ascending: false });
+
+      if (!sessions?.length) return ok(res, null);
+
+      // Return the most recent completed session
+      const completedSession = sessions.find((s: any) => s.status === 'completed') || sessions[0];
+
+      return ok(res, {
+        session_id: completedSession.id,
+        status: completedSession.status,
+        mcq_score: completedSession.mcq_score,
+        coding_score: completedSession.coding_score,
+        total_score: completedSession.total_score,
+        mcq_submissions: completedSession.mcq_submissions || [],
+        coding_submissions: completedSession.coding_submissions || [],
+        mcq_questions: completedSession.mcq_questions || [],
+        coding_challenges: completedSession.coding_challenges || [],
+        proctoring_data: completedSession.proctoring_data || {},
+        started_at: completedSession.started_at,
+        completed_at: completedSession.completed_at,
+      });
+    }
+
+    // GET /api/candidates/:id/interview-details
+    if (segments.length === 3 && segments[2] === 'interview-details') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const candidateId = segments[1];
+      if (req.method !== 'GET') return methodNotAllowed(res);
+
+      // Get AI interview sessions for this candidate
+      const { data: sessions } = await supabase
+        .from('ai_interview_sessions')
+        .select('*')
+        .eq('candidate_id', candidateId)
+        .order('created_at', { ascending: false });
+
+      if (!sessions?.length) return ok(res, null);
+
+      // Return the most recent completed session
+      const completedSession = sessions.find((s: any) => s.status === 'completed') || sessions[0];
+
+      return ok(res, {
+        session_id: completedSession.id,
+        status: completedSession.status,
+        questions: completedSession.questions || [],
+        responses: completedSession.responses || [],
+        final_evaluation: completedSession.final_evaluation || null,
+        proctoring_data: completedSession.proctoring_data || {},
+        started_at: completedSession.started_at,
+        completed_at: completedSession.completed_at,
+      });
+    }
+
     return notFound(res);
   }
 
@@ -1166,7 +1234,7 @@ Return JSON with BOTH parsed resume and screening scores:
       const prompt = `Generate exactly ${count} multiple choice questions for a ${job.level} ${job.role} position.
 Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
 
-Return a JSON array where each object has:
+Return a JSON object with a "questions" array. Each question object must have:
 - "id": unique string like "q1", "q2", etc.
 - "question": the question text
 - "options": array of exactly 4 answer choices as strings
@@ -1175,9 +1243,18 @@ Return a JSON array where each object has:
 - "topic": the skill/topic being tested
 - "points": 5 for easy, 10 for medium, 15 for hard
 
-Example format:
-[{"id":"q1","question":"What is...?","options":["A","B","C","D"],"correct_index":0,"difficulty":"medium","topic":"JavaScript","points":10}]`;
-      const generated = await generateJSON<any>(prompt);
+Example:
+{"questions":[{"id":"q1","question":"What is...?","options":["A","B","C","D"],"correct_index":0,"difficulty":"medium","topic":"JavaScript","points":10}]}`;
+
+      let generated: any;
+      try {
+        generated = await generateJSON<any>(prompt);
+        console.log('MCQ generation result keys:', Object.keys(generated || {}));
+      } catch (genErr: any) {
+        console.error('MCQ generation failed:', genErr.message);
+        return res.status(500).json({ error: 'AI failed to generate questions. Please try again.' });
+      }
+
       const questionsRaw = Array.isArray(generated)
         ? generated
         : Array.isArray(generated?.questions)
@@ -1195,8 +1272,10 @@ Example format:
         }))
         .filter((q: any) => q.question && q.options.length === 4);
 
+      console.log('MCQ questions generated:', questions.length);
+
       if (!questions.length) {
-        return badRequest(res, 'Failed to generate MCQ questions');
+        return res.status(500).json({ error: 'AI returned no valid questions. Please try again.' });
       }
 
       await supabase.from('assessment_sessions').update({
@@ -1236,19 +1315,28 @@ Example format:
       const prompt = `Generate exactly ${count} coding challenges for a ${job.level} ${job.role} position.
 Skills: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
 
-Return a JSON array where each object has:
+Return a JSON object with a "challenges" array. Each challenge object must have:
 - "id": unique string like "c1", "c2"
 - "title": short challenge title
 - "description": detailed problem description with examples
-- "starter_code": code template to start with (use appropriate language)
-- "test_cases": array of {"input":"...","expected_output":"..."}
+- "starter_code": Python code template to start with
+- "test_cases": array of {"input":"...","expected_output":"..."} with at least 3 test cases
 - "difficulty": "easy", "medium", or "hard"
 - "time_limit_minutes": 15 for easy, 25 for medium, 35 for hard
 - "points": 25 for easy, 50 for medium, 75 for hard
 
 Example:
-[{"id":"c1","title":"Two Sum","description":"Given an array...","starter_code":"function twoSum(nums, target) {\n  // your code\n}","test_cases":[{"input":"[2,7,11], 9","expected_output":"[0,1]"}],"difficulty":"medium","time_limit_minutes":25,"points":50}]`;
-      const generated = await generateJSON<any>(prompt);
+{"challenges":[{"id":"c1","title":"Two Sum","description":"Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.","starter_code":"def two_sum(nums, target):\\n    # Your code here\\n    pass","test_cases":[{"input":"[2,7,11,15], 9","expected_output":"[0,1]"},{"input":"[3,2,4], 6","expected_output":"[1,2]"},{"input":"[3,3], 6","expected_output":"[0,1]"}],"difficulty":"medium","time_limit_minutes":25,"points":50}]}`;
+
+      let generated: any;
+      try {
+        generated = await generateJSON<any>(prompt);
+        console.log('Coding challenge generation result keys:', Object.keys(generated || {}));
+      } catch (genErr: any) {
+        console.error('Coding challenge generation failed:', genErr.message);
+        return res.status(500).json({ error: 'AI failed to generate coding challenges. Please try again.' });
+      }
+
       const challengesRaw = Array.isArray(generated)
         ? generated
         : Array.isArray(generated?.challenges)
@@ -1259,7 +1347,7 @@ Example:
           id: String(c?.id || `c${idx + 1}`),
           title: String(c?.title || ''),
           description: String(c?.description || ''),
-          starter_code: String(c?.starter_code || ''),
+          starter_code: String(c?.starter_code || 'def solution():\n    pass'),
           test_cases: Array.isArray(c?.test_cases) ? c.test_cases : [],
           difficulty: String(c?.difficulty || 'medium'),
           time_limit_minutes: typeof c?.time_limit_minutes === 'number' ? c.time_limit_minutes : 25,
@@ -1267,8 +1355,10 @@ Example:
         }))
         .filter((c: any) => c.title && c.description);
 
+      console.log('Coding challenges generated:', challenges.length);
+
       if (!challenges.length) {
-        return badRequest(res, 'Failed to generate coding challenges');
+        return res.status(500).json({ error: 'AI returned no valid coding challenges. Please try again.' });
       }
 
       await supabase.from('assessment_sessions').update({
@@ -1291,40 +1381,181 @@ Example:
       if (!stored.length) return badRequest(res, 'Questions not found for this session');
 
       const questionMap = new Map<string, any>(stored.map((q: any) => [q.id, q] as const));
-      let totalPoints = 0;
-      let scoredPoints = 0;
+
+      // Difficulty weights: easy=1, medium=2, hard=3
+      const difficultyWeight: Record<string, number> = { easy: 1, medium: 2, hard: 3 };
+
+      let totalWeightedPoints = 0;
+      let scoredWeightedPoints = 0;
+      let correctCount = 0;
+      let totalCount = 0;
+
+      // Build detailed results for storage
+      const detailedResults: any[] = [];
 
       for (const s of submissions) {
         const q = questionMap.get(s.question_id);
         if (!q) continue;
-        const pts = q.points ?? 5;
-        totalPoints += pts;
-        if (s.selected_index === q.correct_index) scoredPoints += pts;
+
+        totalCount++;
+        const basePoints = q.points ?? 5;
+        const weight = difficultyWeight[q.difficulty] || 2;
+        const weightedPoints = basePoints * weight;
+        totalWeightedPoints += weightedPoints;
+
+        const isCorrect = s.selected_index === q.correct_index;
+        if (isCorrect) {
+          scoredWeightedPoints += weightedPoints;
+          correctCount++;
+        }
+
+        detailedResults.push({
+          question_id: q.id,
+          question: q.question,
+          options: q.options,
+          selected_index: s.selected_index,
+          correct_index: q.correct_index,
+          is_correct: isCorrect,
+          difficulty: q.difficulty,
+          topic: q.topic,
+          points_possible: weightedPoints,
+          points_earned: isCorrect ? weightedPoints : 0,
+        });
       }
 
-      const percentage = totalPoints > 0 ? (scoredPoints / totalPoints) * 100 : 0;
+      const percentage = totalWeightedPoints > 0 ? (scoredWeightedPoints / totalWeightedPoints) * 100 : 0;
 
       await supabase.from('assessment_sessions').update({
-        mcq_submissions: submissions,
+        mcq_submissions: detailedResults,
         mcq_score: percentage,
       }).eq('id', sessionId);
 
-      return ok(res, { success: true, score: percentage, total: totalPoints, correct_points: scoredPoints });
+      return ok(res, {
+        success: true,
+        score: percentage,
+        correct_count: correctCount,
+        total_count: totalCount,
+        weighted_points_earned: scoredWeightedPoints,
+        weighted_points_possible: totalWeightedPoints,
+      });
     }
 
     // POST /api/assessments/:sessionId/coding/submit
     if (req.method === 'POST' && segments.length === 4 && segments[2] === 'coding' && segments[3] === 'submit') {
       const sessionId = segments[1];
       const submission = req.body;
+      const { challenge_id, code, language = 'python' } = submission;
 
       const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
       if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
-      const existing = session.coding_submissions || [];
-      existing.push(submission);
+      // Find the challenge to get test cases
+      const challenges: any[] = session.coding_challenges || [];
+      const challenge = challenges.find((c: any) => c.id === challenge_id);
+      if (!challenge) return badRequest(res, 'Challenge not found');
 
-      await supabase.from('assessment_sessions').update({ coding_submissions: existing }).eq('id', sessionId);
-      return ok(res, { success: true, message: 'Solution submitted for evaluation' });
+      const testCases = challenge.test_cases || [];
+      const results: any[] = [];
+      let passedCount = 0;
+
+      // Execute code against each test case using Piston API
+      for (const tc of testCases) {
+        try {
+          // Wrap user code with test case execution
+          const wrappedCode = `${code}\n\n# Test execution\nimport json\ntry:\n    result = solution(${tc.input})\n    print(json.dumps(result))\nexcept Exception as e:\n    print(f"ERROR: {e}")`;
+
+          const pistonResp = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              language: 'python',
+              version: '3.10',
+              files: [{ content: wrappedCode }],
+              stdin: '',
+              args: [],
+              compile_timeout: 10000,
+              run_timeout: 5000,
+            }),
+          });
+
+          const pistonResult = await pistonResp.json();
+          const stdout = (pistonResult.run?.stdout || '').trim();
+          const stderr = pistonResult.run?.stderr || '';
+          const exitCode = pistonResult.run?.code || 0;
+
+          const expectedOutput = String(tc.expected_output).trim();
+          const passed = stdout === expectedOutput && exitCode === 0 && !stderr;
+
+          if (passed) passedCount++;
+
+          results.push({
+            input: tc.input,
+            expected: expectedOutput,
+            actual: stdout,
+            passed,
+            error: stderr || null,
+          });
+        } catch (execErr: any) {
+          results.push({
+            input: tc.input,
+            expected: tc.expected_output,
+            actual: null,
+            passed: false,
+            error: execErr.message,
+          });
+        }
+      }
+
+      const totalTests = testCases.length || 1;
+      const scorePercentage = (passedCount / totalTests) * 100;
+      const pointsEarned = Math.round((passedCount / totalTests) * (challenge.points || 50));
+
+      // Store submission with results
+      const submissionRecord = {
+        challenge_id,
+        code,
+        language,
+        test_results: results,
+        passed_count: passedCount,
+        total_tests: totalTests,
+        score_percentage: scorePercentage,
+        points_earned: pointsEarned,
+        max_points: challenge.points || 50,
+        submitted_at: new Date().toISOString(),
+      };
+
+      const existing = session.coding_submissions || [];
+      // Replace if same challenge already submitted
+      const existingIdx = existing.findIndex((s: any) => s.challenge_id === challenge_id);
+      if (existingIdx >= 0) {
+        existing[existingIdx] = submissionRecord;
+      } else {
+        existing.push(submissionRecord);
+      }
+
+      // Calculate total coding score
+      let totalCodingPoints = 0;
+      let earnedCodingPoints = 0;
+      for (const sub of existing) {
+        totalCodingPoints += sub.max_points || 50;
+        earnedCodingPoints += sub.points_earned || 0;
+      }
+      const codingScore = totalCodingPoints > 0 ? (earnedCodingPoints / totalCodingPoints) * 100 : 0;
+
+      await supabase.from('assessment_sessions').update({
+        coding_submissions: existing,
+        coding_score: codingScore,
+      }).eq('id', sessionId);
+
+      return ok(res, {
+        success: true,
+        challenge_id,
+        passed_count: passedCount,
+        total_tests: totalTests,
+        score_percentage: scorePercentage,
+        points_earned: pointsEarned,
+        test_results: results,
+      });
     }
 
     // POST /api/assessments/:sessionId/proctoring
