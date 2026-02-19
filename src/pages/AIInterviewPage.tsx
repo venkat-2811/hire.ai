@@ -30,6 +30,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
+import { useDeepgramTranscription } from '@/hooks/useDeepgramTranscription';
 import {
   Dialog,
   DialogContent,
@@ -104,6 +105,7 @@ export default function AIInterviewPage() {
   const [speechAvailable, setSpeechAvailable] = useState(true);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [manualMode, setManualMode] = useState(false);
+  const [useDeepgram, setUseDeepgram] = useState(true); // Use Deepgram by default
 
   // Proctoring state
   const [showSetupScreen, setShowSetupScreen] = useState(true);
@@ -147,9 +149,41 @@ export default function AIInterviewPage() {
     }
   }, []);
 
+  // Deepgram live transcription hook - must be declared before stopRecording
+  const deepgram = useDeepgramTranscription({
+    onInterimTranscript: (text) => {
+      if (useDeepgram) {
+        setLiveTranscript(text);
+      }
+    },
+    onFinalTranscript: (text) => {
+      if (useDeepgram) {
+        setLiveTranscript(text);
+        setTranscript(text);
+      }
+    },
+    onError: (error) => {
+      console.error('Deepgram error:', error);
+      // Fall back to browser speech recognition
+      setUseDeepgram(false);
+      toast.error('Live transcription unavailable, using browser fallback');
+    },
+    language: 'en',
+  });
+
   const stopRecording = useCallback(() => {
     recordingWantedRef.current = false;
     isRecordingRef.current = false;
+    
+    // Stop Deepgram transcription and get final transcript
+    if (useDeepgram && deepgram.isListening) {
+      const finalText = deepgram.stopListening();
+      if (finalText) {
+        setTranscript(finalText);
+        setLiveTranscript(finalText);
+      }
+    }
+    
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -178,9 +212,17 @@ export default function AIInterviewPage() {
       recordingTimerRef.current = null;
     }
     setIsRecording(false);
-  }, []);
+  }, [useDeepgram, deepgram]);
 
   const startLiveTranscription = useCallback(() => {
+    // Try Deepgram first
+    if (useDeepgram) {
+      deepgram.startListening();
+      setSpeechAvailable(true);
+      return;
+    }
+
+    // Fallback to browser speech recognition
     if (!(('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window))) {
       setSpeechAvailable(false);
       return;
@@ -211,7 +253,7 @@ export default function AIInterviewPage() {
     } catch {
       setSpeechAvailable(false);
     }
-  }, []);
+  }, [useDeepgram, deepgram]);
 
   // Speech recognition - listen to candidate
   const startRecording = useCallback(() => {

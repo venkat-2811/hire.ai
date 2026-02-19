@@ -13,6 +13,7 @@ from app.database.supabase_client import get_supabase_admin_client
 from app.services.email_service import get_email_service
 from app.services.gemini_client import get_gemini_service
 from app.services.assemblyai_service import get_assemblyai_service
+from app.services.deepgram_service import get_deepgram_service
 from app.auth import get_current_user, get_optional_user, ClerkUser
 from app.config import get_settings
 
@@ -21,15 +22,45 @@ router = APIRouter(prefix="/ai-interview", tags=["ai-interview"])
 
 @router.get("/health/assemblyai")
 async def assemblyai_health():
-    """Health check for AssemblyAI configuration."""
+    """Health check for AssemblyAI configuration (deprecated)."""
     try:
         svc = get_assemblyai_service()
-        # Try to get the API key to verify it's configured
         api_key = svc._get_api_key()
         configured = bool(api_key)
     except Exception:
         configured = False
     return {"configured": configured}
+
+
+@router.get("/health/deepgram")
+async def deepgram_health():
+    """Health check for Deepgram configuration."""
+    try:
+        svc = get_deepgram_service()
+        api_key = svc._get_api_key()
+        configured = bool(api_key)
+    except Exception:
+        configured = False
+    return {"configured": configured}
+
+
+@router.get("/deepgram/token")
+async def get_deepgram_token():
+    """
+    Get Deepgram API token for client-side WebSocket connection.
+    This allows the frontend to connect directly to Deepgram for live transcription.
+    """
+    try:
+        svc = get_deepgram_service()
+        token = svc.get_auth_token()
+        return {
+            "token": token,
+            "websocket_url": "wss://api.deepgram.com/v1/listen",
+            "model": "nova-3",
+            "language": "en",
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 class InterviewInviteRequest(BaseModel):

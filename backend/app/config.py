@@ -10,8 +10,11 @@ class Settings:
         # Groq Configuration
         self.groq_api_key = os.getenv("GROQ_API_KEY", "")
 
-        # AssemblyAI (Speech-to-text)
+        # AssemblyAI (Speech-to-text) - deprecated, use Deepgram instead
         self.assemblyai_api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
+        
+        # Deepgram (Live Speech-to-text)
+        self.deepgram_api_key = os.getenv("DEEPGRAM_API_KEY", "")
         
         # Supabase Configuration
         self.supabase_url = os.getenv("SUPABASE_URL", "")
