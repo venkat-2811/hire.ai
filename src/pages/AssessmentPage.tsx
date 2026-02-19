@@ -28,6 +28,11 @@ import {
   Mic,
   Eye,
   EyeOff,
+  Play,
+  Send,
+  Terminal,
+  CheckCircle2,
+  XCircle as XCircleIcon,
 } from 'lucide-react';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
 import {
@@ -52,11 +57,25 @@ interface MCQQuestion {
   points: number;
 }
 
+interface TestCase {
+  input: Record<string, any>;
+  expected: any;
+}
+
+interface TestResult {
+  input: Record<string, any>;
+  expected: any;
+  actual: string;
+  passed: boolean;
+  error: string | null;
+}
+
 interface CodingChallenge {
   id: string;
   title: string;
   description: string;
   starter_code: string;
+  test_cases: TestCase[];
   difficulty: string;
   time_limit_minutes: number;
   points: number;
@@ -90,6 +109,11 @@ export default function AssessmentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
+  
+  // Code execution state
+  const [runningCode, setRunningCode] = useState(false);
+  const [testResults, setTestResults] = useState<Record<string, TestResult[]>>({});
+  const [submittedChallenges, setSubmittedChallenges] = useState<Set<string>>(new Set());
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -415,6 +439,90 @@ export default function AssessmentPage() {
 
   const handleCodingSolution = (challengeId: string, code: string) => {
     setCodingSolutions((prev) => ({ ...prev, [challengeId]: code }));
+  };
+
+  // Run code against test cases without submitting
+  const handleRunCode = async (challengeId: string) => {
+    if (!assessmentData || runningCode) return;
+
+    const code = codingSolutions[challengeId] || '';
+    if (!code.trim()) {
+      toast.error('Please write some code before running');
+      return;
+    }
+
+    setRunningCode(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challenge_id: challengeId,
+          code,
+          language: 'python',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || data.detail || 'Failed to run code');
+      }
+
+      setTestResults((prev) => ({ ...prev, [challengeId]: data.test_results }));
+      
+      const passed = data.passed_count;
+      const total = data.total_tests;
+      if (passed === total) {
+        toast.success(`All ${total} test cases passed!`);
+      } else {
+        toast.info(`${passed}/${total} test cases passed`);
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to run code');
+    } finally {
+      setRunningCode(false);
+    }
+  };
+
+  // Submit a single coding challenge
+  const handleSubmitChallenge = async (challengeId: string) => {
+    if (!assessmentData || runningCode) return;
+
+    const code = codingSolutions[challengeId] || '';
+    if (!code.trim()) {
+      toast.error('Please write some code before submitting');
+      return;
+    }
+
+    setRunningCode(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challenge_id: challengeId,
+          code,
+          language: 'python',
+          time_taken_seconds: 0,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || data.detail || 'Failed to submit');
+      }
+
+      setTestResults((prev) => ({ ...prev, [challengeId]: data.test_results }));
+      setSubmittedChallenges((prev) => new Set([...prev, challengeId]));
+      
+      const passed = data.passed_count;
+      const total = data.total_tests;
+      toast.success(`Challenge submitted! Score: ${passed}/${total} tests passed (${data.score_percentage.toFixed(0)}%)`);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to submit challenge');
+    } finally {
+      setRunningCode(false);
+    }
   };
 
   const handleSubmitAssessment = async () => {
@@ -891,50 +999,181 @@ export default function AssessmentPage() {
 
           {/* Coding Section */}
           <TabsContent value="coding">
-            <div className="max-w-5xl mx-auto space-y-6">
+            <div className="max-w-6xl mx-auto space-y-6">
               <Progress value={codingProgress} className="h-2" />
 
               {currentCoding && (
                 <div className="grid lg:grid-cols-2 gap-6">
-                  {/* Problem Description */}
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <Badge variant={
-                          currentCoding.difficulty === 'easy' ? 'secondary' :
-                            currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
-                        }>
-                          {currentCoding.difficulty}
-                        </Badge>
-                        <Badge variant="outline">
-                          {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
-                        </Badge>
-                      </div>
-                      <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
-                    </CardContent>
-                  </Card>
+                  {/* Problem Description & Test Cases */}
+                  <div className="space-y-4">
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <Badge variant={
+                            currentCoding.difficulty === 'easy' ? 'secondary' :
+                              currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
+                          }>
+                            {currentCoding.difficulty}
+                          </Badge>
+                          <div className="flex items-center gap-2">
+                            {submittedChallenges.has(currentCoding.id) && (
+                              <Badge variant="outline" className="bg-success/10 text-success border-success">
+                                <CheckCircle2 className="mr-1 h-3 w-3" />
+                                Submitted
+                              </Badge>
+                            )}
+                            <Badge variant="outline">
+                              {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
+                            </Badge>
+                          </div>
+                        </div>
+                        <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
+                      </CardContent>
+                    </Card>
 
-                  {/* Code Editor */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Your Solution</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Textarea
-                        className="font-mono text-sm min-h-[400px] resize-none"
-                        value={codingSolutions[currentCoding.id] || ''}
-                        onChange={(e) => handleCodingSolution(currentCoding.id, e.target.value)}
-                        placeholder="Write your code here..."
-                      />
-                    </CardContent>
-                  </Card>
+                    {/* Test Cases */}
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Terminal className="h-4 w-4" />
+                          Test Cases ({currentCoding.test_cases?.length || 0})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {(currentCoding.test_cases || []).map((tc, idx) => {
+                          const result = testResults[currentCoding.id]?.[idx];
+                          return (
+                            <div
+                              key={idx}
+                              className={`p-3 rounded-lg border text-sm ${
+                                result
+                                  ? result.passed
+                                    ? 'border-success/50 bg-success/5'
+                                    : 'border-destructive/50 bg-destructive/5'
+                                  : 'border-border bg-muted/30'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-medium">Test Case {idx + 1}</span>
+                                {result && (
+                                  result.passed ? (
+                                    <Badge variant="outline" className="bg-success/10 text-success border-success text-xs">
+                                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                                      Passed
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="destructive" className="text-xs">
+                                      <XCircleIcon className="mr-1 h-3 w-3" />
+                                      Failed
+                                    </Badge>
+                                  )
+                                )}
+                              </div>
+                              <div className="space-y-1 font-mono text-xs">
+                                <div>
+                                  <span className="text-muted-foreground">Input: </span>
+                                  <span className="text-foreground">{JSON.stringify(tc.input)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Expected: </span>
+                                  <span className="text-foreground">{JSON.stringify(tc.expected)}</span>
+                                </div>
+                                {result && !result.passed && (
+                                  <>
+                                    <div>
+                                      <span className="text-muted-foreground">Actual: </span>
+                                      <span className="text-destructive">{result.actual || 'No output'}</span>
+                                    </div>
+                                    {result.error && (
+                                      <div className="text-destructive mt-1 p-2 bg-destructive/10 rounded">
+                                        {result.error}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Code Editor & Actions */}
+                  <div className="space-y-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm">Your Solution (Python)</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRunCode(currentCoding.id)}
+                              disabled={runningCode}
+                            >
+                              {runningCode ? (
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              ) : (
+                                <Play className="mr-1 h-3 w-3" />
+                              )}
+                              Run
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleSubmitChallenge(currentCoding.id)}
+                              disabled={runningCode || submittedChallenges.has(currentCoding.id)}
+                            >
+                              {runningCode ? (
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              ) : (
+                                <Send className="mr-1 h-3 w-3" />
+                              )}
+                              Submit
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <Textarea
+                          className="font-mono text-sm min-h-[500px] resize-none bg-muted/30"
+                          value={codingSolutions[currentCoding.id] || ''}
+                          onChange={(e) => handleCodingSolution(currentCoding.id, e.target.value)}
+                          placeholder="Write your code here..."
+                          disabled={submittedChallenges.has(currentCoding.id)}
+                        />
+                      </CardContent>
+                    </Card>
+
+                    {/* Test Results Summary */}
+                    {testResults[currentCoding.id] && (
+                      <Card>
+                        <CardContent className="py-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Results</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">
+                                {testResults[currentCoding.id].filter(r => r.passed).length}/
+                                {testResults[currentCoding.id].length} passed
+                              </span>
+                              <Progress 
+                                value={(testResults[currentCoding.id].filter(r => r.passed).length / testResults[currentCoding.id].length) * 100} 
+                                className="w-24 h-2"
+                              />
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
                 </div>
               )}
 
-              <div className="flex justify-between">
+              {/* Challenge Navigator */}
+              <div className="flex justify-between items-center">
                 <Button
                   variant="outline"
                   onClick={() => setCurrentCodingIndex((prev) => Math.max(0, prev - 1))}
@@ -942,6 +1181,23 @@ export default function AssessmentPage() {
                 >
                   Previous Challenge
                 </Button>
+                <div className="flex gap-2">
+                  {codingChallenges.map((c, idx) => (
+                    <Button
+                      key={c.id}
+                      variant={submittedChallenges.has(c.id) ? 'default' : 'outline'}
+                      size="sm"
+                      className={`w-10 h-10 ${currentCodingIndex === idx ? 'ring-2 ring-primary' : ''}`}
+                      onClick={() => setCurrentCodingIndex(idx)}
+                    >
+                      {submittedChallenges.has(c.id) ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        idx + 1
+                      )}
+                    </Button>
+                  ))}
+                </div>
                 <Button
                   onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
                   disabled={currentCodingIndex === codingChallenges.length - 1}

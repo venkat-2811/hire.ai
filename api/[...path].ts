@@ -1440,6 +1440,104 @@ Example:
       });
     }
 
+    // Helper function to execute code against test cases using Piston API
+    async function executeCodeWithTestCases(code: string, testCases: any[], language: string = 'python') {
+      const results: any[] = [];
+      let passedCount = 0;
+
+      for (const tc of testCases) {
+        try {
+          // Build function arguments from input object
+          const inputObj = tc.input || {};
+          const args = Object.entries(inputObj)
+            .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+            .join(', ');
+
+          // Detect function name from code (first def statement)
+          const funcMatch = code.match(/def\s+(\w+)\s*\(/);
+          const funcName = funcMatch ? funcMatch[1] : 'solution';
+
+          // Wrap user code with test case execution
+          const wrappedCode = `${code}
+
+# Test execution
+import json
+try:
+    result = ${funcName}(${args})
+    print(json.dumps(result))
+except Exception as e:
+    print(f"ERROR: {e}")`;
+
+          const pistonResp = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              language: language === 'javascript' ? 'javascript' : 'python',
+              version: language === 'javascript' ? '18.15.0' : '3.10',
+              files: [{ content: wrappedCode }],
+              stdin: '',
+              args: [],
+              compile_timeout: 10000,
+              run_timeout: 5000,
+            }),
+          });
+
+          const pistonResult = await pistonResp.json();
+          const stdout = (pistonResult.run?.stdout || '').trim();
+          const stderr = pistonResult.run?.stderr || '';
+          const exitCode = pistonResult.run?.code || 0;
+
+          // Normalize expected output for comparison
+          const expectedOutput = JSON.stringify(tc.expected);
+          const passed = stdout === expectedOutput && exitCode === 0 && !stderr;
+
+          if (passed) passedCount++;
+
+          results.push({
+            input: inputObj,
+            expected: tc.expected,
+            actual: stdout,
+            passed,
+            error: stderr || null,
+          });
+        } catch (execErr: any) {
+          results.push({
+            input: tc.input,
+            expected: tc.expected,
+            actual: null,
+            passed: false,
+            error: execErr.message,
+          });
+        }
+      }
+
+      return { results, passedCount };
+    }
+
+    // POST /api/assessments/:sessionId/coding/run - Run code without submitting
+    if (req.method === 'POST' && segments.length === 4 && segments[2] === 'coding' && segments[3] === 'run') {
+      const sessionId = segments[1];
+      const { challenge_id, code, language = 'python' } = req.body;
+
+      const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
+      if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
+
+      const challenges: any[] = session.coding_challenges || [];
+      const challenge = challenges.find((c: any) => c.id === challenge_id);
+      if (!challenge) return badRequest(res, 'Challenge not found');
+
+      const testCases = challenge.test_cases || [];
+      const { results, passedCount } = await executeCodeWithTestCases(code, testCases, language);
+
+      return ok(res, {
+        success: true,
+        challenge_id,
+        passed_count: passedCount,
+        total_tests: testCases.length,
+        test_results: results,
+      });
+    }
+
     // POST /api/assessments/:sessionId/coding/submit
     if (req.method === 'POST' && segments.length === 4 && segments[2] === 'coding' && segments[3] === 'submit') {
       const sessionId = segments[1];
@@ -1455,56 +1553,7 @@ Example:
       if (!challenge) return badRequest(res, 'Challenge not found');
 
       const testCases = challenge.test_cases || [];
-      const results: any[] = [];
-      let passedCount = 0;
-
-      // Execute code against each test case using Piston API
-      for (const tc of testCases) {
-        try {
-          // Wrap user code with test case execution
-          const wrappedCode = `${code}\n\n# Test execution\nimport json\ntry:\n    result = solution(${tc.input})\n    print(json.dumps(result))\nexcept Exception as e:\n    print(f"ERROR: {e}")`;
-
-          const pistonResp = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              language: 'python',
-              version: '3.10',
-              files: [{ content: wrappedCode }],
-              stdin: '',
-              args: [],
-              compile_timeout: 10000,
-              run_timeout: 5000,
-            }),
-          });
-
-          const pistonResult = await pistonResp.json();
-          const stdout = (pistonResult.run?.stdout || '').trim();
-          const stderr = pistonResult.run?.stderr || '';
-          const exitCode = pistonResult.run?.code || 0;
-
-          const expectedOutput = String(tc.expected_output).trim();
-          const passed = stdout === expectedOutput && exitCode === 0 && !stderr;
-
-          if (passed) passedCount++;
-
-          results.push({
-            input: tc.input,
-            expected: expectedOutput,
-            actual: stdout,
-            passed,
-            error: stderr || null,
-          });
-        } catch (execErr: any) {
-          results.push({
-            input: tc.input,
-            expected: tc.expected_output,
-            actual: null,
-            passed: false,
-            error: execErr.message,
-          });
-        }
-      }
+      const { results, passedCount } = await executeCodeWithTestCases(code, testCases, language);
 
       const totalTests = testCases.length || 1;
       const scorePercentage = (passedCount / totalTests) * 100;
@@ -1753,6 +1802,153 @@ Example:
       }).eq('id', sessionId);
 
       return ok(res, { success: true, is_last_question: isLast });
+    }
+
+    // POST /api/ai-interview/:sessionId/transcribe - Transcribe audio using AssemblyAI
+    if (req.method === 'POST' && segments.length === 3 && segments[2] === 'transcribe') {
+      const sessionId = segments[1];
+      
+      // Verify session exists
+      const { data: session } = await supabase.from('ai_interview_sessions').select('id, status').eq('id', sessionId).single();
+      if (!session) return notFound(res, 'Session not found');
+      if (session.status !== 'in_progress' && session.status !== 'completed') {
+        return badRequest(res, 'Interview not in progress');
+      }
+
+      // Get AssemblyAI API key
+      const assemblyaiKey = process.env.ASSEMBLYAI_API_KEY;
+      if (!assemblyaiKey) {
+        return res.status(503).json({ error: 'ASSEMBLYAI_API_KEY is not configured' });
+      }
+
+      // Parse multipart form data for audio file
+      // For Vercel, we need to handle the raw body
+      const contentType = req.headers['content-type'] || '';
+      if (!contentType.includes('multipart/form-data')) {
+        return badRequest(res, 'Expected multipart/form-data');
+      }
+
+      try {
+        // Get the raw body as buffer
+        const chunks: Buffer[] = [];
+        for await (const chunk of req as any) {
+          chunks.push(Buffer.from(chunk));
+        }
+        const rawBody = Buffer.concat(chunks);
+        
+        // Extract boundary from content-type
+        const boundaryMatch = contentType.match(/boundary=(.+)/);
+        if (!boundaryMatch) {
+          return badRequest(res, 'Missing boundary in multipart form');
+        }
+        const boundary = boundaryMatch[1];
+        
+        // Simple multipart parser to extract audio data
+        const boundaryBuffer = Buffer.from(`--${boundary}`);
+        const parts = [];
+        let start = 0;
+        let idx = rawBody.indexOf(boundaryBuffer, start);
+        
+        while (idx !== -1) {
+          const nextIdx = rawBody.indexOf(boundaryBuffer, idx + boundaryBuffer.length);
+          if (nextIdx !== -1) {
+            parts.push(rawBody.slice(idx + boundaryBuffer.length, nextIdx));
+          }
+          idx = nextIdx;
+        }
+        
+        // Find the audio part
+        let audioData: Buffer | null = null;
+        for (const part of parts) {
+          const partStr = part.toString('utf8', 0, Math.min(500, part.length));
+          if (partStr.includes('name="audio"') || partStr.includes('filename=')) {
+            // Find the double CRLF that separates headers from content
+            const headerEnd = part.indexOf('\r\n\r\n');
+            if (headerEnd !== -1) {
+              audioData = part.slice(headerEnd + 4, part.length - 2); // Remove trailing CRLF
+            }
+          }
+        }
+        
+        if (!audioData || audioData.length === 0) {
+          return badRequest(res, 'No audio data found in request');
+        }
+
+        // Step 1: Upload audio to AssemblyAI
+        const uploadResp = await fetch('https://api.assemblyai.com/v2/upload', {
+          method: 'POST',
+          headers: {
+            'authorization': assemblyaiKey,
+            'content-type': 'application/octet-stream',
+          },
+          body: audioData,
+        });
+        
+        if (!uploadResp.ok) {
+          const errText = await uploadResp.text();
+          throw new Error(`AssemblyAI upload failed: ${errText}`);
+        }
+        
+        const uploadData = await uploadResp.json();
+        const audioUrl = uploadData.upload_url;
+        
+        // Step 2: Create transcription request
+        const transcriptResp = await fetch('https://api.assemblyai.com/v2/transcript', {
+          method: 'POST',
+          headers: {
+            'authorization': assemblyaiKey,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            audio_url: audioUrl,
+            language_code: 'en_us',
+          }),
+        });
+        
+        if (!transcriptResp.ok) {
+          const errText = await transcriptResp.text();
+          throw new Error(`AssemblyAI transcript create failed: ${errText}`);
+        }
+        
+        const transcriptData = await transcriptResp.json();
+        const transcriptId = transcriptData.id;
+        
+        // Step 3: Poll for completion (with timeout)
+        const maxWait = 60000; // 60 seconds
+        const pollInterval = 1000;
+        let waited = 0;
+        
+        while (waited < maxWait) {
+          const pollResp = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+            headers: { 'authorization': assemblyaiKey },
+          });
+          
+          if (!pollResp.ok) {
+            const errText = await pollResp.text();
+            throw new Error(`AssemblyAI poll failed: ${errText}`);
+          }
+          
+          const pollData = await pollResp.json();
+          
+          if (pollData.status === 'completed') {
+            return ok(res, { transcript: pollData.text || '' });
+          }
+          
+          if (pollData.status === 'error') {
+            throw new Error(`AssemblyAI transcription error: ${pollData.error}`);
+          }
+          
+          // Wait before next poll
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          waited += pollInterval;
+        }
+        
+        return res.status(504).json({ error: 'Transcription timed out' });
+        
+      } catch (err: any) {
+        console.error('Transcription error:', err);
+        return res.status(500).json({ error: err.message || 'Transcription failed' });
+      }
     }
 
     // POST /api/ai-interview/:sessionId/proctoring
