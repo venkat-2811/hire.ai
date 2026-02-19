@@ -66,7 +66,7 @@ async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): 
   const transcriptResp = await fetch('https://api.assemblyai.com/v2/transcript', {
     method: 'POST',
     headers: { authorization: apiKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ audio_url: upload_url, language_code: 'en_us' }),
+    body: JSON.stringify({ audio_url: upload_url, speech_models: ['universal-3-pro', 'universal-2'], language_detection: true }),
   });
   if (!transcriptResp.ok) {
     const errText = await transcriptResp.text();
