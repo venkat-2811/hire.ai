@@ -10,7 +10,7 @@ class GeminiService:
     """Centralized Groq API client for all AI operations.
     
     NOTE: Class name kept as GeminiService to avoid breaking imports across
-    the codebase. Internally uses Groq with llama-3.1-8b-instant.
+    the codebase. Internally uses Groq with DeepSeek-R1-Distill-Llama-70b.
     """
     
     def __init__(self):
@@ -18,7 +18,7 @@ class GeminiService:
         if not settings.groq_api_key:
             raise RuntimeError("GROQ_API_KEY is not set")
         self.client = Groq(api_key=settings.groq_api_key)
-        self._model_name = "llama-3.1-8b-instant"
+        self._model_name = "DeepSeek-R1-Distill-Llama-70b"
 
     @property
     def model_name(self) -> str:

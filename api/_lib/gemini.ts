@@ -20,7 +20,7 @@ export async function generateText(
   const client = getGroqClient();
 
   const completion = await client.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: 'DeepSeek-R1-Distill-Llama-70b',
     messages: [{ role: 'user', content: prompt }],
     temperature: options.temperature ?? 0.7,
     max_tokens: options.maxTokens ?? 2048,

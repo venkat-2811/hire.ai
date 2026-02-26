@@ -411,10 +411,6 @@ export default function AssessmentPage() {
             ? mcqData.questions
             : [];
         setMcqQuestions(mcqList);
-        if (!mcqList.length) {
-          setError('No MCQ questions were generated for this assessment. Please refresh or contact the hiring team.');
-          return;
-        }
 
         // Load coding challenges
         const codingResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/coding`);
@@ -430,16 +426,28 @@ export default function AssessmentPage() {
             ? codingData.challenges
             : [];
         setCodingChallenges(codingList);
-        if (!codingList.length) {
-          setError('No coding challenges were generated for this assessment. Please refresh or contact the hiring team.');
+
+        const hasMcq = mcqList.length > 0;
+        const hasCoding = codingList.length > 0;
+        if (!hasMcq && !hasCoding) {
+          setError('No assessment sections were generated. Please refresh or contact the hiring team.');
           return;
         }
+
+        if (hasMcq && !hasCoding) {
+          setCurrentTab('mcq');
+        } else if (!hasMcq && hasCoding) {
+          setCurrentTab('coding');
+        }
+
         // Initialize solutions with starter code
-        const initialSolutions: Record<string, string> = {};
-        codingList.forEach((c: CodingChallenge) => {
-          initialSolutions[c.id] = c.starter_code;
-        });
-        setCodingSolutions(initialSolutions);
+        if (hasCoding) {
+          const initialSolutions: Record<string, string> = {};
+          codingList.forEach((c: CodingChallenge) => {
+            initialSolutions[c.id] = c.starter_code;
+          });
+          setCodingSolutions(initialSolutions);
+        }
       } catch (e) {
         setError('Failed to load assessment. Please try again.');
       } finally {
@@ -554,31 +562,35 @@ export default function AssessmentPage() {
     setSubmitting(true);
 
     try {
-      // Submit MCQ answers
-      const mcqSubmissions = Object.entries(mcqAnswers).map(([questionId, selectedIndex]) => ({
-        question_id: questionId,
-        selected_index: selectedIndex,
-        time_taken_seconds: 0, // TODO: Track per-question time
-      }));
+      // Submit MCQ answers (if MCQ section exists)
+      if (mcqQuestions.length > 0) {
+        const mcqSubmissions = Object.entries(mcqAnswers).map(([questionId, selectedIndex]) => ({
+          question_id: questionId,
+          selected_index: selectedIndex,
+          time_taken_seconds: 0, // TODO: Track per-question time
+        }));
 
-      await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mcqSubmissions),
-      });
-
-      // Submit coding solutions
-      for (const [challengeId, code] of Object.entries(codingSolutions)) {
-        await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
+        await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            challenge_id: challengeId,
-            code,
-            language: 'python',
-            time_taken_seconds: 0,
-          }),
+          body: JSON.stringify(mcqSubmissions),
         });
+      }
+
+      // Submit coding solutions (if coding section exists)
+      if (codingChallenges.length > 0) {
+        for (const [challengeId, code] of Object.entries(codingSolutions)) {
+          await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              challenge_id: challengeId,
+              code,
+              language: 'python',
+              time_taken_seconds: 0,
+            }),
+          });
+        }
       }
 
       // Complete assessment
@@ -812,6 +824,9 @@ export default function AssessmentPage() {
   const currentCoding = codingChallenges[currentCodingIndex];
   const mcqProgress = mcqQuestions.length === 0 ? 0 : (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
   const codingProgress = codingChallenges.length === 0 ? 0 : (Object.keys(codingSolutions).filter(k => codingSolutions[k] !== codingChallenges.find(c => c.id === k)?.starter_code).length / codingChallenges.length) * 100;
+  const hasMcq = mcqQuestions.length > 0;
+  const hasCoding = codingChallenges.length > 0;
+  const activeTab = hasMcq ? (hasCoding ? currentTab : 'mcq') : 'coding';
 
   return (
     <div className="min-h-screen bg-background select-none">
@@ -936,19 +951,22 @@ export default function AssessmentPage() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        <Tabs value={currentTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding')}>
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
-            <TabsTrigger value="mcq" className="flex items-center gap-2">
-              <FileQuestion className="h-4 w-4" />
-              MCQ ({Object.keys(mcqAnswers).length}/{mcqQuestions.length})
-            </TabsTrigger>
-            <TabsTrigger value="coding" className="flex items-center gap-2">
-              <Code className="h-4 w-4" />
-              Coding ({currentCodingIndex + 1}/{codingChallenges.length})
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding')}>
+          {hasMcq && hasCoding && (
+            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
+              <TabsTrigger value="mcq" className="flex items-center gap-2">
+                <FileQuestion className="h-4 w-4" />
+                MCQ ({Object.keys(mcqAnswers).length}/{mcqQuestions.length})
+              </TabsTrigger>
+              <TabsTrigger value="coding" className="flex items-center gap-2">
+                <Code className="h-4 w-4" />
+                Coding ({currentCodingIndex + 1}/{codingChallenges.length})
+              </TabsTrigger>
+            </TabsList>
+          )}
 
           {/* MCQ Section */}
+          {hasMcq && (
           <TabsContent value="mcq">
             <div className="max-w-3xl mx-auto space-y-6">
               <Progress value={mcqProgress} className="h-2" />
@@ -1035,8 +1053,10 @@ export default function AssessmentPage() {
               </Card>
             </div>
           </TabsContent>
+          )}
 
           {/* Coding Section */}
+          {hasCoding && (
           <TabsContent value="coding">
             <div className="max-w-6xl mx-auto space-y-6">
               <Progress value={codingProgress} className="h-2" />
@@ -1190,6 +1210,7 @@ export default function AssessmentPage() {
               </div>
             </div>
           </TabsContent>
+          )}
         </Tabs>
       </main>
     </div>

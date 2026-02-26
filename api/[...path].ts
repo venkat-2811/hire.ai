@@ -1411,12 +1411,17 @@ Return JSON with BOTH parsed resume and screening scores:
       const sessionId = segments[1];
       const { data: session, error } = await supabase
         .from('assessment_sessions')
-        .select('id, status, job_id, mcq_questions, mcq_question_count')
+        .select('id, status, job_id, mcq_questions, mcq_question_count, proctoring_data')
         .eq('id', sessionId)
         .single();
 
       if (error || !session) return notFound(res, 'Session not found');
       if (session.status !== 'in_progress') return badRequest(res, 'Assessment not in progress');
+
+      const assessmentConfig = session.proctoring_data?.assessment_config || {};
+      if (assessmentConfig.include_mcq === false || (session.mcq_question_count || 0) === 0) {
+        return ok(res, []);
+      }
 
       const stored = session.mcq_questions || [];
       if (stored.length) {
@@ -1434,8 +1439,11 @@ Return JSON with BOTH parsed resume and screening scores:
       if (!job) return notFound(res, 'Job not found');
 
       const count = session.mcq_question_count || 20;
+      const difficulty = assessmentConfig.difficulty || 'medium';
       const prompt = `Generate exactly ${count} multiple choice questions for a ${job.level} ${job.role} position.
 Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+
+Difficulty focus: ${difficulty}. Use mostly ${difficulty} questions with a light mix of adjacent difficulty levels.
 
 Return a JSON object with a "questions" array. Each question object must have:
 - "id": unique string like "q1", "q2", etc.
@@ -1499,28 +1507,36 @@ Example:
     // GET /api/assessments/:sessionId/coding
     if (req.method === 'GET' && segments.length === 3 && segments[2] === 'coding') {
       const sessionId = segments[1];
-      const { data: session } = await supabase
+      const { data: session, error } = await supabase
         .from('assessment_sessions')
-        .select('id, status, job_id, coding_challenges, coding_challenge_count')
+        .select('id, status, job_id, coding_challenges, coding_challenge_count, proctoring_data')
         .eq('id', sessionId)
         .single();
 
       if (!session) return notFound(res, 'Session not found');
       if (session.status !== 'in_progress') return badRequest(res, 'Assessment not in progress');
 
-      const stored = session.coding_challenges || [];
-      if (stored.length) return ok(res, stored);
+      const assessmentConfig = session.proctoring_data?.assessment_config || {};
+      if (assessmentConfig.include_coding === false || (session.coding_challenge_count || 0) === 0) {
+        return ok(res, []);
+      }
+
+      const storedChallenges = session.coding_challenges || [];
+      if (storedChallenges.length) return ok(res, storedChallenges);
 
       const { data: job } = await supabase.from('job_descriptions').select('*').eq('id', session.job_id).single();
       if (!job) return notFound(res, 'Job not found');
 
       const count = session.coding_challenge_count || 2;
-      const prompt = `Generate exactly ${count} coding challenges for a ${job.level} ${job.role} position.
-Skills: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+      const difficulty = assessmentConfig.difficulty || 'medium';
+      const prompt = `Generate exactly ${count} coding challenges for a ${job.level} ${job.role} role.
+Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+
+Difficulty focus: ${difficulty}. Use mostly ${difficulty} challenges with a light mix of adjacent difficulty levels.
 
 Return a JSON object with a "challenges" array. Each challenge object must have:
-- "id": unique string like "c1", "c2"
-- "title": short challenge title
+- "id": unique string like "c1", "c2", etc.
+- "title": short title
 - "description": detailed problem description with examples
 - "starter_code": Python code template to start with
 - "test_cases": array of {"input":"...","expected_output":"..."} with at least 3 test cases
@@ -1860,6 +1876,11 @@ Example:
       const candidateIds = body.candidate_ids as string[];
       const jobId = body.job_id as string;
       const deadlineHours = body.deadline_hours ?? 72;
+      const includeMcq = body.include_mcq !== false;
+      const includeCoding = body.include_coding !== false;
+      const difficulty = (body.difficulty as string) || 'medium';
+      const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
+      const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
 
       const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', jobId).eq('created_by', user.id).single();
       if (!job) return notFound(res, 'Job not found');
@@ -1883,10 +1904,21 @@ Example:
             token,
             status: 'pending',
             deadline: deadline.toISOString(),
-            mcq_question_count: body.mcq_question_count || 20,
-            coding_challenge_count: body.coding_challenge_count || 2,
+            mcq_question_count: mcqCount,
+            coding_challenge_count: codingCount,
             total_time_minutes: body.total_time_minutes || 90,
-            proctoring_data: { tab_switches: 0, fullscreen_exits: 0, copy_paste_attempts: 0, warnings: [], terminated: false },
+            proctoring_data: {
+              tab_switches: 0,
+              fullscreen_exits: 0,
+              copy_paste_attempts: 0,
+              warnings: [],
+              terminated: false,
+              assessment_config: {
+                include_mcq: includeMcq,
+                include_coding: includeCoding,
+                difficulty,
+              },
+            },
             created_at: new Date().toISOString(),
           });
 

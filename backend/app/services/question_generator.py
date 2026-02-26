@@ -258,8 +258,9 @@ Good-to-Have Skills: {good_to_have_skills}
 
 Generate {count} multiple-choice questions that:
 - Test practical knowledge of the required skills
-- Range from easy to hard difficulty
+- Bias toward hard difficulty with advanced concepts, edge cases, and tradeoffs
 - Have 4 options each with exactly ONE correct answer
+- Use plausible distractors that reflect common pitfalls
 - Are specific to this role and level
 - Cover a variety of topics from the job description
 
@@ -339,11 +340,12 @@ Key Skills: {must_have_skills}
 
 Generate {count} coding challenges that:
 - Test practical coding ability relevant to this role
-- Are solvable in 15-25 minutes each
+- Are on the harder end of the level with nuanced edge cases
+- Are solvable in 20-35 minutes each
 - Include clear problem descriptions
 - Provide starter code templates
 - Have specific test cases with inputs and expected outputs
-- Difficulty appropriate for {job.level} level
+- Emphasize advanced reasoning within {job.level}
 
 Return JSON:
 {{

@@ -107,6 +107,11 @@ export default function CandidatesPage() {
   const [assessmentDialogOpen, setAssessmentDialogOpen] = useState(false);
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [sendingInvites, setSendingInvites] = useState(false);
+  const [mcqCount, setMcqCount] = useState(20);
+  const [codingCount, setCodingCount] = useState(2);
+  const [assessmentDifficulty, setAssessmentDifficulty] = useState<'easy' | 'medium' | 'hard'>('hard');
+  const [includeMcq, setIncludeMcq] = useState(true);
+  const [includeCoding, setIncludeCoding] = useState(true);
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -210,6 +215,11 @@ export default function CandidatesPage() {
       return;
     }
 
+    if (!includeMcq && !includeCoding) {
+      toast.error('Please enable at least one section (MCQ or Coding)');
+      return;
+    }
+
     setSendingInvites(true);
     try {
       const token = await getToken();
@@ -223,6 +233,11 @@ export default function CandidatesPage() {
           candidate_ids: Array.from(selectedIds),
           job_id: startJobId,
           deadline_hours: 72,
+          mcq_question_count: includeMcq ? mcqCount : 0,
+          coding_challenge_count: includeCoding ? codingCount : 0,
+          difficulty: assessmentDifficulty,
+          include_mcq: includeMcq,
+          include_coding: includeCoding,
         }),
       });
 
@@ -633,9 +648,56 @@ export default function CandidatesPage() {
                 </Select>
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Include Technical MCQs</Label>
+                  <div className="flex items-center gap-2">
+                    <Checkbox checked={includeMcq} onCheckedChange={(v) => setIncludeMcq(!!v)} />
+                    <span className="text-sm text-muted-foreground">Enable MCQ section</span>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={mcqCount}
+                    onChange={(e) => setMcqCount(Math.max(0, Number(e.target.value) || 0))}
+                    disabled={!includeMcq}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Include Coding Challenges</Label>
+                  <div className="flex items-center gap-2">
+                    <Checkbox checked={includeCoding} onCheckedChange={(v) => setIncludeCoding(!!v)} />
+                    <span className="text-sm text-muted-foreground">Enable coding section</span>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={codingCount}
+                    onChange={(e) => setCodingCount(Math.max(0, Number(e.target.value) || 0))}
+                    disabled={!includeCoding}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Overall Difficulty</Label>
+                <Select value={assessmentDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setAssessmentDifficulty(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="text-sm text-muted-foreground">
                 Candidates will receive an email with a link to complete the technical assessment.
-                The assessment includes MCQ and hands-on coding sections with proctoring.
+                You can configure question counts and difficulty for this invite.
               </div>
             </div>
 
