@@ -3,6 +3,9 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
 import * as jose from 'jose';
 import crypto from 'node:crypto';
+import Busboy from 'busboy';
+import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
 
 // ============== INLINE: Supabase ==============
 let _supabaseAdmin: SupabaseClient | null = null;
@@ -22,7 +25,7 @@ function getSupabaseAdmin(): SupabaseClient {
 }
 
 // ============== INLINE: Clerk ==============
-interface ClerkUser { id: string; sessionId: string; azp: string; }
+interface ClerkUser { id: string; sessionId: string; azp: string; email?: string | null; }
 let _jwks: jose.JWTVerifyGetKey | null = null;
 let _jwksTime = 0;
 async function getJWKS(): Promise<jose.JWTVerifyGetKey> {
@@ -38,10 +41,115 @@ async function verifyClerkToken(req: VercelRequest): Promise<ClerkUser> {
   if (!h || !h.startsWith('Bearer ')) throw new Error('Missing authorization header');
   const jwks = await getJWKS();
   const { payload } = await jose.jwtVerify(h.substring(7), jwks, { issuer: process.env.CLERK_ISSUER });
-  return { id: payload.sub as string, sessionId: payload.sid as string, azp: payload.azp as string };
+  const email = (payload.email as string) || (payload.email_address as string) || (payload.primary_email_address as string) || null;
+  return { id: payload.sub as string, sessionId: payload.sid as string, azp: payload.azp as string, email };
 }
 async function getOptionalUser(req: VercelRequest): Promise<ClerkUser | null> {
   try { return await verifyClerkToken(req); } catch { return null; }
+}
+
+// ============== INLINE: multipart + resume parsing ==============
+async function parseMultipartSingleFile(
+  req: VercelRequest,
+  fieldName: string,
+): Promise<{ filename: string; mimeType: string; buffer: Buffer } | null> {
+  return await new Promise((resolve, reject) => {
+    try {
+      const bb = Busboy({ headers: req.headers as Record<string, string> });
+      let done = false;
+
+      let out: { filename: string; mimeType: string; buffer: Buffer } | null = null;
+
+      bb.on('file', (name: string, file: NodeJS.ReadableStream, info: { filename: string; mimeType: string }) => {
+        if (name !== fieldName) {
+          file.resume();
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        file.on('data', (d: Buffer) => chunks.push(Buffer.from(d)));
+        file.on('limit', () => {
+          // If limits are set (we don't currently), treat it as error
+        });
+        file.on('end', () => {
+          out = {
+            filename: info.filename || 'resume',
+            mimeType: info.mimeType || 'application/octet-stream',
+            buffer: Buffer.concat(chunks),
+          };
+        });
+      });
+
+      bb.on('error', (err: Error) => {
+        if (done) return;
+        done = true;
+        reject(err);
+      });
+
+      bb.on('finish', () => {
+        if (done) return;
+        done = true;
+        resolve(out);
+      });
+
+      req.pipe(bb);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function extractResumeText(fileBuffer: Buffer, filename: string): Promise<string> {
+  const lower = (filename || '').toLowerCase();
+
+  // pdf
+  if (lower.endsWith('.pdf')) {
+    const parsed = await pdfParse(fileBuffer);
+    return String(parsed.text || '');
+  }
+
+  // docx
+  if (lower.endsWith('.docx')) {
+    const result = await mammoth.extractRawText({ buffer: fileBuffer });
+    return String(result.value || '');
+  }
+
+  // doc: not reliably parseable without heavier tooling; fail fast
+  if (lower.endsWith('.doc')) {
+    throw new Error('Unsupported resume format .doc. Please upload PDF or DOCX.');
+  }
+
+  throw new Error('Unsupported resume format. Please upload PDF or DOCX.');
+}
+
+function mapAssessmentDifficulty(difficulty: string): { label: string; guidance: string } {
+  const d = String(difficulty || '').toLowerCase();
+
+  if (d === 'easy') {
+    return {
+      label: 'Medium-to-Hard',
+      guidance: 'Target difficulty: medium-to-hard. Avoid trivial questions. Include real-world pitfalls and at least a few advanced edge cases.'
+    };
+  }
+
+  if (d === 'medium') {
+    return {
+      label: 'Very Hard',
+      guidance: 'Target difficulty: very hard. Include advanced concepts, tricky edge cases, and tradeoffs. Questions should require deep reasoning.'
+    };
+  }
+
+  if (d === 'hard') {
+    return {
+      label: 'FAANG-Level (Very, Very Hard)',
+      guidance: 'Target difficulty: very, very hard (FAANG-level). Expect senior-level depth, nuanced constraints, and multiple failure modes. Prioritize high-signal questions.'
+    };
+  }
+
+  return {
+    label: 'Very Hard',
+    guidance: 'Target difficulty: very hard. Include advanced concepts, tricky edge cases, and tradeoffs. Questions should require deep reasoning.'
+  };
 }
 
 // ============== INLINE: AssemblyAI ==============
@@ -53,7 +161,7 @@ async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): 
   const uploadResp = await fetch('https://api.assemblyai.com/v2/upload', {
     method: 'POST',
     headers: { authorization: apiKey, 'content-type': 'application/octet-stream' },
-    body: audioBuffer,
+    body: audioBuffer as unknown as any,
   });
   if (!uploadResp.ok) {
     const errText = await uploadResp.text();
@@ -359,6 +467,99 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
   const supabase = getSupabaseAdmin();
 
+  // /api/profile (authenticated)
+  if (segments[0] === 'profile') {
+    const user = await requireAuth(req, res);
+    if (!user) return;
+
+    // GET /api/profile
+    if (req.method === 'GET' && segments.length === 1) {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) return res.status(500).json({ error: error.message });
+      if (!profile) {
+        // Best-effort create minimal profile
+        const { data: created, error: createErr } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: user.id,
+            email: user.email || (req.headers['x-user-email'] as string) || 'unknown',
+            full_name: null,
+            avatar_url: null,
+            onboarding_completed: false,
+          })
+          .select()
+          .single();
+        if (createErr) return res.status(500).json({ error: createErr.message });
+        return ok(res, created);
+      }
+
+      return ok(res, profile);
+    }
+
+    // PATCH /api/profile
+    if (req.method === 'PATCH' && segments.length === 1) {
+      const body = req.body || {};
+      const update: Record<string, any> = {
+        organization_email: body.organization_email ?? body.organizationEmail ?? null,
+        company_name: body.company_name ?? body.companyName ?? null,
+        company_website: body.company_website ?? body.companyWebsite ?? null,
+        company_size: body.company_size ?? body.companySize ?? null,
+        industry: body.industry ?? null,
+        headquarters_location: body.headquarters_location ?? body.headquartersLocation ?? null,
+        hiring_regions: body.hiring_regions ?? body.hiringRegions ?? null,
+        hiring_roles: body.hiring_roles ?? body.hiringRoles ?? null,
+        preferred_timezone: body.preferred_timezone ?? body.preferredTimezone ?? null,
+        contact_phone: body.contact_phone ?? body.contactPhone ?? null,
+        onboarding_completed: body.onboarding_completed ?? body.onboardingCompleted ?? undefined,
+        onboarding_completed_at: (body.onboarding_completed ?? body.onboardingCompleted) ? new Date().toISOString() : undefined,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Remove undefined keys
+      Object.keys(update).forEach((k) => update[k] === undefined && delete update[k]);
+
+      // Upsert profile row
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!existing) {
+        const { data: created, error: createErr } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: user.id,
+            email: body.email || user.email || (req.headers['x-user-email'] as string) || 'unknown',
+            full_name: body.full_name ?? body.fullName ?? null,
+            avatar_url: body.avatar_url ?? body.avatarUrl ?? null,
+            ...update,
+          })
+          .select()
+          .single();
+        if (createErr) return res.status(500).json({ error: createErr.message });
+        return ok(res, created);
+      }
+
+      const { data: updated, error: upErr } = await supabase
+        .from('profiles')
+        .update(update)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (upErr) return res.status(500).json({ error: upErr.message });
+      return ok(res, updated);
+    }
+
+    return methodNotAllowed(res);
+  }
+
   // /api/jobs and /api/jobs/:id
   if (segments[0] === 'jobs') {
     if (segments.length === 1) {
@@ -629,6 +830,73 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
       if (error || !data) return notFound(res, 'Candidate not found');
       return ok(res, data.resume_parsed_data || null);
+    }
+
+    // POST /api/candidates/:id/upload-resume
+    if (segments.length === 3 && segments[2] === 'upload-resume') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const candidateId = segments[1];
+      if (req.method !== 'POST') return methodNotAllowed(res);
+
+      // Verify candidate exists
+      const { data: existing, error: existErr } = await supabase
+        .from('candidates')
+        .select('id')
+        .eq('id', candidateId)
+        .single();
+      if (existErr || !existing) return notFound(res, 'Candidate not found');
+
+      try {
+        const uploaded = await parseMultipartSingleFile(req, 'resume');
+        if (!uploaded) return badRequest(res, 'Missing resume file');
+
+        const resumeTextRaw = await extractResumeText(uploaded.buffer, uploaded.filename);
+        const resumeText = String(resumeTextRaw)
+          .replace(/\x00/g, '')
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+          .slice(0, 50000);
+
+        // Parse with AI into structured JSON
+        let resumeParsedData: any = null;
+        try {
+          const prompt = `You are an expert resume parser.
+
+Parse the following resume and return ONLY valid JSON in this exact format:
+{
+  "skills": ["skill1"],
+  "experience": [{"title":"","company":"","duration":"","description":""}],
+  "education": [{"degree":"","institution":"","year":""}],
+  "summary": "",
+  "total_experience_years": 0,
+  "certifications": ["cert1"]
+}
+
+RESUME TEXT:
+${resumeText.slice(0, 8000)}
+`;
+          resumeParsedData = await generateJSON<any>(prompt);
+        } catch {
+          resumeParsedData = null;
+        }
+
+        const { data: updated, error: upErr } = await supabase
+          .from('candidates')
+          .update({
+            resume_text: resumeText,
+            resume_parsed_data: resumeParsedData,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', candidateId)
+          .select()
+          .single();
+        if (upErr) return res.status(500).json({ error: upErr.message });
+
+        return ok(res, updated);
+      } catch (e: any) {
+        return res.status(400).json({ error: e?.message || 'Failed to upload/parse resume' });
+      }
     }
 
     // GET /api/candidates/:id/assessment-details
@@ -1394,9 +1662,9 @@ Return JSON with BOTH parsed resume and screening scores:
         session_id: session.id,
         candidate_name: session.candidates?.full_name,
         job_title: session.job_descriptions?.title,
-        mcq_count: session.mcq_question_count || 20,
-        coding_count: session.coding_challenge_count || 2,
-        total_time_minutes: session.total_time_minutes || 90,
+        mcq_count: session.mcq_question_count ?? 20,
+        coding_count: session.coding_challenge_count ?? 2,
+        total_time_minutes: session.total_time_minutes ?? 90,
         deadline: session.deadline,
       });
     }
@@ -1440,22 +1708,15 @@ Return JSON with BOTH parsed resume and screening scores:
 
       const count = session.mcq_question_count || 20;
       const difficulty = assessmentConfig.difficulty || 'medium';
+      const mapped = mapAssessmentDifficulty(difficulty);
       const prompt = `Generate exactly ${count} multiple choice questions for a ${job.level} ${job.role} position.
 Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+Selected difficulty (user): ${difficulty}.
+Effective difficulty (system): ${mapped.label}.
+${mapped.guidance}
 
-Difficulty focus: ${difficulty}. Use mostly ${difficulty} questions with a light mix of adjacent difficulty levels.
-
-Return a JSON object with a "questions" array. Each question object must have:
-- "id": unique string like "q1", "q2", etc.
-- "question": the question text
-- "options": array of exactly 4 answer choices as strings
-- "correct_index": integer 0-3 indicating correct answer
-- "difficulty": "easy", "medium", or "hard"
-- "topic": the skill/topic being tested
-- "points": 5 for easy, 10 for medium, 15 for hard
-
-Example:
-{"questions":[{"id":"q1","question":"What is...?","options":["A","B","C","D"],"correct_index":0,"difficulty":"medium","topic":"JavaScript","points":10}]}`;
+Return JSON: {"questions": [{"id":"q1","question":"...","options":["A","B","C","D"],"correct_index":0,"difficulty":"${mapped.label}","topic":"...","points":5}]}.
+Only return JSON.`;
 
       let generated: any;
       try {
@@ -1477,13 +1738,11 @@ Example:
           question: String(q?.question || ''),
           options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
           correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
-          difficulty: String(q?.difficulty || 'medium'),
+          difficulty: String(q?.difficulty || mapped.label),
           topic: String(q?.topic || 'General'),
           points: typeof q?.points === 'number' ? q.points : 5,
         }))
         .filter((q: any) => q.question && q.options.length === 4);
-
-      console.log('MCQ questions generated:', questions.length);
 
       if (!questions.length) {
         return res.status(500).json({ error: 'AI returned no valid questions. Please try again.' });
@@ -1513,7 +1772,7 @@ Example:
         .eq('id', sessionId)
         .single();
 
-      if (!session) return notFound(res, 'Session not found');
+      if (error || !session) return notFound(res, 'Session not found');
       if (session.status !== 'in_progress') return badRequest(res, 'Assessment not in progress');
 
       const assessmentConfig = session.proctoring_data?.assessment_config || {};
@@ -1529,23 +1788,15 @@ Example:
 
       const count = session.coding_challenge_count || 2;
       const difficulty = assessmentConfig.difficulty || 'medium';
+      const mapped = mapAssessmentDifficulty(difficulty);
       const prompt = `Generate exactly ${count} coding challenges for a ${job.level} ${job.role} role.
 Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+Selected difficulty (user): ${difficulty}.
+Effective difficulty (system): ${mapped.label}.
+${mapped.guidance}
 
-Difficulty focus: ${difficulty}. Use mostly ${difficulty} challenges with a light mix of adjacent difficulty levels.
-
-Return a JSON object with a "challenges" array. Each challenge object must have:
-- "id": unique string like "c1", "c2", etc.
-- "title": short title
-- "description": detailed problem description with examples
-- "starter_code": Python code template to start with
-- "test_cases": array of {"input":"...","expected_output":"..."} with at least 3 test cases
-- "difficulty": "easy", "medium", or "hard"
-- "time_limit_minutes": 15 for easy, 25 for medium, 35 for hard
-- "points": 25 for easy, 50 for medium, 75 for hard
-
-Example:
-{"challenges":[{"id":"c1","title":"Two Sum","description":"Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.","starter_code":"def two_sum(nums, target):\\n    # Your code here\\n    pass","test_cases":[{"input":"[2,7,11,15], 9","expected_output":"[0,1]"},{"input":"[3,2,4], 6","expected_output":"[1,2]"},{"input":"[3,3], 6","expected_output":"[0,1]"}],"difficulty":"medium","time_limit_minutes":25,"points":50}]}`;
+Return JSON: {"challenges": [{"id":"c1","title":"...","description":"...","starter_code":"...","test_cases":[{"input":{},"expected":{}}],"difficulty":"${mapped.label}","time_limit_minutes":30,"points":50}]}.
+Only return JSON.`;
 
       let generated: any;
       try {
@@ -1568,13 +1819,11 @@ Example:
           description: String(c?.description || ''),
           starter_code: String(c?.starter_code || 'def solution():\n    pass'),
           test_cases: Array.isArray(c?.test_cases) ? c.test_cases : [],
-          difficulty: String(c?.difficulty || 'medium'),
-          time_limit_minutes: typeof c?.time_limit_minutes === 'number' ? c.time_limit_minutes : 25,
+          difficulty: String(c?.difficulty || mapped.label),
+          time_limit_minutes: typeof c?.time_limit_minutes === 'number' ? c.time_limit_minutes : 30,
           points: typeof c?.points === 'number' ? c.points : 50,
         }))
         .filter((c: any) => c.title && c.description);
-
-      console.log('Coding challenges generated:', challenges.length);
 
       if (!challenges.length) {
         return res.status(500).json({ error: 'AI returned no valid coding challenges. Please try again.' });

@@ -113,6 +113,33 @@ export interface CandidateCreatePayload {
   job_id?: string;
 }
 
+export interface Profile {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  organization_email: string | null;
+  company_name: string | null;
+  company_website: string | null;
+  company_size: string | null;
+  industry: string | null;
+  headquarters_location: string | null;
+  hiring_regions: string | null;
+  hiring_roles: string | null;
+  preferred_timezone: string | null;
+  contact_phone: string | null;
+  onboarding_completed: boolean;
+  onboarding_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const profileApi = {
+  get: () => request<Profile>('/profile'),
+  update: (data: Partial<Profile>) => request<Profile>('/profile', { method: 'PATCH', body: data }),
+};
+
 export interface JobDescriptionCreate {
   title: string;
   role: 'salesforce_developer' | 'qa_engineer' | 'business_analyst';

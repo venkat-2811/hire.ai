@@ -17,6 +17,7 @@ import EditJobPage from "./pages/EditJobPage";
 import InterviewSessionPage from "./pages/InterviewSessionPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
+import OnboardingPage from "./pages/OnboardingPage";
 import ApplyPage from "./pages/ApplyPage";
 import AssessmentPage from "./pages/AssessmentPage";
 import AIInterviewPage from "./pages/AIInterviewPage";
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/interviews/:sessionId" element={<InterviewSessionPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/apply/:jobId" element={<ApplyPage />} />
             <Route path="/assessment/:token" element={<AssessmentPage />} />
             <Route path="/ai-interview/:token" element={<AIInterviewPage />} />

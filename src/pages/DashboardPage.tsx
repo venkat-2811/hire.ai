@@ -12,7 +12,6 @@ import {
   Plus,
   Clock,
   CheckCircle,
-  AlertCircle,
   Loader2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -236,25 +235,6 @@ export default function DashboardPage() {
                     <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
                   </Link>
                 ))}
-              </CardContent>
-            </Card>
-
-            {/* AI Insights Card */}
-            <Card className="mt-6 ai-glow border-accent/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <AlertCircle className="h-5 w-5 text-accent" />
-                  AI Insights
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Based on recent screenings, <strong>Salesforce Developer</strong> candidates 
-                  show 23% higher success rates in Apex logic tasks compared to last month.
-                </p>
-                <Button variant="link" className="px-0 mt-2 text-accent">
-                  View detailed analytics
-                </Button>
               </CardContent>
             </Card>
           </motion.div>

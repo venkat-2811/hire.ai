@@ -24,7 +24,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
-import { useCreateCandidate, useRunScreening } from '@/hooks/useCandidates';
+import { useCreateCandidate, useRunScreening, useUploadResume } from '@/hooks/useCandidates';
 import { useJobs } from '@/hooks/useJobs';
 
 type Step = 'upload' | 'details' | 'job' | 'consent' | 'processing';
@@ -48,6 +48,7 @@ export default function NewCandidatePage() {
 
   // API hooks
   const createCandidate = useCreateCandidate();
+  const uploadResume = useUploadResume();
   const runScreening = useRunScreening();
   const { data: jobsData, isLoading: jobsLoading } = useJobs({ is_active: true });
   
@@ -121,27 +122,53 @@ export default function NewCandidatePage() {
         portfolio_url: portfolioUrl || undefined,
         github_url: githubUrl || undefined,
         consent_given: consentGiven,
-        // Until binary resume upload endpoint is implemented, store uploaded filename as a note.
-        resume_text: resumeFile ? `Uploaded resume file: ${resumeFile.name}` : undefined,
         job_id: selectedJob,
       }, {
         onSuccess: async (candidate) => {
-          // Run ATS screening if job selected
-          if (selectedJob && candidate?.id) {
-            runScreening.mutate({ candidateId: candidate.id, jobId: selectedJob }, {
-              onSuccess: () => {
-                toast.success('Candidate processed and screened successfully!');
-                navigate('/candidates');
-              },
-              onError: () => {
-                toast.success('Candidate created. Screening will be done later.');
-                navigate('/candidates');
-              }
-            });
-          } else {
+          if (!candidate?.id) {
             toast.success('Candidate created successfully!');
             navigate('/candidates');
+            return;
           }
+
+          const runAtsIfPossible = () => {
+            if (!selectedJob) {
+              toast.success('Candidate created successfully!');
+              navigate('/candidates');
+              return;
+            }
+
+            runScreening.mutate(
+              { candidateId: candidate.id, jobId: selectedJob },
+              {
+                onSuccess: () => {
+                  toast.success('Candidate processed and screened successfully!');
+                  navigate('/candidates');
+                },
+                onError: () => {
+                  toast.success('Candidate created. Screening will be done later.');
+                  navigate('/candidates');
+                },
+              },
+            );
+          };
+
+          // Upload resume first (so resume_parsed_data exists), then run screening.
+          if (resumeFile) {
+            uploadResume.mutate(
+              { id: candidate.id, file: resumeFile },
+              {
+                onSuccess: () => runAtsIfPossible(),
+                onError: () => {
+                  toast.error('Resume upload/parsing failed. Candidate created without resume parsing.');
+                  runAtsIfPossible();
+                },
+              },
+            );
+            return;
+          }
+
+          runAtsIfPossible();
         },
         onError: () => {
           toast.error('Failed to create candidate');
