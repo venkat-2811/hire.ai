@@ -770,6 +770,66 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       return methodNotAllowed(res);
     }
 
+    // POST /api/candidates/send-acceptance
+    // NOTE: Must be handled before /api/candidates/:id route
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'send-acceptance') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const { candidate_ids, job_id } = req.body as { candidate_ids?: string[]; job_id?: string };
+      if (!candidate_ids?.length || !job_id) return badRequest(res, 'candidate_ids and job_id are required');
+
+      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidate_ids);
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
+      let emailsSent = 0;
+      const errorMessages: string[] = [];
+
+      for (const c of candidates) {
+        try {
+          await sendAcceptanceEmail(c.email, c.full_name, job.title);
+          emailsSent++;
+        } catch (e: any) {
+          errorMessages.push(`${c.full_name}: ${e.message}`);
+        }
+      }
+
+      return ok(res, { success: emailsSent > 0, emails_sent: emailsSent, error_messages: errorMessages });
+    }
+
+    // POST /api/candidates/send-rejection
+    // NOTE: Must be handled before /api/candidates/:id route
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'send-rejection') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const { candidate_ids, job_id } = req.body as { candidate_ids?: string[]; job_id?: string };
+      if (!candidate_ids?.length || !job_id) return badRequest(res, 'candidate_ids and job_id are required');
+
+      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidate_ids);
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
+      let emailsSent = 0;
+      const errorMessages: string[] = [];
+
+      for (const c of candidates) {
+        try {
+          await sendRejectionEmail(c.email, c.full_name, job.title);
+          emailsSent++;
+        } catch (e: any) {
+          errorMessages.push(`${c.full_name}: ${e.message}`);
+        }
+      }
+
+      return ok(res, { success: emailsSent > 0, emails_sent: emailsSent, error_messages: errorMessages });
+    }
+
     if (segments.length === 2) {
       const candidateId = segments[1];
 
@@ -965,64 +1025,6 @@ ${resumeText.slice(0, 8000)}
         started_at: completedSession.started_at,
         completed_at: completedSession.completed_at,
       });
-    }
-
-    // POST /api/candidates/send-acceptance
-    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'send-acceptance') {
-      const user = await requireAuth(req, res);
-      if (!user) return;
-
-      const { candidate_ids, job_id } = req.body as { candidate_ids?: string[]; job_id?: string };
-      if (!candidate_ids?.length || !job_id) return badRequest(res, 'candidate_ids and job_id are required');
-
-      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
-      if (!job) return notFound(res, 'Job not found or access denied');
-
-      const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidate_ids);
-      if (!candidates?.length) return notFound(res, 'No candidates found');
-
-      let emailsSent = 0;
-      const errorMessages: string[] = [];
-
-      for (const c of candidates) {
-        try {
-          await sendAcceptanceEmail(c.email, c.full_name, job.title);
-          emailsSent++;
-        } catch (e: any) {
-          errorMessages.push(`${c.full_name}: ${e.message}`);
-        }
-      }
-
-      return ok(res, { success: emailsSent > 0, emails_sent: emailsSent, error_messages: errorMessages });
-    }
-
-    // POST /api/candidates/send-rejection
-    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'send-rejection') {
-      const user = await requireAuth(req, res);
-      if (!user) return;
-
-      const { candidate_ids, job_id } = req.body as { candidate_ids?: string[]; job_id?: string };
-      if (!candidate_ids?.length || !job_id) return badRequest(res, 'candidate_ids and job_id are required');
-
-      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
-      if (!job) return notFound(res, 'Job not found or access denied');
-
-      const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidate_ids);
-      if (!candidates?.length) return notFound(res, 'No candidates found');
-
-      let emailsSent = 0;
-      const errorMessages: string[] = [];
-
-      for (const c of candidates) {
-        try {
-          await sendRejectionEmail(c.email, c.full_name, job.title);
-          emailsSent++;
-        } catch (e: any) {
-          errorMessages.push(`${c.full_name}: ${e.message}`);
-        }
-      }
-
-      return ok(res, { success: emailsSent > 0, emails_sent: emailsSent, error_messages: errorMessages });
     }
 
     return notFound(res);
