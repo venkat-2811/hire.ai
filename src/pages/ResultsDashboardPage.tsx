@@ -63,6 +63,7 @@ type SortOrder = 'asc' | 'desc';
 
 export default function ResultsDashboardPage() {
   const { loading: authLoading } = useRequireAuth();
+  const { getToken } = useAuth();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
 
   const [selectedJobId, setSelectedJobId] = useState<string>('');
@@ -219,10 +220,14 @@ export default function ResultsDashboardPage() {
 
     setSendingEmails(true);
     try {
+      const token = await getToken();
       const candidateIds = Array.from(selectedCandidates);
       const response = await fetch(`${API_BASE_URL}/candidates/send-acceptance`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           candidate_ids: candidateIds,
           job_id: selectedJobId,
@@ -231,7 +236,7 @@ export default function ResultsDashboardPage() {
 
       const data = await response.json();
       if (!response.ok) {
-        const msg = data?.detail || 'Failed to send acceptance emails';
+        const msg = data?.error || data?.detail || 'Failed to send acceptance emails';
         toast.error(msg);
         return;
       }
@@ -259,10 +264,14 @@ export default function ResultsDashboardPage() {
 
     setSendingEmails(true);
     try {
+      const token = await getToken();
       const candidateIds = Array.from(selectedCandidates);
       const response = await fetch(`${API_BASE_URL}/candidates/send-rejection`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           candidate_ids: candidateIds,
           job_id: selectedJobId,
@@ -271,7 +280,7 @@ export default function ResultsDashboardPage() {
 
       const data = await response.json();
       if (!response.ok) {
-        const msg = data?.detail || 'Failed to send rejection emails';
+        const msg = data?.error || data?.detail || 'Failed to send rejection emails';
         toast.error(msg);
         return;
       }

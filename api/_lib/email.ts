@@ -9,8 +9,7 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
   const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
   if (!apiKey) {
-    console.warn('RESEND_API_KEY not configured, skipping email');
-    return;
+    throw new Error('RESEND_API_KEY is not configured');
   }
 
   const response = await fetch('https://api.resend.com/emails', {
