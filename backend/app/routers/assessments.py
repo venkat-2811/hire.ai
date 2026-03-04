@@ -147,6 +147,17 @@ async def send_assessment_invites(
             # Generate unique assessment token
             token = secrets.token_urlsafe(32)
             
+            # Calculate dynamic time limit based on question counts if not explicitly set
+            mcq_count_val = request.mcq_question_count or 20
+            coding_count_val = request.coding_challenge_count or 2
+            if request.total_time_minutes:
+                calculated_time = request.total_time_minutes
+            else:
+                # ~1.5 min per MCQ + ~20 min per coding challenge
+                calculated_time = int(mcq_count_val * 1.5 + coding_count_val * 20)
+                # Minimum 15 minutes, maximum 180 minutes
+                calculated_time = max(15, min(180, calculated_time))
+
             # Create assessment session
             session_data = {
                 "id": str(uuid.uuid4()),
@@ -155,9 +166,9 @@ async def send_assessment_invites(
                 "token": token,
                 "status": "pending",
                 "deadline": deadline.isoformat(),
-                "mcq_question_count": request.mcq_question_count or 20,
-                "coding_challenge_count": request.coding_challenge_count or 2,
-                "total_time_minutes": request.total_time_minutes or 90,
+                "mcq_question_count": mcq_count_val,
+                "coding_challenge_count": coding_count_val,
+                "total_time_minutes": calculated_time,
                 "proctoring_data": {
                     "tab_switches": 0,
                     "fullscreen_exits": 0,

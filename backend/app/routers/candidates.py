@@ -26,9 +26,24 @@ async def list_candidates(
         "created_at", desc=True
     ).range(offset, offset + limit - 1).execute()
     
+    # Lookup job_ids from job_applications for all candidates
+    candidate_ids = [row["id"] for row in result.data]
+    job_map = {}
+    if candidate_ids:
+        try:
+            apps = supabase.table("job_applications").select(
+                "candidate_id, job_id"
+            ).in_("candidate_id", candidate_ids).order("applied_at", desc=True).execute()
+            for app in (apps.data or []):
+                # Use the most recent application's job_id
+                if app["candidate_id"] not in job_map:
+                    job_map[app["candidate_id"]] = app["job_id"]
+        except Exception:
+            pass  # job_applications table may not exist yet
+    
     candidates = []
     for row in result.data:
-        candidates.append(_row_to_candidate(row))
+        candidates.append(_row_to_candidate(row, job_id=job_map.get(row["id"])))
     
     return candidates
 
@@ -378,7 +393,7 @@ async def bulk_delete_candidates(candidate_ids: List[str]):
     return {"success": True, "deleted": deleted}
 
 
-def _row_to_candidate(row: dict) -> Candidate:
+def _row_to_candidate(row: dict, job_id: str = None) -> Candidate:
     """Convert database row to Candidate model."""
     parsed_data = None
     if row.get("resume_parsed_data"):
@@ -400,6 +415,7 @@ def _row_to_candidate(row: dict) -> Candidate:
         github_url=row.get("github_url"),
         consent_given=row.get("consent_given", False),
         consent_timestamp=row.get("consent_timestamp"),
+        job_id=job_id,
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at")
     )

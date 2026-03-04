@@ -12,7 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import Editor from '@monaco-editor/react';
 import {
   AlertTriangle,
   Clock,
@@ -100,6 +101,7 @@ export default function AssessmentPage() {
   const [assessmentData, setAssessmentData] = useState<AssessmentData | null>(null);
   const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
   const [codingChallenges, setCodingChallenges] = useState<CodingChallenge[]>([]);
+  const hasCoding = codingChallenges.length > 0;
   const [currentTab, setCurrentTab] = useState<'mcq' | 'coding'>('mcq');
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [currentCodingIndex, setCurrentCodingIndex] = useState(0);
@@ -110,6 +112,7 @@ export default function AssessmentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
+  const [codingLanguage, setCodingLanguage] = useState('python');
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -133,6 +136,16 @@ export default function AssessmentPage() {
 
   // ── Webcam initialization ──
   const startCamera = useCallback(async () => {
+    // If stream already exists from the permission prompt, just re-attach
+    if (mediaStreamRef.current) {
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStreamRef.current;
+        videoRef.current.play().catch(() => { });
+      }
+      setCameraReady(true);
+      setCameraError(null);
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 320, height: 240 },
@@ -141,7 +154,7 @@ export default function AssessmentPage() {
       mediaStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().catch(() => { });
       }
       setCameraReady(true);
       setCameraError(null);
@@ -175,7 +188,7 @@ export default function AssessmentPage() {
   useEffect(() => {
     if (videoRef.current && mediaStreamRef.current && !videoRef.current.srcObject) {
       videoRef.current.srcObject = mediaStreamRef.current;
-      videoRef.current.play().catch(() => {});
+      videoRef.current.play().catch(() => { });
     }
   });
 
@@ -199,7 +212,7 @@ export default function AssessmentPage() {
             timestamp: new Date().toISOString(),
             details: { violation_count: count, auto_terminated: true },
           }),
-        }).catch(() => {});
+        }).catch(() => { });
       }
     } else {
       toast.error(
@@ -217,7 +230,7 @@ export default function AssessmentPage() {
             timestamp: new Date().toISOString(),
             details: { violation_count: count },
           }),
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
   }, [assessmentData]);
@@ -701,27 +714,6 @@ export default function AssessmentPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 text-center">
-              {finalScores && typeof finalScores.total_score === 'number' && (
-                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-                  <p className="text-sm font-semibold">Your Score</p>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div className="rounded-md border bg-background p-2">
-                      <p className="text-xs text-muted-foreground">MCQ</p>
-                      <p className="font-mono font-semibold">{finalScores.mcq_score?.toFixed(1) ?? '—'}%</p>
-                    </div>
-                    <div className="rounded-md border bg-background p-2">
-                      <p className="text-xs text-muted-foreground">Coding</p>
-                      <p className="font-mono font-semibold">
-                        {typeof finalScores.coding_score === 'number' ? `${finalScores.coding_score.toFixed(1)}%` : 'Pending'}
-                      </p>
-                    </div>
-                    <div className="rounded-md border bg-background p-2">
-                      <p className="text-xs text-muted-foreground">Total</p>
-                      <p className="font-mono font-semibold">{finalScores.total_score.toFixed(1)}%</p>
-                    </div>
-                  </div>
-                </div>
-              )}
               <p className="text-sm text-muted-foreground">
                 The hiring team will review your results and contact you regarding the next steps.
               </p>
@@ -733,8 +725,31 @@ export default function AssessmentPage() {
     );
   }
 
-  // Fullscreen prompt
+  // Fullscreen prompt with camera/mic permission check
   if (showFullscreenPrompt) {
+    const handleRequestPermissions = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: 320, height: 240 },
+          audio: true,
+        });
+        // Store stream temporarily so startCamera can reuse it
+        mediaStreamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => { });
+        }
+        setCameraReady(true);
+        setCameraError(null);
+      } catch (err: any) {
+        setCameraError(
+          err.name === 'NotAllowedError'
+            ? 'Camera/Microphone permission denied. Please allow access in your browser settings and try again.'
+            : 'Could not access camera/microphone. Please check your device.',
+        );
+      }
+    };
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="max-w-lg w-full">
@@ -794,9 +809,63 @@ export default function AssessmentPage() {
               </ul>
             </div>
 
+            {/* Camera & Mic Permission Section */}
+            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+              <p className="text-sm font-semibold">Step 1: Grant Camera & Microphone Access</p>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Camera className="h-4 w-4" />
+                  {cameraReady ? (
+                    <Badge className="bg-success/90 text-success-foreground text-xs">
+                      <CheckCircle className="mr-1 h-3 w-3" /> Camera Ready
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">Not Connected</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mic className="h-4 w-4" />
+                  {cameraReady ? (
+                    <Badge className="bg-success/90 text-success-foreground text-xs">
+                      <CheckCircle className="mr-1 h-3 w-3" /> Mic Ready
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">Not Connected</Badge>
+                  )}
+                </div>
+              </div>
+              {!cameraReady && (
+                <Button variant="outline" size="sm" onClick={handleRequestPermissions}>
+                  <Camera className="mr-2 h-4 w-4" />
+                  Grant Camera & Microphone Access
+                </Button>
+              )}
+              {cameraError && (
+                <div className="text-sm text-destructive bg-destructive/10 rounded p-2">
+                  {cameraError}
+                  <Button variant="link" size="sm" className="ml-2 h-auto p-0" onClick={handleRequestPermissions}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+              {/* Hidden video element for preview */}
+              {cameraReady && (
+                <div className="rounded-lg overflow-hidden border" style={{ width: 160, height: 120 }}>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                    style={{ transform: 'scaleX(-1)' }}
+                  />
+                </div>
+              )}
+            </div>
+
             <div className="bg-muted/50 rounded-lg p-4">
               <p className="text-sm">
-                <strong>Assessment includes:</strong>
+                <strong>Step 2: Start Assessment</strong>
               </p>
               <div className="flex gap-4 mt-2">
                 <div className="flex items-center gap-2">
@@ -810,9 +879,14 @@ export default function AssessmentPage() {
               </div>
             </div>
 
-            <Button className="w-full" size="lg" onClick={enterFullscreen}>
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={enterFullscreen}
+              disabled={!cameraReady}
+            >
               <Maximize className="mr-2 h-4 w-4" />
-              Enter Fullscreen & Start
+              {cameraReady ? 'Enter Fullscreen & Start' : 'Grant Permissions First'}
             </Button>
           </CardContent>
         </Card>
@@ -825,7 +899,6 @@ export default function AssessmentPage() {
   const mcqProgress = mcqQuestions.length === 0 ? 0 : (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
   const codingProgress = codingChallenges.length === 0 ? 0 : (Object.keys(codingSolutions).filter(k => codingSolutions[k] !== codingChallenges.find(c => c.id === k)?.starter_code).length / codingChallenges.length) * 100;
   const hasMcq = mcqQuestions.length > 0;
-  const hasCoding = codingChallenges.length > 0;
   const activeTab = hasMcq ? (hasCoding ? currentTab : 'mcq') : 'coding';
 
   return (
@@ -967,249 +1040,303 @@ export default function AssessmentPage() {
 
           {/* MCQ Section */}
           {hasMcq && (
-          <TabsContent value="mcq">
-            <div className="max-w-3xl mx-auto space-y-6">
-              <Progress value={mcqProgress} className="h-2" />
+            <TabsContent value="mcq">
+              <div className="max-w-3xl mx-auto space-y-6">
+                <Progress value={mcqProgress} className="h-2" />
 
-              {currentMcq && (
+                {currentMcq && (
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline">{currentMcq.topic}</Badge>
+                        <Badge variant={
+                          currentMcq.difficulty === 'easy' ? 'secondary' :
+                            currentMcq.difficulty === 'medium' ? 'default' : 'destructive'
+                        }>
+                          {currentMcq.difficulty} ({currentMcq.points} pts)
+                        </Badge>
+                      </div>
+                      <CardTitle className="text-lg mt-4">
+                        Question {currentMcqIndex + 1} of {mcqQuestions.length}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <p className="text-base">{currentMcq.question}</p>
+
+                      <RadioGroup
+                        value={mcqAnswers[currentMcq.id]?.toString()}
+                        onValueChange={(v) => handleMcqAnswer(currentMcq.id, parseInt(v))}
+                      >
+                        {currentMcq.options.map((option, index) => (
+                          <div
+                            key={index}
+                            className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${mcqAnswers[currentMcq.id] === index
+                              ? 'border-primary bg-primary/5'
+                              : 'hover:bg-muted/50'
+                              }`}
+                            onClick={() => handleMcqAnswer(currentMcq.id, index)}
+                          >
+                            <RadioGroupItem value={index.toString()} id={`option-${index}`} />
+                            <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
+                              {option}
+                            </Label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+
+                      <div className="flex justify-between pt-4">
+                        <Button
+                          variant="outline"
+                          onClick={() => setCurrentMcqIndex((prev) => Math.max(0, prev - 1))}
+                          disabled={currentMcqIndex === 0}
+                        >
+                          Previous
+                        </Button>
+                        {currentMcqIndex === mcqQuestions.length - 1 && hasCoding ? (
+                          <Button
+                            onClick={() => setCurrentTab('coding')}
+                          >
+                            Next Section →
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={() => setCurrentMcqIndex((prev) => Math.min(mcqQuestions.length - 1, prev + 1))}
+                            disabled={currentMcqIndex === mcqQuestions.length - 1}
+                          >
+                            Next
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Question Navigator */}
                 <Card>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline">{currentMcq.topic}</Badge>
-                      <Badge variant={
-                        currentMcq.difficulty === 'easy' ? 'secondary' :
-                          currentMcq.difficulty === 'medium' ? 'default' : 'destructive'
-                      }>
-                        {currentMcq.difficulty} ({currentMcq.points} pts)
-                      </Badge>
-                    </div>
-                    <CardTitle className="text-lg mt-4">
-                      Question {currentMcqIndex + 1} of {mcqQuestions.length}
-                    </CardTitle>
+                    <CardTitle className="text-sm">Question Navigator</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    <p className="text-base">{currentMcq.question}</p>
-
-                    <RadioGroup
-                      value={mcqAnswers[currentMcq.id]?.toString()}
-                      onValueChange={(v) => handleMcqAnswer(currentMcq.id, parseInt(v))}
-                    >
-                      {currentMcq.options.map((option, index) => (
-                        <div
-                          key={index}
-                          className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${mcqAnswers[currentMcq.id] === index
-                            ? 'border-primary bg-primary/5'
-                            : 'hover:bg-muted/50'
-                            }`}
-                          onClick={() => handleMcqAnswer(currentMcq.id, index)}
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {mcqQuestions.map((q, index) => (
+                        <Button
+                          key={q.id}
+                          variant={mcqAnswers[q.id] !== undefined ? 'default' : 'outline'}
+                          size="sm"
+                          className={`w-10 h-10 ${currentMcqIndex === index ? 'ring-2 ring-primary' : ''}`}
+                          onClick={() => setCurrentMcqIndex(index)}
                         >
-                          <RadioGroupItem value={index.toString()} id={`option-${index}`} />
-                          <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
-                            {option}
-                          </Label>
-                        </div>
+                          {index + 1}
+                        </Button>
                       ))}
-                    </RadioGroup>
-
-                    <div className="flex justify-between pt-4">
-                      <Button
-                        variant="outline"
-                        onClick={() => setCurrentMcqIndex((prev) => Math.max(0, prev - 1))}
-                        disabled={currentMcqIndex === 0}
-                      >
-                        Previous
-                      </Button>
-                      <Button
-                        onClick={() => setCurrentMcqIndex((prev) => Math.min(mcqQuestions.length - 1, prev + 1))}
-                        disabled={currentMcqIndex === mcqQuestions.length - 1}
-                      >
-                        Next
-                      </Button>
                     </div>
                   </CardContent>
                 </Card>
-              )}
-
-              {/* Question Navigator */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Question Navigator</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {mcqQuestions.map((q, index) => (
-                      <Button
-                        key={q.id}
-                        variant={mcqAnswers[q.id] !== undefined ? 'default' : 'outline'}
-                        size="sm"
-                        className={`w-10 h-10 ${currentMcqIndex === index ? 'ring-2 ring-primary' : ''}`}
-                        onClick={() => setCurrentMcqIndex(index)}
-                      >
-                        {index + 1}
-                      </Button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+              </div>
+            </TabsContent>
           )}
 
           {/* Coding Section */}
           {hasCoding && (
-          <TabsContent value="coding">
-            <div className="max-w-6xl mx-auto space-y-6">
-              <Progress value={codingProgress} className="h-2" />
+            <TabsContent value="coding">
+              <div className="max-w-6xl mx-auto space-y-6">
+                <Progress value={codingProgress} className="h-2" />
 
-              {currentCoding && (
-                <div className="grid lg:grid-cols-2 gap-6">
-                  {/* Problem Description */}
-                  <Card className="lg:max-h-[600px] overflow-auto">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <Badge variant={
-                          currentCoding.difficulty === 'easy' ? 'secondary' :
-                            currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
-                        }>
-                          {currentCoding.difficulty}
-                        </Badge>
-                        <Badge variant="outline">
-                          {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
-                        </Badge>
-                      </div>
-                      <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
-                      
-                      {/* Test Cases Preview */}
-                      {currentCoding.test_cases && currentCoding.test_cases.length > 0 && (
-                        <div className="space-y-2">
-                          <h4 className="font-semibold text-sm">Example Test Cases:</h4>
-                          <div className="space-y-2">
-                            {currentCoding.test_cases.slice(0, 2).map((tc, idx) => (
-                              <div key={idx} className="bg-muted/50 rounded p-2 text-xs font-mono">
-                                <div><span className="text-muted-foreground">Input:</span> {JSON.stringify(tc.input)}</div>
-                                <div><span className="text-muted-foreground">Expected:</span> {JSON.stringify(tc.expected)}</div>
-                              </div>
-                            ))}
-                            {currentCoding.test_cases.length > 2 && (
-                              <p className="text-xs text-muted-foreground">+ {currentCoding.test_cases.length - 2} more hidden test cases</p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Code Editor & Results */}
-                  <div className="space-y-4">
-                    <Card>
-                      <CardHeader className="pb-2">
+                {currentCoding && (
+                  <div className="grid lg:grid-cols-2 gap-6">
+                    {/* Problem Description */}
+                    <Card className="lg:max-h-[600px] overflow-auto">
+                      <CardHeader>
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm">Your Solution (Python)</CardTitle>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => runCode(currentCoding.id)}
-                              disabled={runningCode === currentCoding.id}
-                            >
-                              {runningCode === currentCoding.id ? (
-                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                              ) : (
-                                <Play className="mr-1 h-3 w-3" />
-                              )}
-                              Run Tests
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => submitCodingSolution(currentCoding.id)}
-                            >
-                              <Send className="mr-1 h-3 w-3" />
-                              Submit
-                            </Button>
-                          </div>
+                          <Badge variant={
+                            currentCoding.difficulty === 'easy' ? 'secondary' :
+                              currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
+                          }>
+                            {currentCoding.difficulty}
+                          </Badge>
+                          <Badge variant="outline">
+                            {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
+                          </Badge>
                         </div>
+                        <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <Textarea
-                          className="font-mono text-sm min-h-[300px] resize-none bg-slate-950 text-slate-50 border-slate-800"
-                          value={codingSolutions[currentCoding.id] || ''}
-                          onChange={(e) => handleCodingSolution(currentCoding.id, e.target.value)}
-                          placeholder="# Write your Python code here..."
-                          spellCheck={false}
-                        />
+                      <CardContent className="space-y-4">
+                        <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
+
+                        {/* Test Cases Preview */}
+                        {currentCoding.test_cases && currentCoding.test_cases.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="font-semibold text-sm">Example Test Cases:</h4>
+                            <div className="space-y-2">
+                              {currentCoding.test_cases.slice(0, 2).map((tc, idx) => (
+                                <div key={idx} className="bg-muted/50 rounded p-2 text-xs font-mono">
+                                  <div><span className="text-muted-foreground">Input:</span> {JSON.stringify(tc.input)}</div>
+                                  <div><span className="text-muted-foreground">Expected:</span> {JSON.stringify(tc.expected)}</div>
+                                </div>
+                              ))}
+                              {currentCoding.test_cases.length > 2 && (
+                                <p className="text-xs text-muted-foreground">+ {currentCoding.test_cases.length - 2} more hidden test cases</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
 
-                    {/* Test Results */}
-                    {codingResults[currentCoding.id] && (
+                    {/* Code Editor & Results */}
+                    <div className="space-y-4">
                       <Card>
                         <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
-                            <CardTitle className="text-sm">Test Results</CardTitle>
-                            <Badge variant={codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total ? 'default' : 'destructive'}>
-                              {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} Passed
-                            </Badge>
+                            <CardTitle className="text-sm">Your Solution (Python)</CardTitle>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => runCode(currentCoding.id)}
+                                disabled={runningCode === currentCoding.id}
+                              >
+                                {runningCode === currentCoding.id ? (
+                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Play className="mr-1 h-3 w-3" />
+                                )}
+                                Run Tests
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => submitCodingSolution(currentCoding.id)}
+                              >
+                                <Send className="mr-1 h-3 w-3" />
+                                Submit
+                              </Button>
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent>
-                          <div className="space-y-2 max-h-[200px] overflow-auto">
-                            {codingResults[currentCoding.id].results.map((result, idx) => (
-                              <div
-                                key={idx}
-                                className={`p-2 rounded text-xs font-mono ${result.passed ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}
-                              >
-                                <div className="flex items-center gap-2 mb-1">
-                                  {result.passed ? (
-                                    <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                  ) : (
-                                    <XCircleIcon className="h-3 w-3 text-red-500" />
-                                  )}
-                                  <span className="font-semibold">Test Case {idx + 1}</span>
-                                </div>
-                                <div className="text-muted-foreground">
-                                  <div>Input: {JSON.stringify(result.input)}</div>
-                                  <div>Expected: {JSON.stringify(result.expected)}</div>
-                                  {!result.passed && (
-                                    <div className="text-red-400">
-                                      {result.error ? `Error: ${result.error}` : `Got: ${JSON.stringify(result.actual)}`}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
+                          <div className="flex items-center gap-2 mb-2">
+                            <Label className="text-xs text-muted-foreground">Language:</Label>
+                            <Select value={codingLanguage} onValueChange={setCodingLanguage}>
+                              <SelectTrigger className="w-[140px] h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="python">Python</SelectItem>
+                                <SelectItem value="javascript">JavaScript</SelectItem>
+                                <SelectItem value="java">Java</SelectItem>
+                                <SelectItem value="cpp">C++</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <div className="mt-2 pt-2 border-t">
-                            <p className="text-sm font-medium">
-                              Score: {codingResults[currentCoding.id].score.toFixed(1)}%
-                            </p>
+                          <div className="border rounded-md overflow-hidden" style={{ height: 350 }}>
+                            <Editor
+                              height="100%"
+                              language={codingLanguage}
+                              theme="vs-dark"
+                              value={codingSolutions[currentCoding.id] || ''}
+                              onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
+                              options={{
+                                minimap: { enabled: false },
+                                fontSize: 14,
+                                lineNumbers: 'on',
+                                automaticLayout: true,
+                                scrollBeyondLastLine: false,
+                                wordWrap: 'on',
+                                tabSize: 4,
+                                padding: { top: 8 },
+                              }}
+                            />
                           </div>
                         </CardContent>
                       </Card>
-                    )}
-                  </div>
-                </div>
-              )}
 
-              <div className="flex justify-between">
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentCodingIndex((prev) => Math.max(0, prev - 1))}
-                  disabled={currentCodingIndex === 0}
-                >
-                  Previous Challenge
-                </Button>
-                <Button
-                  onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
-                  disabled={currentCodingIndex === codingChallenges.length - 1}
-                >
-                  Next Challenge
-                </Button>
+                      {/* Test Results */}
+                      {codingResults[currentCoding.id] && (
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-sm">Test Results</CardTitle>
+                              <Badge variant={codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total ? 'default' : 'destructive'}>
+                                {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} Passed
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2 max-h-[200px] overflow-auto">
+                              {codingResults[currentCoding.id].results.map((result, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`p-2 rounded text-xs font-mono ${result.passed ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}
+                                >
+                                  <div className="flex items-center gap-2 mb-1">
+                                    {result.passed ? (
+                                      <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                      <XCircleIcon className="h-3 w-3 text-red-500" />
+                                    )}
+                                    <span className="font-semibold">Test Case {idx + 1}</span>
+                                  </div>
+                                  <div className="text-muted-foreground">
+                                    <div>Input: {JSON.stringify(result.input)}</div>
+                                    <div>Expected: {JSON.stringify(result.expected)}</div>
+                                    {!result.passed && (
+                                      <div className="text-red-400">
+                                        {result.error ? `Error: ${result.error}` : `Got: ${JSON.stringify(result.actual)}`}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-2 pt-2 border-t">
+                              <p className="text-sm font-medium">
+                                Score: {codingResults[currentCoding.id].score.toFixed(1)}%
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentCodingIndex((prev) => Math.max(0, prev - 1))}
+                    disabled={currentCodingIndex === 0}
+                  >
+                    Previous Challenge
+                  </Button>
+                  {currentCodingIndex === codingChallenges.length - 1 ? (
+                    <Button
+                      onClick={handleSubmitAssessment}
+                      disabled={submitting}
+                      className="bg-success hover:bg-success/90"
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-4 w-4" />
+                          Submit Assessment
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
+                      disabled={currentCodingIndex === codingChallenges.length - 1}
+                    >
+                      Next Challenge
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          </TabsContent>
+            </TabsContent>
           )}
         </Tabs>
       </main>

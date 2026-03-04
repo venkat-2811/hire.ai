@@ -7,8 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  ArrowLeft, 
+import {
+  ArrowLeft,
   Loader2,
   Mail,
   Phone,
@@ -31,7 +31,7 @@ export default function CandidateDetailsPage() {
   const { candidateId } = useParams<{ candidateId: string }>();
   const navigate = useNavigate();
   const { loading: authLoading } = useRequireAuth();
-  const { data: candidate, isLoading } = useCandidate(candidateId || '');
+  const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '');
 
   const [assessmentDetails, setAssessmentDetails] = useState<AssessmentDetails | null>(null);
   const [interviewDetails, setInterviewDetails] = useState<InterviewDetails | null>(null);
@@ -59,16 +59,27 @@ export default function CandidateDetailsPage() {
     );
   }
 
-  if (!candidate) {
+  if (candidateError || !candidate) {
     return (
       <DashboardLayout>
         <div className="p-6 lg:p-8">
           <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">Candidate not found</p>
-              <Button asChild className="mt-4">
-                <Link to="/candidates">Back to Candidates</Link>
-              </Button>
+            <CardContent className="py-12 text-center space-y-4">
+              <p className="text-muted-foreground">
+                {candidateError
+                  ? `Error loading candidate: ${candidateError instanceof Error ? candidateError.message : 'Unknown error'}`
+                  : 'Candidate not found'}
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                {candidateError && (
+                  <Button variant="outline" onClick={() => refetch()}>
+                    Retry
+                  </Button>
+                )}
+                <Button asChild>
+                  <Link to="/candidates">Back to Candidates</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -85,7 +96,7 @@ export default function CandidateDetailsPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <motion.h1 
+            <motion.h1
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               className="text-2xl lg:text-3xl font-bold"

@@ -102,6 +102,7 @@ class Candidate(CandidateCreate, TimestampMixin):
     resume_text: Optional[str] = None
     resume_parsed_data: Optional[ResumeData] = None
     consent_timestamp: Optional[datetime] = None
+    job_id: Optional[str] = None
 
 
 # ============== ATS Screening ==============

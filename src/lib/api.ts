@@ -205,6 +205,7 @@ export interface Candidate {
   github_url: string | null;
   consent_given: boolean;
   consent_timestamp: string | null;
+  job_id?: string | null;
   created_at: string;
   updated_at: string;
 }
