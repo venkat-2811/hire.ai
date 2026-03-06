@@ -58,8 +58,8 @@ function ClerkProviderWithRouter({ children }: { children: ReactNode }) {
       routerReplace={(to) => navigate(to, { replace: true })}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
-      afterSignInUrl="/dashboard"
-      afterSignUpUrl="/dashboard"
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/dashboard"
     >
       <AuthTokenSetter />
       {children}
@@ -89,11 +89,11 @@ export function useAuth(): AuthContextValue {
 
   const user: ClerkUser | null = clerkUser
     ? {
-        id: clerkUser.id,
-        email: clerkUser.primaryEmailAddress?.emailAddress ?? null,
-        full_name: clerkUser.fullName ?? null,
-        image_url: clerkUser.imageUrl ?? null,
-      }
+      id: clerkUser.id,
+      email: clerkUser.primaryEmailAddress?.emailAddress ?? null,
+      full_name: clerkUser.fullName ?? null,
+      image_url: clerkUser.imageUrl ?? null,
+    }
     : null;
 
   return {

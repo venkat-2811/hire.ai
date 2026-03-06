@@ -102,14 +102,14 @@ export default function AuthPage() {
                 routing="path"
                 path="/sign-up"
                 signInUrl="/sign-in"
-                afterSignUpUrl="/dashboard"
+                fallbackRedirectUrl="/dashboard"
               />
             ) : (
               <SignIn
                 routing="path"
                 path="/sign-in"
                 signUpUrl="/sign-up"
-                afterSignInUrl="/dashboard"
+                fallbackRedirectUrl="/dashboard"
               />
             )}
           </div>

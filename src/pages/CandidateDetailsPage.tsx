@@ -200,9 +200,9 @@ export default function CandidateDetailsPage() {
                 </CardHeader>
                 <CardContent>
                   <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg overflow-auto max-h-96">
-                    {typeof candidate.resume_parsed_data === 'object'
-                      ? JSON.stringify(candidate.resume_parsed_data, null, 2)
-                      : String(candidate.resume_parsed_data)}
+                    {typeof candidate.resume_text === 'object'
+                      ? JSON.stringify(candidate.resume_text, null, 2)
+                      : String(candidate.resume_text)}
                   </pre>
                 </CardContent>
               </Card>
