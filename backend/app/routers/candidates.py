@@ -19,31 +19,38 @@ async def list_candidates(
     limit: int = 50,
     offset: int = 0
 ):
-    """List all candidates with pagination."""
+    """List all candidates with pagination. Returns one entry per job application."""
     supabase = get_supabase_client()
     
     result = supabase.table("candidates").select("*").order(
         "created_at", desc=True
     ).range(offset, offset + limit - 1).execute()
     
-    # Lookup job_ids from job_applications for all candidates
+    # Lookup ALL job_ids from job_applications for all candidates
     candidate_ids = [row["id"] for row in result.data]
-    job_map = {}
+    # Map candidate_id -> list of job_ids
+    job_map: dict[str, list[str]] = {}
     if candidate_ids:
         try:
             apps = supabase.table("job_applications").select(
                 "candidate_id, job_id"
             ).in_("candidate_id", candidate_ids).order("applied_at", desc=True).execute()
             for app in (apps.data or []):
-                # Use the most recent application's job_id
-                if app["candidate_id"] not in job_map:
-                    job_map[app["candidate_id"]] = app["job_id"]
+                cid = app["candidate_id"]
+                if cid not in job_map:
+                    job_map[cid] = []
+                job_map[cid].append(app["job_id"])
         except Exception:
             pass  # job_applications table may not exist yet
     
+    # Return one entry per job application so candidates are grouped by job
     candidates = []
     for row in result.data:
-        candidates.append(_row_to_candidate(row, job_id=job_map.get(row["id"])))
+        applied_jobs = job_map.get(row["id"], [])
+        if applied_jobs:
+            for jid in applied_jobs:
+                candidates.append(_row_to_candidate(row, job_id=jid))
+        # Skip candidates with no job applications
     
     return candidates
 
@@ -63,75 +70,72 @@ async def get_candidate(candidate_id: str):
 
 @router.post("", response_model=Candidate)
 async def create_candidate(
-    full_name: str = Form(...),
-    email: str = Form(...),
-    phone: Optional[str] = Form(None),
-    portfolio_url: Optional[str] = Form(None),
-    github_url: Optional[str] = Form(None),
-    consent_given: bool = Form(False),
-    resume: Optional[UploadFile] = File(None)
+    candidate: CandidateCreate
 ):
-    """Create a new candidate with optional resume upload."""
+    """Create a new candidate or reuse an existing one by email. Optionally links to a job."""
     supabase = get_supabase_client()
-    settings = get_settings()
     
-    resume_url = None
-    resume_text = None
-    resume_parsed_data = None
+    # Check if a candidate with the same email already exists
+    existing = supabase.table("candidates").select("*").eq("email", candidate.email).execute()
     
-    # Process resume if uploaded
-    if resume:
-        # Validate file type
-        allowed_types = [".pdf", ".doc", ".docx"]
-        file_ext = os.path.splitext(resume.filename)[1].lower()
-        if file_ext not in allowed_types:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
-            )
+    candidate_id = None
+    job_id = getattr(candidate, 'job_id', None)
+    
+    if existing.data:
+        # Reuse existing candidate, update their info
+        candidate_id = existing.data[0]["id"]
+        update_data = {
+            "full_name": candidate.full_name,
+            "phone": candidate.phone,
+            "portfolio_url": candidate.portfolio_url,
+            "github_url": candidate.github_url,
+            "consent_given": candidate.consent_given,
+            "consent_timestamp": datetime.utcnow().isoformat() if candidate.consent_given else None,
+        }
+        supabase.table("candidates").update(update_data).eq("id", candidate_id).execute()
+        row = supabase.table("candidates").select("*").eq("id", candidate_id).single().execute()
+        candidate_row = row.data
+    else:
+        # Create new candidate record
+        data = {
+            "full_name": candidate.full_name,
+            "email": candidate.email,
+            "phone": candidate.phone,
+            "portfolio_url": candidate.portfolio_url,
+            "github_url": candidate.github_url,
+            "consent_given": candidate.consent_given,
+            "consent_timestamp": datetime.utcnow().isoformat() if candidate.consent_given else None,
+        }
+        result = supabase.table("candidates").insert(data).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create candidate")
+        candidate_row = result.data[0]
+        candidate_id = candidate_row["id"]
+    
+    # Create job_application record if job_id is provided
+    if job_id:
+        # Check if already applied to this job
+        existing_app = supabase.table("job_applications").select("id").eq(
+            "candidate_id", candidate_id
+        ).eq("job_id", job_id).execute()
         
-        # Read file content
-        file_content = await resume.read()
+        if existing_app.data:
+            raise HTTPException(status_code=400, detail="This candidate has already applied to this job")
         
-        # Save file locally
-        file_id = str(uuid.uuid4())
-        file_path = os.path.join(settings.upload_dir, f"{file_id}{file_ext}")
-        os.makedirs(settings.upload_dir, exist_ok=True)
-        
-        with open(file_path, "wb") as f:
-            f.write(file_content)
-        
-        resume_url = file_path
-        
-        # Parse resume with AI
         try:
-            parser = get_resume_parser()
-            resume_text, parsed_data = await parser.parse_resume(file_content, resume.filename)
-            resume_parsed_data = parsed_data.model_dump()
+            app_data = {
+                "id": str(uuid.uuid4()),
+                "candidate_id": candidate_id,
+                "job_id": job_id,
+                "status": "applied",
+                "applied_at": datetime.utcnow().isoformat(),
+            }
+            supabase.table("job_applications").insert(app_data).execute()
         except Exception as e:
-            # Continue without parsing on error
-            pass
+            print(f"Failed to create job application: {e}")
     
-    # Create candidate record
-    data = {
-        "full_name": full_name,
-        "email": email,
-        "phone": phone,
-        "portfolio_url": portfolio_url,
-        "github_url": github_url,
-        "consent_given": consent_given,
-        "consent_timestamp": datetime.utcnow().isoformat() if consent_given else None,
-        "resume_url": resume_url,
-        "resume_text": resume_text,
-        "resume_parsed_data": resume_parsed_data
-    }
-    
-    result = supabase.table("candidates").insert(data).execute()
-    
-    if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to create candidate")
-    
-    return _row_to_candidate(result.data[0])
+    return _row_to_candidate(candidate_row, job_id=job_id)
+
 
 
 @router.patch("/{candidate_id}", response_model=Candidate)

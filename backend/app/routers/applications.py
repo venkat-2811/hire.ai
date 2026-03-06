@@ -82,9 +82,9 @@ async def submit_application(
     supabase = get_supabase_admin_client()
     settings = get_settings()
     
-    # Verify job exists and is active
+    # Verify job exists and is active (select all fields for ATS screening)
     job_result = supabase.table("job_descriptions").select(
-        "id, title, is_active"
+        "*"
     ).eq("id", job_id).eq("is_active", True).execute()
     
     if not job_result.data:

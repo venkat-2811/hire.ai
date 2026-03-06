@@ -137,11 +137,9 @@ export default function CandidatesPage() {
     // Group by job
     const grouped: Record<string, any[]> = {};
 
-    // Add "No Job" group for candidates without job assignments
-    grouped['no-job'] = [];
-
     filtered.forEach(candidate => {
-      const jobId = (candidate as any).job_id || 'no-job';
+      const jobId = (candidate as any).job_id;
+      if (!jobId) return; // Skip candidates without job assignments
       if (!grouped[jobId]) {
         grouped[jobId] = [];
       }
@@ -172,7 +170,6 @@ export default function CandidatesPage() {
 
   // Get job title by ID
   const getJobTitle = (jobId: string) => {
-    if (jobId === 'no-job') return 'No Job Assigned';
     const job = activeJobs.find(j => j.id === jobId);
     return job ? job.title : 'Unknown Job';
   };

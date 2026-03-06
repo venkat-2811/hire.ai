@@ -85,6 +85,7 @@ class CandidateCreate(BaseModel):
     portfolio_url: Optional[str] = None
     github_url: Optional[str] = None
     consent_given: bool = False
+    job_id: Optional[str] = None
 
 
 class CandidateUpdate(BaseModel):
