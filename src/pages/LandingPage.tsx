@@ -20,33 +20,36 @@ const features = [
     icon: FileText,
     title: 'Semantic Resume Parsing',
     description: 'AI-powered analysis that understands context, not just keywords.',
+    image: '/3d-resume-parsing.png',
   },
   {
     icon: Brain,
     title: 'Adaptive Questions',
     description: 'Unique, role-specific questions tailored to each candidate.',
+    image: '/3d-adaptive-questions.png',
   },
   {
     icon: Shield,
     title: 'Proctoring & Integrity',
     description: 'Tab switching, copy-paste detection, and session monitoring.',
+    image: '/3d-proctoring.png',
   },
   {
     icon: BarChart3,
     title: 'Explainable AI Scoring',
     description: 'Transparent reason codes for every hiring decision.',
+    image: '/3d-ai-scoring.png',
   },
 ];
 
 const roles = [
-  { name: 'Frontend Developer', icon: '🎨', color: 'bg-blue-500/10 text-blue-500' },
-  { name: 'Backend Engineer', icon: '⚙️', color: 'bg-green-500/10 text-green-500' },
-  { name: 'Data Scientist', icon: '📊', color: 'bg-purple-500/10 text-purple-500' },
-  { name: 'DevOps Engineer', icon: '🚀', color: 'bg-orange-500/10 text-orange-500' },
-  { name: 'Product Manager', icon: '🎯', color: 'bg-pink-500/10 text-pink-500' },
-  { name: 'UX Designer', icon: '✨', color: 'bg-yellow-500/10 text-yellow-500' },
-  { name: 'QA Engineer', icon: '🔍', color: 'bg-indigo-500/10 text-indigo-500' },
-  { name: 'Salesforce Dev', icon: '☁️', color: 'bg-sky-500/10 text-sky-500' },
+  { name: 'Frontend Developer', image: '/frontend.png' },
+  { name: 'Backend Engineer', image: '/backend.png' },
+  { name: 'Data Scientist', image: '/data-scientist.png' },
+  { name: 'DevOps Engineer', image: '/devops.png' },
+  { name: 'Product Manager', image: '/product-manager.png' },
+  { name: 'UX Designer', image: '/ux-design.webp' },
+  { name: 'QA Engineer', image: '/QA-Engineer.png' },
 ];
 
 export default function LandingPage() {
@@ -128,9 +131,6 @@ export default function LandingPage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
-              <Button size="lg" variant="outline">
-                Watch Demo
-              </Button>
             </div>
 
             {/* Stats */}
@@ -141,9 +141,9 @@ export default function LandingPage() {
               className="mt-12 grid grid-cols-3 gap-6"
             >
               {[
-                { value: '95%', label: 'Screening Accuracy' },
+                { value: '3+', label: 'Roles Supported' },
+                { value: '95%', label: 'AI Accuracy' },
                 { value: '70%', label: 'Time Saved' },
-                { value: '100%', label: 'Explainable' },
               ].map((stat) => (
                 <div key={stat.label}>
                   <div className="text-2xl md:text-3xl font-bold text-foreground">{stat.value}</div>
@@ -191,10 +191,10 @@ export default function LandingPage() {
             {[...roles, ...roles].map((role, index) => (
               <div
                 key={index}
-                className="w-[300px] flex-shrink-0 p-6 rounded-2xl bg-card border hover:shadow-lg transition-shadow"
+                className="w-[300px] flex-shrink-0 p-6 rounded-2xl bg-card border hover:shadow-lg transition-shadow flex flex-col items-center text-center"
               >
-                <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${role.color} text-2xl mb-4`}>
-                  {role.icon}
+                <div className="w-24 h-24 mb-4 relative overflow-hidden rounded-full border-4 border-muted/50">
+                  <img src={role.image} alt={role.name} className="object-cover w-full h-full" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{role.name}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -226,8 +226,8 @@ export default function LandingPage() {
                     key={feature.title}
                     onClick={() => setActiveFeature(index)}
                     className={`w-full text-left flex items-start gap-4 p-6 rounded-2xl transition-all ${isActive
-                        ? 'bg-card border-primary/50 border shadow-md'
-                        : 'bg-transparent border border-transparent hover:bg-card/50'
+                      ? 'bg-card border-primary/50 border shadow-md'
+                      : 'bg-transparent border border-transparent hover:bg-card/50'
                       }`}
                   >
                     <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'
@@ -248,26 +248,24 @@ export default function LandingPage() {
             </div>
 
             {/* Right side: Dynamic Content */}
-            <div className="relative h-[400px] rounded-3xl overflow-hidden bg-gradient-to-br from-primary/5 to-primary/10 border flex items-center justify-center p-8">
+            <div className="relative h-[450px] rounded-3xl overflow-hidden bg-gradient-to-br from-primary/5 to-primary/10 border flex items-center justify-center p-8">
               <motion.div
                 key={activeFeature}
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
-                className="text-center"
+                className="text-center w-full"
               >
-                <div className="w-24 h-24 rounded-2xl bg-background/80 shadow-2xl flex items-center justify-center mx-auto mb-8 backdrop-blur-xl">
-                  {(() => {
-                    const ActiveIcon = features[activeFeature].icon;
-                    return <ActiveIcon className="w-12 h-12 text-primary" />;
-                  })()}
+                <div className="w-full max-w-sm h-48 sm:h-64 rounded-2xl bg-background/50 shadow-2xl flex items-center justify-center mx-auto mb-8 backdrop-blur-xl overflow-hidden border">
+                  <img
+                    src={features[activeFeature].image}
+                    alt={features[activeFeature].title}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <h3 className="text-2xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
                   {features[activeFeature].title}
                 </h3>
-                <p className="text-muted-foreground max-w-sm mx-auto">
-                  Interactive visualization of how our platform handles {features[activeFeature].title.toLowerCase()} securely and at scale.
-                </p>
               </motion.div>
             </div>
           </div>

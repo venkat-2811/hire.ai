@@ -38,9 +38,9 @@ export default function AuthPage() {
             <span className="text-2xl font-bold text-white">HireAI</span>
           </div>
         </div>
-        
+
         <div className="space-y-6">
-          <motion.h1 
+          <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
@@ -50,13 +50,13 @@ export default function AuthPage() {
             <br />
             <span className="text-white/80">Made Simple</span>
           </motion.h1>
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
             className="text-lg text-white/70 max-w-md"
           >
-            Screen resumes, generate adaptive questions, and evaluate candidates 
+            Screen resumes, generate adaptive questions, and evaluate candidates
             with explainable AI — all in one platform.
           </motion.p>
         </div>
@@ -96,48 +96,25 @@ export default function AuthPage() {
             <span className="text-xl font-bold">HireAI</span>
           </div>
 
-          <Card className="border-0 shadow-lg p-6">
-            <div className="flex items-center justify-center gap-2 mb-6">
-              <Button variant={isSignUp ? 'outline' : 'default'} asChild>
-                <Link to="/sign-in">Sign In</Link>
-              </Button>
-              <Button variant={isSignUp ? 'default' : 'outline'} asChild>
-                <Link to="/sign-up">Sign Up</Link>
-              </Button>
-            </div>
+          <div className="flex justify-center w-full">
+            {isSignUp ? (
+              <SignUp
+                routing="path"
+                path="/sign-up"
+                signInUrl="/sign-in"
+                afterSignUpUrl="/dashboard"
+              />
+            ) : (
+              <SignIn
+                routing="path"
+                path="/sign-in"
+                signUpUrl="/sign-up"
+                afterSignInUrl="/dashboard"
+              />
+            )}
+          </div>
 
-            <div className="flex justify-center">
-              {isSignUp ? (
-                <SignUp
-                  routing="path"
-                  path="/sign-up"
-                  signInUrl="/sign-in"
-                  afterSignUpUrl="/dashboard"
-                  appearance={{
-                    elements: {
-                      rootBox: 'w-full',
-                      card: 'shadow-none border-0 p-0',
-                    },
-                  }}
-                />
-              ) : (
-                <SignIn
-                  routing="path"
-                  path="/sign-in"
-                  signUpUrl="/sign-up"
-                  afterSignInUrl="/dashboard"
-                  appearance={{
-                    elements: {
-                      rootBox: 'w-full',
-                      card: 'shadow-none border-0 p-0',
-                    },
-                  }}
-                />
-              )}
-            </div>
-          </Card>
-
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          <p className="text-center text-sm text-muted-foreground mt-8">
             By continuing, you agree to our Terms of Service and Privacy Policy
           </p>
         </motion.div>

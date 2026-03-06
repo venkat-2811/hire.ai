@@ -240,11 +240,11 @@ export default function CandidateDetailsPage() {
                         </div>
 
                         {/* MCQ Results */}
-                        {assessmentDetails.mcq_submissions?.length > 0 && (
+                        {(assessmentDetails.mcq_submissions?.length ?? 0) > 0 && (
                           <div>
-                            <h4 className="font-semibold text-sm mb-3">MCQ Results ({assessmentDetails.mcq_submissions.filter(s => s.is_correct).length}/{assessmentDetails.mcq_submissions.length} correct)</h4>
+                            <h4 className="font-semibold text-sm mb-3">MCQ Results ({(assessmentDetails.mcq_submissions || []).filter(s => s.is_correct).length}/{(assessmentDetails.mcq_submissions || []).length} correct)</h4>
                             <div className="space-y-2 max-h-64 overflow-auto">
-                              {assessmentDetails.mcq_submissions.map((sub, idx) => (
+                              {(assessmentDetails.mcq_submissions || []).map((sub, idx) => (
                                 <div key={idx} className={`p-3 rounded-lg border ${sub.is_correct ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5'}`}>
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
@@ -273,11 +273,11 @@ export default function CandidateDetailsPage() {
                         )}
 
                         {/* Coding Results */}
-                        {assessmentDetails.coding_submissions?.length > 0 && (
+                        {(assessmentDetails.coding_submissions?.length ?? 0) > 0 && (
                           <div>
                             <h4 className="font-semibold text-sm mb-3">Coding Challenges</h4>
                             <div className="space-y-4">
-                              {assessmentDetails.coding_submissions.map((sub, idx) => {
+                              {(assessmentDetails.coding_submissions || []).map((sub, idx) => {
                                 const challenge = assessmentDetails.coding_challenges?.find(c => c.id === sub.challenge_id);
                                 return (
                                   <div key={idx} className="p-4 rounded-lg border">
@@ -367,11 +367,11 @@ export default function CandidateDetailsPage() {
                         )}
 
                         {/* Q&A */}
-                        {interviewDetails.questions?.length > 0 && (
+                        {(interviewDetails.questions?.length ?? 0) > 0 && (
                           <div>
                             <h4 className="font-semibold text-sm mb-3">Interview Q&A</h4>
                             <div className="space-y-4 max-h-96 overflow-auto">
-                              {interviewDetails.questions.map((q, idx) => {
+                              {(interviewDetails.questions || []).map((q, idx) => {
                                 const response = interviewDetails.responses?.find(r => r.question_index === idx);
                                 return (
                                   <div key={idx} className="p-4 rounded-lg border">
@@ -431,7 +431,7 @@ export default function CandidateDetailsPage() {
                   <Calendar className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm text-muted-foreground">Applied</p>
-                    <p className="font-medium">{new Date(candidate.created_at).toLocaleDateString()}</p>
+                    <p className="font-medium">{candidate.created_at ? new Date(candidate.created_at).toLocaleDateString() : 'N/A'}</p>
                   </div>
                 </div>
                 <div>
