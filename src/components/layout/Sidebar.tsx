@@ -16,6 +16,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -30,6 +31,7 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const { data: profile } = useProfile();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = async () => {
@@ -51,9 +53,19 @@ export function Sidebar() {
             <Sparkles className="h-4 w-4 text-sidebar-primary-foreground" />
           </div>
           {!collapsed && (
-            <span className="text-lg font-semibold text-sidebar-foreground">
-              HireAI
-            </span>
+            <div className="flex flex-col">
+              <span className="text-lg font-bold text-sidebar-foreground inline-flex items-center gap-2">
+                HireAI
+                {profile?.company_name && (
+                  <>
+                    <span className="text-sidebar-foreground/50 text-sm font-normal">|</span>
+                    <span className="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[120px]" title={profile.company_name}>
+                      {profile.company_name}
+                    </span>
+                  </>
+                )}
+              </span>
+            </div>
           )}
         </div>
       </div>

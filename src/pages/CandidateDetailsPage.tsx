@@ -24,8 +24,11 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useCandidate } from '@/hooks/useCandidates';
+import { useProfile } from '@/hooks/useProfile';
 import { candidatesApi, type AssessmentDetails, type InterviewDetails } from '@/lib/api';
 import { ScoreBadge } from '@/components/ui/score-badge';
+import { PDFExportService } from '@/lib/pdf-export';
+import { Download } from 'lucide-react';
 
 export default function CandidateDetailsPage() {
   const { candidateId } = useParams<{ candidateId: string }>();
@@ -33,9 +36,22 @@ export default function CandidateDetailsPage() {
   const { loading: authLoading } = useRequireAuth();
   const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '');
 
+  const { data: profile } = useProfile();
+
   const [assessmentDetails, setAssessmentDetails] = useState<AssessmentDetails | null>(null);
   const [interviewDetails, setInterviewDetails] = useState<InterviewDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const handleDownloadReport = () => {
+    if (candidate) {
+      PDFExportService.generateCandidateReport(
+        candidate as any,
+        assessmentDetails,
+        interviewDetails,
+        profile as any
+      );
+    }
+  };
 
   useEffect(() => {
     if (!candidateId) return;
@@ -91,20 +107,26 @@ export default function CandidateDetailsPage() {
     <DashboardLayout>
       <div className="p-6 lg:p-8 space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/candidates')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <motion.h1
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-2xl lg:text-3xl font-bold"
-            >
-              {candidate.full_name}
-            </motion.h1>
-            <p className="text-muted-foreground">{candidate.email}</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/candidates')}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <motion.h1
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-2xl lg:text-3xl font-bold"
+              >
+                {candidate.full_name}
+              </motion.h1>
+              <p className="text-muted-foreground">{candidate.email}</p>
+            </div>
           </div>
+          <Button variant="outline" onClick={handleDownloadReport}>
+            <Download className="mr-2 h-4 w-4" />
+            Download Candidate Report
+          </Button>
         </div>
 
         {/* Candidate Details */}
@@ -178,7 +200,9 @@ export default function CandidateDetailsPage() {
                 </CardHeader>
                 <CardContent>
                   <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg max-h-96 overflow-auto">
-                    {candidate.resume_text}
+                    {typeof candidate.resume_text === 'object'
+                      ? JSON.stringify(candidate.resume_text, null, 2)
+                      : candidate.resume_text}
                   </pre>
                 </CardContent>
               </Card>

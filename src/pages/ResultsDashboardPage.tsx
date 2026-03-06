@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth, useRequireAuth } from '@/hooks/useAuth';
 import { useJobs } from '@/hooks/useJobs';
-import { analyticsApi } from '@/lib/api';
+import { analyticsApi, type JobDescription } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +55,9 @@ import {
 import { toast } from 'sonner';
 import { CandidateAnalytics, HireRecommendation } from '@/types/database';
 import { ScoreBadge } from '@/components/ui/score-badge';
+import { PDFExportService } from '@/lib/pdf-export';
+import { useProfile } from '@/hooks/useProfile';
+import { Download } from 'lucide-react';
 
 const API_BASE_URL = '/api';
 
@@ -65,6 +68,7 @@ export default function ResultsDashboardPage() {
   const { loading: authLoading } = useRequireAuth();
   const { getToken } = useAuth();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
+  const { data: profile } = useProfile();
 
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [candidates, setCandidates] = useState<CandidateAnalytics[]>([]);
@@ -108,6 +112,19 @@ export default function ResultsDashboardPage() {
 
     loadResults();
   }, [selectedJobId]);
+
+  const handleDownloadReport = () => {
+    const job = jobs?.find(j => j.id === selectedJobId);
+    if (job && processedCandidates.length > 0) {
+      PDFExportService.generateJobReport(
+        job as JobDescription,
+        processedCandidates as any,
+        profile as any
+      );
+    } else {
+      toast.error('No candidate data available to export.');
+    }
+  };
 
   // Derived state for filtered & sorted candidates
   const processedCandidates = useMemo(() => {
@@ -457,6 +474,10 @@ export default function ResultsDashboardPage() {
                       <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
                         <Filter className="mr-2 h-4 w-4" />
                         Filters
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleDownloadReport} disabled={!selectedJobId || processedCandidates.length === 0}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Export PDF
                       </Button>
                       {selectedCandidates.size > 0 && (
                         <>
