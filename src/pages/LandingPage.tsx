@@ -14,6 +14,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
+import { useScroll, useMotionValueEvent, useTransform } from 'framer-motion';
 
 const features = [
   {
@@ -55,8 +56,41 @@ const roles = [
 export default function LandingPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const dragConstraintsRef = useRef<HTMLDivElement>(null);
   const [activeFeature, setActiveFeature] = useState(0);
+  const [activeSection, setActiveSection] = useState('hero');
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start center", "end center"]
+  });
+
+  // Transform scroll progress to line height
+  const lineHeight = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
+
+  const { scrollY } = useScroll();
+
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    const sections = ['hero', 'roles', 'features', 'how-it-works'];
+    for (const section of [...sections].reverse()) {
+      const element = document.getElementById(section);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        // If the top of the section is anywhere above the middle of the screen
+        if (rect.top <= window.innerHeight / 2) {
+          setActiveSection(section);
+          break;
+        }
+      }
+    }
+  });
+
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -81,20 +115,45 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
+      {/* Navigation (Detached NavSpy) */}
+      <nav className="fixed top-4 left-1/2 -translate-x-1/2 w-[95%] md:w-[80%] lg:w-[60%] z-50 bg-background/80 backdrop-blur-xl border rounded-full shadow-lg transition-all duration-300">
+        <div className="px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => scrollTo('hero')}>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
+              <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold">HireAI</span>
+            <span className="text-lg font-bold">HireAI</span>
           </div>
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" asChild>
+
+          {/* ScrollSpy Links (Desktop) */}
+          <div className="hidden md:flex items-center gap-6 text-sm font-medium">
+            {[
+              { id: 'hero', label: 'Home' },
+              { id: 'roles', label: 'Roles' },
+              { id: 'features', label: 'Features' },
+              { id: 'how-it-works', label: 'How it Works' },
+            ].map((link) => (
+              <button
+                key={link.id}
+                onClick={() => scrollTo(link.id)}
+                className={`transition-colors relative py-1 ${activeSection === link.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {link.label}
+                {activeSection === link.id && (
+                  <motion.div
+                    layoutId="nav-pill"
+                    className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" className="hidden sm:inline-flex rounded-full" asChild>
               <Link to="/sign-in">Sign In</Link>
             </Button>
-            <Button asChild>
+            <Button size="sm" className="rounded-full" asChild>
               <Link to="/sign-up">Get Started</Link>
             </Button>
           </div>
@@ -102,7 +161,7 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 px-4">
+      <section id="hero" className="pt-32 pb-20 px-4 min-h-[90vh] flex items-center">
         <div className="container mx-auto grid md:grid-cols-2 gap-12 items-center">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -170,7 +229,7 @@ export default function LandingPage() {
       </section>
 
       {/* Roles Section */}
-      <section className="py-20 bg-muted/30 overflow-hidden">
+      <section id="roles" className="py-20 bg-muted/30 overflow-hidden">
         <div className="container mx-auto px-4 text-center mb-12">
           <h2 className="text-3xl font-bold mb-4">Supported Roles</h2>
           <p className="text-muted-foreground">
@@ -207,7 +266,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section className="py-20 px-4">
+      <section id="features" className="py-20 px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">Enterprise-Grade Features</h2>
@@ -273,39 +332,61 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works Section */}
-      <section className="py-20 px-4 bg-muted/30">
-        <div className="container mx-auto max-w-6xl">
+      <section id="how-it-works" className="py-24 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-4xl" ref={containerRef}>
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">How HireAI Works</h2>
             <p className="text-muted-foreground">
-              Streamline your hiring process in three simple steps. Drag to explore.
+              Streamline your hiring process in three simple steps.
             </p>
           </div>
 
-          <div className="relative overflow-hidden cursor-grab active:cursor-grabbing pb-8" ref={dragConstraintsRef}>
+          <div className="relative">
+            {/* The persistent background line */}
+            <div className="absolute left-[38px] md:left-1/2 md:-translate-x-1/2 top-0 bottom-0 w-1 bg-muted rounded-full" />
+
+            {/* The animated fill line */}
             <motion.div
-              drag="x"
-              dragConstraints={dragConstraintsRef}
-              className="flex gap-8 w-max px-4"
-            >
+              style={{ height: lineHeight }}
+              className="absolute left-[38px] md:left-1/2 md:-translate-x-1/2 top-0 w-1 bg-primary rounded-full origin-top"
+            />
+
+            <div className="flex flex-col gap-16 relative z-10">
               {[
                 { title: 'Create Job', desc: 'Define role requirements and AI will generate custom assessments.', icon: '1' },
                 { title: 'AI Screening', desc: 'Candidates take proctored assessments and AI interviews.', icon: '2' },
                 { title: 'Hire Top Talent', desc: 'Review detailed reports and hire the best fits with confidence.', icon: '3' },
-                { title: 'Onboarding', desc: 'Seamlessly transition successful candidates into your HRIS system.', icon: '4' }
               ].map((step, i) => (
-                <motion.div
-                  key={i}
-                  className="w-[320px] bg-card border rounded-2xl p-8 text-center flex-shrink-0 select-none shadow-sm hover:shadow-md transition-shadow"
-                >
-                  <div className="w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-6 pointer-events-none">
-                    {step.icon}
+                <div key={i} className={`flex flex-col md:flex-row items-start md:items-center gap-6 ${i % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'}`}>
+
+                  {/* Content Container */}
+                  <div className={`flex-1 w-full pl-24 md:pl-0 ${i % 2 === 0 ? 'md:pr-16 md:text-right' : 'md:pl-16 md:text-left'}`}>
+                    <motion.div
+                      initial={{ opacity: 0, x: i % 2 === 0 ? -20 : 20 }}
+                      whileInView={{ opacity: 1, x: 0 }}
+                      viewport={{ once: true, margin: "-100px" }}
+                      className="bg-card border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow"
+                    >
+                      <h3 className="text-xl font-bold mb-2">{step.title}</h3>
+                      <p className="text-muted-foreground">{step.desc}</p>
+                    </motion.div>
                   </div>
-                  <h3 className="text-xl font-bold mb-3 pointer-events-none">{step.title}</h3>
-                  <p className="text-muted-foreground pointer-events-none">{step.desc}</p>
-                </motion.div>
+
+                  {/* Icon Container (Center) */}
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    whileInView={{ scale: 1 }}
+                    viewport={{ once: true, margin: "-100px" }}
+                    className="absolute left-6 md:static md:left-auto w-14 h-14 bg-background border-4 border-primary text-primary rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0 z-20 shadow-lg"
+                  >
+                    {step.icon}
+                  </motion.div>
+
+                  {/* Empty Spacer */}
+                  <div className="hidden md:block flex-1" />
+                </div>
               ))}
-            </motion.div>
+            </div>
           </div>
         </div>
       </section>
