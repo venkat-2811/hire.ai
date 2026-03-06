@@ -698,7 +698,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
         const { data, error } = await supabase
           .from('candidates')
-          .select('*')
+          .select('id, full_name, email, phone, created_at, updated_at, consent_given, resume_url, resume_parsed_data')
           .in('id', candidateIds)
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1);
@@ -1261,48 +1261,62 @@ Return JSON:
       let completedToday = 0;
 
       if (userJobIds.length > 0) {
-        const { count: candCount } = await supabase
-          .from('job_applications')
-          .select('candidate_id', { count: 'exact', head: true })
-          .in('job_id', userJobIds);
-        totalCandidates = candCount || 0;
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
 
-        try {
-          const { count: pendCount } = await supabase
+        // Run independent queries concurrently
+        const [
+          candCountRes,
+          pendCountResWrapper,
+          scoresRes,
+          todayCountResWrapper
+        ] = await Promise.all([
+          supabase
+            .from('job_applications')
+            .select('candidate_id', { count: 'exact', head: true })
+            .in('job_id', userJobIds),
+
+          // Handle potential missing tables gracefully
+          supabase
             .from('ai_interview_sessions')
             .select('id', { count: 'exact', head: true })
             .in('job_id', userJobIds)
-            .eq('status', 'pending');
-          pendingInterviews = pendCount || 0;
-        } catch { /* table may not exist */ }
+            .eq('status', 'pending')
+            .then(res => res)
+            .catch(() => ({ count: 0 })),
 
-        const { data: scores } = await supabase
-          .from('ats_screenings')
-          .select('overall_score, shortlisted')
-          .in('job_id', userJobIds);
-        const validScores = (scores || [])
-          .map((s: any) => s.overall_score)
-          .filter((s: unknown): s is number => typeof s === 'number');
-        averageScore = validScores.length
-          ? Math.round(validScores.reduce((a: number, b: number) => a + b, 0) / validScores.length)
-          : 0;
-        const shortlistedCount = (scores || []).filter((s: any) => s.shortlisted).length;
-        shortlistRate = validScores.length > 0
-          ? Math.round((shortlistedCount / validScores.length) * 100)
-          : 0;
+          supabase
+            .from('ats_screenings')
+            .select('overall_score, shortlisted')
+            .in('job_id', userJobIds),
 
-        // Completed today
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        try {
-          const { count: todayCount } = await supabase
+          supabase
             .from('ai_interview_sessions')
             .select('id', { count: 'exact', head: true })
             .in('job_id', userJobIds)
             .eq('status', 'completed')
-            .gte('completed_at', todayStart.toISOString());
-          completedToday = todayCount || 0;
-        } catch { /* table may not exist */ }
+            .gte('completed_at', todayStart.toISOString())
+            .then(res => res)
+            .catch(() => ({ count: 0 }))
+        ]);
+
+        totalCandidates = candCountRes.count || 0;
+        pendingInterviews = pendCountResWrapper.count || 0;
+        completedToday = todayCountResWrapper.count || 0;
+
+        const scores = scoresRes.data;
+        const validScores = (scores || [])
+          .map((s: any) => s.overall_score)
+          .filter((s: unknown): s is number => typeof s === 'number');
+
+        averageScore = validScores.length
+          ? Math.round(validScores.reduce((a: number, b: number) => a + b, 0) / validScores.length)
+          : 0;
+
+        const shortlistedCount = (scores || []).filter((s: any) => s.shortlisted).length;
+        shortlistRate = validScores.length > 0
+          ? Math.round((shortlistedCount / validScores.length) * 100)
+          : 0;
       }
 
       return ok(res, {
