@@ -716,8 +716,8 @@ export default function AssessmentPage() {
             <CardContent className="space-y-4 text-center">
               <p className="text-sm text-muted-foreground">
                 The hiring team will review your results and contact you regarding the next steps.
+                You may now close this window.
               </p>
-              <Button onClick={() => navigate('/')}>Return Home</Button>
             </CardContent>
           </Card>
         </motion.div>

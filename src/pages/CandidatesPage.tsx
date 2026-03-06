@@ -112,6 +112,7 @@ export default function CandidatesPage() {
   const [assessmentDifficulty, setAssessmentDifficulty] = useState<'easy' | 'medium' | 'hard'>('hard');
   const [includeMcq, setIncludeMcq] = useState(true);
   const [includeCoding, setIncludeCoding] = useState(true);
+  const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -231,6 +232,7 @@ export default function CandidatesPage() {
           difficulty: assessmentDifficulty,
           include_mcq: includeMcq,
           include_coding: includeCoding,
+          total_time_minutes: totalTimeMinutes || undefined,
         }),
       });
 
@@ -688,9 +690,22 @@ export default function CandidatesPage() {
                 </Select>
               </div>
 
-              <div className="text-sm text-muted-foreground">
+              <div className="space-y-2">
+                <Label>Time Limit (Minutes)</Label>
+                <Input
+                  type="number"
+                  min={15}
+                  max={300}
+                  placeholder="Auto-calculate based on questions"
+                  value={totalTimeMinutes}
+                  onChange={(e) => setTotalTimeMinutes(e.target.value ? Number(e.target.value) : '')}
+                />
+                <div className="text-xs text-muted-foreground">Leave empty to auto-calculate (1.5 min per MCQ + 20 min per Coding Challenge).</div>
+              </div>
+
+              <div className="text-sm text-muted-foreground mt-4">
                 Candidates will receive an email with a link to complete the technical assessment.
-                You can configure question counts and difficulty for this invite.
+                You can configure question counts, difficulty, and time limits for this invite.
               </div>
             </div>
 

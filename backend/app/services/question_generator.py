@@ -344,7 +344,9 @@ Generate {count} coding challenges that:
 - Are solvable in 20-35 minutes each
 - Include clear problem descriptions
 - Provide starter code templates
-- Have specific test cases with inputs and expected outputs
+- STRICT REQUIREMENT: You MUST provide a `test_cases` array with at least 3 diverse test cases (including edge cases).
+- `input` must be a JSON object mapping Python argument names to values.
+- `expected` must be the expected direct return value.
 - Emphasize advanced reasoning within {job.level}
 
 Return JSON:
@@ -353,9 +355,10 @@ Return JSON:
         {{
             "title": "Challenge Title",
             "description": "Detailed problem description with examples",
-            "starter_code": "def solution():\\n    pass",
+            "starter_code": "def solution(arg1):\\n    pass",
             "test_cases": [
-                {{"input": {{"param": "value"}}, "expected": "result"}}
+                {{"input": {{"arg1": "value"}}, "expected": "result"}},
+                {{"input": {{"arg1": "edge_case"}}, "expected": "result2"}}
             ],
             "difficulty": "easy|medium|hard",
             "time_limit_minutes": 15,

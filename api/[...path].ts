@@ -1248,33 +1248,67 @@ Return JSON:
         .eq('created_by', user.id);
       const userJobIds = (userJobs || []).map((j: any) => j.id);
 
-      const { count: activeJobs } = await supabase
-        .from('job_descriptions')
-        .select('id', { count: 'exact', head: true })
-        .eq('created_by', user.id)
-        .eq('is_active', true);
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const weekAgoStr = weekAgo.toISOString();
+
+      const [activeJobsRes, activeJobsLastWeekRes] = await Promise.all([
+        supabase
+          .from('job_descriptions')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .eq('is_active', true),
+        supabase
+          .from('job_descriptions')
+          .select('id', { count: 'exact', head: true })
+          .eq('created_by', user.id)
+          .eq('is_active', true)
+          .lt('created_at', weekAgoStr)
+          .then(res => res)
+          .catch(() => ({ count: 0 }))
+      ]);
+
+      const activeJobs = activeJobsRes.count || 0;
+      const activeJobsLastWeek = activeJobsLastWeekRes.count || 0;
+      const active_jobs_change = activeJobsLastWeek === 0 ? (activeJobs > 0 ? 100 : 0) : Math.round(((activeJobs - activeJobsLastWeek) / activeJobsLastWeek) * 100);
 
       let totalCandidates = 0;
+      let total_candidates_change = 0;
       let pendingInterviews = 0;
+      let pending_interviews_change = 0;
       let averageScore = 0;
       let shortlistRate = 0;
       let completedToday = 0;
+      let completed_today_change = 0;
 
       if (userJobIds.length > 0) {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
+        const yesterdayStart = new Date(todayStart);
+        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
         // Run independent queries concurrently
         const [
           candCountRes,
+          candCountLastWeekRes,
           pendCountResWrapper,
           scoresRes,
-          todayCountResWrapper
+          todayCountResWrapper,
+          yesterdayCountResWrapper
         ] = await Promise.all([
           supabase
             .from('job_applications')
             .select('candidate_id', { count: 'exact', head: true })
             .in('job_id', userJobIds),
+
+          supabase
+            .from('job_applications')
+            .select('candidate_id', { count: 'exact', head: true })
+            .in('job_id', userJobIds)
+            .lt('applied_at', weekAgoStr)
+            .then(res => res)
+            .catch(() => ({ count: 0 })),
 
           // Handle potential missing tables gracefully
           supabase
@@ -1297,12 +1331,29 @@ Return JSON:
             .eq('status', 'completed')
             .gte('completed_at', todayStart.toISOString())
             .then(res => res)
+            .catch(() => ({ count: 0 })),
+
+          supabase
+            .from('ai_interview_sessions')
+            .select('id', { count: 'exact', head: true })
+            .in('job_id', userJobIds)
+            .eq('status', 'completed')
+            .gte('completed_at', yesterdayStart.toISOString())
+            .lt('completed_at', todayStart.toISOString())
+            .then(res => res)
             .catch(() => ({ count: 0 }))
         ]);
 
         totalCandidates = candCountRes.count || 0;
+        const candLastWeek = candCountLastWeekRes.count || 0;
+        total_candidates_change = candLastWeek === 0 ? (totalCandidates > 0 ? 100 : 0) : Math.round(((totalCandidates - candLastWeek) / candLastWeek) * 100);
+
         pendingInterviews = pendCountResWrapper.count || 0;
+        pending_interviews_change = 0; // Approximated without deep history
+
         completedToday = todayCountResWrapper.count || 0;
+        const completedYesterday = yesterdayCountResWrapper.count || 0;
+        completed_today_change = completedYesterday === 0 ? (completedToday > 0 ? 100 : 0) : Math.round(((completedToday - completedYesterday) / completedYesterday) * 100);
 
         const scores = scoresRes.data;
         const validScores = (scores || [])
@@ -1321,13 +1372,13 @@ Return JSON:
 
       return ok(res, {
         total_candidates: totalCandidates,
-        total_candidates_change: 0,
+        total_candidates_change,
         active_jobs: activeJobs || 0,
-        active_jobs_change: 0,
+        active_jobs_change,
         pending_interviews: pendingInterviews,
-        pending_interviews_change: 0,
+        pending_interviews_change,
         completed_today: completedToday,
-        completed_today_change: 0,
+        completed_today_change,
         average_score: averageScore,
         shortlist_rate: shortlistRate,
       });

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 const features = [
   {
@@ -39,14 +39,28 @@ const features = [
 ];
 
 const roles = [
-  { name: 'Salesforce Developer', icon: '⚡', color: 'bg-info/10 text-info' },
-  { name: 'QA Engineer', icon: '🔍', color: 'bg-purple-500/10 text-purple-500' },
-  { name: 'Business Analyst', icon: '📊', color: 'bg-warning/10 text-warning' },
+  { name: 'Frontend Developer', icon: '🎨', color: 'bg-blue-500/10 text-blue-500' },
+  { name: 'Backend Engineer', icon: '⚙️', color: 'bg-green-500/10 text-green-500' },
+  { name: 'Data Scientist', icon: '📊', color: 'bg-purple-500/10 text-purple-500' },
+  { name: 'DevOps Engineer', icon: '🚀', color: 'bg-orange-500/10 text-orange-500' },
+  { name: 'Product Manager', icon: '🎯', color: 'bg-pink-500/10 text-pink-500' },
+  { name: 'UX Designer', icon: '✨', color: 'bg-yellow-500/10 text-yellow-500' },
+  { name: 'QA Engineer', icon: '🔍', color: 'bg-indigo-500/10 text-indigo-500' },
+  { name: 'Salesforce Dev', icon: '☁️', color: 'bg-sky-500/10 text-sky-500' },
 ];
 
 export default function LandingPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const dragConstraintsRef = useRef<HTMLDivElement>(null);
+  const [activeFeature, setActiveFeature] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveFeature((prev) => (prev + 1) % features.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!loading && user) {
@@ -86,10 +100,10 @@ export default function LandingPage() {
 
       {/* Hero Section */}
       <section className="pt-32 pb-20 px-4">
-        <div className="container mx-auto text-center max-w-4xl">
+        <div className="container mx-auto grid md:grid-cols-2 gap-12 items-center">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 text-accent text-sm font-medium mb-6">
@@ -102,12 +116,12 @@ export default function LandingPage() {
               <span className="block text-gradient">Explainable AI</span>
             </h1>
 
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
+            <p className="text-lg text-muted-foreground mx-auto mb-8">
               Semantic resume screening, adaptive interviews, and transparent hiring decisions.
               Built for international hiring committee standards.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-4">
               <Button size="lg" asChild>
                 <Link to="/sign-up">
                   Start Hiring
@@ -118,48 +132,66 @@ export default function LandingPage() {
                 Watch Demo
               </Button>
             </div>
+
+            {/* Stats */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="mt-12 grid grid-cols-3 gap-6"
+            >
+              {[
+                { value: '95%', label: 'Screening Accuracy' },
+                { value: '70%', label: 'Time Saved' },
+                { value: '100%', label: 'Explainable' },
+              ].map((stat) => (
+                <div key={stat.label}>
+                  <div className="text-2xl md:text-3xl font-bold text-foreground">{stat.value}</div>
+                  <div className="text-xs text-muted-foreground">{stat.label}</div>
+                </div>
+              ))}
+            </motion.div>
           </motion.div>
 
-          {/* Stats */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="mt-16 grid grid-cols-3 gap-8"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="relative"
           >
-            {[
-              { value: '95%', label: 'Screening Accuracy' },
-              { value: '70%', label: 'Time Saved' },
-              { value: '100%', label: 'Explainable' },
-            ].map((stat) => (
-              <div key={stat.label} className="text-center">
-                <div className="text-3xl md:text-4xl font-bold text-foreground">{stat.value}</div>
-                <div className="text-sm text-muted-foreground">{stat.label}</div>
-              </div>
-            ))}
+            <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 rounded-[3rem] to-transparent blur-3xl -z-10" />
+            <img
+              src="/hero-students.png"
+              alt="Diverse students and young professionals"
+              className="w-full max-w-lg mx-auto relative z-10 drop-shadow-2xl animate-in fade-in zoom-in duration-1000"
+            />
           </motion.div>
         </div>
       </section>
 
       {/* Roles Section */}
-      <section className="py-20 px-4 bg-muted/30">
-        <div className="container mx-auto max-w-5xl">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Supported Roles</h2>
-            <p className="text-muted-foreground">
-              Role-specific evaluation criteria and practical assessments
-            </p>
-          </div>
+      <section className="py-20 bg-muted/30 overflow-hidden">
+        <div className="container mx-auto px-4 text-center mb-12">
+          <h2 className="text-3xl font-bold mb-4">Supported Roles</h2>
+          <p className="text-muted-foreground">
+            Role-specific evaluation criteria and practical assessments
+          </p>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {roles.map((role, index) => (
-              <motion.div
-                key={role.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="p-6 rounded-2xl bg-card border hover:shadow-lg transition-shadow"
+        <div className="relative w-full flex overflow-x-hidden">
+          {/* Fading Edges */}
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-muted/30 to-transparent z-10" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-muted/30 to-transparent z-10" />
+
+          <motion.div
+            className="flex gap-6 px-4 py-4 w-max"
+            animate={{ x: ["0%", "-50%"] }}
+            transition={{ repeat: Infinity, ease: "linear", duration: 40 }}
+          >
+            {[...roles, ...roles].map((role, index) => (
+              <div
+                key={index}
+                className="w-[300px] flex-shrink-0 p-6 rounded-2xl bg-card border hover:shadow-lg transition-shadow"
               >
                 <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${role.color} text-2xl mb-4`}>
                   {role.icon}
@@ -168,122 +200,114 @@ export default function LandingPage() {
                 <p className="text-sm text-muted-foreground">
                   Custom assessments, role-specific questions, and tailored evaluation criteria.
                 </p>
-              </motion.div>
+              </div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
 
       {/* Features Section */}
       <section className="py-20 px-4">
-        <div className="container mx-auto max-w-5xl">
-          <div className="text-center mb-12">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">Enterprise-Grade Features</h2>
             <p className="text-muted-foreground">
               Everything you need for unbiased, efficient hiring
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {features.map((feature, index) => (
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            {/* Left side: Feature List */}
+            <div className="space-y-4">
+              {features.map((feature, index) => {
+                const isActive = activeFeature === index;
+                return (
+                  <button
+                    key={feature.title}
+                    onClick={() => setActiveFeature(index)}
+                    className={`w-full text-left flex items-start gap-4 p-6 rounded-2xl transition-all ${isActive
+                        ? 'bg-card border-primary/50 border shadow-md'
+                        : 'bg-transparent border border-transparent hover:bg-card/50'
+                      }`}
+                  >
+                    <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'
+                      }`}>
+                      <feature.icon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className={`text-xl font-semibold mb-2 transition-colors ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {feature.title}
+                      </h3>
+                      <p className={`text-muted-foreground transition-all duration-300 overflow-hidden ${isActive ? 'h-auto opacity-100' : 'h-0 opacity-0'}`}>
+                        {feature.description}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right side: Dynamic Content */}
+            <div className="relative h-[400px] rounded-3xl overflow-hidden bg-gradient-to-br from-primary/5 to-primary/10 border flex items-center justify-center p-8">
               <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="flex gap-4 p-6 rounded-2xl bg-card border"
+                key={activeFeature}
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                className="text-center"
               >
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <feature.icon className="h-6 w-6 text-primary" />
+                <div className="w-24 h-24 rounded-2xl bg-background/80 shadow-2xl flex items-center justify-center mx-auto mb-8 backdrop-blur-xl">
+                  {(() => {
+                    const ActiveIcon = features[activeFeature].icon;
+                    return <ActiveIcon className="w-12 h-12 text-primary" />;
+                  })()}
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
-                  <p className="text-muted-foreground">{feature.description}</p>
-                </div>
+                <h3 className="text-2xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
+                  {features[activeFeature].title}
+                </h3>
+                <p className="text-muted-foreground max-w-sm mx-auto">
+                  Interactive visualization of how our platform handles {features[activeFeature].title.toLowerCase()} securely and at scale.
+                </p>
               </motion.div>
-            ))}
+            </div>
           </div>
         </div>
       </section>
 
       {/* How It Works Section */}
       <section className="py-20 px-4 bg-muted/30">
-        <div className="container mx-auto max-w-5xl">
+        <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">How HireAI Works</h2>
             <p className="text-muted-foreground">
-              Streamline your hiring process in three simple steps
+              Streamline your hiring process in three simple steps. Drag to explore.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 relative">
-            {[
-              { title: 'Create Job', desc: 'Define role requirements and AI will generate custom assessments.', icon: '1' },
-              { title: 'AI Screening', desc: 'Candidates take proctored assessments and AI interviews.', icon: '2' },
-              { title: 'Hire Top Talent', desc: 'Review detailed reports and hire the best fits with confidence.', icon: '3' }
-            ].map((step, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.2 }}
-                className="relative z-10"
-              >
-                <div className="bg-card border rounded-2xl p-8 text-center h-full hover:shadow-lg transition-all">
-                  <div className="w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-6">
+          <div className="relative overflow-hidden cursor-grab active:cursor-grabbing pb-8" ref={dragConstraintsRef}>
+            <motion.div
+              drag="x"
+              dragConstraints={dragConstraintsRef}
+              className="flex gap-8 w-max px-4"
+            >
+              {[
+                { title: 'Create Job', desc: 'Define role requirements and AI will generate custom assessments.', icon: '1' },
+                { title: 'AI Screening', desc: 'Candidates take proctored assessments and AI interviews.', icon: '2' },
+                { title: 'Hire Top Talent', desc: 'Review detailed reports and hire the best fits with confidence.', icon: '3' },
+                { title: 'Onboarding', desc: 'Seamlessly transition successful candidates into your HRIS system.', icon: '4' }
+              ].map((step, i) => (
+                <motion.div
+                  key={i}
+                  className="w-[320px] bg-card border rounded-2xl p-8 text-center flex-shrink-0 select-none shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-6 pointer-events-none">
                     {step.icon}
                   </div>
-                  <h3 className="text-xl font-bold mb-3">{step.title}</h3>
-                  <p className="text-muted-foreground">{step.desc}</p>
-                </div>
-              </motion.div>
-            ))}
-            {/* Connecting line for desktop */}
-            <div className="hidden md:block absolute top-14 left-0 w-full h-0.5 bg-border -z-0 transform scale-x-75" />
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonials Section */}
-      <section className="py-20 px-4">
-        <div className="container mx-auto max-w-5xl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Trusted by Market Leaders</h2>
-            <p className="text-muted-foreground">
-              See what hiring managers are saying
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8">
-            {[
-              {
-                q: "HireAI cut our screening time by 70%. The AI interviews are surprisingly insightful.",
-                author: "Sarah J.",
-                role: "CTO, TechFlow"
-              },
-              {
-                q: "The proctoring features give us total confidence in our remote hiring process.",
-                author: "Michael R.",
-                role: "HR Director, GlobalCorp"
-              }
-            ].map((t, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                className="bg-card p-8 rounded-2xl border relative"
-              >
-                <div className="text-4xl text-primary/20 font-serif absolute top-6 left-6">"</div>
-                <p className="text-lg relative z-10 mb-6 pt-4">{t.q}</p>
-                <div>
-                  <div className="font-bold">{t.author}</div>
-                  <div className="text-sm text-muted-foreground">{t.role}</div>
-                </div>
-              </motion.div>
-            ))}
+                  <h3 className="text-xl font-bold mb-3 pointer-events-none">{step.title}</h3>
+                  <p className="text-muted-foreground pointer-events-none">{step.desc}</p>
+                </motion.div>
+              ))}
+            </motion.div>
           </div>
         </div>
       </section>
