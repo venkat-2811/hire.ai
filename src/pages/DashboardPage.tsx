@@ -137,9 +137,11 @@ export default function DashboardPage() {
                       <p className="text-3xl font-bold mt-1">
                         {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stat.value}
                       </p>
-                      <p className={`text-sm mt-1 ${stat.change.startsWith('+') ? 'text-success' : 'text-warning'}`}>
-                        {stat.change} from last week
-                      </p>
+                      {stat.change && (
+                        <p className={`text-sm mt-1 ${stat.change.startsWith('+') ? 'text-success' : 'text-warning'}`}>
+                          {stat.change} from last week
+                        </p>
+                      )}
                     </div>
                     <div className={`p-3 rounded-xl bg-muted ${stat.color}`}>
                       <stat.icon className="h-6 w-6" />
@@ -151,23 +153,7 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Analytics Dashboard Rows */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          {analyticsLoading || trendsLoading ? (
-            <div className="flex items-center justify-center p-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <AnalyticsCharts
-              candidatesData={candidatesAnalytics || []}
-              trendsData={trendsData?.trends || []}
-            />
-          )}
-        </motion.div>
+
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent Candidates */}

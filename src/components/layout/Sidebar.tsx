@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Sparkles,
   Trophy,
+  UserCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ const navigation = [
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
   { name: 'Results', href: '/results', icon: Trophy },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { name: 'Profile', href: '/profile', icon: UserCircle },
 ];
 
 export function Sidebar() {

@@ -16,7 +16,7 @@ import JobDetailsPage from "./pages/JobDetailsPage";
 import EditJobPage from "./pages/EditJobPage";
 import InterviewSessionPage from "./pages/InterviewSessionPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
-import SettingsPage from "./pages/SettingsPage";
+import ProfilePage from "./pages/ProfilePage";
 import OnboardingPage from "./pages/OnboardingPage";
 import ApplyPage from "./pages/ApplyPage";
 import AssessmentPage from "./pages/AssessmentPage";
@@ -48,7 +48,7 @@ const App = () => (
             <Route path="/jobs/:jobId/edit" element={<EditJobPage />} />
             <Route path="/interviews/:sessionId" element={<InterviewSessionPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/apply/:jobId" element={<ApplyPage />} />
             <Route path="/assessment/:token" element={<AssessmentPage />} />
