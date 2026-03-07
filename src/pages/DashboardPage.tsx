@@ -3,25 +3,27 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { 
-  Users, 
-  Briefcase, 
-  FileText, 
-  TrendingUp, 
-  ArrowRight, 
+import {
+  Users,
+  Briefcase,
+  FileText,
+  TrendingUp,
+  ArrowRight,
   Plus,
   Clock,
   CheckCircle,
+  XCircle,
   Loader2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { RoleBadge } from '@/components/ui/role-badge';
-import { useDashboardStats } from '@/hooks/useAnalytics';
+import { useDashboardStats, useCandidateAnalytics, useHiringTrends } from '@/hooks/useAnalytics';
 import { useCandidates } from '@/hooks/useCandidates';
 import { useInterviews } from '@/hooks/useInterviews';
 import type { JobRole, InterviewStatus } from '@/types/database';
+import { AnalyticsCharts } from '@/components/dashboard/AnalyticsCharts';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
@@ -34,8 +36,10 @@ export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: candidates, isLoading: candidatesLoading } = useCandidates({ limit: 5 });
   const { data: interviews, isLoading: interviewsLoading } = useInterviews({ status: 'completed' });
+  const { data: candidatesAnalytics, isLoading: analyticsLoading } = useCandidateAnalytics();
+  const { data: trendsData, isLoading: trendsLoading } = useHiringTrends(30);
 
-  const isLoading = authLoading || statsLoading;
+  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading;
 
   if (authLoading) {
     return (
@@ -55,32 +59,32 @@ export default function DashboardPage() {
 
   const dashboardStats = [
     {
-      name: 'Total Candidates',
+      name: 'Total Applicants',
       value: stats?.total_candidates?.toString() || '0',
       change: formatChange(stats?.total_candidates_change),
       icon: Users,
       color: 'text-info'
     },
     {
-      name: 'Active Jobs',
-      value: stats?.active_jobs?.toString() || '0',
-      change: formatChange(stats?.active_jobs_change),
-      icon: Briefcase,
-      color: 'text-accent'
-    },
-    {
-      name: 'Pending Interviews',
-      value: stats?.pending_interviews?.toString() || '0',
-      change: formatChange(stats?.pending_interviews_change),
-      icon: Clock,
-      color: 'text-warning'
-    },
-    {
-      name: 'Completed Today',
-      value: stats?.completed_today?.toString() || '0',
-      change: formatChange(stats?.completed_today_change),
+      name: 'Selected',
+      value: candidatesAnalytics?.filter(c => c.recommendation?.includes('hire') && !c.recommendation?.includes('no_hire')).length.toString() || '0',
+      change: '',
       icon: CheckCircle,
-      color: 'text-success'
+      color: 'text-success bg-success/10'
+    },
+    {
+      name: 'Rejected',
+      value: candidatesAnalytics?.filter(c => c.recommendation?.includes('no_hire')).length.toString() || '0',
+      change: '',
+      icon: XCircle,
+      color: 'text-destructive bg-destructive/10'
+    },
+    {
+      name: 'In Process',
+      value: candidatesAnalytics?.filter(c => !c.recommendation).length.toString() || stats?.pending_interviews?.toString() || '0',
+      change: '',
+      icon: Clock,
+      color: 'text-warning bg-warning/10'
     },
   ];
 
@@ -90,7 +94,7 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <motion.h1 
+            <motion.h1
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               className="text-2xl lg:text-3xl font-bold text-foreground"
@@ -147,9 +151,27 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        {/* Analytics Dashboard Rows */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          {analyticsLoading || trendsLoading ? (
+            <div className="flex items-center justify-center p-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <AnalyticsCharts
+              candidatesData={candidatesAnalytics || []}
+              trendsData={trendsData?.trends || []}
+            />
+          )}
+        </motion.div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent Candidates */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}

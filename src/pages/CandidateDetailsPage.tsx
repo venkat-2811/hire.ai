@@ -264,19 +264,19 @@ export default function CandidateDetailsPage() {
                         </div>
 
                         {/* MCQ Results */}
-                        {(assessmentDetails.mcq_submissions?.length ?? 0) > 0 && (
+                        {Array.isArray(assessmentDetails.mcq_submissions) && assessmentDetails.mcq_submissions.length > 0 && (
                           <div>
-                            <h4 className="font-semibold text-sm mb-3">MCQ Results ({(assessmentDetails.mcq_submissions || []).filter(s => s.is_correct).length}/{(assessmentDetails.mcq_submissions || []).length} correct)</h4>
+                            <h4 className="font-semibold text-sm mb-3">MCQ Results ({assessmentDetails.mcq_submissions.filter(s => s.is_correct).length}/{assessmentDetails.mcq_submissions.length} correct)</h4>
                             <div className="space-y-2 max-h-64 overflow-auto">
-                              {(assessmentDetails.mcq_submissions || []).map((sub, idx) => (
+                              {assessmentDetails.mcq_submissions.map((sub, idx) => (
                                 <div key={idx} className={`p-3 rounded-lg border ${sub.is_correct ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5'}`}>
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
                                       <p className="text-sm font-medium">{sub.question}</p>
                                       <p className="text-xs text-muted-foreground mt-1">
-                                        Your answer: {sub.options?.[sub.selected_index] || 'N/A'}
+                                        Your answer: {Array.isArray(sub.options) ? sub.options[sub.selected_index] : 'N/A'}
                                         {!sub.is_correct && (
-                                          <span className="ml-2 text-success">Correct: {sub.options?.[sub.correct_index]}</span>
+                                          <span className="ml-2 text-success">Correct: {Array.isArray(sub.options) ? sub.options[sub.correct_index] : 'N/A'}</span>
                                         )}
                                       </p>
                                     </div>
@@ -297,12 +297,12 @@ export default function CandidateDetailsPage() {
                         )}
 
                         {/* Coding Results */}
-                        {(assessmentDetails.coding_submissions?.length ?? 0) > 0 && (
+                        {Array.isArray(assessmentDetails.coding_submissions) && assessmentDetails.coding_submissions.length > 0 && (
                           <div>
                             <h4 className="font-semibold text-sm mb-3">Coding Challenges</h4>
                             <div className="space-y-4">
-                              {(assessmentDetails.coding_submissions || []).map((sub, idx) => {
-                                const challenge = assessmentDetails.coding_challenges?.find(c => c.id === sub.challenge_id);
+                              {assessmentDetails.coding_submissions.map((sub, idx) => {
+                                const challenge = Array.isArray(assessmentDetails.coding_challenges) ? assessmentDetails.coding_challenges.find(c => c.id === sub.challenge_id) : undefined;
                                 return (
                                   <div key={idx} className="p-4 rounded-lg border">
                                     <div className="flex items-center justify-between mb-2">
@@ -315,10 +315,10 @@ export default function CandidateDetailsPage() {
                                       {sub.code}
                                     </pre>
                                     <div className="space-y-1">
-                                      {sub.test_results?.map((tr, ti) => (
+                                      {Array.isArray(sub.test_results) && sub.test_results.map((tr, ti) => (
                                         <div key={ti} className={`flex items-center gap-2 text-xs ${tr.passed ? 'text-success' : 'text-destructive'}`}>
                                           {tr.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                                          <span>Input: {tr.input} → Expected: {tr.expected}, Got: {tr.actual || 'Error'}</span>
+                                          <span>Input: {tr.input} → Expected: {tr.expected}, Got: {typeof tr.actual === 'object' ? JSON.stringify(tr.actual) : (tr.actual || 'Error')}</span>
                                         </div>
                                       ))}
                                     </div>
@@ -353,10 +353,10 @@ export default function CandidateDetailsPage() {
                         )}
 
                         {/* Recommendation */}
-                        {interviewDetails.final_evaluation?.recommendation && (
+                        {typeof interviewDetails.final_evaluation?.recommendation === 'string' && (
                           <div className="p-4 rounded-lg bg-muted/50">
                             <p className="text-sm font-medium mb-1">Recommendation</p>
-                            <Badge variant={interviewDetails.final_evaluation.recommendation.includes('hire') ? 'default' : 'secondary'}>
+                            <Badge variant={interviewDetails.final_evaluation.recommendation.toLowerCase().includes('hire') ? 'default' : 'secondary'}>
                               {interviewDetails.final_evaluation.recommendation.replace(/_/g, ' ').toUpperCase()}
                             </Badge>
                           </div>
@@ -368,35 +368,39 @@ export default function CandidateDetailsPage() {
                             <div>
                               <h5 className="font-medium text-sm mb-2 text-success">Strengths</h5>
                               <ul className="space-y-1">
-                                {interviewDetails.final_evaluation.strengths?.map((s, i) => (
+                                {Array.isArray(interviewDetails.final_evaluation.strengths) ? interviewDetails.final_evaluation.strengths.map((s, i) => (
                                   <li key={i} className="text-sm flex items-start gap-2">
                                     <CheckCircle className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-                                    {s}
+                                    {typeof s === 'string' ? s : JSON.stringify(s)}
                                   </li>
-                                ))}
+                                )) : (
+                                  <li className="text-sm text-muted-foreground">{typeof interviewDetails.final_evaluation.strengths === 'string' ? interviewDetails.final_evaluation.strengths : 'None noted'}</li>
+                                )}
                               </ul>
                             </div>
                             <div>
                               <h5 className="font-medium text-sm mb-2 text-destructive">Areas to Improve</h5>
                               <ul className="space-y-1">
-                                {interviewDetails.final_evaluation.weaknesses?.map((w, i) => (
+                                {Array.isArray(interviewDetails.final_evaluation.weaknesses) ? interviewDetails.final_evaluation.weaknesses.map((w, i) => (
                                   <li key={i} className="text-sm flex items-start gap-2">
                                     <XCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
-                                    {w}
+                                    {typeof w === 'string' ? w : JSON.stringify(w)}
                                   </li>
-                                ))}
+                                )) : (
+                                  <li className="text-sm text-muted-foreground">{typeof interviewDetails.final_evaluation.weaknesses === 'string' ? interviewDetails.final_evaluation.weaknesses : 'None noted'}</li>
+                                )}
                               </ul>
                             </div>
                           </div>
                         )}
 
                         {/* Q&A */}
-                        {(interviewDetails.questions?.length ?? 0) > 0 && (
+                        {Array.isArray(interviewDetails.questions) && interviewDetails.questions.length > 0 && (
                           <div>
                             <h4 className="font-semibold text-sm mb-3">Interview Q&A</h4>
                             <div className="space-y-4 max-h-96 overflow-auto">
-                              {(interviewDetails.questions || []).map((q, idx) => {
-                                const response = interviewDetails.responses?.find(r => r.question_index === idx);
+                              {interviewDetails.questions.map((q, idx) => {
+                                const response = Array.isArray(interviewDetails.responses) ? interviewDetails.responses.find(r => r.question_index === idx) : undefined;
                                 return (
                                   <div key={idx} className="p-4 rounded-lg border">
                                     <div className="flex items-start gap-2 mb-2">
