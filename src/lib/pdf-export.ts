@@ -139,7 +139,8 @@ export const PDFExportService = {
                 startY += 6;
                 doc.setFontSize(10);
                 interview.final_evaluation.strengths.forEach((s) => {
-                    const lines = doc.splitTextToSize(`• ${s}`, 180);
+                    const textContent = typeof s === 'string' ? s : JSON.stringify(s);
+                    const lines = doc.splitTextToSize(`• ${textContent}`, 180);
                     doc.text(lines, 14, startY);
                     startY += (lines.length * 5);
                 });
@@ -156,7 +157,8 @@ export const PDFExportService = {
                 startY += 6;
                 doc.setFontSize(10);
                 interview.final_evaluation.weaknesses.forEach((w) => {
-                    const lines = doc.splitTextToSize(`• ${w}`, 180);
+                    const textContent = typeof w === 'string' ? w : JSON.stringify(w);
+                    const lines = doc.splitTextToSize(`• ${textContent}`, 180);
                     doc.text(lines, 14, startY);
                     startY += (lines.length * 5);
                 });

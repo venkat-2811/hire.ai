@@ -30,6 +30,12 @@ import { ScoreBadge } from '@/components/ui/score-badge';
 import { PDFExportService } from '@/lib/pdf-export';
 import { Download } from 'lucide-react';
 
+const safeRender = (val: any): string => {
+  if (val == null) return '';
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+};
+
 export default function CandidateDetailsPage() {
   const { candidateId } = useParams<{ candidateId: string }>();
   const navigate = useNavigate();
@@ -118,9 +124,9 @@ export default function CandidateDetailsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="text-2xl lg:text-3xl font-bold"
               >
-                {candidate.full_name}
+                {safeRender(candidate.full_name)}
               </motion.h1>
-              <p className="text-muted-foreground">{candidate.email}</p>
+              <p className="text-muted-foreground">{safeRender(candidate.email)}</p>
             </div>
           </div>
           <Button variant="outline" onClick={handleDownloadReport}>
@@ -140,19 +146,19 @@ export default function CandidateDetailsPage() {
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3">
                   <Mail className="h-5 w-5 text-muted-foreground" />
-                  <span>{candidate.email}</span>
+                  <span>{safeRender(candidate.email)}</span>
                 </div>
                 {candidate.phone && (
                   <div className="flex items-center gap-3">
                     <Phone className="h-5 w-5 text-muted-foreground" />
-                    <span>{candidate.phone}</span>
+                    <span>{safeRender(candidate.phone)}</span>
                   </div>
                 )}
                 {candidate.portfolio_url && (
                   <div className="flex items-center gap-3">
                     <Globe className="h-5 w-5 text-muted-foreground" />
                     <a href={candidate.portfolio_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                      {candidate.portfolio_url}
+                      {safeRender(candidate.portfolio_url)}
                     </a>
                   </div>
                 )}
@@ -160,7 +166,7 @@ export default function CandidateDetailsPage() {
                   <div className="flex items-center gap-3">
                     <Github className="h-5 w-5 text-muted-foreground" />
                     <a href={candidate.github_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                      {candidate.github_url}
+                      {safeRender(candidate.github_url)}
                     </a>
                   </div>
                 )}
@@ -272,7 +278,7 @@ export default function CandidateDetailsPage() {
                                 <div key={idx} className={`p-3 rounded-lg border ${sub.is_correct ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5'}`}>
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
-                                      <p className="text-sm font-medium">{sub.question}</p>
+                                      <p className="text-sm font-medium">{typeof sub.question === 'object' ? JSON.stringify(sub.question) : sub.question}</p>
                                       <p className="text-xs text-muted-foreground mt-1">
                                         Your answer: {Array.isArray(sub.options) ? sub.options[sub.selected_index] : 'N/A'}
                                         {!sub.is_correct && (
@@ -287,8 +293,8 @@ export default function CandidateDetailsPage() {
                                     )}
                                   </div>
                                   <div className="flex gap-2 mt-2">
-                                    <Badge variant="outline" className="text-xs">{sub.difficulty}</Badge>
-                                    <Badge variant="outline" className="text-xs">{sub.topic}</Badge>
+                                    <Badge variant="outline" className="text-xs">{safeRender(sub.difficulty)}</Badge>
+                                    <Badge variant="outline" className="text-xs">{safeRender(sub.topic)}</Badge>
                                   </div>
                                 </div>
                               ))}
@@ -306,19 +312,19 @@ export default function CandidateDetailsPage() {
                                 return (
                                   <div key={idx} className="p-4 rounded-lg border">
                                     <div className="flex items-center justify-between mb-2">
-                                      <h5 className="font-medium">{challenge?.title || `Challenge ${idx + 1}`}</h5>
+                                      <h5 className="font-medium">{safeRender(challenge?.title) || `Challenge ${idx + 1}`}</h5>
                                       <Badge variant={sub.score_percentage >= 70 ? 'default' : 'secondary'}>
                                         {sub.passed_count}/{sub.total_tests} tests passed
                                       </Badge>
                                     </div>
-                                    <pre className="text-xs bg-muted p-3 rounded max-h-40 overflow-auto mb-3">
-                                      {sub.code}
+                                    <pre className="text-xs bg-muted p-3 rounded max-h-40 overflow-auto mb-3 whitespace-pre-wrap">
+                                      {typeof sub.code === 'object' ? JSON.stringify(sub.code, null, 2) : sub.code}
                                     </pre>
                                     <div className="space-y-1">
                                       {Array.isArray(sub.test_results) && sub.test_results.map((tr, ti) => (
                                         <div key={ti} className={`flex items-center gap-2 text-xs ${tr.passed ? 'text-success' : 'text-destructive'}`}>
                                           {tr.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                                          <span>Input: {tr.input} → Expected: {tr.expected}, Got: {typeof tr.actual === 'object' ? JSON.stringify(tr.actual) : (tr.actual || 'Error')}</span>
+                                          <span>Input: {safeRender(tr.input)} → Expected: {safeRender(tr.expected)}, Got: {safeRender(tr.actual) || 'Error'}</span>
                                         </div>
                                       ))}
                                     </div>
@@ -404,13 +410,13 @@ export default function CandidateDetailsPage() {
                                 return (
                                   <div key={idx} className="p-4 rounded-lg border">
                                     <div className="flex items-start gap-2 mb-2">
-                                      <Badge variant="outline" className="text-xs">{q.question_type}</Badge>
-                                      <p className="text-sm font-medium">{q.question_text}</p>
+                                      <Badge variant="outline" className="text-xs">{safeRender(q.question_type)}</Badge>
+                                      <p className="text-sm font-medium">{safeRender(q.question_text)}</p>
                                     </div>
                                     {response ? (
                                       <div className="bg-muted/50 p-3 rounded text-sm">
                                         <p className="text-muted-foreground text-xs mb-1">Candidate's Answer:</p>
-                                        <p>{response.transcript}</p>
+                                        <p>{typeof response.transcript === 'object' ? JSON.stringify(response.transcript) : response.transcript}</p>
                                       </div>
                                     ) : (
                                       <p className="text-sm text-muted-foreground italic">No response recorded</p>
@@ -427,7 +433,7 @@ export default function CandidateDetailsPage() {
                           <div>
                             <h4 className="font-semibold text-sm mb-2">Detailed Feedback</h4>
                             <p className="text-sm bg-muted/50 p-4 rounded-lg">
-                              {interviewDetails.final_evaluation.detailed_feedback}
+                              {typeof interviewDetails.final_evaluation.detailed_feedback === 'object' ? JSON.stringify(interviewDetails.final_evaluation.detailed_feedback, null, 2) : interviewDetails.final_evaluation.detailed_feedback}
                             </p>
                           </div>
                         )}
