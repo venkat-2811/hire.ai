@@ -2275,7 +2275,15 @@ Only return JSON.`;
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
       const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
-      const frontendUrl = process.env.FRONTEND_URL || 'https://hire-ai-sandy.vercel.app';
+      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+      const isLocalhost = String(hostHeader).includes('localhost');
+      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
+      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
+      
+      let frontendUrl = process.env.FRONTEND_URL;
+      if (!frontendUrl || frontendUrl === 'http://localhost:8080' || frontendUrl.includes('hire-ai-sandy')) {
+        frontendUrl = dynamicUrl;
+      }
 
       let invitesSent = 0;
       const failed: string[] = [];
@@ -2587,7 +2595,15 @@ Evaluate and return JSON:
 
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
-      const frontendUrl = process.env.FRONTEND_URL || 'https://hire-ai-sandy.vercel.app';
+      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+      const isLocalhost = String(hostHeader).includes('localhost');
+      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
+      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
+      
+      let frontendUrl = process.env.FRONTEND_URL;
+      if (!frontendUrl || frontendUrl === 'http://localhost:8080' || frontendUrl.includes('hire-ai-sandy')) {
+        frontendUrl = dynamicUrl;
+      }
       let invitesSent = 0;
       const failed: string[] = [];
 
