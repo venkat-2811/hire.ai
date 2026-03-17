@@ -199,6 +199,14 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
+                          {(() => {
+                            const analytics = candidatesAnalytics?.find(a => a.candidate_id === candidate.id);
+                            if (!analytics) return null;
+                            const scores = [analytics.ats_score, analytics.assessment_score, analytics.interview_score].filter(s => s !== null) as number[];
+                            if (scores.length === 0) return <span className="text-sm text-muted-foreground">No score yet</span>;
+                            const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+                            return <ScoreBadge score={avg} />;
+                          })()}
                           <span className="text-sm text-muted-foreground">
                             {new Date(candidate.created_at).toLocaleDateString()}
                           </span>
