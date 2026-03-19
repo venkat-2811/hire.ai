@@ -594,6 +594,22 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           created_by: user.id,
         };
 
+        // Pre-generate interview question pool for this job (15 questions)
+        try {
+          const pool = await generateInterviewQuestionPool({
+            title: body.title,
+            role: body.role,
+            level: body.level,
+            must_have_skills: body.must_have_skills || [],
+            description: body.description || '',
+          });
+          if (pool && pool.length > 0) {
+            jobData.interview_question_pool = pool;
+          }
+        } catch (poolErr: any) {
+          console.error('Failed to generate interview question pool (non-blocking):', poolErr.message);
+        }
+
         const { data, error } = await supabase
           .from('job_descriptions')
           .insert(jobData)
@@ -656,6 +672,44 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       }
 
       return methodNotAllowed(res);
+    }
+
+    // POST /api/jobs/:jobId/regenerate-questions
+    if (segments.length === 3 && segments[2] === 'regenerate-questions' && req.method === 'POST') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const jobId = segments[1];
+      const { data: job, error } = await supabase
+        .from('job_descriptions')
+        .select('*')
+        .eq('id', jobId)
+        .eq('created_by', user.id)
+        .single();
+
+      if (error || !job) return notFound(res, 'Job not found');
+
+      try {
+        const pool = await generateInterviewQuestionPool({
+          title: job.title,
+          role: job.role,
+          level: job.level,
+          must_have_skills: job.must_have_skills || [],
+          description: job.description || '',
+        });
+
+        if (!pool.length) {
+          return res.status(500).json({ error: 'Failed to generate questions. Please try again.' });
+        }
+
+        await supabase.from('job_descriptions').update({
+          interview_question_pool: pool,
+        }).eq('id', jobId);
+
+        return ok(res, { success: true, questions_generated: pool.length, pool });
+      } catch (e: any) {
+        return res.status(500).json({ error: e.message || 'Failed to generate question pool' });
+      }
     }
 
     return notFound(res);
@@ -1029,20 +1083,22 @@ ${resumeText.slice(0, 8000)}
       }
     }
 
-    // GET /api/candidates/:id/assessment-details
+    // GET /api/candidates/:id/assessment-details?job_id=xxx
     if (segments.length === 3 && segments[2] === 'assessment-details') {
       const user = await requireAuth(req, res);
       if (!user) return;
 
       const candidateId = segments[1];
+      const jobIdFilter = req.query.job_id as string | undefined;
       if (req.method !== 'GET') return methodNotAllowed(res);
 
-      // Get assessment sessions for this candidate
-      const { data: sessions } = await supabase
+      // Get assessment sessions for this candidate, scoped by job if provided
+      let q = supabase
         .from('assessment_sessions')
         .select('*')
-        .eq('candidate_id', candidateId)
-        .order('created_at', { ascending: false });
+        .eq('candidate_id', candidateId);
+      if (jobIdFilter) q = q.eq('job_id', jobIdFilter);
+      const { data: sessions } = await q.order('created_at', { ascending: false });
 
       if (!sessions?.length) return ok(res, null);
 
@@ -1051,6 +1107,7 @@ ${resumeText.slice(0, 8000)}
 
       return ok(res, {
         session_id: completedSession.id,
+        job_id: completedSession.job_id,
         status: completedSession.status,
         mcq_score: completedSession.mcq_score,
         coding_score: completedSession.coding_score,
@@ -1065,20 +1122,22 @@ ${resumeText.slice(0, 8000)}
       });
     }
 
-    // GET /api/candidates/:id/interview-details
+    // GET /api/candidates/:id/interview-details?job_id=xxx
     if (segments.length === 3 && segments[2] === 'interview-details') {
       const user = await requireAuth(req, res);
       if (!user) return;
 
       const candidateId = segments[1];
+      const jobIdFilter = req.query.job_id as string | undefined;
       if (req.method !== 'GET') return methodNotAllowed(res);
 
-      // Get AI interview sessions for this candidate
-      const { data: sessions } = await supabase
+      // Get AI interview sessions for this candidate, scoped by job if provided
+      let q = supabase
         .from('ai_interview_sessions')
         .select('*')
-        .eq('candidate_id', candidateId)
-        .order('created_at', { ascending: false });
+        .eq('candidate_id', candidateId);
+      if (jobIdFilter) q = q.eq('job_id', jobIdFilter);
+      const { data: sessions } = await q.order('created_at', { ascending: false });
 
       if (!sessions?.length) return ok(res, null);
 
@@ -1087,6 +1146,7 @@ ${resumeText.slice(0, 8000)}
 
       return ok(res, {
         session_id: completedSession.id,
+        job_id: completedSession.job_id,
         status: completedSession.status,
         questions: completedSession.questions || [],
         responses: completedSession.responses || [],
@@ -1500,274 +1560,6 @@ Return JSON:
     return notFound(res);
   }
 
-  // /api/apply/* (public)
-  if (segments[0] === 'apply') {
-    // GET /api/apply/job/:jobId
-    if (req.method === 'GET' && segments.length === 3 && segments[1] === 'job') {
-      const jobId = segments[2];
-
-      // First check if job exists at all (for debugging)
-      const { data: anyJob, error: anyError } = await supabase
-        .from('job_descriptions')
-        .select('id, title, is_active')
-        .eq('id', jobId)
-        .maybeSingle();
-
-      if (anyError) {
-        console.error('Apply job fetch error:', anyError);
-        return res.status(500).json({ error: anyError.message, code: anyError.code, details: anyError.details });
-      }
-
-      if (!anyJob) {
-        return notFound(res, 'Job not found - ID does not exist in database');
-      }
-
-      if (!anyJob.is_active) {
-        return res.status(410).json({ error: 'This job is no longer accepting applications', job_title: anyJob.title });
-      }
-
-      // Job exists and is active, fetch full details
-      const { data, error } = await supabase
-        .from('job_descriptions')
-        .select('id, title, role, level, description, must_have_skills, good_to_have_skills, min_experience_years')
-        .eq('id', jobId)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (error) {
-        return res.status(500).json({ error: error.message, code: error.code, details: error.details });
-      }
-      if (!data) return notFound(res, 'Job not found or no longer accepting applications');
-      return ok(res, data);
-    }
-
-    // POST /api/apply/submit
-    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'submit') {
-      const body = req.body;
-      const jobId = body.job_id;
-      const fullName = body.full_name;
-      const email = body.email;
-
-      if (!body.consent_given) return badRequest(res, 'Consent is required');
-      if (!jobId || !fullName || !email) return badRequest(res, 'job_id, full_name, email required');
-
-      const { data: job, error: jobError } = await supabase
-        .from('job_descriptions')
-        .select('id, title, is_active')
-        .eq('id', jobId)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (jobError) return res.status(500).json({ error: jobError.message, step: 'fetch_job' });
-      if (!job) return notFound(res, 'Job not found or no longer accepting applications');
-
-      // Sanitize and parse resume text (optional)
-      let resumeText: string | null = null;
-      let resumeParsedData: any = null;
-      let autoScreenResult: any = null;
-      if (body.resume_text) {
-        // Sanitize: remove null bytes and invalid Unicode escape sequences
-        resumeText = String(body.resume_text)
-          .replace(/\x00/g, '')
-          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
-          .slice(0, 50000);
-
-        // Fetch full job for combined parse+screen
-        const { data: fullJob } = await supabase
-          .from('job_descriptions')
-          .select('*')
-          .eq('id', jobId)
-          .single();
-
-        try {
-          // Combined: parse resume AND screen against job in ONE AI call
-          const combinedPrompt = `You are an ATS system. Parse this resume and score it against the job.
-
-RESUME TEXT:
-${resumeText.slice(0, 6000)}
-
-JOB: ${fullJob?.title || job.title} (${fullJob?.role || 'N/A'}, ${fullJob?.level || 'N/A'})
-Required Skills: ${(fullJob?.must_have_skills || []).join(', ')}
-Nice-to-have: ${(fullJob?.good_to_have_skills || []).join(', ')}
-Min Experience: ${fullJob?.min_experience_years || 0} years
-
-Return JSON with BOTH parsed resume and screening scores:
-{
-  "parsed_resume": {
-    "skills": ["skill1", "skill2"],
-    "experience": [{"title": "Job Title", "company": "Company", "duration": "2 years", "description": "Brief desc"}],
-    "education": [{"degree": "Degree", "institution": "School", "year": "2020"}],
-    "summary": "Brief professional summary",
-    "total_experience_years": 3,
-    "certifications": ["cert1"]
-  },
-  "screening": {
-    "overall_score": 75,
-    "skill_relevance_score": 80,
-    "experience_score": 70,
-    "education_score": 60,
-    "credibility_score": 75,
-    "shortlisted": true,
-    "shortlist_reason": "Strong skill match",
-    "reason_codes": [{"code": "SKILL_MATCH", "type": "positive", "description": "Has required skills", "impact": 10}]
-  }
-}`;
-          const combined = await generateJSON<any>(combinedPrompt);
-          console.log('Combined AI result keys:', Object.keys(combined));
-
-          // Extract parsed resume - handle various response shapes
-          if (combined.parsed_resume) {
-            resumeParsedData = combined.parsed_resume;
-          } else if (combined.skills) {
-            // AI returned flat resume without nesting
-            resumeParsedData = combined;
-          } else {
-            resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
-          }
-
-          // Extract screening - handle various response shapes
-          if (combined.screening) {
-            autoScreenResult = combined.screening;
-          } else if (combined.overall_score != null) {
-            // AI returned flat screening without nesting
-            autoScreenResult = combined;
-          }
-
-          // Ensure parsed_resume has required fields
-          if (!resumeParsedData.skills) {
-            resumeParsedData = { skills: [], experience: [], education: [], summary: '', total_experience_years: 0, certifications: [] };
-          }
-        } catch (parseErr: any) {
-          console.error('Resume parse+screen failed:', parseErr.message);
-          resumeParsedData = { skills: [], experience: [], education: [], summary: resumeText?.slice(0, 200) || '', total_experience_years: 0, certifications: [] };
-        }
-      }
-
-      // Check for existing candidate
-      const { data: existingCandidate } = await supabase
-        .from('candidates')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-
-      let candidateId: string;
-      if (existingCandidate) {
-        candidateId = existingCandidate.id;
-        const { error: updateError } = await supabase.from('candidates').update({
-          full_name: fullName,
-          phone: body.phone || null,
-          portfolio_url: body.portfolio_url || null,
-          github_url: body.github_url || null,
-          consent_given: true,
-          consent_timestamp: new Date().toISOString(),
-          resume_text: resumeText,
-          resume_parsed_data: resumeParsedData,
-        }).eq('id', candidateId);
-        if (updateError) return res.status(500).json({ error: updateError.message, step: 'update_candidate' });
-      } else {
-        candidateId = uuidv4();
-        const { error: insertError } = await supabase.from('candidates').insert({
-          id: candidateId,
-          full_name: fullName,
-          email,
-          phone: body.phone || null,
-          portfolio_url: body.portfolio_url || null,
-          github_url: body.github_url || null,
-          consent_given: true,
-          consent_timestamp: new Date().toISOString(),
-          resume_text: resumeText,
-          resume_parsed_data: resumeParsedData,
-        });
-        if (insertError) return res.status(500).json({ error: insertError.message, step: 'insert_candidate' });
-      }
-
-      // Create job application
-      const applicationId = uuidv4();
-      const { error: appError } = await supabase.from('job_applications').insert({
-        id: applicationId,
-        candidate_id: candidateId,
-        job_id: jobId,
-        status: 'applied',
-        applied_at: new Date().toISOString(),
-      });
-      if (appError) {
-        // If duplicate application, that's okay
-        if (appError.code === '23505') {
-          return ok(res, {
-            job_id: jobId,
-            candidate_id: candidateId,
-            status: 'already_applied',
-            message: `You have already applied for ${job.title}.`,
-          });
-        }
-        return res.status(500).json({ error: appError.message, step: 'insert_application' });
-      }
-
-      // Send confirmation email (non-blocking)
-      try {
-        await sendApplicationReceived(email, fullName, job.title);
-      } catch (emailErr: any) {
-        console.error('Failed to send application email:', emailErr);
-      }
-
-      // Save ATS screening from combined result (already computed above)
-      let atsScore: number | null = null;
-      if (autoScreenResult && autoScreenResult.overall_score != null) {
-        try {
-          atsScore = autoScreenResult.overall_score;
-          const screeningData = {
-            candidate_id: candidateId,
-            job_id: jobId,
-            overall_score: autoScreenResult.overall_score,
-            skill_relevance_score: autoScreenResult.skill_relevance_score ?? null,
-            experience_score: autoScreenResult.experience_score ?? null,
-            education_score: autoScreenResult.education_score ?? null,
-            credibility_score: autoScreenResult.credibility_score ?? null,
-            shortlisted: !!autoScreenResult.shortlisted,
-            shortlist_reason: autoScreenResult.shortlist_reason ?? null,
-            reason_codes: autoScreenResult.reason_codes ?? [],
-            screened_at: new Date().toISOString(),
-          };
-
-          // Upsert screening
-          const { data: existingScreen } = await supabase
-            .from('ats_screenings')
-            .select('id')
-            .eq('candidate_id', candidateId)
-            .eq('job_id', jobId)
-            .maybeSingle();
-
-          if (existingScreen) {
-            await supabase.from('ats_screenings').update(screeningData).eq('id', existingScreen.id);
-          } else {
-            await supabase.from('ats_screenings').insert(screeningData);
-          }
-
-          // Update application status based on screening
-          const newStatus = autoScreenResult.shortlisted ? 'screened' : 'rejected';
-          await supabase.from('job_applications').update({
-            status: newStatus,
-            screening_status: autoScreenResult.shortlisted ? 'shortlisted' : 'rejected',
-            updated_at: new Date().toISOString(),
-          }).eq('id', applicationId);
-        } catch (screenErr: any) {
-          console.error('Screening save failed (non-blocking):', screenErr.message);
-        }
-      }
-
-      return ok(res, {
-        id: applicationId,
-        job_id: jobId,
-        candidate_id: candidateId,
-        status: 'applied',
-        ats_score: atsScore,
-        message: `Application submitted successfully for ${job.title}.`,
-      });
-    }
-
-    return notFound(res);
-  }
-
   // /api/assessments/*
   if (segments[0] === 'assessments') {
     // GET /api/assessments/start/:token (public)
@@ -2045,6 +1837,89 @@ Only return JSON.`;
       });
     }
 
+    // POST /api/assessments/:sessionId/coding/run (run code without submitting - LeetCode style)
+    if (req.method === 'POST' && segments.length === 4 && segments[2] === 'coding' && segments[3] === 'run') {
+      const sessionId = segments[1];
+      const { challenge_id, code, language = 'python' } = req.body;
+
+      const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
+      if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
+
+      const challenges: any[] = session.coding_challenges || [];
+      const challenge = challenges.find((c: any) => c.id === challenge_id);
+      if (!challenge) return badRequest(res, 'Challenge not found');
+
+      const testCases = challenge.test_cases || [];
+      if (!testCases.length) {
+        return ok(res, { success: false, error: 'No test cases available', results: [], passed: 0, total: 0, score_percentage: 0 });
+      }
+
+      const results: any[] = [];
+      let passedCount = 0;
+      let compilationError: string | null = null;
+
+      for (const tc of testCases) {
+        try {
+          const inputArgs = typeof tc.input === 'object'
+            ? Object.values(tc.input).map((v: any) => JSON.stringify(v)).join(', ')
+            : String(tc.input);
+
+          const wrappedCode = `${code}\n\nimport json, sys\ntry:\n    _result = solution(${inputArgs})\n    print(json.dumps(_result))\nexcept Exception as e:\n    print(json.dumps({"__error__": str(e)}))\n    sys.exit(1)`;
+
+          const pistonResp = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              language: 'python',
+              version: '3.10',
+              files: [{ content: wrappedCode }],
+              stdin: '',
+              args: [],
+              compile_timeout: 10000,
+              run_timeout: 5000,
+            }),
+          });
+
+          const pistonResult = await pistonResp.json();
+          const stdout = (pistonResult.run?.stdout || '').trim();
+          const stderr = pistonResult.run?.stderr || '';
+          const exitCode = pistonResult.run?.code || 0;
+
+          if (stderr && !stdout && exitCode !== 0) {
+            compilationError = compilationError || stderr.slice(0, 2000);
+          }
+
+          let actual: any = stdout;
+          try { actual = JSON.parse(stdout); } catch { /* keep as string */ }
+
+          if (actual && typeof actual === 'object' && actual.__error__) {
+            results.push({ input: tc.input, expected: tc.expected, actual: null, passed: false, error: actual.__error__ });
+            continue;
+          }
+
+          const expected = tc.expected;
+          const passed = JSON.stringify(actual) === JSON.stringify(expected);
+          if (passed) passedCount++;
+
+          results.push({ input: tc.input, expected, actual, passed, error: stderr || null });
+        } catch (execErr: any) {
+          results.push({ input: tc.input, expected: tc.expected, actual: null, passed: false, error: execErr.message });
+        }
+      }
+
+      const totalTests = testCases.length;
+      const scorePercentage = totalTests > 0 ? (passedCount / totalTests) * 100 : 0;
+
+      return ok(res, {
+        success: !compilationError,
+        compilation_error: compilationError,
+        results,
+        passed: passedCount,
+        total: totalTests,
+        score_percentage: scorePercentage,
+      });
+    }
+
     // POST /api/assessments/:sessionId/coding/submit
     if (req.method === 'POST' && segments.length === 4 && segments[2] === 'coding' && segments[3] === 'submit') {
       const sessionId = segments[1];
@@ -2066,8 +1941,11 @@ Only return JSON.`;
       // Execute code against each test case using Piston API
       for (const tc of testCases) {
         try {
-          // Wrap user code with test case execution
-          const wrappedCode = `${code}\n\n# Test execution\nimport json\ntry:\n    result = solution(${tc.input})\n    print(json.dumps(result))\nexcept Exception as e:\n    print(f"ERROR: {e}")`;
+          const inputArgs = typeof tc.input === 'object'
+            ? Object.values(tc.input).map((v: any) => JSON.stringify(v)).join(', ')
+            : String(tc.input);
+
+          const wrappedCode = `${code}\n\nimport json, sys\ntry:\n    _result = solution(${inputArgs})\n    print(json.dumps(_result))\nexcept Exception as e:\n    print(json.dumps({"__error__": str(e)}))\n    sys.exit(1)`;
 
           const pistonResp = await fetch('https://emkc.org/api/v2/piston/execute', {
             method: 'POST',
@@ -2088,22 +1966,29 @@ Only return JSON.`;
           const stderr = pistonResult.run?.stderr || '';
           const exitCode = pistonResult.run?.code || 0;
 
-          const expectedOutput = String(tc.expected_output).trim();
-          const passed = stdout === expectedOutput && exitCode === 0 && !stderr;
+          let actual: any = stdout;
+          try { actual = JSON.parse(stdout); } catch { /* keep as string */ }
 
+          if (actual && typeof actual === 'object' && actual.__error__) {
+            results.push({ input: tc.input, expected: tc.expected, actual: null, passed: false, error: actual.__error__ });
+            continue;
+          }
+
+          const expected = tc.expected;
+          const passed = JSON.stringify(actual) === JSON.stringify(expected);
           if (passed) passedCount++;
 
           results.push({
             input: tc.input,
-            expected: expectedOutput,
-            actual: stdout,
+            expected,
+            actual,
             passed,
             error: stderr || null,
           });
         } catch (execErr: any) {
           results.push({
             input: tc.input,
-            expected: tc.expected_output,
+            expected: tc.expected,
             actual: null,
             passed: false,
             error: execErr.message,
@@ -2581,12 +2466,34 @@ Evaluate and return JSON:
 
       const { data: job } = await supabase
         .from('job_descriptions')
-        .select('id, title, role, level, must_have_skills')
+        .select('id, title, role, level, must_have_skills, interview_question_pool')
         .eq('id', job_id)
         .eq('created_by', user.id)
         .single();
 
       if (!job) return notFound(res, 'Job not found');
+
+      // If no question pool exists yet, generate one and store it
+      let questionPool: any[] = job.interview_question_pool || [];
+      if (!questionPool.length) {
+        try {
+          questionPool = await generateInterviewQuestionPool({
+            title: job.title,
+            role: job.role,
+            level: job.level,
+            must_have_skills: job.must_have_skills || [],
+            description: '',
+          });
+          if (questionPool.length) {
+            await supabase.from('job_descriptions').update({
+              interview_question_pool: questionPool,
+            }).eq('id', job_id);
+          }
+        } catch {
+          // Fall back to old method if pool generation fails
+          questionPool = [];
+        }
+      }
 
       const { data: candidates } = await supabase
         .from('candidates')
@@ -2611,7 +2518,17 @@ Evaluate and return JSON:
         try {
           const token = crypto.randomBytes(32).toString('base64url');
 
-          const questions = await generateInterviewQuestions(job);
+          // Randomly select 5 questions from pool for each candidate
+          let questions: any[];
+          if (questionPool.length >= 5) {
+            const shuffled = [...questionPool].sort(() => Math.random() - 0.5);
+            questions = shuffled.slice(0, 5);
+          } else if (questionPool.length > 0) {
+            questions = [...questionPool].sort(() => Math.random() - 0.5);
+          } else {
+            // Fallback: generate questions on the fly (legacy behavior)
+            questions = await generateInterviewQuestions(job);
+          }
 
           await supabase.from('ai_interview_sessions').insert({
             id: uuidv4(),
@@ -2936,5 +2853,39 @@ async function generateInterviewQuestions(job: { title: string; role: string; le
       { text: 'How do you approach problem-solving when facing unfamiliar challenges?', type: 'situational', duration: 120 },
       { text: 'Where do you see yourself in 5 years and how does this role fit into your career goals?', type: 'behavioral', duration: 120 },
     ];
+  }
+}
+
+async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }) {
+  const skills = job.must_have_skills.join(', ') || 'General';
+  const prompt = `Generate exactly 15 diverse interview questions for a ${job.level} ${job.role} position (${job.title}).
+Skills to assess: ${skills}.
+${job.description ? `Job context: ${job.description.slice(0, 500)}` : ''}
+
+Create a balanced mix:
+- 7 technical questions testing specific skills and knowledge
+- 4 behavioral questions about past experiences and teamwork
+- 4 situational questions with hypothetical scenarios
+
+Each question should be distinct and test a different aspect.
+Vary difficulty from moderate to advanced for ${job.level} level.
+
+Return JSON array: [{"text":"The question text","type":"technical|behavioral|situational","duration":120}]
+Only return the JSON array.`;
+
+  try {
+    const raw = await generateJSON<any>(prompt);
+    const questions = Array.isArray(raw) ? raw : Array.isArray(raw?.questions) ? raw.questions : [];
+    return questions
+      .filter((q: any) => q?.text && q?.type)
+      .map((q: any) => ({
+        text: String(q.text),
+        type: String(q.type),
+        duration: typeof q.duration === 'number' ? q.duration : 120,
+      }))
+      .slice(0, 15);
+  } catch (e: any) {
+    console.error('Failed to generate interview question pool:', e.message);
+    return [];
   }
 }

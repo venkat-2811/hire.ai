@@ -570,7 +570,7 @@ export default function CandidatesPage() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuItem asChild>
-                                      <Link to={`/candidates/${candidate.id}`}>
+                                      <Link to={`/candidates/${candidate.id}${candidate.job_id ? `?job_id=${candidate.job_id}` : ''}`}>
                                         <Eye className="mr-2 h-4 w-4" />
                                         View Details
                                       </Link>

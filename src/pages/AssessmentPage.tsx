@@ -1048,17 +1048,11 @@ export default function AssessmentPage() {
                   <Card>
                     <CardHeader>
                       <div className="flex items-center justify-between">
-                        <Badge variant="outline">{currentMcq.topic}</Badge>
-                        <Badge variant={
-                          currentMcq.difficulty === 'easy' ? 'secondary' :
-                            currentMcq.difficulty === 'medium' ? 'default' : 'destructive'
-                        }>
-                          {currentMcq.difficulty} ({currentMcq.points} pts)
-                        </Badge>
+                        <CardTitle className="text-lg">
+                          Question {currentMcqIndex + 1} of {mcqQuestions.length}
+                        </CardTitle>
+                        <Badge variant="outline">{currentMcq.points} pts</Badge>
                       </div>
-                      <CardTitle className="text-lg mt-4">
-                        Question {currentMcqIndex + 1} of {mcqQuestions.length}
-                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-6">
                       <p className="text-base">{currentMcq.question}</p>
@@ -1148,17 +1142,11 @@ export default function AssessmentPage() {
                     <Card className="lg:max-h-[600px] overflow-auto">
                       <CardHeader>
                         <div className="flex items-center justify-between">
-                          <Badge variant={
-                            currentCoding.difficulty === 'easy' ? 'secondary' :
-                              currentCoding.difficulty === 'medium' ? 'default' : 'destructive'
-                          }>
-                            {currentCoding.difficulty}
-                          </Badge>
+                          <CardTitle>{currentCoding.title}</CardTitle>
                           <Badge variant="outline">
                             {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
                           </Badge>
                         </div>
-                        <CardTitle className="mt-4">{currentCoding.title}</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>

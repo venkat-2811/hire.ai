@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useAuth';
@@ -39,6 +39,8 @@ const safeRender = (val: any): string => {
 export default function CandidateDetailsPage() {
   const { candidateId } = useParams<{ candidateId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const jobId = searchParams.get('job_id') || undefined;
   const { loading: authLoading } = useRequireAuth();
   const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '');
 
@@ -63,13 +65,13 @@ export default function CandidateDetailsPage() {
     if (!candidateId) return;
     setLoadingDetails(true);
     Promise.all([
-      candidatesApi.getAssessmentDetails(candidateId).catch(() => null),
-      candidatesApi.getInterviewDetails(candidateId).catch(() => null),
+      candidatesApi.getAssessmentDetails(candidateId, jobId).catch(() => null),
+      candidatesApi.getInterviewDetails(candidateId, jobId).catch(() => null),
     ]).then(([assessment, interview]) => {
       setAssessmentDetails(assessment);
       setInterviewDetails(interview);
     }).finally(() => setLoadingDetails(false));
-  }, [candidateId]);
+  }, [candidateId, jobId]);
 
   if (authLoading || isLoading) {
     return (

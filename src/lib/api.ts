@@ -235,9 +235,9 @@ export const candidatesApi = {
 
   getParsedResume: (id: string) => request<ResumeData>(`/candidates/${id}/parsed-resume`),
 
-  getAssessmentDetails: (id: string) => request<AssessmentDetails | null>(`/candidates/${id}/assessment-details`),
+  getAssessmentDetails: (id: string, jobId?: string) => request<AssessmentDetails | null>(`/candidates/${id}/assessment-details${jobId ? `?job_id=${jobId}` : ''}`),
 
-  getInterviewDetails: (id: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details`),
+  getInterviewDetails: (id: string, jobId?: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details${jobId ? `?job_id=${jobId}` : ''}`),
 
   delete: (id: string) =>
     request<{ success: boolean; message: string }>(`/candidates/${id}`, { method: 'DELETE' }),
