@@ -58,27 +58,35 @@ interface MCQQuestion {
 }
 
 interface TestCase {
-  input: Record<string, unknown>;
-  expected: unknown;
+  id: string;
+  input: string;
+  expected_output: string;
 }
 
 interface TestResult {
+  test_case_id: string;
   passed: boolean;
-  input: Record<string, unknown>;
-  expected: unknown;
-  actual: unknown;
-  error?: string;
+  input: string;
+  expected_output: string;
+  actual_output: string | null;
+  status: string; // AC, WA, TLE, MLE, RE, CE, ERROR
+  time_used: string | null;
+  memory_used: string | null;
+  error?: string | null;
 }
 
 interface CodingChallenge {
   id: string;
+  slug: string;
   title: string;
   description: string;
-  starter_code: string;
+  constraints: string;
+  examples: Array<{ input: string; output: string; explanation?: string }>;
+  starter_code: Record<string, string>; // { python3: "...", javascript: "...", java: "...", cpp: "..." }
   test_cases: TestCase[];
-  difficulty: string;
-  time_limit_minutes: number;
   points: number;
+  time_limit_seconds: number;
+  supported_languages: string[];
 }
 
 interface AssessmentData {
@@ -107,12 +115,12 @@ export default function AssessmentPage() {
   const [currentCodingIndex, setCurrentCodingIndex] = useState(0);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
-  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number }>>({});
+  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
   const [runningCode, setRunningCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
-  const [codingLanguage, setCodingLanguage] = useState('python');
+  const [codingLanguages, setCodingLanguages] = useState<Record<string, string>>({});
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -453,13 +461,17 @@ export default function AssessmentPage() {
           setCurrentTab('coding');
         }
 
-        // Initialize solutions with starter code
+        // Initialize solutions with starter code and default language per challenge
         if (hasCoding) {
           const initialSolutions: Record<string, string> = {};
+          const initialLanguages: Record<string, string> = {};
           codingList.forEach((c: CodingChallenge) => {
-            initialSolutions[c.id] = c.starter_code;
+            const defaultLang = c.supported_languages?.includes('python3') ? 'python3' : (c.supported_languages?.[0] || 'python3');
+            initialLanguages[c.id] = defaultLang;
+            initialSolutions[c.id] = c.starter_code?.[defaultLang] || '';
           });
           setCodingSolutions(initialSolutions);
+          setCodingLanguages(initialLanguages);
         }
       } catch (e) {
         setError('Failed to load assessment. Please try again.');
@@ -497,7 +509,7 @@ export default function AssessmentPage() {
         body: JSON.stringify({
           challenge_id: challengeId,
           code,
-          language: 'python',
+          language: codingLanguages[challengeId] || 'python3',
         }),
       });
 
@@ -546,8 +558,7 @@ export default function AssessmentPage() {
         body: JSON.stringify({
           challenge_id: challengeId,
           code,
-          language: 'python',
-          time_taken_seconds: 0,
+          language: codingLanguages[challengeId] || 'python3',
         }),
       });
 
@@ -556,14 +567,23 @@ export default function AssessmentPage() {
       setCodingResults((prev) => ({
         ...prev,
         [challengeId]: {
-          results: [],
-          passed: data.passed || 0,
-          total: data.total || 0,
+          results: data.test_results || [],
+          passed: data.passed_count || 0,
+          total: data.total_tests || 0,
           score: data.score_percentage || 0,
+          hidden_passed: data.hidden_tests_passed,
+          hidden_total: data.hidden_tests_total,
+          performance: data.performance,
         },
       }));
 
-      toast.success(`Solution submitted! Score: ${data.score_percentage?.toFixed(1)}%`);
+      const totalPassed = (data.passed_count || 0);
+      const totalTests = (data.total_tests || 0);
+      if (totalPassed === totalTests && totalTests > 0) {
+        toast.success(`All ${totalTests} test cases passed! Score: ${data.score_percentage?.toFixed(1)}%`);
+      } else {
+        toast.info(`${totalPassed}/${totalTests} passed (${data.hidden_tests_passed || 0}/${data.hidden_tests_total || 0} hidden). Score: ${data.score_percentage?.toFixed(1)}%`);
+      }
     } catch (e) {
       toast.error('Failed to submit solution');
     }
@@ -897,7 +917,11 @@ export default function AssessmentPage() {
   const currentMcq = mcqQuestions[currentMcqIndex];
   const currentCoding = codingChallenges[currentCodingIndex];
   const mcqProgress = mcqQuestions.length === 0 ? 0 : (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
-  const codingProgress = codingChallenges.length === 0 ? 0 : (Object.keys(codingSolutions).filter(k => codingSolutions[k] !== codingChallenges.find(c => c.id === k)?.starter_code).length / codingChallenges.length) * 100;
+  const codingProgress = codingChallenges.length === 0 ? 0 : (Object.keys(codingSolutions).filter(k => {
+    const challenge = codingChallenges.find(c => c.id === k);
+    const lang = codingLanguages[k] || 'python3';
+    return challenge && codingSolutions[k] !== (challenge.starter_code?.[lang] || '');
+  }).length / codingChallenges.length) * 100;
   const hasMcq = mcqQuestions.length > 0;
   const activeTab = hasMcq ? (hasCoding ? currentTab : 'mcq') : 'coding';
 
@@ -1139,33 +1163,55 @@ export default function AssessmentPage() {
                 {currentCoding && (
                   <div className="grid lg:grid-cols-2 gap-6">
                     {/* Problem Description */}
-                    <Card className="lg:max-h-[600px] overflow-auto">
+                    <Card className="lg:max-h-[700px] overflow-auto">
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle>{currentCoding.title}</CardTitle>
                           <Badge variant="outline">
-                            {currentCoding.time_limit_minutes} min | {currentCoding.points} pts
+                            {currentCoding.points} pts
                           </Badge>
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
 
-                        {/* Test Cases Preview */}
+                        {/* Constraints */}
+                        {currentCoding.constraints && (
+                          <div>
+                            <h4 className="font-semibold text-sm mb-1">Constraints:</h4>
+                            <p className="text-xs text-muted-foreground whitespace-pre-wrap font-mono bg-muted/30 rounded p-2">{currentCoding.constraints}</p>
+                          </div>
+                        )}
+
+                        {/* Examples */}
+                        {currentCoding.examples && currentCoding.examples.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="font-semibold text-sm">Examples:</h4>
+                            {currentCoding.examples.map((ex, idx) => (
+                              <div key={idx} className="bg-muted/50 rounded p-3 text-xs font-mono space-y-1">
+                                <div><span className="text-muted-foreground font-semibold">Input:</span> {ex.input}</div>
+                                <div><span className="text-muted-foreground font-semibold">Output:</span> {ex.output}</div>
+                                {ex.explanation && (
+                                  <div className="text-muted-foreground mt-1 font-sans text-xs"><span className="font-semibold">Explanation:</span> {ex.explanation}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Public Test Cases */}
                         {currentCoding.test_cases && currentCoding.test_cases.length > 0 && (
                           <div className="space-y-2">
-                            <h4 className="font-semibold text-sm">Example Test Cases:</h4>
+                            <h4 className="font-semibold text-sm">Sample Test Cases:</h4>
                             <div className="space-y-2">
-                              {currentCoding.test_cases.slice(0, 2).map((tc, idx) => (
-                                <div key={idx} className="bg-muted/50 rounded p-2 text-xs font-mono">
-                                  <div><span className="text-muted-foreground">Input:</span> {JSON.stringify(tc.input)}</div>
-                                  <div><span className="text-muted-foreground">Expected:</span> {JSON.stringify(tc.expected)}</div>
+                              {currentCoding.test_cases.map((tc, idx) => (
+                                <div key={tc.id || idx} className="bg-muted/50 rounded p-2 text-xs font-mono">
+                                  <div><span className="text-muted-foreground">Input:</span> {tc.input}</div>
+                                  <div><span className="text-muted-foreground">Expected:</span> {tc.expected_output}</div>
                                 </div>
                               ))}
-                              {currentCoding.test_cases.length > 2 && (
-                                <p className="text-xs text-muted-foreground">+ {currentCoding.test_cases.length - 2} more hidden test cases</p>
-                              )}
                             </div>
+                            <p className="text-xs text-muted-foreground italic">Additional hidden test cases will be evaluated on submission.</p>
                           </div>
                         )}
                       </CardContent>
@@ -1176,7 +1222,7 @@ export default function AssessmentPage() {
                       <Card>
                         <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
-                            <CardTitle className="text-sm">Your Solution (Python)</CardTitle>
+                            <CardTitle className="text-sm">Your Solution</CardTitle>
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
@@ -1204,22 +1250,35 @@ export default function AssessmentPage() {
                         <CardContent>
                           <div className="flex items-center gap-2 mb-2">
                             <Label className="text-xs text-muted-foreground">Language:</Label>
-                            <Select value={codingLanguage} onValueChange={setCodingLanguage}>
-                              <SelectTrigger className="w-[140px] h-8 text-xs">
+                            <Select
+                              value={codingLanguages[currentCoding.id] || 'python3'}
+                              onValueChange={(lang) => {
+                                setCodingLanguages(prev => ({ ...prev, [currentCoding.id]: lang }));
+                                // Switch to the new language's starter code if user hasn't modified
+                                const currentCode = codingSolutions[currentCoding.id] || '';
+                                const oldLang = codingLanguages[currentCoding.id] || 'python3';
+                                const oldStarter = currentCoding.starter_code?.[oldLang] || '';
+                                if (!currentCode || currentCode === oldStarter) {
+                                  setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: currentCoding.starter_code?.[lang] || '' }));
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-[150px] h-8 text-xs">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="python">Python</SelectItem>
-                                <SelectItem value="javascript">JavaScript</SelectItem>
-                                <SelectItem value="java">Java</SelectItem>
-                                <SelectItem value="cpp">C++</SelectItem>
+                                {(currentCoding.supported_languages || []).map((lang) => (
+                                  <SelectItem key={lang} value={lang}>
+                                    {{ python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++', typescript: 'TypeScript', csharp: 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby' }[lang] || lang}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           </div>
                           <div className="border rounded-md overflow-hidden" style={{ height: 350 }}>
                             <Editor
                               height="100%"
-                              language={codingLanguage}
+                              language={{ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby' }[codingLanguages[currentCoding.id] || 'python3'] || 'python'}
                               theme="vs-dark"
                               value={codingSolutions[currentCoding.id] || ''}
                               onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
@@ -1244,42 +1303,72 @@ export default function AssessmentPage() {
                           <CardHeader className="pb-2">
                             <div className="flex items-center justify-between">
                               <CardTitle className="text-sm">Test Results</CardTitle>
-                              <Badge variant={codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total ? 'default' : 'destructive'}>
-                                {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} Passed
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                {codingResults[currentCoding.id].performance?.avg_time_ms && (
+                                  <Badge variant="outline" className="text-xs">
+                                    <Clock className="mr-1 h-3 w-3" />
+                                    {codingResults[currentCoding.id].performance?.avg_time_ms}ms avg
+                                  </Badge>
+                                )}
+                                <Badge variant={codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total ? 'default' : 'destructive'}>
+                                  {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} Passed
+                                </Badge>
+                              </div>
                             </div>
                           </CardHeader>
                           <CardContent>
-                            <div className="space-y-2 max-h-[200px] overflow-auto">
+                            <div className="space-y-2 max-h-[250px] overflow-auto">
                               {codingResults[currentCoding.id].results.map((result, idx) => (
                                 <div
-                                  key={idx}
+                                  key={result.test_case_id || idx}
                                   className={`p-2 rounded text-xs font-mono ${result.passed ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}
                                 >
-                                  <div className="flex items-center gap-2 mb-1">
-                                    {result.passed ? (
-                                      <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                    ) : (
-                                      <XCircleIcon className="h-3 w-3 text-red-500" />
-                                    )}
-                                    <span className="font-semibold">Test Case {idx + 1}</span>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-2">
+                                      {result.passed ? (
+                                        <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                      ) : (
+                                        <XCircleIcon className="h-3 w-3 text-red-500" />
+                                      )}
+                                      <span className="font-semibold">Test {idx + 1}</span>
+                                      <Badge variant="outline" className="text-[10px] px-1 py-0">
+                                        {result.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                      {result.time_used && <span>{(parseFloat(result.time_used) * 1000).toFixed(0)}ms</span>}
+                                      {result.memory_used && <span>{result.memory_used}KB</span>}
+                                    </div>
                                   </div>
                                   <div className="text-muted-foreground">
-                                    <div>Input: {JSON.stringify(result.input)}</div>
-                                    <div>Expected: {JSON.stringify(result.expected)}</div>
+                                    <div>Input: {result.input}</div>
+                                    <div>Expected: {result.expected_output}</div>
                                     {!result.passed && (
                                       <div className="text-red-400">
-                                        {result.error ? `Error: ${result.error}` : `Got: ${JSON.stringify(result.actual)}`}
+                                        {result.error ? `${result.error}` : `Got: ${result.actual_output}`}
                                       </div>
                                     )}
                                   </div>
                                 </div>
                               ))}
                             </div>
-                            <div className="mt-2 pt-2 border-t">
+
+                            {/* Hidden test summary */}
+                            {codingResults[currentCoding.id].hidden_total != null && codingResults[currentCoding.id].hidden_total! > 0 && (
+                              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
+                                Hidden tests: {codingResults[currentCoding.id].hidden_passed}/{codingResults[currentCoding.id].hidden_total} passed
+                              </div>
+                            )}
+
+                            <div className="mt-2 pt-2 border-t flex items-center justify-between">
                               <p className="text-sm font-medium">
                                 Score: {codingResults[currentCoding.id].score.toFixed(1)}%
                               </p>
+                              {codingResults[currentCoding.id].performance?.max_memory_kb && (
+                                <p className="text-xs text-muted-foreground">
+                                  Peak: {codingResults[currentCoding.id].performance?.max_time_ms}ms / {codingResults[currentCoding.id].performance?.max_memory_kb}KB
+                                </p>
+                              )}
                             </div>
                           </CardContent>
                         </Card>

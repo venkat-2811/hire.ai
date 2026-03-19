@@ -560,6 +560,96 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     return methodNotAllowed(res);
   }
 
+  // /api/dsa-problems - DSA Problem Bank Management
+  if (segments[0] === 'dsa-problems') {
+    if (segments.length === 1) {
+      if (req.method === 'GET') {
+        const user = await requireAuth(req, res);
+        if (!user) return;
+
+        const { difficulty, category, is_active } = req.query;
+        let q = supabase.from('dsa_problems').select('id, slug, title, difficulty, category, tags, points, is_active, created_at');
+        if (difficulty) q = q.eq('difficulty', difficulty);
+        if (category) q = q.ilike('category', `%${category}%`);
+        if (is_active !== 'false') q = q.eq('is_active', true);
+        const { data, error } = await q.order('difficulty').order('category');
+        if (error) return res.status(500).json({ error: error.message });
+        return ok(res, data);
+      }
+
+      if (req.method === 'POST') {
+        const user = await requireAuth(req, res);
+        if (!user) return;
+
+        const body = req.body;
+        if (!body.slug || !body.title || !body.difficulty || !body.category || !body.description) {
+          return badRequest(res, 'slug, title, difficulty, category, and description are required');
+        }
+
+        const { data, error } = await supabase.from('dsa_problems').insert({
+          slug: body.slug,
+          title: body.title,
+          difficulty: body.difficulty,
+          category: body.category,
+          tags: body.tags || [],
+          description: body.description,
+          constraints: body.constraints || '',
+          examples: body.examples || [],
+          starter_code: body.starter_code || {},
+          solution_wrappers: body.solution_wrappers || {},
+          test_cases: body.test_cases || [],
+          points: body.points || 100,
+          time_limit_seconds: body.time_limit_seconds || 5,
+          memory_limit_kb: body.memory_limit_kb || 262144,
+        }).select().single();
+
+        if (error) return res.status(500).json({ error: error.message });
+        return ok(res, data, 201);
+      }
+
+      return methodNotAllowed(res);
+    }
+
+    if (segments.length === 2) {
+      const problemId = segments[1];
+
+      if (req.method === 'GET') {
+        const user = await requireAuth(req, res);
+        if (!user) return;
+
+        const { data, error } = await supabase.from('dsa_problems').select('*').eq('id', problemId).single();
+        if (error || !data) return notFound(res, 'Problem not found');
+        return ok(res, data);
+      }
+
+      if (req.method === 'PATCH') {
+        const user = await requireAuth(req, res);
+        if (!user) return;
+
+        const { data, error } = await supabase.from('dsa_problems')
+          .update({ ...req.body, updated_at: new Date().toISOString() })
+          .eq('id', problemId)
+          .select().single();
+        if (error) return res.status(500).json({ error: error.message });
+        if (!data) return notFound(res, 'Problem not found');
+        return ok(res, data);
+      }
+
+      if (req.method === 'DELETE') {
+        const user = await requireAuth(req, res);
+        if (!user) return;
+
+        const { error } = await supabase.from('dsa_problems').update({ is_active: false }).eq('id', problemId);
+        if (error) return res.status(500).json({ error: error.message });
+        return ok(res, { success: true, message: 'Problem archived' });
+      }
+
+      return methodNotAllowed(res);
+    }
+
+    return notFound(res);
+  }
+
   // /api/jobs and /api/jobs/:id
   if (segments[0] === 'jobs') {
     if (segments.length === 1) {
@@ -1693,11 +1783,12 @@ Only return JSON.`;
     }
 
     // GET /api/assessments/:sessionId/coding
+    // Serves DSA problems from the problem bank (not AI-generated)
     if (req.method === 'GET' && segments.length === 3 && segments[2] === 'coding') {
       const sessionId = segments[1];
       const { data: session, error } = await supabase
         .from('assessment_sessions')
-        .select('id, status, job_id, coding_challenges, coding_challenge_count, proctoring_data')
+        .select('id, status, coding_challenges, coding_challenge_count, coding_problem_ids, proctoring_data')
         .eq('id', sessionId)
         .single();
 
@@ -1709,56 +1800,74 @@ Only return JSON.`;
         return ok(res, []);
       }
 
+      // Return cached challenges if already assigned
       const storedChallenges = session.coding_challenges || [];
       if (storedChallenges.length) return ok(res, storedChallenges);
 
-      const { data: job } = await supabase.from('job_descriptions').select('*').eq('id', session.job_id).single();
-      if (!job) return notFound(res, 'Job not found');
-
+      // Select problems from DSA bank based on difficulty
       const count = session.coding_challenge_count || 2;
       const difficulty = assessmentConfig.difficulty || 'medium';
-      const mapped = mapAssessmentDifficulty(difficulty);
-      const prompt = `Generate exactly ${count} coding challenges for a ${job.level} ${job.role} role.
-Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
-Selected difficulty (user): ${difficulty}.
-Effective difficulty (system): ${mapped.label}.
-${mapped.guidance}
 
-Return JSON: {"challenges": [{"id":"c1","title":"...","description":"...","starter_code":"...","test_cases":[{"input":{},"expected":{}}],"difficulty":"${mapped.label}","time_limit_minutes":30,"points":50}]}.
-Only return JSON.`;
-
-      let generated: any;
-      try {
-        generated = await generateJSON<any>(prompt);
-        console.log('Coding challenge generation result keys:', Object.keys(generated || {}));
-      } catch (genErr: any) {
-        console.error('Coding challenge generation failed:', genErr.message);
-        return res.status(500).json({ error: 'AI failed to generate coding challenges. Please try again.' });
+      // Difficulty mapping: easy → 1 easy + 1 easy, medium → 1 easy + 1 medium, hard → 1 medium + 1 hard
+      let difficultyDistribution: string[];
+      if (difficulty === 'easy') {
+        difficultyDistribution = Array(count).fill('easy');
+      } else if (difficulty === 'hard') {
+        difficultyDistribution = count >= 2
+          ? ['medium', ...Array(count - 1).fill('hard')]
+          : ['hard'];
+      } else {
+        // medium (default)
+        difficultyDistribution = count >= 2
+          ? ['easy', ...Array(count - 1).fill('medium')]
+          : ['medium'];
       }
 
-      const challengesRaw = Array.isArray(generated)
-        ? generated
-        : Array.isArray(generated?.challenges)
-          ? generated.challenges
-          : [];
-      const challenges = challengesRaw
-        .map((c: any, idx: number) => ({
-          id: String(c?.id || `c${idx + 1}`),
-          title: String(c?.title || ''),
-          description: String(c?.description || ''),
-          starter_code: String(c?.starter_code || 'def solution():\n    pass'),
-          test_cases: Array.isArray(c?.test_cases) ? c.test_cases : [],
-          difficulty: String(c?.difficulty || mapped.label),
-          time_limit_minutes: typeof c?.time_limit_minutes === 'number' ? c.time_limit_minutes : 30,
-          points: typeof c?.points === 'number' ? c.points : 50,
-        }))
-        .filter((c: any) => c.title && c.description);
+      // Fetch candidate problems per difficulty level
+      const selectedProblems: any[] = [];
+      for (const diff of difficultyDistribution) {
+        const { data: problems } = await supabase
+          .from('dsa_problems')
+          .select('*')
+          .eq('difficulty', diff)
+          .eq('is_active', true)
+          .limit(20);
 
-      if (!challenges.length) {
-        return res.status(500).json({ error: 'AI returned no valid coding challenges. Please try again.' });
+        if (problems && problems.length > 0) {
+          // Exclude already selected problems
+          const available = problems.filter((p: any) => !selectedProblems.some(s => s.id === p.id));
+          if (available.length > 0) {
+            const pick = available[Math.floor(Math.random() * available.length)];
+            selectedProblems.push(pick);
+          }
+        }
       }
 
+      if (!selectedProblems.length) {
+        return res.status(500).json({ error: 'No DSA problems available in the problem bank. Please contact the administrator.' });
+      }
+
+      // Build candidate-facing challenge objects (hide private/edge test cases, hide solution wrappers)
+      const challenges = selectedProblems.map((p: any) => {
+        const publicTests = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
+        return {
+          id: p.id,
+          slug: p.slug,
+          title: p.title,
+          description: p.description,
+          constraints: p.constraints || '',
+          examples: p.examples || [],
+          starter_code: p.starter_code || {},
+          test_cases: publicTests.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
+          points: p.points,
+          time_limit_seconds: p.time_limit_seconds,
+          supported_languages: Object.keys(p.starter_code || {}),
+        };
+      });
+
+      // Store problem IDs and candidate-facing challenges in session
       await supabase.from('assessment_sessions').update({
+        coding_problem_ids: selectedProblems.map((p: any) => p.id),
         coding_challenges: challenges,
         updated_at: new Date().toISOString(),
       }).eq('id', sessionId);
@@ -1837,185 +1946,130 @@ Only return JSON.`;
       });
     }
 
-    // POST /api/assessments/:sessionId/coding/run (run code without submitting - LeetCode style)
+    // POST /api/assessments/:sessionId/coding/run (run against public test cases only - LeetCode style)
     if (req.method === 'POST' && segments.length === 4 && segments[2] === 'coding' && segments[3] === 'run') {
       const sessionId = segments[1];
-      const { challenge_id, code, language = 'python' } = req.body;
+      const { challenge_id, code, language = 'python3' } = req.body;
 
       const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
       if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
-      const challenges: any[] = session.coding_challenges || [];
-      const challenge = challenges.find((c: any) => c.id === challenge_id);
-      if (!challenge) return badRequest(res, 'Challenge not found');
+      // Fetch the full problem from DSA bank (with all test cases + solution wrappers)
+      const { data: problem } = await supabase.from('dsa_problems').select('*').eq('id', challenge_id).single();
+      if (!problem) return badRequest(res, 'Problem not found');
 
-      const testCases = challenge.test_cases || [];
-      if (!testCases.length) {
-        return ok(res, { success: false, error: 'No test cases available', results: [], passed: 0, total: 0, score_percentage: 0 });
+      const allTestCases: any[] = problem.test_cases || [];
+      // Run mode: only execute against public test cases
+      const publicTests = allTestCases.filter((tc: any) => tc.visibility === 'public');
+      if (!publicTests.length) {
+        return ok(res, { success: false, error: 'No public test cases available', results: [], passed: 0, total: 0, score_percentage: 0 });
       }
 
-      const results: any[] = [];
-      let passedCount = 0;
-      let compilationError: string | null = null;
-
-      for (const tc of testCases) {
-        try {
-          const inputArgs = typeof tc.input === 'object'
-            ? Object.values(tc.input).map((v: any) => JSON.stringify(v)).join(', ')
-            : String(tc.input);
-
-          const wrappedCode = `${code}\n\nimport json, sys\ntry:\n    _result = solution(${inputArgs})\n    print(json.dumps(_result))\nexcept Exception as e:\n    print(json.dumps({"__error__": str(e)}))\n    sys.exit(1)`;
-
-          const pistonResp = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              language: 'python',
-              version: '3.10',
-              files: [{ content: wrappedCode }],
-              stdin: '',
-              args: [],
-              compile_timeout: 10000,
-              run_timeout: 5000,
-            }),
-          });
-
-          const pistonResult = await pistonResp.json();
-          const stdout = (pistonResult.run?.stdout || '').trim();
-          const stderr = pistonResult.run?.stderr || '';
-          const exitCode = pistonResult.run?.code || 0;
-
-          if (stderr && !stdout && exitCode !== 0) {
-            compilationError = compilationError || stderr.slice(0, 2000);
-          }
-
-          let actual: any = stdout;
-          try { actual = JSON.parse(stdout); } catch { /* keep as string */ }
-
-          if (actual && typeof actual === 'object' && actual.__error__) {
-            results.push({ input: tc.input, expected: tc.expected, actual: null, passed: false, error: actual.__error__ });
-            continue;
-          }
-
-          const expected = tc.expected;
-          const passed = JSON.stringify(actual) === JSON.stringify(expected);
-          if (passed) passedCount++;
-
-          results.push({ input: tc.input, expected, actual, passed, error: stderr || null });
-        } catch (execErr: any) {
-          results.push({ input: tc.input, expected: tc.expected, actual: null, passed: false, error: execErr.message });
-        }
+      const langKey = mapLanguageKey(language);
+      const wrapperTemplate = (problem.solution_wrappers || {})[langKey];
+      if (!wrapperTemplate) {
+        return badRequest(res, `Language '${language}' is not supported for this problem. Supported: ${Object.keys(problem.starter_code || {}).join(', ')}`);
       }
 
-      const totalTests = testCases.length;
-      const scorePercentage = totalTests > 0 ? (passedCount / totalTests) * 100 : 0;
+      const results = await executeTestCasesViaHackerEarth(code, wrapperTemplate, langKey, publicTests, problem.time_limit_seconds, problem.memory_limit_kb);
+
+      const passedCount = results.filter((r: any) => r.passed).length;
+      const compilationError = results.find((r: any) => r.status === 'CE')?.error || null;
 
       return ok(res, {
         success: !compilationError,
         compilation_error: compilationError,
-        results,
+        results: results.map((r: any) => ({
+          test_case_id: r.test_case_id,
+          input: r.input,
+          expected_output: r.expected_output,
+          actual_output: r.actual_output,
+          passed: r.passed,
+          status: r.status,
+          time_used: r.time_used,
+          memory_used: r.memory_used,
+          error: r.error,
+        })),
         passed: passedCount,
-        total: totalTests,
-        score_percentage: scorePercentage,
+        total: publicTests.length,
+        score_percentage: publicTests.length > 0 ? (passedCount / publicTests.length) * 100 : 0,
       });
     }
 
-    // POST /api/assessments/:sessionId/coding/submit
+    // POST /api/assessments/:sessionId/coding/submit (run against ALL test cases and store results)
     if (req.method === 'POST' && segments.length === 4 && segments[2] === 'coding' && segments[3] === 'submit') {
       const sessionId = segments[1];
-      const submission = req.body;
-      const { challenge_id, code, language = 'python' } = submission;
+      const { challenge_id, code, language = 'python3' } = req.body;
 
       const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
       if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
-      // Find the challenge to get test cases
-      const challenges: any[] = session.coding_challenges || [];
-      const challenge = challenges.find((c: any) => c.id === challenge_id);
-      if (!challenge) return badRequest(res, 'Challenge not found');
+      // Fetch the full problem from DSA bank
+      const { data: problem } = await supabase.from('dsa_problems').select('*').eq('id', challenge_id).single();
+      if (!problem) return badRequest(res, 'Problem not found');
 
-      const testCases = challenge.test_cases || [];
-      const results: any[] = [];
-      let passedCount = 0;
-
-      // Execute code against each test case using Piston API
-      for (const tc of testCases) {
-        try {
-          const inputArgs = typeof tc.input === 'object'
-            ? Object.values(tc.input).map((v: any) => JSON.stringify(v)).join(', ')
-            : String(tc.input);
-
-          const wrappedCode = `${code}\n\nimport json, sys\ntry:\n    _result = solution(${inputArgs})\n    print(json.dumps(_result))\nexcept Exception as e:\n    print(json.dumps({"__error__": str(e)}))\n    sys.exit(1)`;
-
-          const pistonResp = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              language: 'python',
-              version: '3.10',
-              files: [{ content: wrappedCode }],
-              stdin: '',
-              args: [],
-              compile_timeout: 10000,
-              run_timeout: 5000,
-            }),
-          });
-
-          const pistonResult = await pistonResp.json();
-          const stdout = (pistonResult.run?.stdout || '').trim();
-          const stderr = pistonResult.run?.stderr || '';
-          const exitCode = pistonResult.run?.code || 0;
-
-          let actual: any = stdout;
-          try { actual = JSON.parse(stdout); } catch { /* keep as string */ }
-
-          if (actual && typeof actual === 'object' && actual.__error__) {
-            results.push({ input: tc.input, expected: tc.expected, actual: null, passed: false, error: actual.__error__ });
-            continue;
-          }
-
-          const expected = tc.expected;
-          const passed = JSON.stringify(actual) === JSON.stringify(expected);
-          if (passed) passedCount++;
-
-          results.push({
-            input: tc.input,
-            expected,
-            actual,
-            passed,
-            error: stderr || null,
-          });
-        } catch (execErr: any) {
-          results.push({
-            input: tc.input,
-            expected: tc.expected,
-            actual: null,
-            passed: false,
-            error: execErr.message,
-          });
-        }
+      const allTestCases: any[] = problem.test_cases || [];
+      const langKey = mapLanguageKey(language);
+      const wrapperTemplate = (problem.solution_wrappers || {})[langKey];
+      if (!wrapperTemplate) {
+        return badRequest(res, `Language '${language}' is not supported for this problem.`);
       }
 
-      const totalTests = testCases.length || 1;
-      const scorePercentage = (passedCount / totalTests) * 100;
-      const pointsEarned = Math.round((passedCount / totalTests) * (challenge.points || 50));
+      // Submit mode: execute against ALL test cases (public + private + edge)
+      const results = await executeTestCasesViaHackerEarth(code, wrapperTemplate, langKey, allTestCases, problem.time_limit_seconds, problem.memory_limit_kb);
 
-      // Store submission with results
+      const passedCount = results.filter((r: any) => r.passed).length;
+      const totalTests = allTestCases.length || 1;
+      const scorePercentage = (passedCount / totalTests) * 100;
+      const pointsEarned = Math.round((passedCount / totalTests) * (problem.points || 100));
+
+      // Separate results by visibility for reporting
+      const publicResults = results.filter((r: any) => r.visibility === 'public');
+      const privateResults = results.filter((r: any) => r.visibility === 'private');
+      const edgeResults = results.filter((r: any) => r.visibility === 'edge');
+
+      // Calculate time/memory performance stats
+      const executionTimes = results.filter((r: any) => r.time_used).map((r: any) => parseFloat(r.time_used));
+      const memoryUsages = results.filter((r: any) => r.memory_used).map((r: any) => parseInt(r.memory_used));
+
       const submissionRecord = {
         challenge_id,
+        problem_slug: problem.slug,
         code,
-        language,
-        test_results: results,
+        language: langKey,
+        test_results: results.map((r: any) => ({
+          test_case_id: r.test_case_id,
+          visibility: r.visibility,
+          passed: r.passed,
+          status: r.status,
+          time_used: r.time_used,
+          memory_used: r.memory_used,
+          // Only include input/output for public tests in stored results
+          ...(r.visibility === 'public' ? { input: r.input, expected_output: r.expected_output, actual_output: r.actual_output } : {}),
+        })),
+        summary: {
+          public_passed: publicResults.filter((r: any) => r.passed).length,
+          public_total: publicResults.length,
+          private_passed: privateResults.filter((r: any) => r.passed).length,
+          private_total: privateResults.length,
+          edge_passed: edgeResults.filter((r: any) => r.passed).length,
+          edge_total: edgeResults.length,
+        },
+        performance: {
+          avg_time_ms: executionTimes.length > 0 ? (executionTimes.reduce((a: number, b: number) => a + b, 0) / executionTimes.length * 1000).toFixed(2) : null,
+          max_time_ms: executionTimes.length > 0 ? (Math.max(...executionTimes) * 1000).toFixed(2) : null,
+          avg_memory_kb: memoryUsages.length > 0 ? Math.round(memoryUsages.reduce((a: number, b: number) => a + b, 0) / memoryUsages.length) : null,
+          max_memory_kb: memoryUsages.length > 0 ? Math.max(...memoryUsages) : null,
+        },
         passed_count: passedCount,
         total_tests: totalTests,
         score_percentage: scorePercentage,
         points_earned: pointsEarned,
-        max_points: challenge.points || 50,
+        max_points: problem.points || 100,
         submitted_at: new Date().toISOString(),
       };
 
       const existing = session.coding_submissions || [];
-      // Replace if same challenge already submitted
       const existingIdx = existing.findIndex((s: any) => s.challenge_id === challenge_id);
       if (existingIdx >= 0) {
         existing[existingIdx] = submissionRecord;
@@ -2023,11 +2077,11 @@ Only return JSON.`;
         existing.push(submissionRecord);
       }
 
-      // Calculate total coding score
+      // Calculate total coding score across all challenges
       let totalCodingPoints = 0;
       let earnedCodingPoints = 0;
       for (const sub of existing) {
-        totalCodingPoints += sub.max_points || 50;
+        totalCodingPoints += sub.max_points || 100;
         earnedCodingPoints += sub.points_earned || 0;
       }
       const codingScore = totalCodingPoints > 0 ? (earnedCodingPoints / totalCodingPoints) * 100 : 0;
@@ -2044,7 +2098,21 @@ Only return JSON.`;
         total_tests: totalTests,
         score_percentage: scorePercentage,
         points_earned: pointsEarned,
-        test_results: results,
+        summary: submissionRecord.summary,
+        performance: submissionRecord.performance,
+        // Only send public test results to candidate
+        test_results: publicResults.map((r: any) => ({
+          test_case_id: r.test_case_id,
+          input: r.input,
+          expected_output: r.expected_output,
+          actual_output: r.actual_output,
+          passed: r.passed,
+          status: r.status,
+          time_used: r.time_used,
+          memory_used: r.memory_used,
+        })),
+        hidden_tests_passed: (submissionRecord.summary.private_passed + submissionRecord.summary.edge_passed),
+        hidden_tests_total: (submissionRecord.summary.private_total + submissionRecord.summary.edge_total),
       });
     }
 
@@ -2855,6 +2923,289 @@ async function generateInterviewQuestions(job: { title: string; role: string; le
     ];
   }
 }
+
+// ============== HackerEarth Code Execution Engine ==============
+
+const HACKEREARTH_LANG_MAP: Record<string, string> = {
+  python3: 'PYTHON3',
+  javascript: 'JAVASCRIPT_NODE',
+  java: 'JAVA14',
+  cpp: 'CPP17',
+  c: 'C',
+  csharp: 'CSHARP',
+  go: 'GO',
+  ruby: 'RUBY',
+  rust: 'RUST',
+  typescript: 'TYPESCRIPT',
+  kotlin: 'KOTLIN',
+  swift: 'SWIFT',
+};
+
+function mapLanguageKey(lang: string): string {
+  const normalized = lang.toLowerCase().replace(/[^a-z0-9+#]/g, '');
+  if (normalized.includes('python') || normalized === 'py') return 'python3';
+  if (normalized.includes('javascript') || normalized === 'js' || normalized === 'node') return 'javascript';
+  if (normalized.includes('java') && !normalized.includes('script')) return 'java';
+  if (normalized.includes('cpp') || normalized.includes('c++') || normalized === 'c17' || normalized === 'cpp17') return 'cpp';
+  if (normalized.includes('typescript') || normalized === 'ts') return 'typescript';
+  if (normalized.includes('csharp') || normalized === 'c#' || normalized === 'cs') return 'csharp';
+  if (normalized === 'go' || normalized === 'golang') return 'go';
+  if (normalized === 'ruby' || normalized === 'rb') return 'ruby';
+  if (normalized === 'rust' || normalized === 'rs') return 'rust';
+  if (normalized === 'kotlin' || normalized === 'kt') return 'kotlin';
+  if (normalized === 'swift') return 'swift';
+  return normalized || 'python3';
+}
+
+async function executeTestCasesViaHackerEarth(
+  userCode: string,
+  wrapperTemplate: string,
+  langKey: string,
+  testCases: Array<{ id: string; input: string; expected_output: string; visibility?: string; time_limit_ms?: number; memory_limit_kb?: number }>,
+  defaultTimeLimitSec: number,
+  defaultMemoryLimitKb: number,
+): Promise<Array<{
+  test_case_id: string;
+  input: string;
+  expected_output: string;
+  actual_output: string | null;
+  passed: boolean;
+  status: string;
+  time_used: string | null;
+  memory_used: string | null;
+  visibility: string;
+  error: string | null;
+}>> {
+  const hackerEarthSecret = process.env.HACKEREARTH_CLIENT_SECRET;
+  const heLang = HACKEREARTH_LANG_MAP[langKey];
+
+  if (!hackerEarthSecret || !heLang) {
+    // Fallback to Piston API if HackerEarth not configured
+    return executeTestCasesViaPiston(userCode, wrapperTemplate, langKey, testCases, defaultTimeLimitSec);
+  }
+
+  // Combine user code with solution wrapper
+  const fullSource = `${userCode}\n\n${wrapperTemplate}`;
+
+  const results: Array<any> = [];
+
+  for (const tc of testCases) {
+    const timeLimitSec = tc.time_limit_ms ? Math.ceil(tc.time_limit_ms / 1000) : defaultTimeLimitSec;
+    const memLimitKb = tc.memory_limit_kb || defaultMemoryLimitKb;
+
+    try {
+      // Submit to HackerEarth
+      const submitResp = await fetch('https://api.hackerearth.com/v4/partner/code-evaluation/submissions/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'client-secret': hackerEarthSecret,
+        },
+        body: JSON.stringify({
+          lang: heLang,
+          source: fullSource,
+          input: tc.input,
+          time_limit: Math.min(timeLimitSec, 5),
+          memory_limit: Math.min(memLimitKb, 262144),
+          context: JSON.stringify({ tc_id: tc.id }),
+        }),
+      });
+
+      const submitData = await submitResp.json();
+
+      if (!submitData.he_id || !submitData.status_update_url) {
+        results.push({
+          test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+          actual_output: null, passed: false, status: 'REQUEST_FAILED',
+          time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+          error: submitData.errors?.message || submitData.request_status?.message || 'HackerEarth submission failed',
+        });
+        continue;
+      }
+
+      // Poll for result (max 30 seconds)
+      let result: any = null;
+      const pollUrl = submitData.status_update_url;
+      for (let attempt = 0; attempt < 15; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const statusResp = await fetch(pollUrl, {
+          headers: { 'client-secret': hackerEarthSecret },
+        });
+        const statusData = await statusResp.json();
+
+        if (statusData.request_status?.code === 'REQUEST_COMPLETED') {
+          result = statusData;
+          break;
+        }
+        if (statusData.request_status?.code === 'REQUEST_FAILED') {
+          result = statusData;
+          break;
+        }
+      }
+
+      if (!result) {
+        results.push({
+          test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+          actual_output: null, passed: false, status: 'TIMEOUT',
+          time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+          error: 'Execution timed out waiting for HackerEarth response',
+        });
+        continue;
+      }
+
+      const runStatus = result.result?.run_status || {};
+      const compileStatus = result.result?.compile_status || '';
+      const status = runStatus.status || 'NA';
+
+      // Fetch actual output from S3 URL if present
+      let actualOutput: string | null = null;
+      if (status === 'AC' && runStatus.output && typeof runStatus.output === 'string' && runStatus.output.startsWith('http')) {
+        try {
+          const outputResp = await fetch(runStatus.output);
+          actualOutput = (await outputResp.text()).trim();
+        } catch {
+          actualOutput = null;
+        }
+      }
+
+      // Handle compilation error
+      if (compileStatus && compileStatus !== 'OK') {
+        results.push({
+          test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+          actual_output: null, passed: false, status: 'CE',
+          time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+          error: `Compilation Error: ${compileStatus}`,
+        });
+        continue;
+      }
+
+      // Handle runtime errors
+      if (status !== 'AC') {
+        let errorMsg = '';
+        if (status === 'TLE') errorMsg = 'Time Limit Exceeded';
+        else if (status === 'MLE') errorMsg = 'Memory Limit Exceeded';
+        else if (status === 'RE') errorMsg = `Runtime Error: ${runStatus.status_detail || runStatus.stderr || ''}`;
+        else errorMsg = `Execution status: ${status}`;
+
+        results.push({
+          test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+          actual_output: actualOutput, passed: false, status,
+          time_used: runStatus.time_used || null, memory_used: runStatus.memory_used || null,
+          visibility: tc.visibility || 'public', error: errorMsg,
+        });
+        continue;
+      }
+
+      // Compare output
+      const expectedTrimmed = tc.expected_output.trim();
+      const actualTrimmed = (actualOutput || '').trim();
+      const passed = actualTrimmed === expectedTrimmed;
+
+      results.push({
+        test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+        actual_output: actualTrimmed, passed, status: passed ? 'AC' : 'WA',
+        time_used: runStatus.time_used || null, memory_used: runStatus.memory_used || null,
+        visibility: tc.visibility || 'public', error: passed ? null : 'Wrong Answer',
+      });
+
+    } catch (err: any) {
+      results.push({
+        test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+        actual_output: null, passed: false, status: 'ERROR',
+        time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+        error: err.message || 'Execution failed',
+      });
+    }
+  }
+
+  return results;
+}
+
+// Fallback: Piston API execution (when HackerEarth is not configured)
+async function executeTestCasesViaPiston(
+  userCode: string,
+  wrapperTemplate: string,
+  langKey: string,
+  testCases: Array<{ id: string; input: string; expected_output: string; visibility?: string }>,
+  defaultTimeLimitSec: number,
+): Promise<Array<any>> {
+  const pistonLangMap: Record<string, { language: string; version: string }> = {
+    python3: { language: 'python', version: '3.10' },
+    javascript: { language: 'javascript', version: '18.15' },
+    java: { language: 'java', version: '15.0' },
+    cpp: { language: 'c++', version: '10.2' },
+    typescript: { language: 'typescript', version: '5.0' },
+  };
+
+  const pistonLang = pistonLangMap[langKey] || pistonLangMap.python3;
+  const fullSource = `${userCode}\n\n${wrapperTemplate}`;
+  const results: Array<any> = [];
+
+  for (const tc of testCases) {
+    try {
+      const resp = await fetch('https://emkc.org/api/v2/piston/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          language: pistonLang.language,
+          version: pistonLang.version,
+          files: [{ content: fullSource }],
+          stdin: tc.input,
+          args: [],
+          compile_timeout: 10000,
+          run_timeout: defaultTimeLimitSec * 1000,
+        }),
+      });
+
+      const data = await resp.json();
+      const stdout = (data.run?.stdout || '').trim();
+      const stderr = data.run?.stderr || '';
+      const exitCode = data.run?.code || 0;
+
+      if (data.compile?.stderr) {
+        results.push({
+          test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+          actual_output: null, passed: false, status: 'CE',
+          time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+          error: `Compilation Error: ${data.compile.stderr.slice(0, 2000)}`,
+        });
+        continue;
+      }
+
+      if (exitCode !== 0 && !stdout) {
+        results.push({
+          test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+          actual_output: null, passed: false, status: 'RE',
+          time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+          error: `Runtime Error: ${stderr.slice(0, 2000)}`,
+        });
+        continue;
+      }
+
+      const expectedTrimmed = tc.expected_output.trim();
+      const passed = stdout === expectedTrimmed;
+
+      results.push({
+        test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+        actual_output: stdout, passed, status: passed ? 'AC' : 'WA',
+        time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+        error: passed ? null : (stderr || 'Wrong Answer'),
+      });
+    } catch (err: any) {
+      results.push({
+        test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
+        actual_output: null, passed: false, status: 'ERROR',
+        time_used: null, memory_used: null, visibility: tc.visibility || 'public',
+        error: err.message || 'Execution failed',
+      });
+    }
+  }
+
+  return results;
+}
+
+// ============== End HackerEarth Engine ==============
 
 async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }) {
   const skills = job.must_have_skills.join(', ') || 'General';

@@ -260,15 +260,34 @@ export interface MCQSubmission {
 
 export interface CodingSubmission {
   challenge_id: string;
+  problem_slug?: string;
   code: string;
   language: string;
   test_results: {
-    input: string;
-    expected: string;
-    actual: string;
+    test_case_id: string;
+    visibility: string;
     passed: boolean;
-    error: string | null;
+    status: string; // AC, WA, TLE, MLE, RE, CE, ERROR
+    time_used: string | null;
+    memory_used: string | null;
+    input?: string;
+    expected_output?: string;
+    actual_output?: string;
   }[];
+  summary?: {
+    public_passed: number;
+    public_total: number;
+    private_passed: number;
+    private_total: number;
+    edge_passed: number;
+    edge_total: number;
+  };
+  performance?: {
+    avg_time_ms: string | null;
+    max_time_ms: string | null;
+    avg_memory_kb: number | null;
+    max_memory_kb: number | null;
+  };
   passed_count: number;
   total_tests: number;
   score_percentage: number;
