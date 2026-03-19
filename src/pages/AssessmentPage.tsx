@@ -117,10 +117,12 @@ export default function AssessmentPage() {
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
   const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
   const [runningCode, setRunningCode] = useState<string | null>(null);
+  const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
   const [codingLanguages, setCodingLanguages] = useState<Record<string, string>>({});
+  const [problemTab, setProblemTab] = useState<'description' | 'submissions'>('description');
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -513,10 +515,25 @@ export default function AssessmentPage() {
         }),
       });
 
+      if (response.status === 429) {
+        toast.error('Rate limit exceeded. Please wait before running again.');
+        return;
+      }
+
       const data = await response.json();
 
       if (data.compilation_error) {
         toast.error(`Compilation Error: ${data.compilation_error}`);
+        setCodingResults((prev) => ({
+          ...prev,
+          [challengeId]: {
+            ...prev[challengeId],
+            results: data.results || [],
+            passed: 0,
+            total: data.total || 0,
+            score: 0,
+          },
+        }));
         return;
       }
 
@@ -536,20 +553,22 @@ export default function AssessmentPage() {
         toast.info(`${data.passed}/${data.total} test cases passed`);
       }
     } catch (e) {
-      toast.error('Failed to run code');
+      toast.error('Failed to run code. Please try again.');
     } finally {
       setRunningCode(null);
     }
   };
 
   const submitCodingSolution = async (challengeId: string) => {
-    if (!assessmentData) return;
+    if (!assessmentData || submittingCode) return;
 
     const code = codingSolutions[challengeId];
     if (!code) {
       toast.error('Please write some code first');
       return;
     }
+
+    setSubmittingCode(challengeId);
 
     try {
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
@@ -561,6 +580,11 @@ export default function AssessmentPage() {
           language: codingLanguages[challengeId] || 'python3',
         }),
       });
+
+      if (response.status === 429) {
+        toast.error('Rate limit exceeded. Maximum 5 submissions per minute.');
+        return;
+      }
 
       const data = await response.json();
 
@@ -585,7 +609,18 @@ export default function AssessmentPage() {
         toast.info(`${totalPassed}/${totalTests} passed (${data.hidden_tests_passed || 0}/${data.hidden_tests_total || 0} hidden). Score: ${data.score_percentage?.toFixed(1)}%`);
       }
     } catch (e) {
-      toast.error('Failed to submit solution');
+      toast.error('Failed to submit solution. Please try again.');
+    } finally {
+      setSubmittingCode(null);
+    }
+  };
+
+  const resetCode = (challengeId: string) => {
+    const lang = codingLanguages[challengeId] || 'python3';
+    const challenge = codingChallenges.find(c => c.id === challengeId);
+    if (challenge) {
+      setCodingSolutions(prev => ({ ...prev, [challengeId]: challenge.starter_code?.[lang] || '' }));
+      toast.info('Code reset to starter template');
     }
   };
 
@@ -1154,224 +1189,342 @@ export default function AssessmentPage() {
             </TabsContent>
           )}
 
-          {/* Coding Section */}
+          {/* Coding Section — LeetCode-style */}
           {hasCoding && (
             <TabsContent value="coding">
-              <div className="max-w-6xl mx-auto space-y-6">
-                <Progress value={codingProgress} className="h-2" />
+              <div className="max-w-7xl mx-auto space-y-4">
+                {/* Problem Navigator Chips */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {codingChallenges.map((c, idx) => {
+                    const result = codingResults[c.id];
+                    const isActive = currentCodingIndex === idx;
+                    const isAccepted = result && result.passed === result.total && result.total > 0;
+                    const hasResult = !!result;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setCurrentCodingIndex(idx)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                          isActive ? 'ring-2 ring-primary border-primary bg-primary/10' :
+                          isAccepted ? 'border-green-500/50 bg-green-500/10 text-green-600' :
+                          hasResult ? 'border-orange-500/50 bg-orange-500/10 text-orange-600' :
+                          'border-border bg-card hover:bg-muted/50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {isAccepted && <CheckCircle2 className="h-3 w-3" />}
+                          {hasResult && !isAccepted && <AlertCircle className="h-3 w-3" />}
+                          Q{idx + 1}: {c.title}
+                          <span className="text-[10px] opacity-70">({c.points}pts)</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <div className="ml-auto">
+                    <Progress value={codingProgress} className="h-1.5 w-32" />
+                  </div>
+                </div>
 
                 {currentCoding && (
-                  <div className="grid lg:grid-cols-2 gap-6">
-                    {/* Problem Description */}
-                    <Card className="lg:max-h-[700px] overflow-auto">
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <CardTitle>{currentCoding.title}</CardTitle>
-                          <Badge variant="outline">
-                            {currentCoding.points} pts
-                          </Badge>
+                  <div className="grid lg:grid-cols-2 gap-4" style={{ minHeight: '70vh' }}>
+                    {/* LEFT: Problem Description Panel */}
+                    <div className="flex flex-col border rounded-lg overflow-hidden bg-card">
+                      {/* Problem Header */}
+                      <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-sm">{currentCoding.title}</h3>
+                          <Badge variant="outline" className="text-[10px]">{currentCoding.points} pts</Badge>
                         </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <p className="whitespace-pre-wrap text-sm">{currentCoding.description}</p>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => setProblemTab('description')}
+                            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${problemTab === 'description' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            Description
+                          </button>
+                          <button
+                            onClick={() => setProblemTab('submissions')}
+                            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${problemTab === 'submissions' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            Results {codingResults[currentCoding.id] ? `(${codingResults[currentCoding.id].passed}/${codingResults[currentCoding.id].total})` : ''}
+                          </button>
+                        </div>
+                      </div>
 
-                        {/* Constraints */}
-                        {currentCoding.constraints && (
-                          <div>
-                            <h4 className="font-semibold text-sm mb-1">Constraints:</h4>
-                            <p className="text-xs text-muted-foreground whitespace-pre-wrap font-mono bg-muted/30 rounded p-2">{currentCoding.constraints}</p>
-                          </div>
-                        )}
-
-                        {/* Examples */}
-                        {currentCoding.examples && currentCoding.examples.length > 0 && (
-                          <div className="space-y-2">
-                            <h4 className="font-semibold text-sm">Examples:</h4>
-                            {currentCoding.examples.map((ex, idx) => (
-                              <div key={idx} className="bg-muted/50 rounded p-3 text-xs font-mono space-y-1">
-                                <div><span className="text-muted-foreground font-semibold">Input:</span> {ex.input}</div>
-                                <div><span className="text-muted-foreground font-semibold">Output:</span> {ex.output}</div>
-                                {ex.explanation && (
-                                  <div className="text-muted-foreground mt-1 font-sans text-xs"><span className="font-semibold">Explanation:</span> {ex.explanation}</div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Public Test Cases */}
-                        {currentCoding.test_cases && currentCoding.test_cases.length > 0 && (
-                          <div className="space-y-2">
-                            <h4 className="font-semibold text-sm">Sample Test Cases:</h4>
-                            <div className="space-y-2">
-                              {currentCoding.test_cases.map((tc, idx) => (
-                                <div key={tc.id || idx} className="bg-muted/50 rounded p-2 text-xs font-mono">
-                                  <div><span className="text-muted-foreground">Input:</span> {tc.input}</div>
-                                  <div><span className="text-muted-foreground">Expected:</span> {tc.expected_output}</div>
-                                </div>
-                              ))}
+                      {/* Problem Content */}
+                      <div className="flex-1 overflow-auto p-4 space-y-4">
+                        {problemTab === 'description' ? (
+                          <>
+                            <div className="prose prose-sm dark:prose-invert max-w-none">
+                              <p className="whitespace-pre-wrap text-sm leading-relaxed">{currentCoding.description}</p>
                             </div>
-                            <p className="text-xs text-muted-foreground italic">Additional hidden test cases will be evaluated on submission.</p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
 
-                    {/* Code Editor & Results */}
-                    <div className="space-y-4">
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-sm">Your Solution</CardTitle>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => runCode(currentCoding.id)}
-                                disabled={runningCode === currentCoding.id}
-                              >
-                                {runningCode === currentCoding.id ? (
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Play className="mr-1 h-3 w-3" />
-                                )}
-                                Run Tests
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => submitCodingSolution(currentCoding.id)}
-                              >
-                                <Send className="mr-1 h-3 w-3" />
-                                Submit
-                              </Button>
-                            </div>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center gap-2 mb-2">
-                            <Label className="text-xs text-muted-foreground">Language:</Label>
-                            <Select
-                              value={codingLanguages[currentCoding.id] || 'python3'}
-                              onValueChange={(lang) => {
-                                setCodingLanguages(prev => ({ ...prev, [currentCoding.id]: lang }));
-                                // Switch to the new language's starter code if user hasn't modified
-                                const currentCode = codingSolutions[currentCoding.id] || '';
-                                const oldLang = codingLanguages[currentCoding.id] || 'python3';
-                                const oldStarter = currentCoding.starter_code?.[oldLang] || '';
-                                if (!currentCode || currentCode === oldStarter) {
-                                  setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: currentCoding.starter_code?.[lang] || '' }));
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="w-[150px] h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(currentCoding.supported_languages || []).map((lang) => (
-                                  <SelectItem key={lang} value={lang}>
-                                    {{ python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++', typescript: 'TypeScript', csharp: 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby' }[lang] || lang}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="border rounded-md overflow-hidden" style={{ height: 350 }}>
-                            <Editor
-                              height="100%"
-                              language={{ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby' }[codingLanguages[currentCoding.id] || 'python3'] || 'python'}
-                              theme="vs-dark"
-                              value={codingSolutions[currentCoding.id] || ''}
-                              onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
-                              options={{
-                                minimap: { enabled: false },
-                                fontSize: 14,
-                                lineNumbers: 'on',
-                                automaticLayout: true,
-                                scrollBeyondLastLine: false,
-                                wordWrap: 'on',
-                                tabSize: 4,
-                                padding: { top: 8 },
-                              }}
-                            />
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      {/* Test Results */}
-                      {codingResults[currentCoding.id] && (
-                        <Card>
-                          <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                              <CardTitle className="text-sm">Test Results</CardTitle>
-                              <div className="flex items-center gap-2">
-                                {codingResults[currentCoding.id].performance?.avg_time_ms && (
-                                  <Badge variant="outline" className="text-xs">
-                                    <Clock className="mr-1 h-3 w-3" />
-                                    {codingResults[currentCoding.id].performance?.avg_time_ms}ms avg
-                                  </Badge>
-                                )}
-                                <Badge variant={codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total ? 'default' : 'destructive'}>
-                                  {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} Passed
-                                </Badge>
-                              </div>
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-2 max-h-[250px] overflow-auto">
-                              {codingResults[currentCoding.id].results.map((result, idx) => (
-                                <div
-                                  key={result.test_case_id || idx}
-                                  className={`p-2 rounded text-xs font-mono ${result.passed ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}
-                                >
-                                  <div className="flex items-center justify-between mb-1">
-                                    <div className="flex items-center gap-2">
-                                      {result.passed ? (
-                                        <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                      ) : (
-                                        <XCircleIcon className="h-3 w-3 text-red-500" />
+                            {currentCoding.examples && currentCoding.examples.length > 0 && (
+                              <div className="space-y-3">
+                                {currentCoding.examples.map((ex, idx) => (
+                                  <div key={idx} className="rounded-lg border bg-muted/20 overflow-hidden">
+                                    <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Example {idx + 1}</div>
+                                    <div className="p-3 text-xs font-mono space-y-1">
+                                      <div><span className="text-emerald-500 font-semibold">Input: </span>{ex.input}</div>
+                                      <div><span className="text-blue-500 font-semibold">Output: </span>{ex.output}</div>
+                                      {ex.explanation && (
+                                        <div className="text-muted-foreground font-sans pt-1 border-t mt-2"><span className="font-semibold">Explanation: </span>{ex.explanation}</div>
                                       )}
-                                      <span className="font-semibold">Test {idx + 1}</span>
-                                      <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                        {result.status}
-                                      </Badge>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                      {result.time_used && <span>{(parseFloat(result.time_used) * 1000).toFixed(0)}ms</span>}
-                                      {result.memory_used && <span>{result.memory_used}KB</span>}
                                     </div>
                                   </div>
-                                  <div className="text-muted-foreground">
-                                    <div>Input: {result.input}</div>
-                                    <div>Expected: {result.expected_output}</div>
-                                    {!result.passed && (
-                                      <div className="text-red-400">
-                                        {result.error ? `${result.error}` : `Got: ${result.actual_output}`}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Hidden test summary */}
-                            {codingResults[currentCoding.id].hidden_total != null && codingResults[currentCoding.id].hidden_total! > 0 && (
-                              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
-                                Hidden tests: {codingResults[currentCoding.id].hidden_passed}/{codingResults[currentCoding.id].hidden_total} passed
+                                ))}
                               </div>
                             )}
 
-                            <div className="mt-2 pt-2 border-t flex items-center justify-between">
-                              <p className="text-sm font-medium">
-                                Score: {codingResults[currentCoding.id].score.toFixed(1)}%
-                              </p>
-                              {codingResults[currentCoding.id].performance?.max_memory_kb && (
-                                <p className="text-xs text-muted-foreground">
-                                  Peak: {codingResults[currentCoding.id].performance?.max_time_ms}ms / {codingResults[currentCoding.id].performance?.max_memory_kb}KB
-                                </p>
-                              )}
+                            {currentCoding.constraints && (
+                              <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                                <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Constraints</div>
+                                <div className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{currentCoding.constraints}</div>
+                              </div>
+                            )}
+
+                            {currentCoding.test_cases && currentCoding.test_cases.length > 0 && (
+                              <div className="space-y-2">
+                                <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide">Sample Test Cases</h4>
+                                {currentCoding.test_cases.map((tc, idx) => (
+                                  <div key={tc.id || idx} className="bg-muted/30 rounded-lg p-2.5 text-xs font-mono border">
+                                    <div><span className="text-muted-foreground">Input:</span> {tc.input}</div>
+                                    <div><span className="text-muted-foreground">Expected:</span> {tc.expected_output}</div>
+                                  </div>
+                                ))}
+                                <p className="text-[10px] text-muted-foreground italic">Hidden test cases will be evaluated on submission.</p>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          /* Submissions/Results Tab */
+                          codingResults[currentCoding.id] ? (
+                            <div className="space-y-3">
+                              {/* Verdict Banner */}
+                              <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className={`rounded-lg p-4 border ${
+                                  codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0
+                                    ? 'bg-green-500/10 border-green-500/30'
+                                    : 'bg-red-500/10 border-red-500/30'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? (
+                                      <CheckCircle className="h-5 w-5 text-green-500" />
+                                    ) : (
+                                      <XCircle className="h-5 w-5 text-red-500" />
+                                    )}
+                                    <span className="font-bold text-sm">
+                                      {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? 'Accepted' : 'Not Accepted'}
+                                    </span>
+                                  </div>
+                                  <span className="text-2xl font-bold">{codingResults[currentCoding.id].score.toFixed(0)}%</span>
+                                </div>
+                                <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                  <span>{codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} tests passed</span>
+                                  {codingResults[currentCoding.id].hidden_total != null && codingResults[currentCoding.id].hidden_total! > 0 && (
+                                    <span>({codingResults[currentCoding.id].hidden_passed}/{codingResults[currentCoding.id].hidden_total} hidden)</span>
+                                  )}
+                                  {codingResults[currentCoding.id].performance?.avg_time_ms && (
+                                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {codingResults[currentCoding.id].performance?.avg_time_ms}ms avg</span>
+                                  )}
+                                  {codingResults[currentCoding.id].performance?.avg_memory_kb && (
+                                    <span>{codingResults[currentCoding.id].performance?.avg_memory_kb}KB avg</span>
+                                  )}
+                                </div>
+                              </motion.div>
+
+                              {/* Individual Test Results */}
+                              <div className="space-y-1.5">
+                                {codingResults[currentCoding.id].results.map((result, idx) => (
+                                  <motion.div
+                                    key={result.test_case_id || idx}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className={`p-2.5 rounded-lg text-xs font-mono border ${
+                                      result.passed ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        {result.passed ? (
+                                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                                        ) : (
+                                          <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                                        )}
+                                        <span className="font-semibold font-sans">Test {idx + 1}</span>
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-[10px] px-1.5 py-0 ${
+                                            result.status === 'AC' ? 'border-green-500/50 text-green-600' :
+                                            result.status === 'WA' ? 'border-red-500/50 text-red-600' :
+                                            result.status === 'TLE' ? 'border-yellow-500/50 text-yellow-600' :
+                                            result.status === 'MLE' ? 'border-purple-500/50 text-purple-600' :
+                                            result.status === 'CE' ? 'border-orange-500/50 text-orange-600' :
+                                            'border-red-500/50 text-red-600'
+                                          }`}
+                                        >
+                                          {result.status}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-sans">
+                                        {result.time_used && <span>{(parseFloat(result.time_used) * 1000).toFixed(0)} ms</span>}
+                                        {result.memory_used && <span>{result.memory_used} KB</span>}
+                                      </div>
+                                    </div>
+                                    {!result.passed && (
+                                      <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
+                                        <div><span className="text-muted-foreground/70">Input:</span> {result.input}</div>
+                                        <div><span className="text-muted-foreground/70">Expected:</span> {result.expected_output}</div>
+                                        <div className="text-red-400">
+                                          {result.error ? result.error : `Got: ${result.actual_output}`}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </motion.div>
+                                ))}
+                              </div>
                             </div>
-                          </CardContent>
-                        </Card>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm">
+                              <Code className="h-8 w-8 mb-2 opacity-40" />
+                              <p>No results yet. Run or submit your code.</p>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT: Code Editor Panel */}
+                    <div className="flex flex-col border rounded-lg overflow-hidden bg-card">
+                      {/* Editor Toolbar */}
+                      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={codingLanguages[currentCoding.id] || 'python3'}
+                            onValueChange={(lang) => {
+                              setCodingLanguages(prev => ({ ...prev, [currentCoding.id]: lang }));
+                              const currentCode = codingSolutions[currentCoding.id] || '';
+                              const oldLang = codingLanguages[currentCoding.id] || 'python3';
+                              const oldStarter = currentCoding.starter_code?.[oldLang] || '';
+                              if (!currentCode || currentCode === oldStarter) {
+                                setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: currentCoding.starter_code?.[lang] || '' }));
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-[140px] h-7 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(currentCoding.supported_languages || []).map((lang) => (
+                                <SelectItem key={lang} value={lang}>
+                                  {{ python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++', typescript: 'TypeScript', csharp: 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby' }[lang] || lang}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => resetCode(currentCoding.id)}>
+                            Reset
+                          </Button>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => runCode(currentCoding.id)}
+                            disabled={runningCode === currentCoding.id || submittingCode === currentCoding.id}
+                          >
+                            {runningCode === currentCoding.id ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Play className="mr-1 h-3 w-3" />
+                            )}
+                            Run
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => submitCodingSolution(currentCoding.id)}
+                            disabled={runningCode === currentCoding.id || submittingCode === currentCoding.id}
+                          >
+                            {submittingCode === currentCoding.id ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="mr-1 h-3 w-3" />
+                            )}
+                            Submit
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Monaco Editor */}
+                      <div className="flex-1" style={{ minHeight: 400 }}>
+                        <Editor
+                          height="100%"
+                          language={{ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby' }[codingLanguages[currentCoding.id] || 'python3'] || 'python'}
+                          theme="vs-dark"
+                          value={codingSolutions[currentCoding.id] || ''}
+                          onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 14,
+                            lineNumbers: 'on',
+                            automaticLayout: true,
+                            scrollBeyondLastLine: false,
+                            wordWrap: 'on',
+                            tabSize: 4,
+                            padding: { top: 8 },
+                            renderLineHighlight: 'gutter',
+                            bracketPairColorization: { enabled: true },
+                            suggestOnTriggerCharacters: true,
+                          }}
+                        />
+                      </div>
+
+                      {/* Quick Result Bar (when running/submitting) */}
+                      <AnimatePresence>
+                        {(runningCode === currentCoding.id || submittingCode === currentCoding.id) && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="border-t bg-muted/50 px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground"
+                          >
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            {submittingCode ? 'Evaluating against all test cases...' : 'Running public test cases...'}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Compact Result Summary Bar */}
+                      {codingResults[currentCoding.id] && !runningCode && !submittingCode && (
+                        <div
+                          className={`border-t px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors ${
+                            codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0
+                              ? 'bg-green-500/5' : 'bg-red-500/5'
+                          }`}
+                          onClick={() => setProblemTab('submissions')}
+                        >
+                          <div className="flex items-center gap-2 text-xs">
+                            {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            ) : (
+                              <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                            )}
+                            <span className="font-medium">
+                              {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} passed
+                            </span>
+                            {codingResults[currentCoding.id].performance?.avg_time_ms && (
+                              <span className="text-muted-foreground">• {codingResults[currentCoding.id].performance?.avg_time_ms}ms</span>
+                            )}
+                          </div>
+                          <span className="text-xs font-bold">{codingResults[currentCoding.id].score.toFixed(0)}%</span>
+                        </div>
                       )}
                     </div>
                   </div>

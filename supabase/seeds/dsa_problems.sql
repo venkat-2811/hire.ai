@@ -294,3 +294,5 @@ ON CONFLICT (slug) DO UPDATE SET
   time_limit_seconds = EXCLUDED.time_limit_seconds,
   memory_limit_kb = EXCLUDED.memory_limit_kb,
   updated_at = now();
+
+-- Additional 25 problems are in dsa_problems_extra.sql
