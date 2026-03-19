@@ -455,6 +455,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       GROQ_API_KEY: !!process.env.GROQ_API_KEY,
       RESEND_API_KEY: !!process.env.RESEND_API_KEY,
       FRONTEND_URL: !!process.env.FRONTEND_URL,
+      HACKEREARTH_CLIENT_SECRET: !!process.env.HACKEREARTH_CLIENT_SECRET,
     };
 
     return ok(res, {
