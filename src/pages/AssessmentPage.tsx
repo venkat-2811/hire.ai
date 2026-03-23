@@ -128,6 +128,7 @@ export default function AssessmentPage() {
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
   const [codingLanguages, setCodingLanguages] = useState<Record<string, string>>({});
   const [problemTab, setProblemTab] = useState<'description' | 'submissions'>('description');
+  const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -641,6 +642,14 @@ export default function AssessmentPage() {
   const handleSubmitAssessment = async () => {
     if (!assessmentData || submitting) return;
 
+    // Show confirmation dialog first
+    setShowSubmitConfirmation(true);
+  };
+
+  const confirmSubmitAssessment = async () => {
+    if (!assessmentData || submitting) return;
+
+    setShowSubmitConfirmation(false);
     setSubmitting(true);
 
     try {
@@ -976,15 +985,90 @@ export default function AssessmentPage() {
 
   return (
     <div className="min-h-screen bg-background select-none">
+      {/* Submit Confirmation Dialog */}
+      <AlertDialog open={showSubmitConfirmation} onOpenChange={setShowSubmitConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5" />
+              Submit Assessment
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base space-y-4">
+              <p>Are you sure you want to submit your assessment? This action cannot be undone.</p>
+              
+              <div className="space-y-3 pt-2">
+                <p className="font-semibold text-foreground">Your Progress:</p>
+                
+                {mcqQuestions.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span>MCQ Questions:</span>
+                      <span className="font-medium">
+                        {Object.keys(mcqAnswers).length} / {mcqQuestions.length} answered
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(Object.keys(mcqAnswers).length / mcqQuestions.length) * 100} 
+                      className="h-2"
+                    />
+                  </div>
+                )}
+                
+                {codingChallenges.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span>Coding Challenges:</span>
+                      <span className="font-medium">
+                        {Object.keys(codingSolutions).filter(id => codingSolutions[id]?.trim()).length} / {codingChallenges.length} attempted
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(Object.keys(codingSolutions).filter(id => codingSolutions[id]?.trim()).length / codingChallenges.length) * 100} 
+                      className="h-2"
+                    />
+                    
+                    {Object.keys(codingResults).length > 0 && (
+                      <div className="flex justify-between text-sm mt-1">
+                        <span>Test Cases Passed:</span>
+                        <span className="font-medium text-success">
+                          {Object.values(codingResults).reduce((sum, r) => sum + r.passed, 0)} / {Object.values(codingResults).reduce((sum, r) => sum + r.total, 0)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                <div className="flex justify-between text-sm pt-2 border-t">
+                  <span>Time Remaining:</span>
+                  <span className={`font-medium ${timeRemaining < 300 ? 'text-destructive' : ''}`}>
+                    {formatTime(timeRemaining)}
+                  </span>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={() => setShowSubmitConfirmation(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmSubmitAssessment} className="bg-gray-700 hover:bg-gray-800">
+              Confirm Submit
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Warning Dialog */}
       <AlertDialog open={showWarning} onOpenChange={setShowWarning}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-warning">
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5" />
               Proctoring Warning
             </AlertDialogTitle>
-            <AlertDialogDescription>{warningMessage}</AlertDialogDescription>
+            <AlertDialogDescription className="text-base">
+              {warningMessage}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => {
@@ -1575,7 +1659,7 @@ export default function AssessmentPage() {
                   onClick={handleSubmitAssessment}
                   disabled={submitting}
                   size="lg"
-                  className="bg-success hover:bg-success/90 min-w-[200px]"
+                  className="bg-gray-700 hover:bg-gray-800 text-white min-w-[200px]"
                 >
                   {submitting ? (
                     <>
