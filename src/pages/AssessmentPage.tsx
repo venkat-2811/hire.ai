@@ -1562,6 +1562,37 @@ export default function AssessmentPage() {
             </TabsContent>
           )}
         </Tabs>
+
+        {/* Submit Assessment Button - Always visible at the bottom */}
+        <div className="max-w-7xl mx-auto mt-8">
+          <Card>
+            <CardContent className="py-6">
+              <div className="flex flex-col items-center gap-4">
+                <p className="text-sm text-muted-foreground text-center">
+                  Once you've completed all sections, click below to submit your assessment.
+                </p>
+                <Button
+                  onClick={handleSubmitAssessment}
+                  disabled={submitting}
+                  size="lg"
+                  className="bg-success hover:bg-success/90 min-w-[200px]"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="mr-2 h-4 w-4" />
+                      Submit Assessment
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </main>
     </div>
   );

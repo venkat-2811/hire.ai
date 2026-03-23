@@ -696,11 +696,19 @@ export default function CandidatesPage() {
                   type="number"
                   min={15}
                   max={300}
-                  placeholder="Auto-calculate based on questions"
+                  placeholder="Auto-calculate based on questions and difficulty"
                   value={totalTimeMinutes}
                   onChange={(e) => setTotalTimeMinutes(e.target.value ? Number(e.target.value) : '')}
                 />
-                <div className="text-xs text-muted-foreground">Leave empty to auto-calculate (1.5 min per MCQ + 20 min per Coding Challenge).</div>
+                <div className="text-xs text-muted-foreground">
+                  Leave empty to auto-calculate based on difficulty:
+                  <br />
+                  • Easy: 1 min/MCQ + 15 min/Coding
+                  <br />
+                  • Medium: 1.5 min/MCQ + 20 min/Coding
+                  <br />
+                  • Hard: 2 min/MCQ + 30 min/Coding
+                </div>
               </div>
 
               <div className="text-sm text-muted-foreground mt-4">

@@ -2247,6 +2247,22 @@ Only return JSON.`;
         frontendUrl = dynamicUrl;
       }
 
+      // Auto-calculate time based on questions and difficulty if not provided
+      let totalTimeMinutes = body.total_time_minutes;
+      if (!totalTimeMinutes) {
+        // MCQ time per question based on difficulty
+        const mcqTimePerQuestion = difficulty === 'easy' ? 1 : difficulty === 'hard' ? 2 : 1.5;
+        // Coding time per challenge based on difficulty
+        const codingTimePerChallenge = difficulty === 'easy' ? 15 : difficulty === 'hard' ? 30 : 20;
+        
+        totalTimeMinutes = Math.ceil(
+          (mcqCount * mcqTimePerQuestion) + (codingCount * codingTimePerChallenge)
+        );
+        
+        // Ensure minimum time of 15 minutes
+        totalTimeMinutes = Math.max(15, totalTimeMinutes);
+      }
+
       let invitesSent = 0;
       const failed: string[] = [];
 
@@ -2262,7 +2278,7 @@ Only return JSON.`;
             deadline: deadline.toISOString(),
             mcq_question_count: mcqCount,
             coding_challenge_count: codingCount,
-            total_time_minutes: body.total_time_minutes || 90,
+            total_time_minutes: totalTimeMinutes,
             proctoring_data: {
               tab_switches: 0,
               fullscreen_exits: 0,

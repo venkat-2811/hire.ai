@@ -76,23 +76,6 @@ export default function ProfilePage() {
                 </div>
               </CardContent>
             </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>System Information</CardTitle>
-                <CardDescription>Technical details</CardDescription>
-              </CardHeader>
-              <CardContent className="text-sm space-y-2">
-                <div>
-                  <span className="font-medium">API Endpoint: </span>
-                  <span className="text-muted-foreground">/api (Vercel)</span>
-                </div>
-                <div>
-                  <span className="font-medium">User ID: </span>
-                  <span className="text-muted-foreground break-all text-xs">{user?.id}</span>
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
           <div className="md:col-span-2">
