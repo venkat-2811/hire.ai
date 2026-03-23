@@ -960,6 +960,10 @@ export default function AssessmentPage() {
   const hasMcq = mcqQuestions.length > 0;
   const activeTab = hasMcq ? (hasCoding ? currentTab : 'mcq') : 'coding';
 
+  useEffect(() => {
+    setProblemTab('description');
+  }, [currentCodingIndex]);
+
   return (
     <div className="min-h-screen bg-background select-none">
       {/* Warning Dialog */}
@@ -1145,6 +1149,21 @@ export default function AssessmentPage() {
                         >
                           Previous
                         </Button>
+
+                        <Button
+                          variant="outline"
+                          onClick={() =>
+                            setMcqAnswers((prev) => {
+                              const next = { ...prev };
+                              delete next[currentMcq.id];
+                              return next;
+                            })
+                          }
+                          disabled={mcqAnswers[currentMcq.id] === undefined}
+                        >
+                          Clear response
+                        </Button>
+
                         {currentMcqIndex === mcqQuestions.length - 1 && hasCoding ? (
                           <Button
                             onClick={() => setCurrentTab('coding')}
@@ -1203,7 +1222,10 @@ export default function AssessmentPage() {
                     return (
                       <button
                         key={c.id}
-                        onClick={() => setCurrentCodingIndex(idx)}
+                        onClick={() => {
+                          setProblemTab('description');
+                          setCurrentCodingIndex(idx);
+                        }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
                           isActive ? 'ring-2 ring-primary border-primary bg-primary/10' :
                           isAccepted ? 'border-green-500/50 bg-green-500/10 text-green-600' :
@@ -1539,23 +1561,7 @@ export default function AssessmentPage() {
                     Previous Challenge
                   </Button>
                   {currentCodingIndex === codingChallenges.length - 1 ? (
-                    <Button
-                      onClick={handleSubmitAssessment}
-                      disabled={submitting}
-                      className="bg-success hover:bg-success/90"
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="mr-2 h-4 w-4" />
-                          Submit Assessment
-                        </>
-                      )}
-                    </Button>
+                    <div />
                   ) : (
                     <Button
                       onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}

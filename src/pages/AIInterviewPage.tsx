@@ -328,6 +328,17 @@ export default function AIInterviewPage() {
     }
   }, [interviewData]);
 
+  const stopAndTranscribe = useCallback(async () => {
+    if (!isRecordingRef.current && !isRecording) return;
+    stopRecording();
+    const text = await transcribeLatestRecording();
+    if (text && text.trim()) {
+      setTranscript(text.trim());
+    } else if (liveTranscript && liveTranscript.trim()) {
+      setTranscript(liveTranscript.trim());
+    }
+  }, [stopRecording, transcribeLatestRecording, liveTranscript, isRecording]);
+
   // Load current question
   const loadCurrentQuestion = useCallback(async () => {
     if (!interviewData) return;
@@ -1003,45 +1014,36 @@ export default function AIInterviewPage() {
                     <p className="text-sm">{transcript}</p>
                   ) : (
                     <p className="text-sm text-muted-foreground italic">
-                      Record your answer, then submit to generate a transcript.
+                      Record your answer. When you stop recording, we will transcribe it automatically.
                     </p>
                   )}
                 </div>
 
                 {/* Recording Controls */}
                 <div className="flex items-center justify-center gap-4">
-                  {!isRecording ? (
+                  {!isRecording && !transcript ? (
                     <Button size="lg" onClick={startRecording} className="gap-2" disabled={isTranscribing}>
                       <Mic className="h-5 w-5" />
                       Start Recording
                     </Button>
-                  ) : (
-                    <Button size="lg" variant="destructive" onClick={stopRecording} className="gap-2">
+                  ) : isRecording ? (
+                    <Button size="lg" variant="destructive" onClick={stopAndTranscribe} className="gap-2">
                       <Square className="h-5 w-5" />
                       Stop Recording
                     </Button>
+                  ) : null}
+
+                  {!isRecording && (
+                    <Button
+                      size="lg"
+                      onClick={submitResponse}
+                      disabled={isTranscribing || !transcript.trim()}
+                      className="gap-2"
+                    >
+                      <SkipForward className="h-5 w-5" />
+                      Next
+                    </Button>
                   )}
-
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={() => {
-                      stopRecording();
-                      setManualMode(true);
-                    }}
-                  >
-                    Type Answer
-                  </Button>
-
-                  <Button
-                    size="lg"
-                    onClick={submitResponse}
-                    disabled={isTranscribing || isRecording || (manualMode ? !transcript.trim() : !hasRecordedAudio)}
-                    className="gap-2"
-                  >
-                    <SkipForward className="h-5 w-5" />
-                    Submit & Next
-                  </Button>
                 </div>
 
                 {isRecording && (
