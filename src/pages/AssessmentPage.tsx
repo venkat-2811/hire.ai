@@ -113,6 +113,11 @@ export default function AssessmentPage() {
   const [currentTab, setCurrentTab] = useState<'mcq' | 'coding'>('mcq');
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [currentCodingIndex, setCurrentCodingIndex] = useState(0);
+  
+  // Reset to description tab when switching coding questions
+  useEffect(() => {
+    setProblemTab('description');
+  }, [currentCodingIndex]);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
   const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
@@ -486,7 +491,16 @@ export default function AssessmentPage() {
   }, [token]);
 
   const handleMcqAnswer = (questionId: string, optionIndex: number) => {
-    setMcqAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
+    if (optionIndex === -1) {
+      // Clear response
+      setMcqAnswers((prev) => {
+        const newAnswers = { ...prev };
+        delete newAnswers[questionId];
+        return newAnswers;
+      });
+    } else {
+      setMcqAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
+    }
   };
 
   const handleCodingSolution = (challengeId: string, code: string) => {
@@ -960,10 +974,6 @@ export default function AssessmentPage() {
   const hasMcq = mcqQuestions.length > 0;
   const activeTab = hasMcq ? (hasCoding ? currentTab : 'mcq') : 'coding';
 
-  useEffect(() => {
-    setProblemTab('description');
-  }, [currentCodingIndex]);
-
   return (
     <div className="min-h-screen bg-background select-none">
       {/* Warning Dialog */}
@@ -1071,16 +1081,6 @@ export default function AssessmentPage() {
               <span className="font-mono font-semibold">{formatTime(timeRemaining)}</span>
             </div>
 
-            <Button onClick={handleSubmitAssessment} disabled={submitting}>
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                'Submit Assessment'
-              )}
-            </Button>
           </div>
         </div>
       </header>
@@ -1142,28 +1142,22 @@ export default function AssessmentPage() {
                       </RadioGroup>
 
                       <div className="flex justify-between pt-4">
-                        <Button
-                          variant="outline"
-                          onClick={() => setCurrentMcqIndex((prev) => Math.max(0, prev - 1))}
-                          disabled={currentMcqIndex === 0}
-                        >
-                          Previous
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          onClick={() =>
-                            setMcqAnswers((prev) => {
-                              const next = { ...prev };
-                              delete next[currentMcq.id];
-                              return next;
-                            })
-                          }
-                          disabled={mcqAnswers[currentMcq.id] === undefined}
-                        >
-                          Clear response
-                        </Button>
-
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => setCurrentMcqIndex((prev) => Math.max(0, prev - 1))}
+                            disabled={currentMcqIndex === 0}
+                          >
+                            Previous
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => handleMcqAnswer(currentMcq.id, -1)}
+                            disabled={mcqAnswers[currentMcq.id] === undefined}
+                          >
+                            Clear Response
+                          </Button>
+                        </div>
                         {currentMcqIndex === mcqQuestions.length - 1 && hasCoding ? (
                           <Button
                             onClick={() => setCurrentTab('coding')}
@@ -1222,10 +1216,7 @@ export default function AssessmentPage() {
                     return (
                       <button
                         key={c.id}
-                        onClick={() => {
-                          setProblemTab('description');
-                          setCurrentCodingIndex(idx);
-                        }}
+                        onClick={() => setCurrentCodingIndex(idx)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
                           isActive ? 'ring-2 ring-primary border-primary bg-primary/10' :
                           isAccepted ? 'border-green-500/50 bg-green-500/10 text-green-600' :
@@ -1560,16 +1551,12 @@ export default function AssessmentPage() {
                   >
                     Previous Challenge
                   </Button>
-                  {currentCodingIndex === codingChallenges.length - 1 ? (
-                    <div />
-                  ) : (
-                    <Button
-                      onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
-                      disabled={currentCodingIndex === codingChallenges.length - 1}
-                    >
-                      Next Challenge
-                    </Button>
-                  )}
+                  <Button
+                    onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
+                    disabled={currentCodingIndex === codingChallenges.length - 1}
+                  >
+                    Next Challenge
+                  </Button>
                 </div>
               </div>
             </TabsContent>

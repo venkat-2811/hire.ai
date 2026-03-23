@@ -147,7 +147,51 @@ export default function AIInterviewPage() {
     }
   }, []);
 
-  const stopRecording = useCallback(() => {
+  const transcribeLatestRecording = useCallback(async () => {
+    if (!interviewData) return null;
+    const blobFromStop = recordedAudioBlobRef.current;
+    const blobFromChunks = recordedChunksRef.current.length
+      ? new Blob(recordedChunksRef.current, { type: 'audio/webm' })
+      : null;
+    const blob = (blobFromStop && blobFromStop.size > 0) ? blobFromStop : blobFromChunks;
+    if (!blob || blob.size === 0) return null;
+
+    setIsTranscribing(true);
+    try {
+      // Convert blob to base64 for Vercel serverless compatibility
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < uint8.byteLength; i++) {
+        binary += String.fromCharCode(uint8[i]);
+      }
+      const audio_base64 = btoa(binary);
+
+      const resp = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audio_base64,
+          mime_type: blob.type || 'audio/webm',
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data?.error || data?.detail || 'Failed to transcribe audio');
+      }
+      const text = (data?.transcript || '').toString();
+      return text;
+    } catch (e) {
+      console.error('Transcription failed', e);
+      const msg = e instanceof Error ? e.message : 'Failed to transcribe audio';
+      toast.error(msg);
+      return null;
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [interviewData]);
+
+  const stopRecording = useCallback(async () => {
     recordingWantedRef.current = false;
     isRecordingRef.current = false;
     if (recognitionRef.current) {
@@ -178,7 +222,19 @@ export default function AIInterviewPage() {
       recordingTimerRef.current = null;
     }
     setIsRecording(false);
-  }, []);
+
+    // Auto-transcribe after stopping
+    if (!manualMode && interviewData) {
+      const transcribed = await transcribeLatestRecording();
+      if (transcribed && transcribed.trim()) {
+        setTranscript(transcribed.trim());
+      } else {
+        // fallback to live browser transcript if AssemblyAI is unavailable
+        const fallback = (liveTranscript || '').trim();
+        if (fallback) setTranscript(fallback);
+      }
+    }
+  }, [manualMode, interviewData, transcribeLatestRecording, liveTranscript]);
 
   const startLiveTranscription = useCallback(() => {
     if (!(('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window))) {
@@ -284,61 +340,6 @@ export default function AIInterviewPage() {
     }, 1000);
   }, [micEnabled, stopRecording]);
 
-  const transcribeLatestRecording = useCallback(async () => {
-    if (!interviewData) return null;
-    const blobFromStop = recordedAudioBlobRef.current;
-    const blobFromChunks = recordedChunksRef.current.length
-      ? new Blob(recordedChunksRef.current, { type: 'audio/webm' })
-      : null;
-    const blob = (blobFromStop && blobFromStop.size > 0) ? blobFromStop : blobFromChunks;
-    if (!blob || blob.size === 0) return null;
-
-    setIsTranscribing(true);
-    try {
-      // Convert blob to base64 for Vercel serverless compatibility
-      const arrayBuffer = await blob.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      let binary = '';
-      for (let i = 0; i < uint8.byteLength; i++) {
-        binary += String.fromCharCode(uint8[i]);
-      }
-      const audio_base64 = btoa(binary);
-
-      const resp = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/transcribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audio_base64,
-          mime_type: blob.type || 'audio/webm',
-        }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data?.error || data?.detail || 'Failed to transcribe audio');
-      }
-      const text = (data?.transcript || '').toString();
-      return text;
-    } catch (e) {
-      console.error('Transcription failed', e);
-      const msg = e instanceof Error ? e.message : 'Failed to transcribe audio';
-      toast.error(msg);
-      return null;
-    } finally {
-      setIsTranscribing(false);
-    }
-  }, [interviewData]);
-
-  const stopAndTranscribe = useCallback(async () => {
-    if (!isRecordingRef.current && !isRecording) return;
-    stopRecording();
-    const text = await transcribeLatestRecording();
-    if (text && text.trim()) {
-      setTranscript(text.trim());
-    } else if (liveTranscript && liveTranscript.trim()) {
-      setTranscript(liveTranscript.trim());
-    }
-  }, [stopRecording, transcribeLatestRecording, liveTranscript, isRecording]);
-
   // Load current question
   const loadCurrentQuestion = useCallback(async () => {
     if (!interviewData) return;
@@ -377,22 +378,7 @@ export default function AIInterviewPage() {
       return;
     }
 
-    let finalTranscript = '';
-
-    if (manualMode) {
-      finalTranscript = transcript.trim();
-    } else {
-      // Always prefer AssemblyAI transcript for scoring
-      const transcribed = await transcribeLatestRecording();
-      if (transcribed && transcribed.trim()) {
-        finalTranscript = transcribed.trim();
-        setTranscript(finalTranscript);
-      } else {
-        // fallback to live browser transcript if AssemblyAI is unavailable
-        finalTranscript = (liveTranscript || '').trim();
-        if (finalTranscript) setTranscript(finalTranscript);
-      }
-    }
+    const finalTranscript = transcript.trim();
 
     if (!finalTranscript) {
       toast.error('Please provide a response before submitting');
@@ -430,7 +416,7 @@ export default function AIInterviewPage() {
     } catch (e) {
       toast.error('Failed to submit response');
     }
-  }, [interviewData, currentQuestion, transcript, recordingTime, manualMode, isRecording, transcribeLatestRecording, liveTranscript, loadCurrentQuestion]);
+  }, [interviewData, currentQuestion, transcript, recordingTime, isRecording, loadCurrentQuestion]);
 
   // Camera setup
   const setupCamera = useCallback(async () => {
@@ -1014,26 +1000,24 @@ export default function AIInterviewPage() {
                     <p className="text-sm">{transcript}</p>
                   ) : (
                     <p className="text-sm text-muted-foreground italic">
-                      Record your answer. When you stop recording, we will transcribe it automatically.
+                      Record your answer, then submit to generate a transcript.
                     </p>
                   )}
                 </div>
 
                 {/* Recording Controls */}
                 <div className="flex items-center justify-center gap-4">
-                  {!isRecording && !transcript ? (
+                  {isRecording ? (
+                    <Button size="lg" variant="destructive" onClick={stopRecording} className="gap-2">
+                      <Square className="h-5 w-5" />
+                      Stop Recording
+                    </Button>
+                  ) : !transcript.trim() ? (
                     <Button size="lg" onClick={startRecording} className="gap-2" disabled={isTranscribing}>
                       <Mic className="h-5 w-5" />
                       Start Recording
                     </Button>
-                  ) : isRecording ? (
-                    <Button size="lg" variant="destructive" onClick={stopAndTranscribe} className="gap-2">
-                      <Square className="h-5 w-5" />
-                      Stop Recording
-                    </Button>
-                  ) : null}
-
-                  {!isRecording && (
+                  ) : (
                     <Button
                       size="lg"
                       onClick={submitResponse}

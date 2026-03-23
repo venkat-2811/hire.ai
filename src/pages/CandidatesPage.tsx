@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useAuth';
@@ -92,7 +92,7 @@ export default function CandidatesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
 
   const { data: candidates, isLoading: candidatesLoading } = useCandidates();
@@ -119,17 +119,6 @@ export default function CandidatesPage() {
   const [candidateToDelete, setCandidateToDelete] = useState<string | null>(null);
 
   const activeJobs = useMemo(() => jobs || [], [jobs]);
-
-  const makeSelectionKey = (jobId: string, candidateId: string) => `${jobId}:${candidateId}`;
-
-  const getSelectedCandidateIdsForJob = useCallback((jobId: string) => {
-    const ids: string[] = [];
-    selectedKeys.forEach((k) => {
-      const [kJobId, kCandidateId] = k.split(':');
-      if (kJobId === jobId && kCandidateId) ids.push(kCandidateId);
-    });
-    return ids;
-  }, [selectedKeys]);
 
   // Group candidates by job
   const candidatesByJob = useMemo(() => {
@@ -189,30 +178,25 @@ export default function CandidatesPage() {
   const toggleSelectAll = () => {
     // Get all candidates from all jobs
     const allCandidates = Object.values(candidatesByJob).flat();
-    if (selectedKeys.size === allCandidates.length) {
-      setSelectedKeys(new Set());
+    if (selectedIds.size === allCandidates.length) {
+      setSelectedIds(new Set());
     } else {
-      const keys = new Set<string>();
-      Object.entries(candidatesByJob).forEach(([jobId, jobCandidates]) => {
-        jobCandidates.forEach((c) => keys.add(makeSelectionKey(jobId, c.id)));
-      });
-      setSelectedKeys(keys);
+      setSelectedIds(new Set(allCandidates.map(c => c.id)));
     }
   };
 
-  const toggleSelect = (jobId: string, candidateId: string) => {
-    const key = makeSelectionKey(jobId, candidateId);
-    const next = new Set(selectedKeys);
-    if (next.has(key)) {
-      next.delete(key);
+  const toggleSelect = (id: string, jobId: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
     } else {
-      next.add(key);
+      newSet.add(id);
     }
-    setSelectedKeys(next);
+    setSelectedIds(newSet);
   };
 
   const handleBulkAssessment = () => {
-    if (selectedKeys.size === 0) {
+    if (selectedIds.size === 0) {
       toast.error('Please select at least one candidate');
       return;
     }
@@ -222,12 +206,6 @@ export default function CandidatesPage() {
   const sendAssessmentInvites = async () => {
     if (!startJobId) {
       toast.error('Please select a job');
-      return;
-    }
-
-    const selectedCandidateIds = getSelectedCandidateIdsForJob(startJobId);
-    if (selectedCandidateIds.length === 0) {
-      toast.error('Please select at least one candidate for the selected job');
       return;
     }
 
@@ -246,7 +224,7 @@ export default function CandidatesPage() {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
-          candidate_ids: selectedCandidateIds,
+          candidate_ids: Array.from(selectedIds),
           job_id: startJobId,
           deadline_hours: 72,
           mcq_question_count: includeMcq ? mcqCount : 0,
@@ -266,7 +244,7 @@ export default function CandidatesPage() {
       const data = await response.json();
       toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
       setAssessmentDialogOpen(false);
-      setSelectedKeys(new Set());
+      setSelectedIds(new Set());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to send assessment invites');
     } finally {
@@ -275,7 +253,7 @@ export default function CandidatesPage() {
   };
 
   const handleBulkInterview = () => {
-    if (selectedKeys.size === 0) {
+    if (selectedIds.size === 0) {
       toast.error('Please select at least one candidate');
       return;
     }
@@ -285,12 +263,6 @@ export default function CandidatesPage() {
   const sendInterviewInvites = async () => {
     if (!startJobId) {
       toast.error('Please select a job');
-      return;
-    }
-
-    const selectedCandidateIds = getSelectedCandidateIdsForJob(startJobId);
-    if (selectedCandidateIds.length === 0) {
-      toast.error('Please select at least one candidate for the selected job');
       return;
     }
 
@@ -304,7 +276,7 @@ export default function CandidatesPage() {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
-          candidate_ids: selectedCandidateIds,
+          candidate_ids: Array.from(selectedIds),
           job_id: startJobId,
         }),
       });
@@ -317,7 +289,7 @@ export default function CandidatesPage() {
       const data = await response.json();
       toast.success(`Interview invites sent to ${data.invites_sent} candidate(s)`);
       setInterviewDialogOpen(false);
-      setSelectedKeys(new Set());
+      setSelectedIds(new Set());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to send interview invites');
     } finally {
@@ -443,12 +415,12 @@ export default function CandidatesPage() {
         </Card>
 
         {/* Bulk Actions */}
-        {selectedKeys.size > 0 && (
+        {selectedIds.size > 0 && (
           <Card>
             <CardContent className="py-4">
               <div className="flex items-center gap-4">
                 <span className="text-sm font-medium">
-                  {selectedKeys.size} candidate(s) selected
+                  {selectedIds.size} candidate(s) selected
                 </span>
                 <Button size="sm" onClick={handleBulkAssessment}>
                   <Mail className="mr-2 h-4 w-4" />
@@ -458,7 +430,7 @@ export default function CandidatesPage() {
                   <Play className="mr-2 h-4 w-4" />
                   Send Interview Invite
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setSelectedKeys(new Set())}>
+                <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
                   Clear Selection
                 </Button>
               </div>
@@ -485,18 +457,17 @@ export default function CandidatesPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Checkbox
-                          checked={jobCandidates.every(c => selectedKeys.has(makeSelectionKey(jobId, c.id)))}
-                          onCheckedChange={() => {
-                            const newSet = new Set(selectedKeys);
-                            jobCandidates.forEach(c => {
-                              const key = makeSelectionKey(jobId, c.id);
-                              if (newSet.has(key)) {
-                                newSet.delete(key);
-                              } else {
-                                newSet.add(key);
-                              }
-                            });
-                            setSelectedKeys(newSet);
+                          checked={jobCandidates.length > 0 && jobCandidates.every(c => selectedIds.has(c.id))}
+                          onCheckedChange={(checked) => {
+                            const newSet = new Set(selectedIds);
+                            if (checked) {
+                              // Select all candidates in this job
+                              jobCandidates.forEach(c => newSet.add(c.id));
+                            } else {
+                              // Deselect all candidates in this job
+                              jobCandidates.forEach(c => newSet.delete(c.id));
+                            }
+                            setSelectedIds(newSet);
                           }}
                         />
                         <ChevronDown className="h-4 w-4" />
@@ -511,18 +482,17 @@ export default function CandidatesPage() {
                         <TableRow>
                           <TableHead className="w-12">
                             <Checkbox
-                              checked={jobCandidates.every(c => selectedKeys.has(makeSelectionKey(jobId, c.id)))}
-                              onCheckedChange={() => {
-                                const newSet = new Set(selectedKeys);
-                                jobCandidates.forEach(c => {
-                                  const key = makeSelectionKey(jobId, c.id);
-                                  if (newSet.has(key)) {
-                                    newSet.delete(key);
-                                  } else {
-                                    newSet.add(key);
-                                  }
-                                });
-                                setSelectedKeys(newSet);
+                              checked={jobCandidates.length > 0 && jobCandidates.every(c => selectedIds.has(c.id))}
+                              onCheckedChange={(checked) => {
+                                const newSet = new Set(selectedIds);
+                                if (checked) {
+                                  // Select all candidates in this job
+                                  jobCandidates.forEach(c => newSet.add(c.id));
+                                } else {
+                                  // Deselect all candidates in this job
+                                  jobCandidates.forEach(c => newSet.delete(c.id));
+                                }
+                                setSelectedIds(newSet);
                               }}
                             />
                           </TableHead>
@@ -548,12 +518,12 @@ export default function CandidatesPage() {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ delay: index * 0.05 }}
-                              className={`group ${selectedKeys.has(makeSelectionKey(jobId, candidate.id)) ? 'bg-primary/5' : ''}`}
+                              className={`group ${selectedIds.has(candidate.id) ? 'bg-primary/5' : ''}`}
                             >
                               <TableCell>
                                 <Checkbox
-                                  checked={selectedKeys.has(makeSelectionKey(jobId, candidate.id))}
-                                  onCheckedChange={() => toggleSelect(jobId, candidate.id)}
+                                  checked={selectedIds.has(candidate.id)}
+                                  onCheckedChange={() => toggleSelect(candidate.id, jobId)}
                                 />
                               </TableCell>
                               <TableCell>
@@ -606,16 +576,16 @@ export default function CandidatesPage() {
                                       </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => {
-                                      setSelectedKeys(new Set([makeSelectionKey(jobId, candidate.id)]));
-                                      setStartJobId(jobId);
+                                      setSelectedIds(new Set([candidate.id]));
+                                      setStartJobId(activeJobs[0]?.id || '');
                                       setAssessmentDialogOpen(true);
                                     }}>
                                       <FileText className="mr-2 h-4 w-4" />
                                       Send Assessment
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => {
-                                      setSelectedKeys(new Set([makeSelectionKey(jobId, candidate.id)]));
-                                      setStartJobId(jobId);
+                                      setSelectedIds(new Set([candidate.id]));
+                                      setStartJobId(activeJobs[0]?.id || '');
                                       setInterviewDialogOpen(true);
                                     }}>
                                       <Play className="mr-2 h-4 w-4" />
@@ -652,7 +622,7 @@ export default function CandidatesPage() {
             <DialogHeader>
               <DialogTitle>Send Assessment Invites</DialogTitle>
               <DialogDescription>
-                Send technical assessment invitations to {selectedKeys.size} selected candidate(s).
+                Send technical assessment invitations to {selectedIds.size} selected candidate(s).
               </DialogDescription>
             </DialogHeader>
 
@@ -760,7 +730,7 @@ export default function CandidatesPage() {
             <DialogHeader>
               <DialogTitle>Send AI Interview Invites</DialogTitle>
               <DialogDescription>
-                Send AI interview invitations to {selectedKeys.size} selected candidate(s).
+                Send AI interview invitations to {selectedIds.size} selected candidate(s).
               </DialogDescription>
             </DialogHeader>
 
