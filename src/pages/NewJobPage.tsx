@@ -94,7 +94,7 @@ export default function NewJobPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold">Create New Job</h1>
-            <p className="text-muted-foreground">Define job requirements for AI-powered screening</p>
+            <p className="text-muted-foreground">Define the job requirements for AI-powered screening</p>
           </div>
         </div>
 

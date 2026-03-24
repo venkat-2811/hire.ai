@@ -279,13 +279,47 @@ Return a JSON object:
 }}"""
 
         try:
-            result = await self.gemini.generate_json(
-                prompt=f"Generate {count} MCQ questions for this {job.role} position.",
-                system_instruction=system_prompt,
-                temperature=0.7,
-                max_tokens=8192,
-                raise_on_error=True,
-            )
+            from app.config import get_settings
+            import httpx
+            import json
+            
+            settings = get_settings()
+            api_key = settings.gemini_api_key
+            if not api_key:
+                raise RuntimeError("GEMINI_API_KEY not set")
+            
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            
+            payload = {
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": f"Generate {count} MCQ questions for this {job.role} position."}]
+                    }
+                ],
+                "systemInstruction": {
+                    "role": "model",
+                    "parts": [{"text": system_prompt}]
+                },
+                "generationConfig": {
+                    "temperature": 0.7,
+                    "maxOutputTokens": 8192,
+                    "responseMimeType": "application/json"
+                }
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, timeout=60.0)
+                
+            if response.status_code != 200:
+                raise RuntimeError(f"Gemini API error: {response.text}")
+                
+            data = response.json()
+            try:
+                content_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                result = json.loads(content_text)
+            except (KeyError, IndexError, json.JSONDecodeError) as e:
+                raise RuntimeError(f"Failed to parse Gemini response: {e}")
             
             questions = []
             for q in result.get("questions", [])[:count]:
