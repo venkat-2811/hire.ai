@@ -224,13 +224,13 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
   const response = result.response;
   return response.text() || '';
 }
-async function generateJSON<T>(prompt: string): Promise<T> {
+async function generateJSON<T>(prompt: string, maxTokens: number = 8192): Promise<T> {
   const genAI = getGeminiClient();
   const model = genAI.getGenerativeModel({ 
     model: 'gemini-2.5-flash',
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens: 8192,
+      maxOutputTokens: maxTokens,
       responseMimeType: 'application/json',
     },
   });
@@ -1736,41 +1736,32 @@ Return JSON:
       const difficulty = assessmentConfig.difficulty || 'medium';
       const mapped = mapAssessmentDifficulty(difficulty);
       
-      // Build comprehensive job context from JD
-      const jobContext = `
-Job Title: ${job.title}
-Role: ${job.role}
-Level: ${job.level}
-Must-Have Skills: ${(job.must_have_skills || []).join(', ')}
-Good-to-Have Skills: ${(job.good_to_have_skills || []).join(', ')}
-Minimum Experience: ${job.min_experience_years || 0} years
-Job Description: ${job.description || 'Not provided'}
-`;
+      // Build concise job context from JD (limit description to 300 chars for speed)
+      const skills = (job.must_have_skills || []).join(', ') || 'general programming';
+      const jobDesc = job.description ? job.description.slice(0, 300) : '';
       
-      const prompt = `You are creating a technical assessment for a specific job position. Generate exactly ${count} multiple choice questions that are STRICTLY based on the job description and required skills below.
+      const prompt = `Generate ${count} MCQ questions for ${job.level} ${job.role}.
+Skills: ${skills}
+${jobDesc ? `Context: ${jobDesc}` : ''}
+Difficulty: ${mapped.label}
 
-${jobContext}
+Rules:
+- Test ONLY the listed skills
+- ${job.level} level appropriate
+- Practical scenarios
 
-IMPORTANT INSTRUCTIONS:
-1. ALL questions MUST directly test the skills listed in "Must-Have Skills" above
-2. Questions should be relevant to the ${job.level} level and ${job.role} role
-3. DO NOT include questions on topics not mentioned in the job description
-4. Focus on practical, job-relevant scenarios
-5. Selected difficulty: ${difficulty} (${mapped.label})
-6. ${mapped.guidance}
-
-Return ONLY valid JSON in this exact format:
-{"questions": [{"id":"q1","question":"...","options":["A","B","C","D"],"correct_index":0,"difficulty":"${mapped.label}","topic":"...","points":5}]}
-
-Ensure every question tests a skill from the Must-Have Skills list.`;
+JSON format:
+{"questions":[{"id":"q1","question":"...","options":["A","B","C","D"],"correct_index":0,"difficulty":"${mapped.label}","topic":"...","points":5}]}`;
 
       let generated: any;
       try {
-        generated = await generateJSON<any>(prompt);
+        // Use lower token limit for faster generation
+        const tokenLimit = Math.min(4096, count * 200);
+        generated = await generateJSON<any>(prompt, tokenLimit);
         console.log('MCQ generation result keys:', Object.keys(generated || {}));
       } catch (genErr: any) {
         console.error('MCQ generation failed:', genErr.message);
-        return res.status(500).json({ error: 'AI failed to generate questions. Please try again.' });
+        return res.status(500).json({ error: 'Failed to generate questions. Please try again or reduce question count.' });
       }
 
       const questionsRaw = Array.isArray(generated)
