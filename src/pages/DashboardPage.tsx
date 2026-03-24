@@ -102,7 +102,7 @@ export default function DashboardPage() {
               Welcome back! 👋
             </motion.h1>
             <p className="text-muted-foreground mt-1">
-              Here's what's happening with your hiring pipeline today.
+              See how your hiring pipeline is performing today.
             </p>
           </div>
           <div className="flex gap-3">
@@ -128,8 +128,9 @@ export default function DashboardPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
+              className="h-full"
             >
-              <Card className="hover:shadow-md transition-shadow">
+              <Card className="hover:shadow-md transition-shadow h-full">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
@@ -137,9 +138,13 @@ export default function DashboardPage() {
                       <p className="text-3xl font-bold mt-1">
                         {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stat.value}
                       </p>
-                      {stat.change && (
+                      {stat.change ? (
                         <p className={`text-sm mt-1 ${stat.change.startsWith('+') ? 'text-success' : 'text-warning'}`}>
                           {stat.change} from last week
+                        </p>
+                      ) : (
+                        <p className="text-sm mt-1 opacity-0 select-none">
+                          &nbsp;
                         </p>
                       )}
                     </div>
