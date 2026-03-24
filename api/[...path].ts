@@ -1729,14 +1729,43 @@ Return JSON:
       const count = session.mcq_question_count || 20;
       const difficulty = assessmentConfig.difficulty || 'medium';
       const mapped = mapAssessmentDifficulty(difficulty);
+      
+      const mustHaveSkills = (job.must_have_skills || []).join(', ') || 'general programming';
+      const goodToHaveSkills = (job.good_to_have_skills || []).join(', ');
+      const jobDescription = job.description || '';
+      
       const prompt = `Generate exactly ${count} multiple choice questions for a ${job.level} ${job.role} position.
-Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
+
+Job Description: ${jobDescription}
+
+Must-Have Skills to test: ${mustHaveSkills}
+${goodToHaveSkills ? `Good-to-Have Skills to include: ${goodToHaveSkills}` : ''}
+
 Selected difficulty (user): ${difficulty}.
 Effective difficulty (system): ${mapped.label}.
 ${mapped.guidance}
 
-Return JSON: {"questions": [{"id":"q1","question":"...","options":["A","B","C","D"],"correct_index":0,"difficulty":"${mapped.label}","topic":"...","points":5}]}.
-Only return JSON.`;
+IMPORTANT: Generate questions that are directly relevant to the job description and required skills.
+Each question should test practical knowledge of the must-have skills and good-to-have skills.
+
+Return JSON with this exact structure:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What is the purpose of...",
+      "options": ["First actual answer option", "Second actual answer option", "Third actual answer option", "Fourth actual answer option"],
+      "correct_index": 0,
+      "difficulty": "${mapped.label}",
+      "topic": "Relevant skill or topic",
+      "points": 5
+    }
+  ]
+}
+
+CRITICAL: The "options" array MUST contain 4 complete, meaningful answer choices - NOT just "A", "B", "C", "D".
+Each option should be a full sentence or phrase that could be a valid answer.
+Only return valid JSON, no additional text.`;
 
       let generated: any;
       try {
