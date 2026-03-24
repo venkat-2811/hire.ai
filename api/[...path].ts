@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as jose from 'jose';
 import crypto from 'node:crypto';
 import Busboy from 'busboy';
@@ -201,40 +201,46 @@ async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): 
   throw new Error('AssemblyAI transcription timed out after 120 seconds');
 }
 
-// ============== INLINE: Groq ==============
-let _groq: Groq | null = null;
-function getGroqClient(): Groq {
-  if (!_groq) {
-    const k = process.env.GROQ_API_KEY;
-    if (!k) throw new Error('GROQ_API_KEY not configured');
-    _groq = new Groq({ apiKey: k });
+// ============== INLINE: Gemini ==============
+let _gemini: GoogleGenerativeAI | null = null;
+function getGeminiClient(): GoogleGenerativeAI {
+  if (!_gemini) {
+    const k = process.env.GEMINI_API_KEY;
+    if (!k) throw new Error('GEMINI_API_KEY not configured in environment variables');
+    _gemini = new GoogleGenerativeAI(k);
   }
-  return _groq;
+  return _gemini;
 }
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  const client = getGroqClient();
-  const completion = await client.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: opts.temperature ?? 0.7,
-    max_tokens: opts.maxTokens ?? 2048,
+  const genAI = getGeminiClient();
+  const model = genAI.getGenerativeModel({ 
+    model: 'gemini-2.0-flash-exp',
+    generationConfig: {
+      temperature: opts.temperature ?? 0.7,
+      maxOutputTokens: opts.maxTokens ?? 2048,
+    },
   });
-  return completion.choices[0]?.message?.content || '';
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+  return response.text() || '';
 }
 async function generateJSON<T>(prompt: string): Promise<T> {
-  const client = getGroqClient();
-  // Use Groq's native JSON mode for reliable JSON output
-  const completion = await client.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
-    messages: [
-      { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
-      { role: 'user', content: prompt },
-    ],
-    temperature: 0.3,
-    max_tokens: 8192,
-    response_format: { type: 'json_object' },
+  const genAI = getGeminiClient();
+  const model = genAI.getGenerativeModel({ 
+    model: 'gemini-2.0-flash-exp',
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 8192,
+      responseMimeType: 'application/json',
+    },
   });
-  const text = (completion.choices[0]?.message?.content || '').trim();
+  
+  const enhancedPrompt = `You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.\n\n${prompt}`;
+  
+  const result = await model.generateContent(enhancedPrompt);
+  const response = result.response;
+  const text = response.text().trim();
+  
   if (!text) throw new Error('Empty AI response');
   try { return JSON.parse(text) as T; }
   catch (e) {
@@ -1729,14 +1735,34 @@ Return JSON:
       const count = session.mcq_question_count || 20;
       const difficulty = assessmentConfig.difficulty || 'medium';
       const mapped = mapAssessmentDifficulty(difficulty);
-      const prompt = `Generate exactly ${count} multiple choice questions for a ${job.level} ${job.role} position.
-Skills to test: ${(job.must_have_skills || []).join(', ') || 'general programming'}.
-Selected difficulty (user): ${difficulty}.
-Effective difficulty (system): ${mapped.label}.
-${mapped.guidance}
+      
+      // Build comprehensive job context from JD
+      const jobContext = `
+Job Title: ${job.title}
+Role: ${job.role}
+Level: ${job.level}
+Must-Have Skills: ${(job.must_have_skills || []).join(', ')}
+Good-to-Have Skills: ${(job.good_to_have_skills || []).join(', ')}
+Minimum Experience: ${job.min_experience_years || 0} years
+Job Description: ${job.description || 'Not provided'}
+`;
+      
+      const prompt = `You are creating a technical assessment for a specific job position. Generate exactly ${count} multiple choice questions that are STRICTLY based on the job description and required skills below.
 
-Return JSON: {"questions": [{"id":"q1","question":"...","options":["A","B","C","D"],"correct_index":0,"difficulty":"${mapped.label}","topic":"...","points":5}]}.
-Only return JSON.`;
+${jobContext}
+
+IMPORTANT INSTRUCTIONS:
+1. ALL questions MUST directly test the skills listed in "Must-Have Skills" above
+2. Questions should be relevant to the ${job.level} level and ${job.role} role
+3. DO NOT include questions on topics not mentioned in the job description
+4. Focus on practical, job-relevant scenarios
+5. Selected difficulty: ${difficulty} (${mapped.label})
+6. ${mapped.guidance}
+
+Return ONLY valid JSON in this exact format:
+{"questions": [{"id":"q1","question":"...","options":["A","B","C","D"],"correct_index":0,"difficulty":"${mapped.label}","topic":"...","points":5}]}
+
+Ensure every question tests a skill from the Must-Have Skills list.`;
 
       let generated: any;
       try {
@@ -1809,6 +1835,10 @@ Only return JSON.`;
       const count = session.coding_challenge_count || 2;
       const difficulty = assessmentConfig.difficulty || 'medium';
 
+      // Get job details to match coding challenges with JD
+      const { data: job } = await supabase.from('job_descriptions').select('*').eq('id', session.job_id).single();
+      const mustHaveSkills = job?.must_have_skills || [];
+      
       // Difficulty mapping: easy → 1 easy + 1 easy, medium → 1 easy + 1 medium, hard → 1 medium + 1 hard
       let difficultyDistribution: string[];
       if (difficulty === 'easy') {
@@ -1824,18 +1854,59 @@ Only return JSON.`;
           : ['medium'];
       }
 
-      // Fetch candidate problems per difficulty level
+      // Fetch candidate problems per difficulty level, prioritizing JD-relevant categories
       const selectedProblems: any[] = [];
+      
+      // Map skills to DSA categories (basic mapping)
+      const skillToCategoryMap: Record<string, string[]> = {
+        'javascript': ['Arrays', 'Strings', 'Hash Maps'],
+        'python': ['Arrays', 'Strings', 'Dynamic Programming'],
+        'java': ['Arrays', 'Strings', 'Trees'],
+        'react': ['Arrays', 'Hash Maps', 'Strings'],
+        'node': ['Arrays', 'Strings', 'Trees'],
+        'algorithms': ['Dynamic Programming', 'Graphs', 'Trees'],
+        'data structures': ['Arrays', 'Trees', 'Hash Maps', 'Stacks'],
+        'backend': ['Trees', 'Graphs', 'Hash Maps'],
+        'frontend': ['Arrays', 'Strings', 'Hash Maps'],
+      };
+      
+      // Extract relevant categories from must-have skills
+      const relevantCategories = new Set<string>();
+      mustHaveSkills.forEach((skill: string) => {
+        const skillLower = skill.toLowerCase();
+        Object.entries(skillToCategoryMap).forEach(([key, categories]) => {
+          if (skillLower.includes(key)) {
+            categories.forEach(cat => relevantCategories.add(cat));
+          }
+        });
+      });
+      
       for (const diff of difficultyDistribution) {
-        const { data: problems } = await supabase
+        let query = supabase
           .from('dsa_problems')
           .select('*')
           .eq('difficulty', diff)
-          .eq('is_active', true)
-          .limit(20);
-
+          .eq('is_active', true);
+        
+        // If we have relevant categories from JD, prioritize them
+        if (relevantCategories.size > 0) {
+          const { data: relevantProblems } = await query
+            .in('category', Array.from(relevantCategories))
+            .limit(20);
+          
+          if (relevantProblems && relevantProblems.length > 0) {
+            const available = relevantProblems.filter((p: any) => !selectedProblems.some(s => s.id === p.id));
+            if (available.length > 0) {
+              const pick = available[Math.floor(Math.random() * available.length)];
+              selectedProblems.push(pick);
+              continue;
+            }
+          }
+        }
+        
+        // Fallback: select any problem of the required difficulty
+        const { data: problems } = await query.limit(20);
         if (problems && problems.length > 0) {
-          // Exclude already selected problems
           const available = problems.filter((p: any) => !selectedProblems.some(s => s.id === p.id));
           if (available.length > 0) {
             const pick = available[Math.floor(Math.random() * available.length)];
@@ -2935,7 +3006,8 @@ Evaluate and return JSON:
 
 async function generateInterviewQuestions(job: { title: string; role: string; level: string; must_have_skills?: string[] }) {
   try {
-    const prompt = `Generate 5 interview questions for ${job.level} ${job.role} (${job.title}). Skills: ${(job.must_have_skills || []).join(', ') || 'General'}. Return JSON array: [{"text":"Question","type":"technical|behavioral|situational","duration":120}]`;
+    const skills = (job.must_have_skills || []).join(', ') || 'General';
+    const prompt = `Generate 5 interview questions STRICTLY based on these required skills: ${skills}. Job: ${job.level} ${job.role} (${job.title}). ALL questions must test the listed skills only. Return JSON array: [{"text":"Question","type":"technical|behavioral|situational","duration":120}]`;
     const questions = await generateJSON<any[]>(prompt);
     return questions.slice(0, 5);
   } catch {
@@ -3250,9 +3322,20 @@ async function runSinglePiston(
 
 async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }) {
   const skills = job.must_have_skills.join(', ') || 'General';
-  const prompt = `Generate exactly 15 diverse interview questions for a ${job.level} ${job.role} position (${job.title}).
-Skills to assess: ${skills}.
-${job.description ? `Job context: ${job.description.slice(0, 500)}` : ''}
+  const prompt = `You are creating interview questions for a specific job position. Generate exactly 15 diverse interview questions that are STRICTLY based on the job description and required skills below.
+
+Job Title: ${job.title}
+Role: ${job.role}
+Level: ${job.level}
+Must-Have Skills: ${skills}
+Job Description: ${job.description || 'Not provided'}
+
+IMPORTANT INSTRUCTIONS:
+1. ALL questions MUST directly assess the skills listed in "Must-Have Skills" above
+2. Questions should be appropriate for the ${job.level} level
+3. DO NOT include questions on topics not mentioned in the job description
+4. Mix technical, behavioral, and situational questions
+5. Each question should be relevant to the actual job responsibilities
 
 Create a balanced mix:
 - 7 technical questions testing specific skills and knowledge
