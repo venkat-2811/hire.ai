@@ -488,23 +488,11 @@ async def run_code_against_tests(
         }
     
     # Execute code against test cases
-    result = executor.execute_python(request.code, test_cases)
+    result = await executor.execute(request.code, test_cases, language=request.language)
     
     # Normalize results to match frontend TestResult interface
     normalized_results = []
     for idx, tr in enumerate(result.test_results):
-        # Determine status code
-        if tr.passed:
-            status = "AC"
-        elif tr.error and "Time limit" in tr.error:
-            status = "TLE"
-        elif tr.error and "Runtime error" in tr.error:
-            status = "RE"
-        elif result.compilation_error:
-            status = "CE"
-        else:
-            status = "WA"
-        
         # Format input for display
         input_display = tr.input_data
         if isinstance(input_display, dict):
@@ -516,10 +504,12 @@ async def run_code_against_tests(
             "input": str(input_display),
             "expected_output": str(tr.expected) if tr.expected is not None else "",
             "actual_output": str(tr.actual) if tr.actual is not None else None,
-            "status": status,
-            "time_used": None,
-            "memory_used": None,
+            "status": tr.status,
+            "time_used": tr.time_used,
+            "memory_used": tr.memory_used,
             "error": tr.error,
+            "stdout": tr.stdout,
+            "stderr": tr.stderr,
         })
     
     return {
@@ -565,23 +555,12 @@ async def submit_coding_solution(
     if challenge:
         test_cases = challenge.get("test_cases", [])
         if test_cases:
-            result = executor.execute_python(submission.code, test_cases)
+            result = await executor.execute(submission.code, test_cases, language=submission.language)
             score_percentage = result.score_percentage
             compilation_error = result.compilation_error
             
             # Normalize results to match frontend TestResult interface
             for idx, tr in enumerate(result.test_results):
-                if tr.passed:
-                    status = "AC"
-                elif tr.error and "Time limit" in tr.error:
-                    status = "TLE"
-                elif tr.error and "Runtime error" in tr.error:
-                    status = "RE"
-                elif result.compilation_error:
-                    status = "CE"
-                else:
-                    status = "WA"
-                
                 input_display = tr.input_data
                 if isinstance(input_display, dict):
                     input_display = ", ".join(f"{k}={v}" for k, v in input_display.items())
@@ -592,10 +571,12 @@ async def submit_coding_solution(
                     "input": str(input_display),
                     "expected_output": str(tr.expected) if tr.expected is not None else "",
                     "actual_output": str(tr.actual) if tr.actual is not None else None,
-                    "status": status,
-                    "time_used": None,
-                    "memory_used": None,
+                    "status": tr.status,
+                    "time_used": tr.time_used,
+                    "memory_used": tr.memory_used,
                     "error": tr.error,
+                    "stdout": tr.stdout,
+                    "stderr": tr.stderr,
                 })
     
     # Store submission with results

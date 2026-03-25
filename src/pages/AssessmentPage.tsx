@@ -33,6 +33,7 @@ import {
   Send,
   CheckCircle2,
   XCircle as XCircleIcon,
+  Terminal,
 } from 'lucide-react';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
 import {
@@ -73,6 +74,8 @@ interface TestResult {
   time_used: string | null;
   memory_used: string | null;
   error?: string | null;
+  stdout?: string | null;
+  stderr?: string | null;
 }
 
 interface CodingChallenge {
@@ -1531,6 +1534,18 @@ export default function AssessmentPage() {
                                           <><span className="text-muted-foreground/70">Output:</span> {result.actual_output ?? 'N/A'}</>
                                         )}
                                       </div>
+                                      {result.stdout && (
+                                        <div className="mt-1 pt-1 border-t border-dotted border-zinc-700">
+                                          <span className="text-muted-foreground/70 text-[10px] uppercase">Stdout:</span>
+                                          <pre className="text-[11px] font-mono text-zinc-300 whitespace-pre-wrap bg-black/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{result.stdout}</pre>
+                                        </div>
+                                      )}
+                                      {result.stderr && (
+                                        <div className="mt-1 pt-1 border-t border-dotted border-zinc-700">
+                                          <span className="text-muted-foreground/70 text-[10px] uppercase">Stderr:</span>
+                                          <pre className="text-[11px] font-mono text-red-400/90 whitespace-pre-wrap bg-red-950/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{result.stderr}</pre>
+                                        </div>
+                                      )}
                                     </div>
                                   </motion.div>
                                 ))}
@@ -1673,6 +1688,38 @@ export default function AssessmentPage() {
                           <span className="text-xs font-bold">{codingResults[currentCoding.id].score.toFixed(0)}%</span>
                         </div>
                       )}
+
+                      {/* Console Output Panel */}
+                      {codingResults[currentCoding.id] && !runningCode && !submittingCode && (() => {
+                        const results = codingResults[currentCoding.id].results;
+                        const hasStdout = results.some(r => r.stdout);
+                        const hasStderr = results.some(r => r.stderr);
+                        const compilationError = codingResults[currentCoding.id].compilation_error;
+                        if (!hasStdout && !hasStderr && !compilationError) return null;
+                        return (
+                          <div className="border-t bg-zinc-950 max-h-40 overflow-auto">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 sticky top-0">
+                              <Terminal className="h-3 w-3 text-zinc-400" />
+                              <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Console Output</span>
+                            </div>
+                            <div className="p-3 space-y-1">
+                              {compilationError && (
+                                <pre className="text-xs font-mono text-red-400 whitespace-pre-wrap">{compilationError}</pre>
+                              )}
+                              {results.map((r, i) => (
+                                <div key={i}>
+                                  {r.stdout && (
+                                    <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">{r.stdout}</pre>
+                                  )}
+                                  {r.stderr && !compilationError && (
+                                    <pre className="text-xs font-mono text-red-400 whitespace-pre-wrap">{r.stderr}</pre>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

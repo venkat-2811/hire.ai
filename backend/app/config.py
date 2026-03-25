@@ -51,6 +51,9 @@ class Settings:
         self.clerk_jwks_url = os.getenv("CLERK_JWKS_URL", "")
         self.clerk_issuer = os.getenv("CLERK_ISSUER", "")
         
+        # HackerEarth Code Evaluation API
+        self.hackerearth_client_secret = os.getenv("HACKEREARTH_CLIENT_SECRET", "")
+
         # Resend Email
         self.resend_api_key = os.getenv("RESEND_API_KEY", "")
         self.resend_from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
