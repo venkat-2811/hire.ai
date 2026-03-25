@@ -120,7 +120,7 @@ export default function AssessmentPage() {
   }, [currentCodingIndex]);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
-  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
+  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; compilation_error?: string; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
   const [runningCode, setRunningCode] = useState<string | null>(null);
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -538,7 +538,7 @@ export default function AssessmentPage() {
       const data = await response.json();
 
       if (data.compilation_error) {
-        toast.error(`Compilation Error: ${data.compilation_error}`);
+        toast.error(`Compilation Error`);
         setCodingResults((prev) => ({
           ...prev,
           [challengeId]: {
@@ -547,8 +547,11 @@ export default function AssessmentPage() {
             passed: 0,
             total: data.total || 0,
             score: 0,
+            compilation_error: data.compilation_error,
           },
         }));
+        // Auto-switch to results tab to show the compilation error
+        setProblemTab('submissions');
         return;
       }
 
@@ -559,8 +562,12 @@ export default function AssessmentPage() {
           passed: data.passed || 0,
           total: data.total || 0,
           score: data.score_percentage || 0,
+          compilation_error: undefined,
         },
       }));
+
+      // Auto-switch to results tab to show output
+      setProblemTab('submissions');
 
       if (data.passed === data.total && data.total > 0) {
         toast.success(`All ${data.total} test cases passed!`);
@@ -603,6 +610,22 @@ export default function AssessmentPage() {
 
       const data = await response.json();
 
+      if (data.compilation_error) {
+        setCodingResults((prev) => ({
+          ...prev,
+          [challengeId]: {
+            results: data.test_results || [],
+            passed: 0,
+            total: data.total_tests || 0,
+            score: 0,
+            compilation_error: data.compilation_error,
+          },
+        }));
+        setProblemTab('submissions');
+        toast.error('Compilation Error — check the Results tab for details.');
+        return;
+      }
+
       setCodingResults((prev) => ({
         ...prev,
         [challengeId]: {
@@ -613,15 +636,19 @@ export default function AssessmentPage() {
           hidden_passed: data.hidden_tests_passed,
           hidden_total: data.hidden_tests_total,
           performance: data.performance,
+          compilation_error: undefined,
         },
       }));
+
+      // Auto-switch to results tab
+      setProblemTab('submissions');
 
       const totalPassed = (data.passed_count || 0);
       const totalTests = (data.total_tests || 0);
       if (totalPassed === totalTests && totalTests > 0) {
         toast.success(`All ${totalTests} test cases passed! Score: ${data.score_percentage?.toFixed(1)}%`);
       } else {
-        toast.info(`${totalPassed}/${totalTests} passed (${data.hidden_tests_passed || 0}/${data.hidden_tests_total || 0} hidden). Score: ${data.score_percentage?.toFixed(1)}%`);
+        toast.info(`${totalPassed}/${totalTests} passed. Score: ${data.score_percentage?.toFixed(1)}%`);
       }
     } catch (e) {
       toast.error('Failed to submit solution. Please try again.');
@@ -671,13 +698,14 @@ export default function AssessmentPage() {
       // Submit coding solutions (if coding section exists)
       if (codingChallenges.length > 0) {
         for (const [challengeId, code] of Object.entries(codingSolutions)) {
+          if (!code?.trim()) continue; // Skip empty solutions
           await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               challenge_id: challengeId,
               code,
-              language: 'python',
+              language: codingLanguages[challengeId] || 'python3',
               time_taken_seconds: 0,
             }),
           });
@@ -1397,42 +1425,61 @@ export default function AssessmentPage() {
                           /* Submissions/Results Tab */
                           codingResults[currentCoding.id] ? (
                             <div className="space-y-3">
-                              {/* Verdict Banner */}
-                              <motion.div
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className={`rounded-lg p-4 border ${
-                                  codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0
-                                    ? 'bg-green-500/10 border-green-500/30'
-                                    : 'bg-red-500/10 border-red-500/30'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? (
-                                      <CheckCircle className="h-5 w-5 text-green-500" />
-                                    ) : (
-                                      <XCircle className="h-5 w-5 text-red-500" />
-                                    )}
-                                    <span className="font-bold text-sm">
-                                      {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? 'Accepted' : 'Not Accepted'}
-                                    </span>
+                              {/* Compilation Error Banner */}
+                              {codingResults[currentCoding.id].compilation_error && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-4"
+                                >
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <AlertCircle className="h-5 w-5 text-orange-500" />
+                                    <span className="font-bold text-sm text-orange-600">Compilation Error</span>
                                   </div>
-                                  <span className="text-2xl font-bold">{codingResults[currentCoding.id].score.toFixed(0)}%</span>
-                                </div>
-                                <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                                  <span>{codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} tests passed</span>
-                                  {codingResults[currentCoding.id].hidden_total != null && codingResults[currentCoding.id].hidden_total! > 0 && (
-                                    <span>({codingResults[currentCoding.id].hidden_passed}/{codingResults[currentCoding.id].hidden_total} hidden)</span>
-                                  )}
-                                  {codingResults[currentCoding.id].performance?.avg_time_ms && (
-                                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {codingResults[currentCoding.id].performance?.avg_time_ms}ms avg</span>
-                                  )}
-                                  {codingResults[currentCoding.id].performance?.avg_memory_kb && (
-                                    <span>{codingResults[currentCoding.id].performance?.avg_memory_kb}KB avg</span>
-                                  )}
-                                </div>
-                              </motion.div>
+                                  <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-black/30 rounded p-3 overflow-auto max-h-40">
+                                    {codingResults[currentCoding.id].compilation_error}
+                                  </pre>
+                                </motion.div>
+                              )}
+
+                              {/* Verdict Banner */}
+                              {!codingResults[currentCoding.id].compilation_error && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className={`rounded-lg p-4 border ${
+                                    codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0
+                                      ? 'bg-green-500/10 border-green-500/30'
+                                      : 'bg-red-500/10 border-red-500/30'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? (
+                                        <CheckCircle className="h-5 w-5 text-green-500" />
+                                      ) : (
+                                        <XCircle className="h-5 w-5 text-red-500" />
+                                      )}
+                                      <span className="font-bold text-sm">
+                                        {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? 'Accepted' : 'Not Accepted'}
+                                      </span>
+                                    </div>
+                                    <span className="text-2xl font-bold">{codingResults[currentCoding.id].score.toFixed(0)}%</span>
+                                  </div>
+                                  <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                    <span>{codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} tests passed</span>
+                                    {codingResults[currentCoding.id].hidden_total != null && codingResults[currentCoding.id].hidden_total! > 0 && (
+                                      <span>({codingResults[currentCoding.id].hidden_passed}/{codingResults[currentCoding.id].hidden_total} hidden)</span>
+                                    )}
+                                    {codingResults[currentCoding.id].performance?.avg_time_ms && (
+                                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {codingResults[currentCoding.id].performance?.avg_time_ms}ms avg</span>
+                                    )}
+                                    {codingResults[currentCoding.id].performance?.avg_memory_kb && (
+                                      <span>{codingResults[currentCoding.id].performance?.avg_memory_kb}KB avg</span>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              )}
 
                               {/* Individual Test Results */}
                               <div className="space-y-1.5">
@@ -1473,15 +1520,18 @@ export default function AssessmentPage() {
                                         {result.memory_used && <span>{result.memory_used} KB</span>}
                                       </div>
                                     </div>
-                                    {!result.passed && (
-                                      <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
-                                        <div><span className="text-muted-foreground/70">Input:</span> {result.input}</div>
-                                        <div><span className="text-muted-foreground/70">Expected:</span> {result.expected_output}</div>
-                                        <div className="text-red-400">
-                                          {result.error ? result.error : `Got: ${result.actual_output}`}
-                                        </div>
+                                    {/* Always show details for all tests */}
+                                    <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
+                                      <div><span className="text-muted-foreground/70">Input:</span> {result.input}</div>
+                                      <div><span className="text-muted-foreground/70">Expected:</span> {result.expected_output}</div>
+                                      <div className={result.passed ? 'text-green-400' : 'text-red-400'}>
+                                        {result.error ? (
+                                          <><span className="text-muted-foreground/70">Error:</span> {result.error}</>
+                                        ) : (
+                                          <><span className="text-muted-foreground/70">Output:</span> {result.actual_output ?? 'N/A'}</>
+                                        )}
                                       </div>
-                                    )}
+                                    </div>
                                   </motion.div>
                                 ))}
                               </div>

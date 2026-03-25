@@ -97,7 +97,7 @@ class CodingSubmission(BaseModel):
     challenge_id: str
     code: str
     language: str
-    time_taken_seconds: int
+    time_taken_seconds: Optional[int] = 0
 
 
 class CodeRunRequest(BaseModel):
@@ -490,20 +490,43 @@ async def run_code_against_tests(
     # Execute code against test cases
     result = executor.execute_python(request.code, test_cases)
     
+    # Normalize results to match frontend TestResult interface
+    normalized_results = []
+    for idx, tr in enumerate(result.test_results):
+        # Determine status code
+        if tr.passed:
+            status = "AC"
+        elif tr.error and "Time limit" in tr.error:
+            status = "TLE"
+        elif tr.error and "Runtime error" in tr.error:
+            status = "RE"
+        elif result.compilation_error:
+            status = "CE"
+        else:
+            status = "WA"
+        
+        # Format input for display
+        input_display = tr.input_data
+        if isinstance(input_display, dict):
+            input_display = ", ".join(f"{k}={v}" for k, v in input_display.items())
+        
+        normalized_results.append({
+            "test_case_id": test_cases[idx].get("id", f"tc_{idx+1}") if idx < len(test_cases) else f"tc_{idx+1}",
+            "passed": tr.passed,
+            "input": str(input_display),
+            "expected_output": str(tr.expected) if tr.expected is not None else "",
+            "actual_output": str(tr.actual) if tr.actual is not None else None,
+            "status": status,
+            "time_used": None,
+            "memory_used": None,
+            "error": tr.error,
+        })
+    
     return {
         "success": result.success,
         "compilation_error": result.compilation_error,
         "runtime_error": result.runtime_error,
-        "results": [
-            {
-                "passed": tr.passed,
-                "input": tr.input_data,
-                "expected": tr.expected,
-                "actual": tr.actual,
-                "error": tr.error,
-            }
-            for tr in result.test_results
-        ],
+        "results": normalized_results,
         "passed": result.passed_count,
         "total": result.total_count,
         "score_percentage": result.score_percentage,
@@ -538,21 +561,42 @@ async def submit_coding_solution(
     score_percentage = 0
     test_results = []
     
+    compilation_error = None
     if challenge:
         test_cases = challenge.get("test_cases", [])
         if test_cases:
             result = executor.execute_python(submission.code, test_cases)
             score_percentage = result.score_percentage
-            test_results = [
-                {
+            compilation_error = result.compilation_error
+            
+            # Normalize results to match frontend TestResult interface
+            for idx, tr in enumerate(result.test_results):
+                if tr.passed:
+                    status = "AC"
+                elif tr.error and "Time limit" in tr.error:
+                    status = "TLE"
+                elif tr.error and "Runtime error" in tr.error:
+                    status = "RE"
+                elif result.compilation_error:
+                    status = "CE"
+                else:
+                    status = "WA"
+                
+                input_display = tr.input_data
+                if isinstance(input_display, dict):
+                    input_display = ", ".join(f"{k}={v}" for k, v in input_display.items())
+                
+                test_results.append({
+                    "test_case_id": test_cases[idx].get("id", f"tc_{idx+1}") if idx < len(test_cases) else f"tc_{idx+1}",
                     "passed": tr.passed,
-                    "input": tr.input_data,
-                    "expected": tr.expected,
-                    "actual": tr.actual,
+                    "input": str(input_display),
+                    "expected_output": str(tr.expected) if tr.expected is not None else "",
+                    "actual_output": str(tr.actual) if tr.actual is not None else None,
+                    "status": status,
+                    "time_used": None,
+                    "memory_used": None,
                     "error": tr.error,
-                }
-                for tr in result.test_results
-            ]
+                })
     
     # Store submission with results
     existing_submissions = session_data.get("coding_submissions", []) or []
@@ -588,11 +632,16 @@ async def submit_coding_solution(
         "coding_score": avg_coding_score,
     }).eq("id", session_id).execute()
     
+    passed_count = len([r for r in test_results if r.get("passed")])
+    total_count = len(test_results)
+    
     return {
         "success": True,
+        "compilation_error": compilation_error,
         "score_percentage": score_percentage,
-        "passed": len([r for r in test_results if r.get("passed")]),
-        "total": len(test_results),
+        "passed_count": passed_count,
+        "total_tests": total_count,
+        "test_results": test_results,
         "message": "Solution submitted and evaluated",
     }
 
