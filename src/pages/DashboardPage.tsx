@@ -22,8 +22,13 @@ import { RoleBadge } from '@/components/ui/role-badge';
 import { useDashboardStats, useCandidateAnalytics, useHiringTrends } from '@/hooks/useAnalytics';
 import { useCandidates } from '@/hooks/useCandidates';
 import { useInterviews } from '@/hooks/useInterviews';
+import { useUsage } from '@/hooks/useUsage';
 import type { JobRole, InterviewStatus } from '@/types/database';
 import { AnalyticsCharts } from '@/components/dashboard/AnalyticsCharts';
+import { Progress } from '@/components/ui/progress';
+import { UpgradePrompt } from '@/components/UpgradePrompt';
+import { Label } from '@/components/ui/label';
+import { useState } from 'react';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
@@ -38,8 +43,11 @@ export default function DashboardPage() {
   const { data: interviews, isLoading: interviewsLoading } = useInterviews({ status: 'completed' });
   const { data: candidatesAnalytics, isLoading: analyticsLoading } = useCandidateAnalytics();
   const { data: trendsData, isLoading: trendsLoading } = useHiringTrends(30);
+  const { data: usageData, isLoading: usageLoading } = useUsage();
 
-  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading;
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading || usageLoading;
 
   if (authLoading) {
     return (
@@ -207,10 +215,9 @@ export default function DashboardPage() {
                           {(() => {
                             const analytics = candidatesAnalytics?.find(a => a.candidate_id === candidate.id);
                             if (!analytics) return null;
-                            const scores = [analytics.ats_score, analytics.assessment_score, analytics.interview_score].filter(s => s !== null) as number[];
-                            if (scores.length === 0) return <span className="text-sm text-muted-foreground">No score yet</span>;
-                            const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-                            return <ScoreBadge score={avg} />;
+                            const score = analytics.overall_score;
+                            if (score === null || score === undefined) return <span className="text-sm text-muted-foreground">No score yet</span>;
+                            return <ScoreBadge score={score} />;
                           })()}
                           <span className="text-sm text-muted-foreground">
                             {new Date(candidate.created_at).toLocaleDateString()}
@@ -233,6 +240,7 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
+            className="space-y-6"
           >
             <Card>
               <CardHeader>
@@ -258,8 +266,64 @@ export default function DashboardPage() {
                 ))}
               </CardContent>
             </Card>
+
+            {/* Usage & Subscription */}
+            <Card>
+              <CardHeader className="flex flex-row flex-wrap justify-between items-start gap-2">
+                <div>
+                  <CardTitle>Usage & Subscription</CardTitle>
+                  <CardDescription>
+                    Current plan: <span className="font-semibold text-foreground">{usageData?.plan_label || 'Loading...'}</span>
+                  </CardDescription>
+                </div>
+                {(usageData?.plan === 'free' || usageData?.plan === 'pro') && (
+                  <Button variant="outline" size="sm" onClick={() => setShowUpgrade(true)}>
+                    Upgrade Plan
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {usageLoading ? (
+                  <div className="flex justify-center p-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <>
+                    {Object.values(usageData?.usage || {}).map((item) => {
+                      const percent = Math.min(100, Math.round((item.used / item.limit) * 100));
+                      const isHigh = percent >= 80;
+                      return (
+                        <div key={item.label} className="space-y-1.5">
+                          <div className="flex justify-between items-end">
+                            <Label className="text-xs text-muted-foreground">{item.label}</Label>
+                            <span className="text-xs font-medium">
+                              {item.used} / {item.limit > 900000 ? '∞' : item.limit}
+                            </span>
+                          </div>
+                          <Progress
+                            value={percent}
+                            className={`h-2 ${isHigh ? '[&>div]:bg-destructive' : ''}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </motion.div>
         </div>
+
+        {usageData && (
+          <UpgradePrompt
+            open={showUpgrade}
+            onClose={() => setShowUpgrade(false)}
+            resource="plan features"
+            current={usageData.usage.jobs.used}
+            limit={usageData.usage.jobs.limit}
+            plan={usageData.plan_label}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

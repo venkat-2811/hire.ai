@@ -408,6 +408,49 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+// ============== Plan Limits ==============
+const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
+  free: { max_jobs: 2, max_assessments: 10, max_interviews: 10, price: 0, label: 'Free' },
+  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 5000, label: 'Pro' },       // price in paise (₹50 = 5000)
+  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 7500, label: 'Premium' }, // ₹75 = 7500
+};
+
+function getPlanLimits(plan: string) {
+  return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+}
+
+async function getUserProfile(supabase: SupabaseClient, userId: string) {
+  const { data } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
+  return data;
+}
+
+// ============== Razorpay Helpers ==============
+function getRazorpayAuth(): string {
+  const keyId = process.env.RAZORPAY_KEY_ID || '';
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
+  return 'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64');
+}
+
+async function createRazorpayOrder(amount: number, currency: string, receipt: string, notes: Record<string, string>) {
+  const resp = await fetch('https://api.razorpay.com/v1/orders', {
+    method: 'POST',
+    headers: { Authorization: getRazorpayAuth(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, currency, receipt, notes }),
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Razorpay order creation failed: ${err}`);
+  }
+  return resp.json();
+}
+
+function verifyRazorpaySignature(orderId: string, paymentId: string, signature: string): boolean {
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
+  const body = `${orderId}|${paymentId}`;
+  const expected = crypto.createHmac('sha256', keySecret).update(body).digest('hex');
+  return expected === signature;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -561,6 +604,142 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     return methodNotAllowed(res);
   }
 
+  // /api/subscription
+  if (segments[0] === 'subscription') {
+    const user = await requireAuth(req, res);
+    if (!user) return;
+
+    // GET /api/subscription
+    if (req.method === 'GET' && segments.length === 1) {
+      const profile = await getUserProfile(supabase, user.id);
+      if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+      const plan = profile.subscription_plan || 'free';
+      const limits = getPlanLimits(plan);
+
+      return ok(res, {
+        plan,
+        status: profile.subscription_status || 'active',
+        subscription_id: profile.subscription_id,
+        plan_selected_at: profile.plan_selected_at,
+        limits,
+        usage: {
+          jobs_count: profile.jobs_count || 0,
+          assessments_count: profile.assessments_count || 0,
+          interviews_count: profile.interviews_count || 0,
+        },
+      });
+    }
+
+    // POST /api/subscription/create-order
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'create-order') {
+      const { plan } = req.body || {};
+      if (!plan || !PLAN_LIMITS[plan]) return badRequest(res, 'Invalid plan');
+      if (plan === 'free') return badRequest(res, 'Free plan does not require payment');
+
+      const limits = getPlanLimits(plan);
+      const receipt = `sub_${user.id.slice(0, 8)}_${Date.now()}`;
+
+      try {
+        const order = await createRazorpayOrder(limits.price, 'INR', receipt, {
+          plan,
+          user_id: user.id,
+        });
+
+        return ok(res, {
+          order_id: order.id,
+          amount: order.amount,
+          currency: order.currency,
+          key_id: process.env.RAZORPAY_KEY_ID,
+          plan,
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    // POST /api/subscription/verify
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'verify') {
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan } = req.body || {};
+
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !plan) {
+        return badRequest(res, 'Missing payment verification fields');
+      }
+
+      const isValid = verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
+      if (!isValid) {
+        return res.status(400).json({ error: 'Payment verification failed — invalid signature' });
+      }
+
+      // Activate the plan
+      const { data: updated, error: upErr } = await supabase
+        .from('profiles')
+        .update({
+          subscription_plan: plan,
+          subscription_id: razorpay_order_id,
+          razorpay_payment_id: razorpay_payment_id,
+          subscription_status: 'active',
+          plan_selected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (upErr) return res.status(500).json({ error: upErr.message });
+
+      return ok(res, {
+        success: true,
+        plan,
+        message: `${getPlanLimits(plan).label} plan activated successfully!`,
+        profile: updated,
+      });
+    }
+
+    // POST /api/subscription/select-free
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'select-free') {
+      const { data: updated, error: upErr } = await supabase
+        .from('profiles')
+        .update({
+          subscription_plan: 'free',
+          subscription_status: 'active',
+          plan_selected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (upErr) return res.status(500).json({ error: upErr.message });
+      return ok(res, { success: true, plan: 'free', profile: updated });
+    }
+
+    return methodNotAllowed(res);
+  }
+
+  // /api/usage
+  if (segments[0] === 'usage' && segments.length === 1) {
+    const user = await requireAuth(req, res);
+    if (!user) return;
+    if (req.method !== 'GET') return methodNotAllowed(res);
+
+    const profile = await getUserProfile(supabase, user.id);
+    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+    const plan = profile.subscription_plan || 'free';
+    const limits = getPlanLimits(plan);
+
+    return ok(res, {
+      plan,
+      plan_label: limits.label,
+      usage: {
+        jobs: { used: profile.jobs_count || 0, limit: limits.max_jobs, label: 'Job Roles' },
+        assessments: { used: profile.assessments_count || 0, limit: limits.max_assessments, label: 'Technical Assessments' },
+        interviews: { used: profile.interviews_count || 0, limit: limits.max_interviews, label: 'Interviews' },
+      },
+    });
+  }
+
   // /api/dsa-problems - DSA Problem Bank Management
   if (segments[0] === 'dsa-problems') {
     if (segments.length === 1) {
@@ -672,6 +851,24 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const user = await requireAuth(req, res);
         if (!user) return;
 
+        // ---- Usage Limit Check ----
+        const profile = await getUserProfile(supabase, user.id);
+        if (profile) {
+          const plan = profile.subscription_plan || 'free';
+          const limits = getPlanLimits(plan);
+          const currentJobs = profile.jobs_count || 0;
+          if (currentJobs >= limits.max_jobs) {
+            return res.status(403).json({
+              error: 'limit_exceeded',
+              message: `You have reached the maximum of ${limits.max_jobs} job roles on the ${limits.label} plan. Please upgrade to create more.`,
+              resource: 'jobs',
+              current: currentJobs,
+              limit: limits.max_jobs,
+              plan,
+            });
+          }
+        }
+
         const body = req.body;
         const jobData: Record<string, any> = {
           title: body.title,
@@ -708,6 +905,15 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           .single();
 
         if (error) return res.status(500).json({ error: error.message });
+
+        // Increment usage counter
+        if (profile) {
+          await supabase.from('profiles').update({
+            jobs_count: (profile.jobs_count || 0) + 1,
+            updated_at: new Date().toISOString(),
+          }).eq('user_id', user.id);
+        }
+
         return ok(res, data, 201);
       }
 

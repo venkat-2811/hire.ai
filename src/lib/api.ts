@@ -631,4 +631,63 @@ export const analyticsApi = {
   },
 };
 
+// ============== Subscription API ==============
+
+export interface SubscriptionInfo {
+  plan: 'free' | 'pro' | 'premium';
+  status: string;
+  subscription_id: string | null;
+  plan_selected_at: string | null;
+  limits: {
+    max_jobs: number;
+    max_assessments: number;
+    max_interviews: number;
+    price: number;
+    label: string;
+  };
+  usage: {
+    jobs_count: number;
+    assessments_count: number;
+    interviews_count: number;
+  };
+}
+
+export interface UsageInfo {
+  plan: string;
+  plan_label: string;
+  usage: {
+    jobs: { used: number; limit: number; label: string };
+    assessments: { used: number; limit: number; label: string };
+    interviews: { used: number; limit: number; label: string };
+  };
+}
+
+export const subscriptionApi = {
+  get: () => request<SubscriptionInfo>('/subscription'),
+
+  createOrder: (plan: string) =>
+    request<{ order_id: string; amount: number; currency: string; key_id: string; plan: string }>(
+      '/subscription/create-order',
+      { method: 'POST', body: { plan } },
+    ),
+
+  verify: (data: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    plan: string;
+  }) =>
+    request<{ success: boolean; plan: string; message: string }>(
+      '/subscription/verify',
+      { method: 'POST', body: data },
+    ),
+
+  selectFree: () =>
+    request<{ success: boolean; plan: string }>('/subscription/select-free', { method: 'POST' }),
+};
+
+export const usageApi = {
+  get: () => request<UsageInfo>('/usage'),
+};
+
 export { APIError };
