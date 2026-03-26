@@ -1689,33 +1689,111 @@ export default function AssessmentPage() {
                         </div>
                       )}
 
-                      {/* Console Output Panel */}
+                      {/* User Output Panel — always shown once code has been run */}
                       {codingResults[currentCoding.id] && !runningCode && !submittingCode && (() => {
-                        const results = codingResults[currentCoding.id].results;
-                        const hasStdout = results.some(r => r.stdout);
-                        const hasStderr = results.some(r => r.stderr);
-                        const compilationError = codingResults[currentCoding.id].compilation_error;
-                        if (!hasStdout && !hasStderr && !compilationError) return null;
+                        const result = codingResults[currentCoding.id];
+                        const compilationError = result.compilation_error;
+                        const results = result.results;
+
+                        // Collect distinct runtime stderr messages (not a compile error)
+                        const runtimeErrors = !compilationError
+                          ? results
+                              .filter(r => r.stderr && r.status !== 'CE')
+                              .map((r, i) => ({ testIdx: i + 1, msg: r.stderr! }))
+                          : [];
+
+                        // Collect all stdout lines per test
+                        const stdoutItems = results
+                          .filter(r => r.stdout)
+                          .map((r, i) => ({ testIdx: i + 1, out: r.stdout! }));
+
+                        // Match check: does aggregated stdout equal first test's expected output?
+                        const firstExpected = currentCoding.test_cases?.[0]?.expected_output?.trim();
+                        const allStdout = stdoutItems.map(s => s.out.trim()).join('\n');
+                        const outputMatchesExpected =
+                          !!firstExpected &&
+                          stdoutItems.length > 0 &&
+                          (allStdout === firstExpected || stdoutItems[0]?.out.trim() === firstExpected);
+
+                        const hasContent = compilationError || runtimeErrors.length > 0 || stdoutItems.length > 0;
+
                         return (
-                          <div className="border-t bg-zinc-950 max-h-40 overflow-auto">
+                          <div className="border-t bg-zinc-950">
+                            {/* Header */}
                             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 sticky top-0">
                               <Terminal className="h-3 w-3 text-zinc-400" />
-                              <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Console Output</span>
+                              <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">User Output</span>
                             </div>
-                            <div className="p-3 space-y-1">
+
+                            <div className="p-3 space-y-3 max-h-52 overflow-auto">
+                              {/* ── Compilation Error ── */}
                               {compilationError && (
-                                <pre className="text-xs font-mono text-red-400 whitespace-pre-wrap">{compilationError}</pre>
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-400 mb-1 flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3" /> Compilation Error
+                                  </p>
+                                  <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-orange-950/30 border border-orange-500/20 rounded px-2.5 py-2">
+                                    {compilationError}
+                                  </pre>
+                                </div>
                               )}
-                              {results.map((r, i) => (
-                                <div key={i}>
-                                  {r.stdout && (
-                                    <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">{r.stdout}</pre>
-                                  )}
-                                  {r.stderr && !compilationError && (
-                                    <pre className="text-xs font-mono text-red-400 whitespace-pre-wrap">{r.stderr}</pre>
+
+                              {/* ── Runtime Errors (stderr) ── */}
+                              {runtimeErrors.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-1 flex items-center gap-1">
+                                    <XCircleIcon className="h-3 w-3" /> Runtime Error
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {runtimeErrors.map(({ testIdx, msg }) => (
+                                      <div key={testIdx}>
+                                        {runtimeErrors.length > 1 && (
+                                          <span className="text-[10px] text-zinc-500 font-sans">Test {testIdx}:</span>
+                                        )}
+                                        <pre className="text-xs font-mono text-red-300 whitespace-pre-wrap bg-red-950/30 border border-red-500/20 rounded px-2.5 py-2">
+                                          {msg}
+                                        </pre>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* ── Stdout / Print Output ── */}
+                              {stdoutItems.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1 flex items-center gap-1">
+                                    <Terminal className="h-3 w-3" /> Output
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {stdoutItems.map(({ testIdx, out }) => (
+                                      <div key={testIdx}>
+                                        {stdoutItems.length > 1 && (
+                                          <span className="text-[10px] text-zinc-500 font-sans">Test {testIdx}:</span>
+                                        )}
+                                        <pre className="text-xs font-mono text-zinc-200 whitespace-pre-wrap bg-zinc-900 border border-zinc-700/50 rounded px-2.5 py-2">
+                                          {out}
+                                        </pre>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* Output match confirmation */}
+                                  {outputMatchesExpected && (
+                                    <div className="mt-2 flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded px-2.5 py-1.5">
+                                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                                      <span className="text-xs text-green-400 font-medium">
+                                        Output matches expected — looks correct!
+                                      </span>
+                                    </div>
                                   )}
                                 </div>
-                              ))}
+                              )}
+
+                              {/* ── Nothing to show ── */}
+                              {!hasContent && (
+                                <p className="text-xs text-zinc-500 italic">No output generated.</p>
+                              )}
                             </div>
                           </div>
                         );
