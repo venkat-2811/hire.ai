@@ -101,7 +101,7 @@ export default function CandidateDetailsPage() {
                   </Button>
                 )}
                 <Button asChild>
-                  <Link to="/candidates">Back to Candidates</Link>
+                  <Link to="/candidates">Back to the Candidates</Link>
                 </Button>
               </div>
             </CardContent>
