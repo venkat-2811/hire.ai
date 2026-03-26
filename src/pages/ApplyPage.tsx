@@ -205,7 +205,7 @@ export default function ApplyPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground text-center">
-                Our team will review your application and contact you soon regarding the next steps.
+                Our team will review your application and contact you soon regarding the next steps of your application.
               </p>
               <div className="flex justify-center">
                 <Button variant="outline" onClick={() => navigate('/')}>

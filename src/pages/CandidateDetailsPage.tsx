@@ -101,7 +101,7 @@ export default function CandidateDetailsPage() {
                   </Button>
                 )}
                 <Button asChild>
-                  <Link to="/candidates">Back to Candidates</Link>
+                  <Link to="/candidates">Back to the Candidates</Link>
                 </Button>
               </div>
             </CardContent>
@@ -189,7 +189,7 @@ export default function CandidateDetailsPage() {
                       rel="noopener noreferrer"
                       className="text-primary hover:underline"
                     >
-                      Open uploaded resume
+                      Open uploaded Resume
                     </a>
                   ) : (
                     <p className="text-sm text-muted-foreground">

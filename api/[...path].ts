@@ -2266,6 +2266,8 @@ Only return valid JSON, no additional text.`;
           time_used: r.time_used,
           memory_used: r.memory_used,
           error: r.error,
+          stdout: r.stdout,
+          stderr: r.stderr,
         })),
         passed: passedCount,
         total: publicTests.length,
@@ -2326,7 +2328,7 @@ Only return valid JSON, no additional text.`;
           time_used: r.time_used,
           memory_used: r.memory_used,
           // Only include input/output for public tests in stored results
-          ...(r.visibility === 'public' ? { input: r.input, expected_output: r.expected_output, actual_output: r.actual_output } : {}),
+          ...(r.visibility === 'public' ? { input: r.input, expected_output: r.expected_output, actual_output: r.actual_output, stdout: r.stdout, stderr: r.stderr } : {}),
         })),
         summary: {
           public_passed: publicResults.filter((r: any) => r.passed).length,
@@ -2391,6 +2393,8 @@ Only return valid JSON, no additional text.`;
           status: r.status,
           time_used: r.time_used,
           memory_used: r.memory_used,
+          stdout: r.stdout,
+          stderr: r.stderr,
         })),
         hidden_tests_passed: (submissionRecord.summary.private_passed + submissionRecord.summary.edge_passed),
         hidden_tests_total: (submissionRecord.summary.private_total + submissionRecord.summary.edge_total),
@@ -3269,6 +3273,7 @@ type TCResult = {
   actual_output: string | null; passed: boolean; status: string;
   time_used: string | null; memory_used: string | null;
   visibility: string; error: string | null;
+  stdout?: string | null; stderr?: string | null;
 };
 
 // Rate-limiting: track recent submissions per session
@@ -3334,6 +3339,7 @@ async function executeTestCasesViaHackerEarth(
         expected_output: testCases[i].expected_output, actual_output: null,
         passed: false, status: 'CE', time_used: null, memory_used: null,
         visibility: testCases[i].visibility || 'public', error: firstResult.error,
+        stdout: null, stderr: null,
       });
     }
     return results;
@@ -3401,7 +3407,8 @@ async function submitAndEvalSingleHE(
         error: `Compilation Error: ${compileStatus}` };
     }
 
-    const actualOutput = await fetchHEOutput(runStatus.output);
+    const stdoutRaw = await fetchHEOutput(runStatus.output);
+    const stderrRaw = await fetchHEOutput(runStatus.stderr);
 
     // Runtime error / TLE / MLE
     if (status !== 'AC') {
@@ -3412,20 +3419,22 @@ async function submitAndEvalSingleHE(
         'SI': 'Signal Error', 'OTHER': runStatus.status_detail || 'Unknown Error',
       };
       return { test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
-        actual_output: actualOutput, passed: false, status: status === 'NZEC' ? 'RE' : status,
+        actual_output: stdoutRaw, passed: false, status: status === 'NZEC' ? 'RE' : status,
         time_used: runStatus.time_used || null, memory_used: runStatus.memory_used || null,
-        visibility: vis, error: errorMap[status] || `Execution error: ${status}` };
+        visibility: vis, error: errorMap[status] || `Execution error: ${status}`,
+        stdout: stdoutRaw, stderr: stderrRaw };
     }
 
     // Strict output comparison
     const expected = normalizeOutput(tc.expected_output);
-    const actual = normalizeOutput(actualOutput);
+    const actual = normalizeOutput(stdoutRaw);
     const passed = actual === expected;
 
     return { test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
       actual_output: actual, passed, status: passed ? 'AC' : 'WA',
       time_used: runStatus.time_used || null, memory_used: runStatus.memory_used || null,
-      visibility: vis, error: passed ? null : 'Wrong Answer' };
+      visibility: vis, error: passed ? null : 'Wrong Answer',
+      stdout: stdoutRaw, stderr: stderrRaw };
 
   } catch (err: any) {
     return { test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
