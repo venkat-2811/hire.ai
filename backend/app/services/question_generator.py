@@ -377,11 +377,10 @@ Generate {count} coding challenges that:
 - Are on the harder end of the level with nuanced edge cases
 - Are solvable in 20-35 minutes each
 - Include clear problem descriptions
-- Provide Python 3 starter code as `starter_code` (a single Python string)
+- Provide starter code templates
 - STRICT REQUIREMENT: You MUST provide a `test_cases` array with at least 3 diverse test cases (including edge cases).
 - `input` must be a JSON object mapping Python argument names to values.
-- `expected` must be the expected direct return value of the function.
-- Include 2-3 worked `examples` (input/output/explanation).
+- `expected` must be the expected direct return value.
 - Emphasize advanced reasoning within {job.level}
 
 Return JSON:
@@ -389,25 +388,18 @@ Return JSON:
     "challenges": [
         {{
             "title": "Challenge Title",
-            "slug": "challenge-title",
-            "description": "Detailed problem description",
-            "constraints": "1 <= n <= 10^5",
-            "examples": [
-                {{"input": "nums = [2,7,11], target = 9", "output": "[0,1]", "explanation": "nums[0]+nums[1]=9"}}
-            ],
-            "starter_code": "def solution(arg1):\\n    # Your code here\\n    pass",
+            "description": "Detailed problem description with examples",
+            "starter_code": "def solution(arg1):\\n    pass",
             "test_cases": [
                 {{"input": {{"arg1": "value"}}, "expected": "result"}},
                 {{"input": {{"arg1": "edge_case"}}, "expected": "result2"}}
             ],
             "difficulty": "easy|medium|hard",
-            "time_limit_seconds": 5,
+            "time_limit_minutes": 15,
             "points": 25
         }}
     ]
 }}"""
-
-        SUPPORTED_LANGUAGES = ["python3", "javascript", "java", "cpp"]
 
         try:
             result = await self.gemini.generate_json(
@@ -423,41 +415,25 @@ Return JSON:
                 test_cases = c.get("test_cases", [])
                 if not isinstance(test_cases, list):
                     test_cases = []
-                # Attach IDs to test cases
-                for i, tc in enumerate(test_cases):
-                    if not tc.get("id"):
-                        tc["id"] = str(uuid.uuid4())
-
-                raw_starter = c.get("starter_code", "")
-                # Convert plain string starter code into per-language dict
-                starter_code_dict: Dict[str, str] = {
-                    lang: raw_starter for lang in SUPPORTED_LANGUAGES
-                }
-
                 challenges.append({
                     "id": str(uuid.uuid4()),
-                    "slug": c.get("slug", c.get("title", "").lower().replace(" ", "-")),
                     "title": c.get("title", ""),
                     "description": c.get("description", ""),
-                    "constraints": c.get("constraints", ""),
-                    "examples": c.get("examples", []),
-                    "starter_code": starter_code_dict,
+                    "starter_code": c.get("starter_code", ""),
                     "test_cases": test_cases,
-                    "supported_languages": SUPPORTED_LANGUAGES,
                     "difficulty": c.get("difficulty", "medium"),
-                    "time_limit_seconds": c.get("time_limit_seconds", 5),
+                    "time_limit_minutes": c.get("time_limit_minutes", 20),
                     "points": c.get("points", 25),
                 })
             
             if not challenges:
-                raise RuntimeError("No coding challenges returned")
+                raise RuntimeError("Groq returned no coding challenges")
 
             return challenges
             
         except Exception as e:
             print(f"Error generating coding challenges: {e}")
             return self._get_fallback_coding_challenges(count)
-
     
     def _get_fallback_mcq_questions(self, count: int) -> List[dict]:
         """Fallback MCQ questions if AI generation fails."""
@@ -508,55 +484,37 @@ Return JSON:
     
     def _get_fallback_coding_challenges(self, count: int) -> List[dict]:
         """Fallback coding challenges if AI generation fails."""
-        _LANGS = ["python3", "javascript", "java", "cpp"]
         fallbacks = [
             {
                 "id": str(uuid.uuid4()),
-                "slug": "two-sum",
                 "title": "Two Sum",
-                "description": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.\n\nYou may assume that each input would have exactly one solution, and you may not use the same element twice.",
-                "constraints": "2 <= nums.length <= 10^4\n-10^9 <= nums[i] <= 10^9\n-10^9 <= target <= 10^9",
-                "examples": [
-                    {"input": "nums = [2,7,11,15], target = 9", "output": "[0,1]", "explanation": "nums[0] + nums[1] = 2 + 7 = 9"},
-                    {"input": "nums = [3,2,4], target = 6", "output": "[1,2]"},
-                ],
-                "starter_code": {lang: "def two_sum(nums, target):\n    # Your code here\n    pass" for lang in _LANGS},
+                "description": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.",
+                "starter_code": "def two_sum(nums, target):\n    # Your code here\n    pass",
                 "test_cases": [
-                    {"id": str(uuid.uuid4()), "input": {"nums": [2, 7, 11, 15], "target": 9}, "expected": [0, 1]},
-                    {"id": str(uuid.uuid4()), "input": {"nums": [3, 2, 4], "target": 6}, "expected": [1, 2]},
-                    {"id": str(uuid.uuid4()), "input": {"nums": [3, 3], "target": 6}, "expected": [0, 1]},
+                    {"input": {"nums": [2, 7, 11, 15], "target": 9}, "expected": [0, 1]},
+                    {"input": {"nums": [3, 2, 4], "target": 6}, "expected": [1, 2]},
                 ],
-                "supported_languages": _LANGS,
                 "difficulty": "easy",
-                "time_limit_seconds": 5,
+                "time_limit_minutes": 15,
                 "points": 25,
             },
             {
                 "id": str(uuid.uuid4()),
-                "slug": "valid-parentheses",
                 "title": "Valid Parentheses",
-                "description": "Given a string s containing just the characters '(', ')', '{', '}', '[' and ']', determine if the input string is valid.\n\nAn input string is valid if:\n- Open brackets must be closed by the same type of brackets.\n- Open brackets must be closed in the correct order.",
-                "constraints": "1 <= s.length <= 10^4\ns consists of parentheses only '()[]{}'",
-                "examples": [
-                    {"input": "s = \"()\"", "output": "true"},
-                    {"input": "s = \"()[]{}\"", "output": "true"},
-                    {"input": "s = \"(]\"", "output": "false"},
-                ],
-                "starter_code": {lang: "def is_valid(s):\n    # Your code here\n    pass" for lang in _LANGS},
+                "description": "Given a string s containing just the characters '(', ')', '{', '}', '[' and ']', determine if the input string is valid.",
+                "starter_code": "def is_valid(s):\n    # Your code here\n    pass",
                 "test_cases": [
-                    {"id": str(uuid.uuid4()), "input": {"s": "()"}, "expected": True},
-                    {"id": str(uuid.uuid4()), "input": {"s": "()[]{}"}, "expected": True},
-                    {"id": str(uuid.uuid4()), "input": {"s": "(]"}, "expected": False},
+                    {"input": {"s": "()"}, "expected": True},
+                    {"input": {"s": "()[]{}"}, "expected": True},
+                    {"input": {"s": "(]"}, "expected": False},
                 ],
-                "supported_languages": _LANGS,
                 "difficulty": "medium",
-                "time_limit_seconds": 5,
+                "time_limit_minutes": 20,
                 "points": 35,
             },
         ]
         
         return fallbacks[:count]
-
     
     def _get_fallback_technical_questions(
         self,

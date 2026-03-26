@@ -111,8 +111,12 @@ class HackerEarthExecutor:
             function_name = self._detect_function_name(code, language)
 
         if not function_name:
-            # Fall back to running code directly (top-level script mode)
-            function_name = "__toplevel__"
+            return ExecutionResult(
+                success=False, test_results=[], passed_count=0,
+                total_count=0, score_percentage=0,
+                compilation_error="Could not detect function name in code. "
+                                  "Make sure your code defines a function.",
+            )
 
         he_lang = LANGUAGE_MAP.get(language, "PYTHON3")
 
@@ -368,19 +372,8 @@ class HackerEarthExecutor:
     ) -> str:
         """Build a runner script that wraps the candidate code + test harness."""
         input_json = json.dumps(input_data)
-        is_toplevel = function_name == "__toplevel__"
 
         if language in ("python3", "python"):
-            if is_toplevel:
-                # Run the code directly without calling a function
-                return f'''import json
-import sys
-import traceback
-
-# ---- Candidate's code ----
-{code}
-# ---- End candidate's code ----
-'''
             return f'''import json
 import sys
 import traceback
@@ -391,39 +384,25 @@ import traceback
 
 if __name__ == "__main__":
     try:
-        _input = json.loads({repr(input_json)})
-        # Try calling with keyword arguments first; fall back to no-args for main()
-        try:
-            _result = {function_name}(**_input)
-        except TypeError:
-            _result = {function_name}()
+        input_data = json.loads({repr(input_json)})
+        result = {function_name}(**input_data)
         print("---RESULT_SEPARATOR---")
-        print(json.dumps(_result, default=str))
+        print(json.dumps(result))
     except Exception as e:
         tb = traceback.format_exc()
         print(tb, file=sys.stderr)
         sys.exit(1)
 '''
         elif language == "javascript":
-            if is_toplevel:
-                return f'''// ---- Candidate's code ----
-{code}
-// ---- End candidate's code ----
-'''
             return f'''// ---- Candidate's code ----
 {code}
 // ---- End candidate's code ----
 
 try {{
-    const _input = {input_json};
-    let _result;
-    try {{
-        _result = {function_name}(...Object.values(_input));
-    }} catch (e) {{
-        _result = {function_name}();
-    }}
+    const inputData = {input_json};
+    const result = {function_name}(...Object.values(inputData));
     console.log("---RESULT_SEPARATOR---");
-    console.log(JSON.stringify(_result));
+    console.log(JSON.stringify(result));
 }} catch (e) {{
     console.error(e.stack || e.message || e);
     process.exit(1);
@@ -435,13 +414,6 @@ try {{
             return code  # C++ runs as-is
         else:
             # Default: treat as Python
-            if is_toplevel:
-                return f'''import json
-import sys
-import traceback
-
-{code}
-'''
             return f'''import json
 import sys
 import traceback
@@ -450,13 +422,10 @@ import traceback
 
 if __name__ == "__main__":
     try:
-        _input = json.loads({repr(input_json)})
-        try:
-            _result = {function_name}(**_input)
-        except TypeError:
-            _result = {function_name}()
+        input_data = json.loads({repr(input_json)})
+        result = {function_name}(**input_data)
         print("---RESULT_SEPARATOR---")
-        print(json.dumps(_result, default=str))
+        print(json.dumps(result))
     except Exception as e:
         tb = traceback.format_exc()
         print(tb, file=sys.stderr)
@@ -539,7 +508,7 @@ if __name__ == "__main__":
                         status="RE",
                     )
 
-                # Parse output — always capture user stdout
+                # Parse output
                 actual = None
                 user_stdout = ""
                 lines = stdout_content.rstrip("\n").split("\n")
@@ -550,7 +519,6 @@ if __name__ == "__main__":
                         break
 
                 if separator_idx is not None:
-                    # Lines before separator are user print output
                     user_stdout = "\n".join(lines[:separator_idx])
                     result_line = "\n".join(lines[separator_idx + 1:]).strip()
                     try:
@@ -558,9 +526,10 @@ if __name__ == "__main__":
                     except json.JSONDecodeError:
                         actual = result_line
                 else:
-                    # No separator — all output is the user's stdout, compare as string
-                    user_stdout = stdout_content.strip()
-                    actual = user_stdout
+                    try:
+                        actual = json.loads(stdout_content.strip())
+                    except json.JSONDecodeError:
+                        actual = stdout_content.strip()
 
                 passed = self._compare_results(actual, expected)
 
@@ -598,11 +567,6 @@ if __name__ == "__main__":
         if language in ("python3", "python"):
             matches = re.findall(r'def\s+(\w+)\s*\(', code)
             if matches:
-                # Prefer non-private, non-main functions first (solution/helper functions)
-                for m in matches:
-                    if not m.startswith('_') and m not in ('main',):
-                        return m
-                # Fall back to main if that's the only function
                 for m in matches:
                     if not m.startswith('_'):
                         return m
