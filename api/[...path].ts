@@ -1954,23 +1954,60 @@ ${mapped.guidance}
 IMPORTANT: Generate questions that are directly relevant to the job description and required skills.
 Each question should test practical knowledge of the must-have skills and good-to-have skills.
 
+## QUESTION STYLE RULES:
+- Prefer scenario-based questions ("What happens when...", "Given this code snippet, what is the output?", "Which approach is best for...") over simple definition questions.
+- Include questions that test trade-offs, debugging, best practices, and edge cases.
+- Vary question types: some code output prediction, some "which is correct", some "what is the best approach", some "what is wrong with this code".
+
+## OPTION RULES (CRITICAL - FOLLOW STRICTLY):
+1. NEVER generate options that are permutations or rearrangements of the same sentence. For example, if the question is about the difference between X and Y, do NOT create 4 options that all say "X does ___ while Y does ___" with swapped descriptions. This is the #1 thing to avoid.
+2. Each option MUST be structurally different - they should start with different words and use different sentence structures.
+3. Options should be concise (1-2 lines max). Avoid long paragraph-style options.
+4. The 4 options should follow this pattern:
+   - One clearly correct answer
+   - One plausible distractor that contains a common misconception
+   - One distractor that is partially correct but missing a key detail
+   - One distractor that sounds technical but is incorrect
+5. Vary option lengths - not all options should be the same length.
+6. Randomize the position of the correct answer across questions (don't always put it first).
+
+## EXAMPLE OF GOOD OPTIONS (for a SQL question about indexes):
+Question: "What is the primary benefit of adding an index on a frequently queried column?"
+Good options:
+- "It speeds up SELECT queries by allowing the database to locate rows without a full table scan" (correct)
+- "It reduces the overall storage size of the table" (plausible misconception)
+- "It guarantees that all values in the column are unique" (confuses index with unique constraint)
+- "It automatically caches the column data in application memory" (sounds technical but wrong)
+
+## EXAMPLE OF BAD OPTIONS (DO NOT DO THIS):
+- "A JOIN combines rows from tables based on a related column, while a UNION combines result-sets of SELECT statements"
+- "A JOIN combines result-sets of SELECT statements, while a UNION combines rows from tables based on a related column"
+- "A JOIN is used to combine rows based on a column, while a UNION combines result-sets"
+- "A JOIN combines result-sets, while a UNION combines rows based on a column"
+These are bad because they are all permutations of the same sentence. NEVER do this.
+
 Return JSON with this exact structure:
 {
   "questions": [
     {
       "id": "q1",
-      "question": "What is the purpose of...",
-      "options": ["First actual answer option", "Second actual answer option", "Third actual answer option", "Fourth actual answer option"],
+      "question": "What happens when you call Thread.sleep(0) in Java?",
+      "options": [
+        "The current thread yields its remaining time slice to other threads of equal priority",
+        "The JVM throws an IllegalArgumentException for invalid sleep duration",
+        "The thread is permanently suspended until notify() is called",
+        "Nothing happens — the method returns immediately with no effect"
+      ],
       "correct_index": 0,
       "difficulty": "${mapped.label}",
-      "topic": "Relevant skill or topic",
+      "topic": "Java Concurrency",
       "points": 5
     }
   ]
 }
 
 CRITICAL: The "options" array MUST contain 4 complete, meaningful answer choices - NOT just "A", "B", "C", "D".
-Each option should be a full sentence or phrase that could be a valid answer.
+Each option must start with a different word/phrase and be structurally unique.
 Only return valid JSON, no additional text.`;
 
       let generated: any;
