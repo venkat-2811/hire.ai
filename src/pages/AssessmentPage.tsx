@@ -131,6 +131,7 @@ export default function AssessmentPage() {
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
   const [codingLanguages, setCodingLanguages] = useState<Record<string, string>>({});
   const [problemTab, setProblemTab] = useState<'description' | 'submissions'>('description');
+  const [activeTestCaseTab, setActiveTestCaseTab] = useState(0);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
 
   // Proctoring state
@@ -521,6 +522,7 @@ export default function AssessmentPage() {
     }
 
     setRunningCode(challengeId);
+    setActiveTestCaseTab(0);
 
     try {
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/run`, {
@@ -594,6 +596,7 @@ export default function AssessmentPage() {
     }
 
     setSubmittingCode(challengeId);
+    setActiveTestCaseTab(0);
 
     try {
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
@@ -1625,7 +1628,7 @@ export default function AssessmentPage() {
                       </div>
 
                       {/* Monaco Editor */}
-                      <div className="flex-1" style={{ minHeight: 400 }}>
+                      <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
                           language={{ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby' }[codingLanguages[currentCoding.id] || 'python3'] || 'python'}
@@ -1663,69 +1666,32 @@ export default function AssessmentPage() {
                         )}
                       </AnimatePresence>
 
-                      {/* Compact Result Summary Bar */}
-                      {codingResults[currentCoding.id] && !runningCode && !submittingCode && (
-                        <div
-                          className={`border-t px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors ${
-                            codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0
-                              ? 'bg-green-500/5' : 'bg-red-500/5'
-                          }`}
-                          onClick={() => setProblemTab('submissions')}
-                        >
-                          <div className="flex items-center gap-2 text-xs">
-                            {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? (
-                              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                            ) : (
-                              <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
-                            )}
-                            <span className="font-medium">
-                              {codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} passed
-                            </span>
-                            {codingResults[currentCoding.id].performance?.avg_time_ms && (
-                              <span className="text-muted-foreground">• {codingResults[currentCoding.id].performance?.avg_time_ms}ms</span>
-                            )}
-                          </div>
-                          <span className="text-xs font-bold">{codingResults[currentCoding.id].score.toFixed(0)}%</span>
-                        </div>
-                      )}
-
                       {/* User Output Panel — always shown once code has been run */}
                       {codingResults[currentCoding.id] && !runningCode && !submittingCode && (() => {
                         const result = codingResults[currentCoding.id];
                         const compilationError = result.compilation_error;
                         const results = result.results;
 
-                        // Collect distinct runtime stderr messages (not a compile error)
-                        const runtimeErrors = !compilationError
-                          ? results
-                              .filter(r => r.stderr && r.status !== 'CE')
-                              .map((r, i) => ({ testIdx: i + 1, msg: r.stderr! }))
-                          : [];
+                        // Get the active test case
+                        const activeIndex = activeTestCaseTab < results.length ? activeTestCaseTab : 0;
+                        const activeResult = results[activeIndex];
 
-                        // Collect all stdout lines per test
-                        const stdoutItems = results
-                          .filter(r => r.stdout)
-                          .map((r, i) => ({ testIdx: i + 1, out: r.stdout! }));
-
-                        // Match check: does aggregated stdout equal first test's expected output?
-                        const firstExpected = currentCoding.test_cases?.[0]?.expected_output?.trim();
-                        const allStdout = stdoutItems.map(s => s.out.trim()).join('\n');
-                        const outputMatchesExpected =
-                          !!firstExpected &&
-                          stdoutItems.length > 0 &&
-                          (allStdout === firstExpected || stdoutItems[0]?.out.trim() === firstExpected);
-
-                        const hasContent = compilationError || runtimeErrors.length > 0 || stdoutItems.length > 0;
+                        const outputMatchesExpectedText = (() => {
+                          if (!activeResult || !activeResult.stdout) return false;
+                          const actual = activeResult.stdout.trim();
+                          const expected = (activeResult.expected_output || "").trim();
+                          return actual === expected;
+                        })();
 
                         return (
-                          <div className="border-t bg-zinc-950">
+                          <div className="flex flex-col flex-1 bg-zinc-950 overflow-hidden" style={{ minHeight: 250 }}>
                             {/* Header */}
                             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 sticky top-0">
                               <Terminal className="h-3 w-3 text-zinc-400" />
-                              <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">User Output</span>
+                              <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Testcase &gt;_ Test Result</span>
                             </div>
 
-                            <div className="p-3 space-y-3 max-h-52 overflow-auto">
+                            <div className="flex-1 overflow-auto p-3 space-y-3">
                               {/* ── Compilation Error ── */}
                               {compilationError && (
                                 <div>
@@ -1738,60 +1704,94 @@ export default function AssessmentPage() {
                                 </div>
                               )}
 
-                              {/* ── Runtime Errors (stderr) ── */}
-                              {runtimeErrors.length > 0 && (
-                                <div>
-                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-1 flex items-center gap-1">
-                                    <XCircleIcon className="h-3 w-3" /> Runtime Error
-                                  </p>
-                                  <div className="space-y-1.5">
-                                    {runtimeErrors.map(({ testIdx, msg }) => (
-                                      <div key={testIdx}>
-                                        {runtimeErrors.length > 1 && (
-                                          <span className="text-[10px] text-zinc-500 font-sans">Test {testIdx}:</span>
-                                        )}
-                                        <pre className="text-xs font-mono text-red-300 whitespace-pre-wrap bg-red-950/30 border border-red-500/20 rounded px-2.5 py-2">
-                                          {msg}
-                                        </pre>
-                                      </div>
-                                    ))}
+                              {!compilationError && results.length > 0 && (
+                                <>
+                                  {/* Verdict & Runtime */}
+                                  <div className="flex items-center gap-3">
+                                    <span className={`text-lg font-bold ${result.passed === result.total ? 'text-green-500' : 'text-red-500'}`}>
+                                      {result.passed === result.total ? 'Accepted' : 'Wrong Answer'}
+                                    </span>
+                                    {result.performance?.avg_time_ms && (
+                                      <span className="text-xs text-zinc-400 font-medium tracking-tight">Runtime: {result.performance.avg_time_ms} ms</span>
+                                    )}
                                   </div>
-                                </div>
-                              )}
 
-                              {/* ── Stdout / Print Output ── */}
-                              {stdoutItems.length > 0 && (
-                                <div>
-                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1 flex items-center gap-1">
-                                    <Terminal className="h-3 w-3" /> Output
-                                  </p>
-                                  <div className="space-y-1.5">
-                                    {stdoutItems.map(({ testIdx, out }) => (
-                                      <div key={testIdx}>
-                                        {stdoutItems.length > 1 && (
-                                          <span className="text-[10px] text-zinc-500 font-sans">Test {testIdx}:</span>
-                                        )}
-                                        <pre className="text-xs font-mono text-zinc-200 whitespace-pre-wrap bg-zinc-900 border border-zinc-700/50 rounded px-2.5 py-2">
-                                          {out}
-                                        </pre>
-                                      </div>
+                                  {/* Testcase Tabs */}
+                                  <div className="flex flex-wrap gap-2 pt-1 pb-2">
+                                    {results.map((r, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={() => setActiveTestCaseTab(idx)}
+                                        className={`px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                                          activeTestCaseTab === idx
+                                            ? 'bg-zinc-800 text-zinc-100'
+                                            : 'bg-zinc-900/40 text-zinc-400 hover:bg-zinc-800/60'
+                                        }`}
+                                      >
+                                        <div className={`h-1.5 w-1.5 rounded-full ${r.status !== 'CE' && r.passed ? 'bg-green-500' : 'bg-red-500'}`} />
+                                        Case {idx + 1}
+                                      </button>
                                     ))}
                                   </div>
 
-                                  {/* Output match confirmation */}
-                                  {outputMatchesExpected && (
-                                    <div className="mt-2 flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded px-2.5 py-1.5">
-                                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                                      <span className="text-xs text-green-400 font-medium">
-                                        Output matches expected — looks correct!
-                                      </span>
+                                  {/* Active Testcase Details */}
+                                  {activeResult && (
+                                    <div className="space-y-3">
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-zinc-500 mb-1">Input</p>
+                                        <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
+                                          <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">
+                                            {activeResult.input || 'No input'}
+                                          </pre>
+                                        </div>
+                                      </div>
+                                      
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-zinc-500 mb-1">Output</p>
+                                        <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
+                                          <pre className={`text-xs font-mono whitespace-pre-wrap ${(!activeResult.passed && !activeResult.stderr) ? 'text-red-400' : 'text-zinc-300'}`}>
+                                            {activeResult.actual_output || activeResult.stdout || ''}
+                                          </pre>
+                                          {(!activeResult.actual_output && !activeResult.stdout && !activeResult.stderr) && (
+                                            <span className="text-xs italic text-zinc-600">No output</span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-zinc-500 mb-1">Expected</p>
+                                        <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
+                                          <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">
+                                            {activeResult.expected_output || 'No expected output'}
+                                          </pre>
+                                        </div>
+                                      </div>
+
+                                      {activeResult.stderr && (
+                                        <div>
+                                          <p className="text-[10px] font-semibold text-red-500 mb-1 flex items-center gap-1.5">
+                                            <XCircleIcon className="h-3 w-3" /> Runtime Error / Stderr
+                                          </p>
+                                          <pre className="text-xs font-mono text-red-400 bg-red-950/20 border border-red-500/20 rounded px-3 py-2 whitespace-pre-wrap">
+                                            {activeResult.stderr}
+                                          </pre>
+                                        </div>
+                                      )}
+
+                                      {outputMatchesExpectedText && (
+                                        <div className="mt-1 flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 rounded px-2.5 py-1.5 w-fit">
+                                          <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                                          <span className="text-[10px] text-green-400 font-medium">
+                                            Output matches expected — looks correct!
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
-                                </div>
+                                </>
                               )}
-
-                              {/* ── Nothing to show ── */}
-                              {!hasContent && (
+                              
+                              {!compilationError && results.length === 0 && (
                                 <p className="text-xs text-zinc-500 italic">No output generated.</p>
                               )}
                             </div>
