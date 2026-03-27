@@ -7,6 +7,12 @@ from app.models.schemas import (
 )
 from app.models.enums import RoleLevel, AssessmentType
 from app.services.gemini_client import get_gemini_service
+from app.prompts import (
+    get_technical_questions_prompt,
+    get_behavioral_questions_prompt,
+    get_mcq_generation_prompt,
+    get_coding_challenges_prompt
+)
 
 
 class QuestionGeneratorService:
@@ -110,44 +116,20 @@ class QuestionGeneratorService:
             previous_q_text = f"\n\nDO NOT generate questions similar to these (already asked to other candidates):\n" + \
                              "\n".join([f"- {q}" for q in previous_questions[:20]])
         
-        system_prompt = f"""You are an expert technical interviewer for {job.role.replace('_', ' ')} positions.
-Generate unique, challenging technical interview questions based strictly on the Job Description and Skills provided.
-
-Role: {job.role.replace('_', ' ')}
-Level: {job.level.value}
-Job Description Summary: {job.description[:800]}
-Must-Have Skills: {must_have_skills}
-Good-to-Have Skills: {good_to_have_skills}
-
-Guidelines:
-- Questions should be specific and test real-world knowledge
-- Difficulty should range from {min_difficulty} to {max_difficulty} (scale 1-5)
-- Include a mix of conceptual and scenario-based questions
-- Questions should be answerable in 2-5 minutes
-- Use the seed "{seed}" to ensure uniqueness
-- Tailor questions to the candidate's background when relevant
-{previous_q_text}
-
-Return a JSON object with this structure:
-{{
-    "questions": [
-        {{
-            "question_text": "The question",
-            "difficulty_level": 3,
-            "expected_answer": "Key points for a good answer",
-            "time_limit_seconds": 180,
-            "focus_area": "Specific topic being tested"
-        }}
-    ]
-}}"""
-
-        user_prompt = f"""Generate {num_questions} technical interview questions for this candidate.
-
-Candidate Skills: {candidate_skills}
-Experience: {resume_data.total_experience_years} years
-Job Description: {job.description[:500]}
-
-Generate unique questions that assess their fit for this role."""
+        system_prompt, user_prompt = get_technical_questions_prompt(
+            role=job.role.replace('_', ' '),
+            level=job.level.value,
+            description=job.description,
+            must_have=must_have_skills,
+            good_to_have=good_to_have_skills,
+            min_diff=min_difficulty,
+            max_diff=max_difficulty,
+            seed=seed,
+            previous_q_text=previous_q_text,
+            candidate_skills=candidate_skills,
+            experience_years=resume_data.total_experience_years,
+            num_questions=num_questions
+        )
 
         try:
             result = await self.gemini.generate_json(
@@ -189,36 +171,17 @@ Generate unique questions that assess their fit for this role."""
             recent_exp = resume_data.experience[0]
             experience_context = f"Recent role: {recent_exp.title} at {recent_exp.company}"
         
-        system_prompt = f"""You are an expert behavioral interviewer.
-Generate STAR-format behavioral questions that assess soft skills and cultural fit.
-
-Role: {job.role.replace('_', ' ')}
-Level: {job.level.value}
-{experience_context}
-
-Focus on:
-- Problem-solving approach
-- Communication skills
-- Teamwork and collaboration
-- Handling pressure and deadlines
-- Learning and adaptability
-
-Use seed "{seed}" for uniqueness.
-
-Return JSON:
-{{
-    "questions": [
-        {{
-            "question_text": "Tell me about a time when...",
-            "expected_answer": "Look for: specific situation, actions taken, measurable results",
-            "competency": "Problem Solving"
-        }}
-    ]
-}}"""
+        system_prompt, user_prompt = get_behavioral_questions_prompt(
+            role=job.role.replace('_', ' '),
+            level=job.level.value,
+            experience_context=experience_context,
+            seed=seed,
+            num_questions=num_questions
+        )
 
         try:
             result = await self.gemini.generate_json(
-                prompt=f"Generate {num_questions} behavioral questions.",
+                prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7
             )
@@ -260,39 +223,9 @@ Generate {count} multiple-choice questions that:
 - Test practical knowledge of the required skills
 - Bias toward hard difficulty with advanced concepts, edge cases, and tradeoffs
 - Have 4 options each with exactly ONE correct answer
+- Use plausible distractors that reflect common pitfalls
 - Are specific to this role and level
 - Cover a variety of topics from the job description
-
-## QUESTION STYLE RULES:
-- Prefer scenario-based questions ("What happens when...", "Given this code snippet, what is the output?", "Which approach is best for...") over simple definition questions.
-- Include questions that test trade-offs, debugging, best practices, and edge cases.
-- Vary question types: some code output prediction, some "which is correct", some "what is the best approach", some "what is wrong with this code".
-
-## OPTION RULES (CRITICAL - FOLLOW STRICTLY):
-1. NEVER generate options that are permutations or rearrangements of the same sentence. For example, if the question asks about the difference between X and Y, do NOT create 4 options that all say "X does ___ while Y does ___" with swapped descriptions. This is the #1 thing to avoid.
-2. Each option MUST be structurally different - they should start with different words and use different sentence structures.
-3. Options should be concise (1-2 lines max). Avoid long paragraph-style options.
-4. The 4 options should follow this pattern:
-   - One clearly correct answer
-   - One plausible distractor that contains a common misconception
-   - One distractor that is partially correct but missing a key detail
-   - One distractor that sounds technical but is incorrect
-5. Vary option lengths - not all options should be the same length.
-6. Randomize the position of the correct answer across questions.
-
-## EXAMPLE OF BAD OPTIONS (DO NOT DO THIS):
-- "A JOIN combines rows from tables based on a related column, while a UNION combines result-sets of SELECT statements"
-- "A JOIN combines result-sets of SELECT statements, while a UNION combines rows from tables based on a related column"
-- "A JOIN is used to combine rows based on a column, while a UNION combines result-sets"
-- "A JOIN combines result-sets, while a UNION combines rows based on a column"
-These are all permutations of the same sentence. NEVER do this.
-
-## EXAMPLE OF GOOD OPTIONS:
-Question: "What is the primary benefit of adding an index on a frequently queried column?"
-- "It speeds up SELECT queries by allowing the database to locate rows without a full table scan" (correct)
-- "It reduces the overall storage size of the table" (plausible misconception)
-- "It guarantees that all values in the column are unique" (confuses index with unique constraint)
-- "It automatically caches the column data in application memory" (sounds technical but wrong)
 
 Return a JSON object:
 {{
@@ -324,7 +257,7 @@ Return a JSON object:
                 "contents": [
                     {
                         "role": "user",
-                        "parts": [{"text": f"Generate {count} MCQ questions for this {job.role} position."}]
+                        "parts": [{"text": user_prompt}]
                     }
                 ],
                 "systemInstruction": {
@@ -397,43 +330,17 @@ Return a JSON object:
         
         must_have_skills = ", ".join(job.must_have_skills)
         
-        system_prompt = f"""You are creating coding challenges for a {job.role} position at {job.level} level.
-
-Job Description: {job.description[:800]}
-Key Skills: {must_have_skills}
-
-Generate {count} coding challenges that:
-- Test practical coding ability relevant to this role
-- Are on the harder end of the level with nuanced edge cases
-- Are solvable in 20-35 minutes each
-- Include clear problem descriptions
-- Provide starter code templates
-- STRICT REQUIREMENT: You MUST provide a `test_cases` array with at least 3 diverse test cases (including edge cases).
-- `input` must be a JSON object mapping Python argument names to values.
-- `expected` must be the expected direct return value.
-- Emphasize advanced reasoning within {job.level}
-
-Return JSON:
-{{
-    "challenges": [
-        {{
-            "title": "Challenge Title",
-            "description": "Detailed problem description with examples",
-            "starter_code": "def solution(arg1):\\n    pass",
-            "test_cases": [
-                {{"input": {{"arg1": "value"}}, "expected": "result"}},
-                {{"input": {{"arg1": "edge_case"}}, "expected": "result2"}}
-            ],
-            "difficulty": "easy|medium|hard",
-            "time_limit_minutes": 15,
-            "points": 25
-        }}
-    ]
-}}"""
+        system_prompt, user_prompt = get_coding_challenges_prompt(
+            role=job.role,
+            level=job.level,
+            description=job.description,
+            must_have_skills=must_have_skills,
+            count=count
+        )
 
         try:
             result = await self.gemini.generate_json(
-                prompt=f"Generate {count} coding challenges for {job.role}.",
+                prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7,
                 max_tokens=8192,

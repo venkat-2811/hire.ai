@@ -4,6 +4,14 @@ import json
 import re
 from typing import Optional, Dict, Any, List
 from app.config import get_settings
+from app.prompts import (
+    get_analyze_resume_prompt,
+    get_screen_candidate_prompt,
+    get_interview_questions_general_prompt,
+    get_evaluate_response_prompt,
+    get_generate_practical_assessment_prompt,
+    get_evaluate_practical_submission_prompt
+)
 
 
 class GeminiService:
@@ -143,42 +151,7 @@ Just the raw JSON object.
     
     async def analyze_resume(self, resume_text: str) -> Dict[str, Any]:
         """Parse and analyze resume content."""
-        system_instruction = """You are an expert resume parser and analyzer.
-Extract structured information from resumes accurately."""
-        
-        prompt = f"""Analyze the following resume and extract information in this exact JSON format:
-{{
-    "skills": ["skill1", "skill2", ...],
-    "experience": [
-        {{
-            "title": "Job Title",
-            "company": "Company Name",
-            "duration": "Duration string",
-            "description": "Brief description",
-            "start_date": "YYYY-MM or null",
-            "end_date": "YYYY-MM or null"
-        }}
-    ],
-    "education": [
-        {{
-            "degree": "Degree Name",
-            "institution": "Institution Name",
-            "year": "Graduation Year"
-        }}
-    ],
-    "summary": "Brief professional summary",
-    "contact": {{
-        "email": "email or null",
-        "phone": "phone or null",
-        "linkedin": "linkedin url or null"
-    }},
-    "total_experience_years": 0.0,
-    "certifications": ["cert1", "cert2", ...]
-}}
-
-Resume:
-{resume_text}
-"""
+        system_instruction, prompt = get_analyze_resume_prompt(resume_text)
         return await self.generate_json(prompt, system_instruction)
     
     async def screen_candidate(
@@ -187,57 +160,7 @@ Resume:
         job_description: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Screen candidate against job requirements."""
-        system_instruction = """You are an expert ATS (Applicant Tracking System) that screens candidates.
-Provide detailed, fair, and explainable screening results."""
-        
-        prompt = f"""Screen this candidate against the job requirements.
-
-Job Requirements:
-- Title: {job_description.get('title', 'N/A')}
-- Role: {job_description.get('role', 'N/A')}
-- Level: {job_description.get('level', 'N/A')}
-- Description: {job_description.get('description', 'N/A')}
-- Must Have Skills: {job_description.get('must_have_skills', [])}
-- Good to Have Skills: {job_description.get('good_to_have_skills', [])}
-- Min Experience: {job_description.get('min_experience_years', 0)} years
-
-Candidate Resume Data:
-{json.dumps(resume_data, indent=2)}
-
-Provide screening results in this exact JSON format:
-{{
-    "overall_score": 75,
-    "skill_relevance_score": 80,
-    "experience_score": 70,
-    "education_score": 75,
-    "credibility_score": 85,
-    "shortlisted": true,
-    "shortlist_reason": "Reason for decision",
-    "reason_codes": [
-        {{
-            "code": "SKILL_MATCH",
-            "type": "positive",
-            "description": "Has required Python skills",
-            "impact": 15
-        }}
-    ],
-    "detailed_analysis": {{
-        "skill_match": [
-            {{
-                "skill": "Python",
-                "found": true,
-                "relevance": "must_have",
-                "evidence": "5 years experience mentioned",
-                "confidence": 0.9
-            }}
-        ],
-        "experience_analysis": "Analysis of work experience",
-        "education_analysis": "Analysis of education",
-        "career_gap_analysis": "Any gaps identified",
-        "credibility_flags": []
-    }}
-}}
-"""
+        system_instruction, prompt = get_screen_candidate_prompt(job_description, resume_data)
         return await self.generate_json(prompt, system_instruction)
     
     async def generate_interview_questions(
@@ -249,36 +172,7 @@ Provide screening results in this exact JSON format:
         difficulty: int = 3
     ) -> List[Dict[str, Any]]:
         """Generate role-specific interview questions."""
-        system_instruction = """You are an expert technical interviewer.
-Generate relevant, challenging, and fair interview questions."""
-        
-        prompt = f"""Generate interview questions for this candidate and role.
-
-Job:
-- Title: {job_description.get('title', 'N/A')}
-- Role: {job_description.get('role', 'N/A')}
-- Level: {job_description.get('level', 'N/A')}
-- Required Skills: {job_description.get('must_have_skills', [])}
-
-Candidate Skills: {resume_data.get('skills', [])}
-Experience Years: {resume_data.get('total_experience_years', 0)}
-
-Generate {num_technical} technical questions and {num_behavioral} behavioral questions.
-Difficulty level: {difficulty}/5
-
-Return as JSON array:
-[
-    {{
-        "question_text": "The question",
-        "question_type": "technical",
-        "difficulty_level": 3,
-        "expected_answer": "Key points for ideal answer",
-        "time_limit_seconds": 300,
-        "max_score": 10,
-        "metadata": {{"topic": "Python", "subtopic": "OOP"}}
-    }}
-]
-"""
+        system_instruction, prompt = get_interview_questions_general_prompt(job_description, resume_data, num_technical, num_behavioral, difficulty)
         result = await self.generate_json(prompt, system_instruction)
         if isinstance(result, list):
             return result
@@ -292,29 +186,7 @@ Return as JSON array:
         candidate_response: str
     ) -> Dict[str, Any]:
         """Evaluate candidate's response to a question."""
-        system_instruction = """You are an expert interview evaluator.
-Provide fair, detailed, and constructive feedback."""
-        
-        prompt = f"""Evaluate this interview response.
-
-Question ({question_type}): {question}
-
-Expected Answer Points: {expected_answer}
-
-Candidate's Response: {candidate_response}
-
-Provide evaluation in this JSON format:
-{{
-    "score": 7,
-    "max_score": 10,
-    "feedback": "Detailed feedback",
-    "strengths": ["strength1", "strength2"],
-    "improvements": ["area1", "area2"],
-    "technical_accuracy": 0.8,
-    "communication_score": 0.75,
-    "completeness": 0.7
-}}
-"""
+        system_instruction, prompt = get_evaluate_response_prompt(question, question_type, expected_answer, candidate_response)
         return await self.generate_json(prompt, system_instruction)
     
     async def generate_practical_assessment(
@@ -324,30 +196,7 @@ Provide evaluation in this JSON format:
         skills: List[str]
     ) -> Dict[str, Any]:
         """Generate a practical coding/design assessment."""
-        system_instruction = """You are an expert at creating practical technical assessments.
-Create realistic, fair, and skill-appropriate challenges."""
-        
-        prompt = f"""Create a practical assessment for:
-- Role: {job_role}
-- Level: {level}
-- Key Skills: {skills}
-
-Return in this JSON format:
-{{
-    "title": "Assessment Title",
-    "description": "Detailed problem description",
-    "requirements": ["req1", "req2"],
-    "time_limit_minutes": 60,
-    "evaluation_criteria": [
-        {{"criterion": "Code Quality", "weight": 25}},
-        {{"criterion": "Correctness", "weight": 35}},
-        {{"criterion": "Efficiency", "weight": 20}},
-        {{"criterion": "Best Practices", "weight": 20}}
-    ],
-    "starter_code": "# Optional starter code",
-    "test_cases": ["Test case 1", "Test case 2"]
-}}
-"""
+        system_instruction, prompt = get_generate_practical_assessment_prompt(job_role, level, skills)
         return await self.generate_json(prompt, system_instruction)
     
     async def evaluate_practical_submission(
@@ -356,35 +205,7 @@ Return in this JSON format:
         submission: str
     ) -> Dict[str, Any]:
         """Evaluate a practical assessment submission."""
-        system_instruction = """You are an expert code reviewer and evaluator.
-Provide thorough, fair, and constructive evaluation."""
-        
-        prompt = f"""Evaluate this practical assessment submission.
-
-Assessment:
-- Title: {assessment.get('title', 'N/A')}
-- Description: {assessment.get('description', 'N/A')}
-- Requirements: {assessment.get('requirements', [])}
-- Evaluation Criteria: {assessment.get('evaluation_criteria', [])}
-
-Candidate's Submission:
-{submission}
-
-Provide evaluation in this JSON format:
-{{
-    "overall_score": 75,
-    "max_score": 100,
-    "criteria_scores": [
-        {{"criterion": "Code Quality", "score": 20, "max": 25, "feedback": "Good structure"}},
-        {{"criterion": "Correctness", "score": 30, "max": 35, "feedback": "Mostly correct"}}
-    ],
-    "strengths": ["strength1", "strength2"],
-    "improvements": ["improvement1", "improvement2"],
-    "detailed_feedback": "Overall detailed feedback",
-    "code_quality_notes": "Notes on code quality",
-    "would_pass": true
-}}
-"""
+        system_instruction, prompt = get_evaluate_practical_submission_prompt(assessment, submission)
         return await self.generate_json(prompt, system_instruction)
 
 
