@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -105,23 +105,30 @@ export default function OnboardingPage() {
     }
   }, [profile?.onboarding_completed, navigate]);
 
-  // Handle Stripe redirect back
+  const verifyingRef = useRef(false);
+
+  // Handle Stripe redirect back — wait for auth/profile to be ready
   useEffect(() => {
+    if (isLoading) return; // Auth not ready yet, wait
+
     const sessionId = searchParams.get('session_id');
     const plan = searchParams.get('plan');
     const cancelled = searchParams.get('cancelled');
 
     if (cancelled) {
       toast.error('Payment was cancelled.');
-      // Clean URL
       window.history.replaceState({}, '', '/onboarding');
       return;
     }
 
-    if (sessionId && plan) {
+    if (sessionId && plan && !verifyingRef.current) {
+      verifyingRef.current = true;
       setStep(2);
       setProcessingPlan(true);
       setSelectedPlan(plan);
+
+      // Clean URL immediately to prevent re-triggering
+      window.history.replaceState({}, '', '/onboarding');
 
       subscriptionApi.verify({ session_id: sessionId, plan })
         .then(() => {
@@ -131,17 +138,15 @@ export default function OnboardingPage() {
             { onSuccess: () => navigate('/dashboard', { replace: true }) },
           );
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error('Payment verification failed:', err);
           toast.error('Payment verification failed. Please try again.');
           setProcessingPlan(false);
           setSelectedPlan(null);
-        })
-        .finally(() => {
-          // Clean URL
-          window.history.replaceState({}, '', '/onboarding');
+          verifyingRef.current = false;
         });
     }
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onChange = (key: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
