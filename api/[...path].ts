@@ -411,8 +411,8 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
 // ============== Plan Limits ==============
 const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
   free: { max_jobs: 2, max_assessments: 10, max_interviews: 10, price: 0, label: 'Free' },
-  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 5000, label: 'Pro' },       // price in paise (₹50 = 5000)
-  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 7500, label: 'Premium' }, // ₹75 = 7500
+  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 500, label: 'Pro' },       // price in cents ($5 = 500)
+  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 1000, label: 'Premium' }, // $10 = 1000
 };
 
 function getPlanLimits(plan: string) {
@@ -424,31 +424,47 @@ async function getUserProfile(supabase: SupabaseClient, userId: string) {
   return data;
 }
 
-// ============== Razorpay Helpers ==============
-function getRazorpayAuth(): string {
-  const keyId = process.env.RAZORPAY_KEY_ID || '';
-  const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
-  return 'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64');
+// ============== Stripe Helpers ==============
+function getStripeSecretKey(): string {
+  return process.env.STRIPE_SECRET_KEY || '';
 }
 
-async function createRazorpayOrder(amount: number, currency: string, receipt: string, notes: Record<string, string>) {
-  const resp = await fetch('https://api.razorpay.com/v1/orders', {
+async function createStripeCheckoutSession(amount: number, planLabel: string, planId: string, successUrl: string, cancelUrl: string) {
+  const resp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
-    headers: { Authorization: getRazorpayAuth(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount, currency, receipt, notes }),
+    headers: {
+      Authorization: `Bearer ${getStripeSecretKey()}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      'mode': 'payment',
+      'line_items[0][price_data][currency]': 'usd',
+      'line_items[0][price_data][product_data][name]': `Hire.AI ${planLabel} Plan`,
+      'line_items[0][price_data][unit_amount]': String(amount),
+      'line_items[0][quantity]': '1',
+      'success_url': successUrl,
+      'cancel_url': cancelUrl,
+      'metadata[plan]': planId,
+    }).toString(),
   });
   if (!resp.ok) {
     const err = await resp.text();
-    throw new Error(`Razorpay order creation failed: ${err}`);
+    throw new Error(`Stripe checkout session creation failed: ${err}`);
   }
-  return resp.json();
+  return resp.json() as Promise<{ id: string; url: string }>;
 }
 
-function verifyRazorpaySignature(orderId: string, paymentId: string, signature: string): boolean {
-  const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
-  const body = `${orderId}|${paymentId}`;
-  const expected = crypto.createHmac('sha256', keySecret).update(body).digest('hex');
-  return expected === signature;
+async function getStripeCheckoutSession(sessionId: string) {
+  const resp = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
+    headers: {
+      Authorization: `Bearer ${getStripeSecretKey()}`,
+    },
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Stripe session retrieval failed: ${err}`);
+  }
+  return resp.json() as Promise<{ id: string; payment_status: string; payment_intent: string | null; metadata: Record<string, string> }>;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -638,19 +654,22 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       if (plan === 'free') return badRequest(res, 'Free plan does not require payment');
 
       const limits = getPlanLimits(plan);
-      const receipt = `sub_${user.id.slice(0, 8)}_${Date.now()}`;
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const successUrl = `${frontendUrl}/onboarding?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`;
+      const cancelUrl = `${frontendUrl}/onboarding?cancelled=true`;
 
       try {
-        const order = await createRazorpayOrder(limits.price, 'INR', receipt, {
+        const session = await createStripeCheckoutSession(
+          limits.price,
+          limits.label,
           plan,
-          user_id: user.id,
-        });
+          successUrl,
+          cancelUrl,
+        );
 
         return ok(res, {
-          order_id: order.id,
-          amount: order.amount,
-          currency: order.currency,
-          key_id: process.env.RAZORPAY_KEY_ID,
+          session_id: session.id,
+          url: session.url,
           plan,
         });
       } catch (err: any) {
@@ -660,40 +679,44 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
     // POST /api/subscription/verify
     if (req.method === 'POST' && segments.length === 2 && segments[1] === 'verify') {
-      const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan } = req.body || {};
+      const { session_id, plan } = req.body || {};
 
-      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !plan) {
-        return badRequest(res, 'Missing payment verification fields');
+      if (!session_id || !plan) {
+        return badRequest(res, 'Missing session_id or plan');
       }
 
-      const isValid = verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
-      if (!isValid) {
-        return res.status(400).json({ error: 'Payment verification failed — invalid signature' });
+      try {
+        const session = await getStripeCheckoutSession(session_id);
+        if (session.payment_status !== 'paid') {
+          return res.status(400).json({ error: 'Payment not completed' });
+        }
+
+        // Activate the plan
+        const { data: updated, error: upErr } = await supabase
+          .from('profiles')
+          .update({
+            subscription_plan: plan,
+            subscription_id: session_id,
+            stripe_payment_id: session.payment_intent || session_id,
+            subscription_status: 'active',
+            plan_selected_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', user.id)
+          .select()
+          .single();
+
+        if (upErr) return res.status(500).json({ error: upErr.message });
+
+        return ok(res, {
+          success: true,
+          plan,
+          message: `${getPlanLimits(plan).label} plan activated successfully!`,
+          profile: updated,
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
       }
-
-      // Activate the plan
-      const { data: updated, error: upErr } = await supabase
-        .from('profiles')
-        .update({
-          subscription_plan: plan,
-          subscription_id: razorpay_order_id,
-          razorpay_payment_id: razorpay_payment_id,
-          subscription_status: 'active',
-          plan_selected_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id)
-        .select()
-        .single();
-
-      if (upErr) return res.status(500).json({ error: upErr.message });
-
-      return ok(res, {
-        success: true,
-        plan,
-        message: `${getPlanLimits(plan).label} plan activated successfully!`,
-        profile: updated,
-      });
     }
 
     // POST /api/subscription/select-free

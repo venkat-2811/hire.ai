@@ -666,15 +666,13 @@ export const subscriptionApi = {
   get: () => request<SubscriptionInfo>('/subscription'),
 
   createOrder: (plan: string) =>
-    request<{ order_id: string; amount: number; currency: string; key_id: string; plan: string }>(
+    request<{ session_id: string; url: string; plan: string }>(
       '/subscription/create-order',
       { method: 'POST', body: { plan } },
     ),
 
   verify: (data: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
+    session_id: string;
     plan: string;
   }) =>
     request<{ success: boolean; plan: string; message: string }>(

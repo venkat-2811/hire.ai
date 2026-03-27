@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,12 +14,6 @@ import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
-
 const COMPANY_SIZES = ['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'];
 
 const TIMEZONES = [
@@ -31,7 +25,7 @@ const PLANS = [
   {
     id: 'free' as const,
     name: 'Free',
-    price: '₹0',
+    price: '$0',
     period: 'forever',
     icon: Sparkles,
     gradient: 'from-slate-500 to-slate-600',
@@ -47,7 +41,7 @@ const PLANS = [
   {
     id: 'pro' as const,
     name: 'Pro',
-    price: '₹50',
+    price: '$5',
     period: '/month',
     icon: Zap,
     gradient: 'from-blue-500 to-cyan-500',
@@ -58,12 +52,12 @@ const PLANS = [
       { text: '100+ AI interviews', highlight: true },
       { text: 'Priority support', highlight: false },
     ],
-    cta: 'Subscribe — ₹50/mo',
+    cta: 'Subscribe — $5/mo',
   },
   {
     id: 'premium' as const,
     name: 'Premium',
-    price: '₹75',
+    price: '$10',
     period: '/month',
     icon: Crown,
     gradient: 'from-purple-500 to-pink-500',
@@ -75,12 +69,13 @@ const PLANS = [
       { text: 'Unlimited interviews', highlight: true },
       { text: 'Dedicated support', highlight: false },
     ],
-    cta: 'Subscribe — ₹75/mo',
+    cta: 'Subscribe — $10/mo',
   },
 ];
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
@@ -110,15 +105,43 @@ export default function OnboardingPage() {
     }
   }, [profile?.onboarding_completed, navigate]);
 
-  // Load Razorpay script
+  // Handle Stripe redirect back
   useEffect(() => {
-    if (document.getElementById('razorpay-script')) return;
-    const script = document.createElement('script');
-    script.id = 'razorpay-script';
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    document.head.appendChild(script);
-  }, []);
+    const sessionId = searchParams.get('session_id');
+    const plan = searchParams.get('plan');
+    const cancelled = searchParams.get('cancelled');
+
+    if (cancelled) {
+      toast.error('Payment was cancelled.');
+      // Clean URL
+      window.history.replaceState({}, '', '/onboarding');
+      return;
+    }
+
+    if (sessionId && plan) {
+      setStep(2);
+      setProcessingPlan(true);
+      setSelectedPlan(plan);
+
+      subscriptionApi.verify({ session_id: sessionId, plan })
+        .then(() => {
+          toast.success(`${plan === 'pro' ? 'Pro' : 'Premium'} plan activated! 🎉`);
+          updateProfile.mutate(
+            { onboarding_completed: true } as any,
+            { onSuccess: () => navigate('/dashboard', { replace: true }) },
+          );
+        })
+        .catch(() => {
+          toast.error('Payment verification failed. Please try again.');
+          setProcessingPlan(false);
+          setSelectedPlan(null);
+        })
+        .finally(() => {
+          // Clean URL
+          window.history.replaceState({}, '', '/onboarding');
+        });
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onChange = (key: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -163,61 +186,10 @@ export default function OnboardingPage() {
         return;
       }
 
-      // Create Razorpay order
-      const order = await subscriptionApi.createOrder(planId);
-
-      const options = {
-        key: order.key_id,
-        amount: order.amount,
-        currency: order.currency,
-        name: 'Hire.AI',
-        description: `${planId === 'pro' ? 'Pro' : 'Premium'} Plan — Monthly Subscription`,
-        order_id: order.order_id,
-        handler: async (response: any) => {
-          try {
-            await subscriptionApi.verify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              plan: planId,
-            });
-            toast.success(`${planId === 'pro' ? 'Pro' : 'Premium'} plan activated! 🎉`);
-            // Mark onboarding complete
-            updateProfile.mutate(
-              { onboarding_completed: true } as any,
-              { onSuccess: () => navigate('/dashboard', { replace: true }) },
-            );
-          } catch {
-            toast.error('Payment verification failed. Please try again.');
-            setProcessingPlan(false);
-          }
-        },
-        modal: {
-          ondismiss: () => {
-            setProcessingPlan(false);
-            setSelectedPlan(null);
-          },
-        },
-        prefill: {
-          email: form.organization_email || profile?.email || '',
-          contact: form.contact_phone || '',
-        },
-        theme: { color: '#4F46E5' },
-      };
-
-      if (!window.Razorpay) {
-        toast.error('Payment gateway is loading. Please try again.');
-        setProcessingPlan(false);
-        return;
-      }
-
-      const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', () => {
-        toast.error('Payment failed. Please try again.');
-        setProcessingPlan(false);
-        setSelectedPlan(null);
-      });
-      rzp.open();
+      // Create Stripe Checkout session and redirect
+      const session = await subscriptionApi.createOrder(planId);
+      // Redirect to Stripe Checkout
+      window.location.href = session.url;
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong');
       setProcessingPlan(false);

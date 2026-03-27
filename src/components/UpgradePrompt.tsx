@@ -13,12 +13,6 @@ import { Sparkles, Zap, Crown, Loader2 } from 'lucide-react';
 import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
 
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
-
 interface UpgradePromptProps {
   open: boolean;
   onClose: () => void;
@@ -32,7 +26,7 @@ const PLANS = [
   {
     id: 'pro',
     name: 'Pro',
-    price: '₹50',
+    price: '$5',
     period: '/month',
     icon: Zap,
     color: 'from-blue-500 to-cyan-500',
@@ -41,7 +35,7 @@ const PLANS = [
   {
     id: 'premium',
     name: 'Premium',
-    price: '₹75',
+    price: '$10',
     period: '/month',
     icon: Crown,
     color: 'from-purple-500 to-pink-500',
@@ -57,37 +51,11 @@ export function UpgradePrompt({ open, onClose, resource, current, limit, plan }:
   const handleUpgrade = async (targetPlan: string) => {
     setLoading(targetPlan);
     try {
-      const order = await subscriptionApi.createOrder(targetPlan);
-
-      const options = {
-        key: order.key_id,
-        amount: order.amount,
-        currency: order.currency,
-        name: 'Hire.AI',
-        description: `${targetPlan === 'pro' ? 'Pro' : 'Premium'} Plan Subscription`,
-        order_id: order.order_id,
-        handler: async (response: any) => {
-          try {
-            await subscriptionApi.verify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              plan: targetPlan,
-            });
-            toast.success(`${targetPlan === 'pro' ? 'Pro' : 'Premium'} plan activated! 🎉`);
-            onClose();
-            window.location.reload();
-          } catch {
-            toast.error('Payment verification failed. Please contact support.');
-          }
-        },
-        theme: { color: '#4F46E5' },
-      };
-
-      const rzp = new window.Razorpay(options);
-      rzp.open();
+      const session = await subscriptionApi.createOrder(targetPlan);
+      // Redirect to Stripe Checkout
+      window.location.href = session.url;
     } catch (err: any) {
-      toast.error(err.message || 'Failed to create payment order');
+      toast.error(err.message || 'Failed to create payment session');
     } finally {
       setLoading(null);
     }
