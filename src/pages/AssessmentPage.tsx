@@ -1168,22 +1168,6 @@ export default function AssessmentPage() {
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button
-              onClick={handleSubmitAssessment}
-              disabled={submitting}
-              size="sm"
-              className="bg-gray-700 hover:bg-gray-800 text-white shadow-sm"
-              title="Submit Assessment"
-            >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <Send className="mr-2 h-4 w-4" />
-                  <span className="hidden sm:inline">Submit</span>
-                </>
-              )}
-            </Button>
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" />
               <span className="font-semibold hidden sm:inline">Proctored Assessment</span>
@@ -1220,7 +1204,28 @@ export default function AssessmentPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
+      <main className="container mx-auto px-4 py-6 relative">
+        <div className="flex justify-end mb-4">
+          <Button
+            onClick={handleSubmitAssessment}
+            disabled={submitting}
+            size="lg"
+            className="bg-gray-700 hover:bg-gray-800 text-white shadow-md text-base px-6 h-12"
+            title="Submit Assessment"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                <Send className="mr-2 h-5 w-5" />
+                Submit Assessment
+              </>
+            )}
+          </Button>
+        </div>
         <Tabs value={activeTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding')}>
           {hasMcq && hasCoding && (
             <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
