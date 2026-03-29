@@ -4,6 +4,11 @@ from app.models.schemas import (
 )
 from app.models.enums import AssessmentType
 from app.services.gemini_client import get_gemini_service
+from app.prompts import (
+    get_evaluate_technical_response_prompt,
+    get_evaluate_behavioral_response_prompt,
+    get_calculate_communication_score_prompt
+)
 
 
 class ResponseEvaluatorService:
@@ -46,39 +51,13 @@ class ResponseEvaluatorService:
                 improvements=["Candidate did not provide an answer."]
             )
         
-        system_prompt = """You are an expert technical interviewer evaluating a candidate's response.
-Provide a fair, detailed evaluation based on:
-1. Technical accuracy
-2. Depth of understanding
-3. Practical application
-4. Communication clarity
-
-Return JSON:
-{
-    "score": 75,
-    "feedback": "Detailed feedback on the response",
-    "strengths": ["Strength 1", "Strength 2"],
-    "improvements": ["Area for improvement 1", "Area for improvement 2"]
-}
-
-Score guidelines:
-- 90-100: Exceptional, demonstrates expert-level knowledge
-- 75-89: Strong, covers key points with good depth
-- 60-74: Adequate, covers basics but lacks depth
-- 40-59: Partial, some understanding but significant gaps
-- 0-39: Insufficient, major gaps or incorrect information"""
-
-        user_prompt = f"""Evaluate this technical response:
-
-Question: {question.question_text}
-
-Expected Answer Points: {question.expected_answer or 'Not specified'}
-
-Candidate's Response:
-{response_text[:3000]}
-
-Time taken: {response.time_taken_seconds or 'Unknown'} seconds
-Max score: {question.max_score}"""
+        system_prompt, user_prompt = get_evaluate_technical_response_prompt(
+            question_text=question.question_text,
+            expected_answer=question.expected_answer or 'Not specified',
+            candidate_response=response_text[:3000],
+            time_taken=str(response.time_taken_seconds or 'Unknown'),
+            max_score=question.max_score
+        )
 
         try:
             result = await self.gemini.generate_json(
@@ -119,41 +98,11 @@ Max score: {question.max_score}"""
                 improvements=["Candidate did not provide an answer."]
             )
         
-        system_prompt = """You are an expert behavioral interviewer evaluating responses using the STAR method.
-
-Evaluate based on:
-1. Situation: Did they describe a specific context?
-2. Task: Did they explain their responsibility?
-3. Action: Did they detail specific actions THEY took?
-4. Result: Did they share measurable outcomes?
-
-Also assess:
-- Relevance to the question
-- Communication clarity
-- Self-awareness and reflection
-
-Return JSON:
-{
-    "score": 75,
-    "feedback": "Detailed feedback",
-    "strengths": ["Strength 1"],
-    "improvements": ["Improvement 1"],
-    "star_analysis": {
-        "situation": true,
-        "task": true,
-        "action": true,
-        "result": false
-    }
-}"""
-
-        user_prompt = f"""Evaluate this behavioral response:
-
-Question: {question.question_text}
-
-Competency being assessed: {question.metadata.get('competency', 'General')}
-
-Candidate's Response:
-{response_text[:3000]}"""
+        system_prompt, user_prompt = get_evaluate_behavioral_response_prompt(
+            question_text=question.question_text,
+            competency=question.metadata.get('competency', 'General'),
+            candidate_response=response_text[:3000]
+        )
 
         try:
             result = await self.gemini.generate_json(
@@ -234,18 +183,11 @@ Candidate's Response:
         if len(all_text) < 100:
             return 40
         
-        system_prompt = """Analyze the communication quality of these interview responses.
-Consider:
-- Clarity and coherence
-- Professional language
-- Structure and organization
-- Conciseness vs verbosity
-
-Return JSON: {"score": 75, "notes": "Brief assessment"}"""
+        system_prompt, user_prompt = get_calculate_communication_score_prompt(all_text[:4000])
 
         try:
             result = await self.gemini.generate_json(
-                prompt=f"Responses:\n{all_text[:4000]}",
+                prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.3
             )

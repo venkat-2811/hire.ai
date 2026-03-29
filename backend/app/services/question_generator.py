@@ -206,40 +206,23 @@ class QuestionGeneratorService:
     async def generate_mcq_questions(
         self,
         job: JobDescription,
-        count: int = 20
+        count: int = 20,
+        difficulty: str = "medium"
     ) -> List[dict]:
         """Generate MCQ questions for technical assessment based on job description."""
         
         must_have_skills = ", ".join(job.must_have_skills)
         good_to_have_skills = ", ".join(job.good_to_have_skills)
         
-        system_prompt = f"""You are creating a multiple-choice technical assessment for a {job.role} position at {job.level} level.
-
-Job Description: {job.description[:800]}
-Must-Have Skills: {must_have_skills}
-Good-to-Have Skills: {good_to_have_skills}
-
-Generate {count} multiple-choice questions that:
-- Test practical knowledge of the required skills
-- Bias toward hard difficulty with advanced concepts, edge cases, and tradeoffs
-- Have 4 options each with exactly ONE correct answer
-- Use plausible distractors that reflect common pitfalls
-- Are specific to this role and level
-- Cover a variety of topics from the job description
-
-Return a JSON object:
-{{
-    "questions": [
-        {{
-            "question": "Question text here",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_index": 0,
-            "difficulty": "easy|medium|hard",
-            "topic": "Topic name",
-            "points": 5
-        }}
-    ]
-}}"""
+        system_prompt, user_prompt = get_mcq_generation_prompt(
+            role=job.role,
+            level=job.level,
+            description=job.description,
+            must_have_skills=must_have_skills,
+            good_to_have_skills=good_to_have_skills,
+            count=count,
+            difficulty=difficulty
+        )
 
         try:
             from app.config import get_settings
@@ -324,7 +307,8 @@ Return a JSON object:
     async def generate_coding_challenges(
         self,
         job: JobDescription,
-        count: int = 2
+        count: int = 2,
+        difficulty: str = "medium"
     ) -> List[dict]:
         """Generate coding challenges for practical assessment."""
         
@@ -335,7 +319,8 @@ Return a JSON object:
             level=job.level,
             description=job.description,
             must_have_skills=must_have_skills,
-            count=count
+            count=count,
+            difficulty=difficulty
         )
 
         try:

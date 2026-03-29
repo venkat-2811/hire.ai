@@ -253,8 +253,16 @@ Provide evaluation in this JSON format:
 # ==========================================
 
 def get_mcq_generation_prompt(
-    role: str, level: str, description: str, must_have_skills: str, good_to_have_skills: str, count: int
+    role: str, level: str, description: str, must_have_skills: str, good_to_have_skills: str, count: int, difficulty: str = "medium"
 ) -> tuple[str, str]:
+    
+    difficulty_instructions = {
+        "easy": "Target medium-level questions. Maintain moderate complexity and clear logic, avoiding overly basic questions. Use limited edge cases.",
+        "medium": "Target slightly more challenging questions. Increase depth and include edge cases. Include scenario-based or real-world problem questions.",
+        "hard": "Target high-quality, advanced questions with strong complexity. Require deeper problem-solving and optimization. Use rigorous scenario-driven challenges."
+    }
+
+    instruction = difficulty_instructions.get(difficulty.lower(), difficulty_instructions["medium"])
     
     system_prompt = f"""You are creating a multiple-choice technical assessment for a {role} position at {level} level.
 
@@ -262,9 +270,12 @@ Job Description: {description[:800]}
 Must-Have Skills: {must_have_skills}
 Good-to-Have Skills: {good_to_have_skills}
 
+Difficulty Target: {difficulty.upper()}
+{instruction}
+
 Generate {count} multiple-choice questions that:
 - Test practical knowledge of the required skills
-- Bias toward hard difficulty with advanced concepts, edge cases, and tradeoffs
+- Adhere strictly to the requested {difficulty.upper()} difficulty guidelines
 - Have 4 options each with exactly ONE correct answer
 - Use plausible distractors that reflect common pitfalls
 - Are specific to this role and level
@@ -289,17 +300,28 @@ Return a JSON object:
 
 
 def get_coding_challenges_prompt(
-    role: str, level: str, description: str, must_have_skills: str, count: int
+    role: str, level: str, description: str, must_have_skills: str, count: int, difficulty: str = "medium"
 ) -> tuple[str, str]:
+    
+    difficulty_instructions = {
+        "easy": "Generate medium-level coding problems with moderate complexity and clear logic. Limit edge cases.",
+        "medium": "Generate slightly more challenging scenario-based or real-world logic problems with edge cases.",
+        "hard": "Generate high-quality, advanced coding problems requiring deep reasoning, edge case handling, and optimization. Use sophisticated scenarios."
+    }
+
+    instruction = difficulty_instructions.get(difficulty.lower(), difficulty_instructions["medium"])
     
     system_prompt = f"""You are creating coding challenges for a {role} position at {level} level.
 
 Job Description: {description[:800]}
 Key Skills: {must_have_skills}
 
+Difficulty Target: {difficulty.upper()}
+{instruction}
+
 Generate {count} coding challenges that:
 - Test practical coding ability relevant to this role
-- Are on the harder end of the level with nuanced edge cases
+- Adhere strictly to the {difficulty.upper()} difficulty target guidelines provided
 - Are solvable in 20-35 minutes each
 - Include clear problem descriptions
 - Provide starter code templates
@@ -389,3 +411,163 @@ Provide evaluation in this JSON format:
 }}
 """
     return system_instruction, user_prompt
+
+def get_generate_tasks_with_ai_prompt(role: str, level: str, description: str, skills: str) -> tuple[str, str]:
+    system_prompt = f"""You are an expert technical interviewer creating a practical assessment for a {role} position.
+Level: {level}
+Job Description: {description[:500]}
+Skills: {skills}
+
+Create 2 practical tasks that can be done in a browser-based coding environment or text editor.
+1. A Coding Task (Algorithm/Function/Script)
+2. A Design/Scenario Task (System Design/Test Case/process flow)
+
+For each task provide:
+- Title
+- Clear Description
+- Starter Code (or template)
+- Evaluation Criteria (rubric)
+
+Return JSON format:
+{{
+    "tasks": [
+        {{
+            "title": "Title",
+            "description": "Full markdown description",
+            "starter_code": "code...",
+            "time_limit": 30,
+            "criteria": [
+                {{"name": "Criteria 1", "description": "desc", "max_points": 25}}
+            ]
+        }}
+    ]
+}}"""
+    user_prompt = "Generate 2 practical assessments."
+    return system_prompt, user_prompt
+
+
+def get_evaluate_practical_task_submission_prompt(role: str, criteria_text: str, task_title: str, task_description: str, submitted_content: str, time_taken: str, time_limit: int) -> tuple[str, str]:
+    system_prompt = f"""You are an expert evaluator for {role} practical assessments.
+
+Evaluate the submission against these criteria:
+{criteria_text}
+
+Be fair but thorough. Provide specific, actionable feedback.
+
+Return JSON:
+{{
+    "criteria_scores": [
+        {{
+            "criterion": "Criterion Name",
+            "score": 20,
+            "max_score": 25,
+            "feedback": "Specific feedback for this criterion"
+        }}
+    ],
+    "overall_assessment": "Summary of the submission quality",
+    "suggestions": ["Suggestion 1", "Suggestion 2"]
+}}"""
+
+    user_prompt = f"""Evaluate this submission:
+
+Task: {task_title}
+Description: {task_description}
+
+Submission:
+```
+{submitted_content}
+```
+
+Time taken: {time_taken} seconds
+Time limit: {time_limit} minutes"""
+    return system_prompt, user_prompt
+
+
+def get_evaluate_technical_response_prompt(question_text: str, expected_answer: str, candidate_response: str, time_taken: str, max_score: int) -> tuple[str, str]:
+    system_prompt = """You are an expert technical interviewer evaluating a candidate's response.
+Provide a fair, detailed evaluation based on:
+1. Technical accuracy
+2. Depth of understanding
+3. Practical application
+4. Communication clarity
+
+Return JSON:
+{
+    "score": 75,
+    "feedback": "Detailed feedback on the response",
+    "strengths": ["Strength 1", "Strength 2"],
+    "improvements": ["Area for improvement 1", "Area for improvement 2"]
+}
+
+Score guidelines:
+- 90-100: Exceptional, demonstrates expert-level knowledge
+- 75-89: Strong, covers key points with good depth
+- 60-74: Adequate, covers basics but lacks depth
+- 40-59: Partial, some understanding but significant gaps
+- 0-39: Insufficient, major gaps or incorrect information"""
+
+    user_prompt = f"""Evaluate this technical response:
+
+Question: {question_text}
+
+Expected Answer Points: {expected_answer}
+
+Candidate's Response:
+{candidate_response}
+
+Time taken: {time_taken} seconds
+Max score: {max_score}"""
+    return system_prompt, user_prompt
+
+
+def get_evaluate_behavioral_response_prompt(question_text: str, competency: str, candidate_response: str) -> tuple[str, str]:
+    system_prompt = """You are an expert behavioral interviewer evaluating responses using the STAR method.
+
+Evaluate based on:
+1. Situation: Did they describe a specific context?
+2. Task: Did they explain their responsibility?
+3. Action: Did they detail specific actions THEY took?
+4. Result: Did they share measurable outcomes?
+
+Also assess:
+- Relevance to the question
+- Communication clarity
+- Self-awareness and reflection
+
+Return JSON:
+{
+    "score": 75,
+    "feedback": "Detailed feedback",
+    "strengths": ["Strength 1"],
+    "improvements": ["Improvement 1"],
+    "star_analysis": {
+        "situation": true,
+        "task": true,
+        "action": true,
+        "result": false
+    }
+}"""
+
+    user_prompt = f"""Evaluate this behavioral response:
+
+Question: {question_text}
+
+Competency being assessed: {competency}
+
+Candidate's Response:
+{candidate_response}"""
+    return system_prompt, user_prompt
+
+
+def get_calculate_communication_score_prompt(all_text: str) -> tuple[str, str]:
+    system_prompt = """Analyze the communication quality of these interview responses.
+Consider:
+- Clarity and coherence
+- Professional language
+- Structure and organization
+- Conciseness vs verbosity
+
+Return JSON: {"score": 75, "notes": "Brief assessment"}"""
+    
+    user_prompt = f"Responses:\n{all_text}"
+    return system_prompt, user_prompt
