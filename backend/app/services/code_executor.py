@@ -127,6 +127,7 @@ class HackerEarthExecutor:
         test_results: List[TestResult] = []
         passed_count = 0
         overall_compilation_error = None
+        overall_runtime_error = None
 
         for tc in test_cases:
             result = await self._run_single_test_he(
@@ -135,18 +136,23 @@ class HackerEarthExecutor:
             test_results.append(result)
             if result.passed:
                 passed_count += 1
-            # If first test had a compilation error, record it and
-            # cascade it to all remaining tests (no need to re-submit)
-            if result.status == "CE" and not overall_compilation_error:
-                overall_compilation_error = result.error or result.stderr
-                # Mark remaining test cases as CE without API calls
+            
+            # If the code crashes or fails compilation fundamentally, abort the rest of the testing
+            if result.status in ("CE", "RE") and not overall_compilation_error and not overall_runtime_error:
+                error_msg = result.error or result.stderr or "Unknown Error"
+                if result.status == "CE" or "SyntaxError" in error_msg or "IndentationError" in error_msg:
+                    overall_compilation_error = error_msg
+                else:
+                    overall_runtime_error = error_msg
+                
+                # Mark remaining test cases as skipped
                 for remaining_tc in test_cases[len(test_results):]:
                     input_data = remaining_tc.get("input", {})
                     expected = remaining_tc.get("expected")
                     test_results.append(TestResult(
                         passed=False, input_data=input_data, expected=expected,
-                        actual=None, error=overall_compilation_error,
-                        status="CE", stderr=result.stderr,
+                        actual=None, error="Skipped due to prior execution error",
+                        status="SKIPPED", stderr=result.stderr,
                     ))
                 break
 
@@ -154,12 +160,13 @@ class HackerEarthExecutor:
         score = (passed_count / total_count * 100) if total_count > 0 else 0
 
         return ExecutionResult(
-            success=overall_compilation_error is None,
+            success=(overall_compilation_error is None and overall_runtime_error is None),
             test_results=test_results,
             passed_count=passed_count,
             total_count=total_count,
             score_percentage=score,
             compilation_error=overall_compilation_error,
+            runtime_error=overall_runtime_error
         )
 
     async def _run_single_test_he(
@@ -440,19 +447,42 @@ if __name__ == "__main__":
         """Fallback: execute Python code locally via subprocess."""
         test_results = []
         passed_count = 0
+        overall_compilation_error = None
+        overall_runtime_error = None
 
         for tc in test_cases:
             result = self._run_single_test_local(code, function_name, tc)
             test_results.append(result)
             if result.passed:
                 passed_count += 1
+            
+            # If the code fundamentally crashes, halt loop
+            if result.status in ("CE", "RE") and not overall_compilation_error and not overall_runtime_error:
+                error_msg = result.error or result.stderr or "Unknown Error"
+                if result.status == "CE" or "SyntaxError" in error_msg or "IndentationError" in error_msg:
+                    overall_compilation_error = error_msg
+                else:
+                    overall_runtime_error = error_msg
+                
+                # Mark remaining test cases as skipped
+                for remaining_tc in test_cases[len(test_results):]:
+                    test_results.append(TestResult(
+                        passed=False, input_data=remaining_tc.get("input", {}),
+                        expected=remaining_tc.get("expected"),
+                        actual=None, error="Skipped due to prior execution error",
+                        status="SKIPPED"
+                    ))
+                break
 
         total = len(test_cases)
         score = (passed_count / total * 100) if total > 0 else 0
         return ExecutionResult(
-            success=True, test_results=test_results,
+            success=(overall_compilation_error is None and overall_runtime_error is None),
+            test_results=test_results,
             passed_count=passed_count, total_count=total,
             score_percentage=score,
+            compilation_error=overall_compilation_error,
+            runtime_error=overall_runtime_error
         )
 
     def _run_single_test_local(

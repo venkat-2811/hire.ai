@@ -123,7 +123,7 @@ export default function AssessmentPage() {
   }, [currentCodingIndex]);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
-  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; compilation_error?: string; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
+  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; compilation_error?: string; runtime_error?: string; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
   const [runningCode, setRunningCode] = useState<string | null>(null);
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -542,8 +542,8 @@ export default function AssessmentPage() {
 
       const data = await response.json();
 
-      if (data.compilation_error) {
-        toast.error(`Compilation Error`);
+      if (data.compilation_error || data.runtime_error) {
+        toast.error(`Execution Error`);
         setCodingResults((prev) => ({
           ...prev,
           [challengeId]: {
@@ -553,9 +553,10 @@ export default function AssessmentPage() {
             total: data.total || 0,
             score: 0,
             compilation_error: data.compilation_error,
+            runtime_error: data.runtime_error,
           },
         }));
-        // Auto-switch to results tab to show the compilation error
+        // Auto-switch to results tab to show the error
         setProblemTab('submissions');
         return;
       }
@@ -568,6 +569,7 @@ export default function AssessmentPage() {
           total: data.total || 0,
           score: data.score_percentage || 0,
           compilation_error: undefined,
+          runtime_error: undefined,
         },
       }));
 
@@ -616,7 +618,7 @@ export default function AssessmentPage() {
 
       const data = await response.json();
 
-      if (data.compilation_error) {
+      if (data.compilation_error || data.runtime_error) {
         setCodingResults((prev) => ({
           ...prev,
           [challengeId]: {
@@ -625,10 +627,11 @@ export default function AssessmentPage() {
             total: data.total_tests || 0,
             score: 0,
             compilation_error: data.compilation_error,
+            runtime_error: data.runtime_error,
           },
         }));
         setProblemTab('submissions');
-        toast.error('Compilation Error — check the Results tab for details.');
+        toast.error('Execution Error — check the Results tab for details.');
         return;
       }
 
@@ -643,6 +646,7 @@ export default function AssessmentPage() {
           hidden_total: data.hidden_tests_total,
           performance: data.performance,
           compilation_error: undefined,
+          runtime_error: undefined,
         },
       }));
 
@@ -1452,8 +1456,8 @@ export default function AssessmentPage() {
                           /* Submissions/Results Tab */
                           codingResults[currentCoding.id] ? (
                             <div className="space-y-3">
-                              {/* Compilation Error Banner */}
-                              {codingResults[currentCoding.id].compilation_error && (
+                              {/* Compilation / Runtime Error Banner */}
+                              {(codingResults[currentCoding.id].compilation_error || codingResults[currentCoding.id].runtime_error) && (
                                 <motion.div
                                   initial={{ opacity: 0, y: -10 }}
                                   animate={{ opacity: 1, y: 0 }}
@@ -1461,16 +1465,18 @@ export default function AssessmentPage() {
                                 >
                                   <div className="flex items-center gap-2 mb-2">
                                     <AlertCircle className="h-5 w-5 text-orange-500" />
-                                    <span className="font-bold text-sm text-orange-600">Compilation Error</span>
+                                    <span className="font-bold text-sm text-orange-600">
+                                      {codingResults[currentCoding.id].compilation_error ? 'Compilation Error' : 'Runtime Error'}
+                                    </span>
                                   </div>
                                   <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-black/30 rounded p-3 overflow-auto max-h-40">
-                                    {codingResults[currentCoding.id].compilation_error}
+                                    {codingResults[currentCoding.id].compilation_error || codingResults[currentCoding.id].runtime_error}
                                   </pre>
                                 </motion.div>
                               )}
 
                               {/* Verdict Banner */}
-                              {!codingResults[currentCoding.id].compilation_error && (
+                              {!(codingResults[currentCoding.id].compilation_error || codingResults[currentCoding.id].runtime_error) && (
                                 <motion.div
                                   initial={{ opacity: 0, y: -10 }}
                                   animate={{ opacity: 1, y: 0 }}

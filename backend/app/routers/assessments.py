@@ -558,12 +558,14 @@ async def submit_coding_solution(
     test_results = []
     
     compilation_error = None
+    runtime_error = None
     if challenge:
         test_cases = challenge.get("test_cases", [])
         if test_cases:
             result = await executor.execute(submission.code, test_cases, language=submission.language)
             score_percentage = result.score_percentage
             compilation_error = result.compilation_error
+            runtime_error = result.runtime_error
             
             # Normalize results to match frontend TestResult interface
             for idx, tr in enumerate(result.test_results):
@@ -625,6 +627,7 @@ async def submit_coding_solution(
     return {
         "success": True,
         "compilation_error": compilation_error,
+        "runtime_error": runtime_error,
         "score_percentage": score_percentage,
         "passed_count": passed_count,
         "total_tests": total_count,
