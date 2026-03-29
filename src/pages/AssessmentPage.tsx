@@ -1168,11 +1168,27 @@ export default function AssessmentPage() {
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
+            <Button
+              onClick={handleSubmitAssessment}
+              disabled={submitting}
+              size="sm"
+              className="bg-gray-700 hover:bg-gray-800 text-white shadow-sm"
+              title="Submit Assessment"
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  <span className="hidden sm:inline">Submit</span>
+                </>
+              )}
+            </Button>
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" />
-              <span className="font-semibold">Proctored Assessment</span>
+              <span className="font-semibold hidden sm:inline">Proctored Assessment</span>
             </div>
-            <Badge variant="outline">{assessmentData?.job_title}</Badge>
+            <Badge variant="outline" className="hidden md:inline-flex">{assessmentData?.job_title}</Badge>
           </div>
 
           <div className="flex items-center gap-4">
@@ -1823,35 +1839,7 @@ export default function AssessmentPage() {
         </Tabs>
 
         {/* Submit Assessment Button - Always visible at the bottom */}
-        <div className="max-w-7xl mx-auto mt-8">
-          <Card>
-            <CardContent className="py-6">
-              <div className="flex flex-col items-center gap-4">
-                <p className="text-sm text-muted-foreground text-center">
-                  Once you've completed all sections, click below to submit your assessment.
-                </p>
-                <Button
-                  onClick={handleSubmitAssessment}
-                  disabled={submitting}
-                  size="lg"
-                  className="bg-gray-700 hover:bg-gray-800 text-white min-w-[200px]"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="mr-2 h-4 w-4" />
-                      Submit Assessment
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+
       </main>
     </div>
   );

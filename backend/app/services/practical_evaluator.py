@@ -6,7 +6,7 @@ from app.models.schemas import (
 )
 from app.models.enums import RoleLevel
 from app.services.gemini_client import get_gemini_service
-from app.prompts import (
+from app.assessment_prompts import (
     get_generate_tasks_with_ai_prompt,
     get_evaluate_practical_task_submission_prompt
 )

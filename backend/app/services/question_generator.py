@@ -7,7 +7,7 @@ from app.models.schemas import (
 )
 from app.models.enums import RoleLevel, AssessmentType
 from app.services.gemini_client import get_gemini_service
-from app.prompts import (
+from app.assessment_prompts import (
     get_technical_questions_prompt,
     get_behavioral_questions_prompt,
     get_mcq_generation_prompt,
