@@ -85,12 +85,14 @@ async function uploadFile<T>(endpoint: string, formData: FormData, skipAuth = fa
 
 // ============== Jobs API ==============
 
+import type { JobRole, RoleLevel } from '@/types/database';
+
 export interface JobDescription {
   id: string;
   created_by: string | null;
   title: string;
-  role: 'salesforce_developer' | 'qa_engineer' | 'business_analyst';
-  level: 'intern' | 'junior' | 'mid' | 'senior';
+  role: JobRole;
+  level: RoleLevel;
   description: string;
   must_have_skills: string[];
   good_to_have_skills: string[];
@@ -142,8 +144,8 @@ export const profileApi = {
 
 export interface JobDescriptionCreate {
   title: string;
-  role: 'salesforce_developer' | 'qa_engineer' | 'business_analyst';
-  level: 'intern' | 'junior' | 'mid' | 'senior';
+  role: JobRole;
+  level: RoleLevel;
   description: string;
   must_have_skills: string[];
   good_to_have_skills: string[];
@@ -168,8 +170,8 @@ export const jobsApi = {
   update: (id: string, data: Partial<JobDescriptionCreate>) =>
     request<JobDescription>(`/jobs/${id}`, { method: 'PATCH', body: data }),
 
-  delete: (id: string) =>
-    request<{ success: boolean; message: string }>(`/jobs/${id}`, { method: 'DELETE' }),
+  delete: (id: string, permanent: boolean = false) =>
+    request<{ success: boolean; message: string }>(`/jobs/${id}${permanent ? '?permanent=true' : ''}`, { method: 'DELETE' }),
 };
 
 // ============== Candidates API ==============

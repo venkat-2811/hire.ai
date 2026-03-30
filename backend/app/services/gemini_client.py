@@ -6,7 +6,9 @@ from typing import Optional, Dict, Any, List
 from app.config import get_settings
 from app.prompts import (
     get_analyze_resume_prompt,
-    get_screen_candidate_prompt,
+    get_screen_candidate_prompt
+)
+from app.assessment_prompts import (
     get_interview_questions_general_prompt,
     get_evaluate_response_prompt,
     get_generate_practical_assessment_prompt,

@@ -82,13 +82,13 @@ export function useDeleteJob() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: string) => {
-      return jobsApi.delete(id);
+    mutationFn: async ({ id, permanent = false }: { id: string; permanent?: boolean }) => {
+      return jobsApi.delete(id, permanent);
     },
-    onSuccess: () => {
+    onSuccess: (_, { permanent }) => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
-      toast.success('Job and all related data deleted successfully');
+      toast.success(permanent ? 'Job and all related data permanently deleted' : 'Job archived successfully');
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to delete job');

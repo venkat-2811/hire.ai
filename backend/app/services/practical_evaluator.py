@@ -6,6 +6,10 @@ from app.models.schemas import (
 )
 from app.models.enums import RoleLevel
 from app.services.gemini_client import get_gemini_service
+from app.assessment_prompts import (
+    get_generate_tasks_with_ai_prompt,
+    get_evaluate_practical_task_submission_prompt
+)
 
 
 class PracticalEvaluatorService:
@@ -198,38 +202,15 @@ Identify gaps, prioritize them, and recommend solutions.""",
             return self._get_fallback_tasks(job.role, session_id)
 
     async def _generate_tasks_with_ai(self, job: JobDescription, session_id: str) -> List[PracticalAssessment]:
-        system_prompt = f"""You are an expert technical interviewer creating a practical assessment for a {job.role} position.
-Level: {job.level.value}
-Job Description: {job.description[:500]}
-Skills: {', '.join(job.must_have_skills)}
-
-Create 2 practical tasks that can be done in a browser-based coding environment or text editor.
-1. A Coding Task (Algorithm/Function/Script)
-2. A Design/Scenario Task (System Design/Test Case/process flow)
-
-For each task provide:
-- Title
-- Clear Description
-- Starter Code (or template)
-- Evaluation Criteria (rubric)
-
-Return JSON format:
-{{
-    "tasks": [
-        {{
-            "title": "Title",
-            "description": "Full markdown description",
-            "starter_code": "code...",
-            "time_limit": 30,
-            "criteria": [
-                {{"name": "Criteria 1", "description": "desc", "max_points": 25}}
-            ]
-        }}
-    ]
-}}"""
+        system_prompt, user_prompt = get_generate_tasks_with_ai_prompt(
+            role=job.role,
+            level=job.level.value,
+            description=job.description,
+            skills=", ".join(job.must_have_skills)
+        )
 
         result = await self.gemini.generate_json(
-            prompt="Generate 2 practical assessments.",
+            prompt=user_prompt,
             system_instruction=system_prompt,
             temperature=0.7
         )
@@ -319,39 +300,15 @@ Return JSON format:
             for c in assessment.evaluation_criteria
         ])
         
-        system_prompt = f"""You are an expert evaluator for {assessment.role.replace('_', ' ')} practical assessments.
-
-Evaluate the submission against these criteria:
-{criteria_text}
-
-Be fair but thorough. Provide specific, actionable feedback.
-
-Return JSON:
-{{
-    "criteria_scores": [
-        {{
-            "criterion": "Criterion Name",
-            "score": 20,
-            "max_score": 25,
-            "feedback": "Specific feedback for this criterion"
-        }}
-    ],
-    "overall_assessment": "Summary of the submission quality",
-    "suggestions": ["Suggestion 1", "Suggestion 2"]
-}}"""
-
-        user_prompt = f"""Evaluate this submission:
-
-Task: {assessment.task_title}
-Description: {assessment.task_description}
-
-Submission:
-```
-{submitted_content[:6000]}
-```
-
-Time taken: {submission.time_taken_seconds or 'Unknown'} seconds
-Time limit: {assessment.time_limit_minutes} minutes"""
+        system_prompt, user_prompt = get_evaluate_practical_task_submission_prompt(
+            role=assessment.role.replace('_', ' '),
+            criteria_text=criteria_text,
+            task_title=assessment.task_title,
+            task_description=assessment.task_description,
+            submitted_content=submitted_content[:6000],
+            time_taken=str(submission.time_taken_seconds or 'Unknown'),
+            time_limit=assessment.time_limit_minutes
+        )
 
         try:
             result = await self.gemini.generate_json(

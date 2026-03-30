@@ -59,54 +59,6 @@ class ResumeParserService:
     
     async def _ai_parse_resume(self, resume_text: str) -> ResumeData:
         """Use AI to semantically parse resume content."""
-        
-        system_prompt = """You are an expert resume parser. Analyze the resume text and extract structured information.
-        
-Return a JSON object with the following structure:
-{
-    "skills": ["skill1", "skill2", ...],
-    "experience": [
-        {
-            "title": "Job Title",
-            "company": "Company Name",
-            "duration": "Jan 2020 - Present",
-            "description": "Brief description of responsibilities",
-            "start_date": "2020-01",
-            "end_date": "present"
-        }
-    ],
-    "education": [
-        {
-            "degree": "Bachelor of Science in Computer Science",
-            "institution": "University Name",
-            "year": "2019"
-        }
-    ],
-    "summary": "Brief professional summary",
-    "contact": {
-        "email": "email@example.com",
-        "phone": "+1234567890",
-        "linkedin": "linkedin.com/in/profile"
-    },
-    "total_experience_years": 5.5,
-    "certifications": ["Certification 1", "Certification 2"]
-}
-
-Guidelines:
-- Extract ALL skills mentioned, including technical and soft skills
-- Calculate total_experience_years by summing up all work experience durations
-- If information is not found, use empty strings or empty arrays
-- Be thorough in extracting experience details
-- Normalize skill names (e.g., "JS" -> "JavaScript")
-- Include certifications, licenses, and professional qualifications"""
-
-        user_prompt = f"""Parse the following resume and extract structured information:
-
----
-{resume_text[:8000]}
----
-
-Return the parsed data as a JSON object."""
 
         try:
             result = await self.gemini.analyze_resume(resume_text[:8000])

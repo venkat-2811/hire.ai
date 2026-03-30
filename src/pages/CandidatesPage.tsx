@@ -99,7 +99,7 @@ export default function CandidatesPage() {
   const deleteCandidate = useDeleteCandidate();
   const createInterview = useCreateInterview();
   const startInterview = useStartInterview();
-  const { data: jobs, isLoading: jobsLoading } = useJobs({ is_active: true });
+  const { data: jobs, isLoading: jobsLoading } = useJobs();
 
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [startCandidateId, setStartCandidateId] = useState<string | null>(null);
@@ -118,7 +118,8 @@ export default function CandidatesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState<string | null>(null);
 
-  const activeJobs = useMemo(() => jobs || [], [jobs]);
+  const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
+  const allJobs = useMemo(() => jobs || [], [jobs]);
 
   // Group candidates by job
   const candidatesByJob = useMemo(() => {
@@ -171,8 +172,9 @@ export default function CandidatesPage() {
 
   // Get job title by ID
   const getJobTitle = (jobId: string) => {
-    const job = activeJobs.find(j => j.id === jobId);
-    return job ? job.title : 'Unknown Job';
+    const job = allJobs.find(j => j.id === jobId);
+    if (!job) return 'Unknown Job';
+    return job.is_active ? job.title : `${job.title} (Archived)`;
   };
 
   const toggleSelectAll = () => {

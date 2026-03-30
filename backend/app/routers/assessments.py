@@ -32,6 +32,9 @@ class AssessmentInviteRequest(BaseModel):
     deadline_hours: Optional[int] = 72  # Default 72 hours to complete
     mcq_question_count: Optional[int] = 20
     coding_challenge_count: Optional[int] = 2
+    difficulty: Optional[str] = "medium"
+    include_mcq: Optional[bool] = True
+    include_coding: Optional[bool] = True
     total_time_minutes: Optional[int] = 90
 
 
@@ -169,6 +172,7 @@ async def send_assessment_invites(
                 "mcq_question_count": mcq_count_val,
                 "coding_challenge_count": coding_count_val,
                 "total_time_minutes": calculated_time,
+                "difficulty": request.difficulty,
                 "proctoring_data": {
                     "tab_switches": 0,
                     "fullscreen_exits": 0,
@@ -286,7 +290,7 @@ async def get_mcq_questions(session_id: str):
     
     # If already generated for this session, return stored questions
     session_row = supabase.table("assessment_sessions").select(
-        "id, mcq_questions, mcq_question_count"
+        "id, mcq_questions, mcq_question_count, difficulty"
     ).eq("id", session_id).single().execute()
 
     stored_questions = (session_row.data or {}).get("mcq_questions") or []
@@ -325,8 +329,9 @@ async def get_mcq_questions(session_id: str):
     )
 
     mcq_count = (session_row.data or {}).get("mcq_question_count") or 20
+    difficulty = (session_row.data or {}).get("difficulty") or "medium"
     question_generator = get_question_generator()
-    questions = await question_generator.generate_mcq_questions(job, count=mcq_count)
+    questions = await question_generator.generate_mcq_questions(job, count=mcq_count, difficulty=difficulty)
 
     supabase.table("assessment_sessions").update({
         "mcq_questions": questions,
@@ -362,7 +367,7 @@ async def get_coding_challenges(session_id: str):
     
     # If already generated for this session, return stored challenges
     session_row = supabase.table("assessment_sessions").select(
-        "id, coding_challenges, coding_challenge_count"
+        "id, coding_challenges, coding_challenge_count, difficulty"
     ).eq("id", session_id).single().execute()
 
     stored_challenges = (session_row.data or {}).get("coding_challenges") or []
@@ -391,8 +396,9 @@ async def get_coding_challenges(session_id: str):
     )
 
     coding_count = (session_row.data or {}).get("coding_challenge_count") or 2
+    difficulty = (session_row.data or {}).get("difficulty") or "medium"
     question_generator = get_question_generator()
-    challenges = await question_generator.generate_coding_challenges(job, count=coding_count)
+    challenges = await question_generator.generate_coding_challenges(job, count=coding_count, difficulty=difficulty)
 
     supabase.table("assessment_sessions").update({
         "coding_challenges": challenges,
@@ -552,12 +558,14 @@ async def submit_coding_solution(
     test_results = []
     
     compilation_error = None
+    runtime_error = None
     if challenge:
         test_cases = challenge.get("test_cases", [])
         if test_cases:
             result = await executor.execute(submission.code, test_cases, language=submission.language)
             score_percentage = result.score_percentage
             compilation_error = result.compilation_error
+            runtime_error = result.runtime_error
             
             # Normalize results to match frontend TestResult interface
             for idx, tr in enumerate(result.test_results):
@@ -619,6 +627,7 @@ async def submit_coding_solution(
     return {
         "success": True,
         "compilation_error": compilation_error,
+        "runtime_error": runtime_error,
         "score_percentage": score_percentage,
         "passed_count": passed_count,
         "total_tests": total_count,
