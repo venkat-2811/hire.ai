@@ -82,15 +82,15 @@ export function useDeleteJob() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: string) => {
-      return jobsApi.delete(id);
+    mutationFn: async ({ id, permanent = false }: { id: string; permanent?: boolean }) => {
+      return jobsApi.delete(id, permanent);
     },
-    onSuccess: () => {
+    onSuccess: (_, { permanent }) => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Job archived successfully');
+      toast.success(`Job ${permanent ? 'permanently deleted' : 'archived'} successfully`);
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to archive job');
+    onError: (error: Error, { permanent }) => {
+      toast.error(error.message || `Failed to ${permanent ? 'delete' : 'archive'} job`);
     },
   });
 }

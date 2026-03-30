@@ -13,6 +13,7 @@ import {
   Eye,
   Edit,
   Archive,
+  Trash2,
   Loader2,
   Link as LinkIcon,
   Copy,
@@ -24,10 +25,21 @@ import {
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
+  DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
-import { useJobs, useDeleteJob } from '@/hooks/useJobs';
+import { useJobs, useDeleteJob, useUpdateJob } from '@/hooks/useJobs';
 import { toast } from 'sonner';
 
 export default function JobsPage() {
@@ -36,6 +48,9 @@ export default function JobsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const { data: jobs, isLoading: jobsLoading } = useJobs();
   const deleteJob = useDeleteJob();
+  const updateJob = useUpdateJob();
+
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const getApplicationLink = (jobId: string) => {
     return `${window.location.origin}/apply/${jobId}`;
@@ -57,8 +72,22 @@ export default function JobsPage() {
     (j) => j.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleArchive = (jobId: string) => {
-    deleteJob.mutate(jobId);
+  const handleToggleArchive = (jobId: string, currentStatus: boolean) => {
+    if (currentStatus) {
+      // Archive (soft delete)
+      deleteJob.mutate({ id: jobId, permanent: false });
+    } else {
+      // Activate
+      updateJob.mutate({ id: jobId, data: { is_active: true } as any });
+    }
+  };
+
+  const handlePermanentDelete = () => {
+    if (deleteId) {
+      deleteJob.mutate({ id: deleteId, permanent: true }, {
+        onSuccess: () => setDeleteId(null)
+      });
+    }
   };
 
   if (authLoading || jobsLoading) {
@@ -155,9 +184,17 @@ export default function JobsPage() {
                             Edit Job
                           </Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleArchive(job.id)}>
+                        <DropdownMenuItem onClick={() => handleToggleArchive(job.id, job.is_active)}>
                           <Archive className="mr-2 h-4 w-4" />
-                          {job.is_active ? 'Archive' : 'Activate'}
+                          {job.is_active ? 'Archive Job' : 'Activate Job'}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem 
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteId(job.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Permanently
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -185,6 +222,28 @@ export default function JobsPage() {
             </motion.div>
           ))}
         </div>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the job position
+                and remove all associated candidate applications, interviews, and assessment data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handlePermanentDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete Permanently
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );

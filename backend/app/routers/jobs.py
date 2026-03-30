@@ -13,7 +13,7 @@ router = APIRouter(prefix="/jobs", tags=["Jobs"])
 async def list_jobs(
     role: Optional[str] = None,
     level: Optional[RoleLevel] = None,
-    is_active: Optional[bool] = True
+    is_active: Optional[bool] = None
 ):
     """List all job descriptions with optional filters."""
     supabase = get_supabase_client()
@@ -24,6 +24,9 @@ async def list_jobs(
         query = query.ilike("role", f"%{role}%")
     if level:
         query = query.eq("level", level.value)
+    
+    # If is_active is explicitly provided (True or False), filter by it.
+    # If it is None, it means "don't filter by is_active" (show all).
     if is_active is not None:
         query = query.eq("is_active", is_active)
     
@@ -169,16 +172,31 @@ async def update_job(job_id: str, job: JobDescriptionUpdate):
 
 
 @router.delete("/{job_id}", response_model=APIResponse)
-async def delete_job(job_id: str):
-    """Archive a job (soft delete)."""
+async def delete_job(job_id: str, permanent: bool = False):
+    """Archive (soft delete) or permanently delete a job."""
     supabase = get_supabase_admin_client()
     
-    result = supabase.table("job_descriptions").update({"is_active": False}).eq("id", job_id).execute()
+    if permanent:
+        # Perform permanent (hard) deletion
+        try:
+            # Foreign keys (applications, interviews) are configured with ON DELETE CASCADE
+            result = supabase.table("job_descriptions").delete().eq("id", job_id).execute()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete job: {str(e)}")
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        return APIResponse(success=True, message="Job permanently deleted")
+    else:
+        # Perform archiving (soft delete)
+        result = supabase.table("job_descriptions").update({"is_active": False}).eq("id", job_id).execute()
 
-    if getattr(result, "error", None):
-        raise HTTPException(status_code=500, detail=str(result.error))
-    
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    return APIResponse(success=True, message="Job archived successfully")
+        if getattr(result, "error", None):
+            raise HTTPException(status_code=500, detail=str(result.error))
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        return APIResponse(success=True, message="Job archived successfully")
+
