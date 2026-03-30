@@ -142,6 +142,11 @@ export default function CandidatesPage() {
     filtered.forEach(candidate => {
       const jobId = (candidate as any).job_id;
       if (!jobId) return; // Skip candidates without job assignments
+
+      // Skip candidates whose linked job no longer exists (has been deleted)
+      const job = allJobs.find(j => j.id === jobId);
+      if (!job) return; 
+
       if (!grouped[jobId]) {
         grouped[jobId] = [];
       }
@@ -168,12 +173,12 @@ export default function CandidatesPage() {
     });
 
     return grouped;
-  }, [candidates, searchQuery, sortField, sortOrder]);
+  }, [candidates, searchQuery, sortField, sortOrder, allJobs]);
 
   // Get job title by ID
   const getJobTitle = (jobId: string) => {
     const job = allJobs.find(j => j.id === jobId);
-    if (!job) return 'Unknown Job';
+    if (!job) return '';
     return job.is_active ? job.title : `${job.title} (Archived)`;
   };
 
