@@ -87,10 +87,11 @@ export function useDeleteJob() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      toast.success('Job archived successfully');
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      toast.success('Job and all related data deleted successfully');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to archive job');
+      toast.error(error.message || 'Failed to delete job');
     },
   });
 }

@@ -654,7 +654,18 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       if (plan === 'free') return badRequest(res, 'Free plan does not require payment');
 
       const limits = getPlanLimits(plan);
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      
+      // Dynamically detect frontend URL from request headers
+      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+      const isLocalhost = String(hostHeader).includes('localhost');
+      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
+      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
+      
+      let frontendUrl = process.env.FRONTEND_URL;
+      if (!frontendUrl || frontendUrl === 'http://localhost:5173' || frontendUrl === 'http://localhost:8080' || frontendUrl.includes('hire-ai-sandy')) {
+        frontendUrl = dynamicUrl;
+      }
+      
       const successUrl = `${frontendUrl}/onboarding?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`;
       const cancelUrl = `${frontendUrl}/onboarding?cancelled=true`;
 
@@ -978,17 +989,60 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const user = await requireAuth(req, res);
         if (!user) return;
 
-        const { data, error } = await supabase
+        // Verify job belongs to the user
+        const { data: job, error: jobErr } = await supabase
           .from('job_descriptions')
-          .update({ is_active: false })
+          .select('id')
           .eq('id', jobId)
           .eq('created_by', user.id)
-          .select()
           .single();
 
-        if (error) return res.status(500).json({ error: error.message });
-        if (!data) return notFound(res, 'Job not found');
-        return ok(res, { success: true, message: 'Job archived successfully' });
+        if (jobErr || !job) return notFound(res, 'Job not found');
+
+        // Cascade delete all related data for this job
+
+        // 1. Delete assessment sessions for this job
+        await supabase.from('assessment_sessions').delete().eq('job_id', jobId);
+
+        // 2. Delete AI interview sessions for this job
+        await supabase.from('ai_interview_sessions').delete().eq('job_id', jobId);
+
+        // 3. Delete ATS screenings for this job
+        await supabase.from('ats_screenings').delete().eq('job_id', jobId);
+
+        // 4. Get candidate IDs linked to this job before deleting applications
+        const { data: jobApps } = await supabase
+          .from('job_applications')
+          .select('candidate_id')
+          .eq('job_id', jobId);
+        const candidateIds = [...new Set((jobApps || []).map((a: any) => a.candidate_id))];
+
+        // 5. Delete job applications for this job
+        await supabase.from('job_applications').delete().eq('job_id', jobId);
+
+        // 6. Delete orphaned candidates (those who have no other job applications)
+        if (candidateIds.length > 0) {
+          for (const cid of candidateIds) {
+            const { data: otherApps } = await supabase
+              .from('job_applications')
+              .select('id')
+              .eq('candidate_id', cid)
+              .limit(1);
+            if (!otherApps || otherApps.length === 0) {
+              await supabase.from('candidates').delete().eq('id', cid);
+            }
+          }
+        }
+
+        // 7. Delete the job itself
+        const { error: delErr } = await supabase
+          .from('job_descriptions')
+          .delete()
+          .eq('id', jobId)
+          .eq('created_by', user.id);
+
+        if (delErr) return res.status(500).json({ error: delErr.message });
+        return ok(res, { success: true, message: 'Job and all related data deleted successfully' });
       }
 
       return methodNotAllowed(res);
