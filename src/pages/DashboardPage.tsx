@@ -110,7 +110,7 @@ export default function DashboardPage() {
               Welcome back!! 👋
             </motion.h1>
             <p className="text-muted-foreground mt-1">
-              See how your hiring pipeline is performing in today.
+              See how your hiring pipeline is performing today.
             </p>
           </div>
           <div className="flex gap-3">
