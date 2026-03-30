@@ -99,10 +99,15 @@ export default function OnboardingPage() {
 
   useEffect(() => { setForm(initial); }, [initial]);
 
+  useEffect(() => {
+    if (profile?.onboarding_completed) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [profile?.onboarding_completed, navigate]);
+
   const verifyingRef = useRef(false);
 
   // Handle Stripe redirect back — wait for auth/profile to be ready
-  // This MUST run before the onboarding_completed redirect check
   useEffect(() => {
     if (isLoading) return; // Auth not ready yet, wait
 
@@ -113,10 +118,6 @@ export default function OnboardingPage() {
     if (cancelled) {
       toast.error('Payment was cancelled.');
       window.history.replaceState({}, '', '/onboarding');
-      // If already onboarded, go to dashboard
-      if (profile?.onboarding_completed) {
-        navigate('/dashboard', { replace: true });
-      }
       return;
     }
 
@@ -143,17 +144,7 @@ export default function OnboardingPage() {
           setProcessingPlan(false);
           setSelectedPlan(null);
           verifyingRef.current = false;
-          // If already onboarded, go to dashboard even on failure
-          if (profile?.onboarding_completed) {
-            navigate('/dashboard', { replace: true });
-          }
         });
-      return; // Don't run the redirect check below while verifying
-    }
-
-    // Only redirect to dashboard if no Stripe params need processing
-    if (profile?.onboarding_completed) {
-      navigate('/dashboard', { replace: true });
     }
   }, [searchParams, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -655,7 +655,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
       const limits = getPlanLimits(plan);
       
-      // Dynamically detect frontend URL from request headers
+      // Dynamically resolve frontend URL from request headers
       const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
       const isLocalhost = String(hostHeader).includes('localhost');
       const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
@@ -989,60 +989,109 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const user = await requireAuth(req, res);
         if (!user) return;
 
-        // Verify job belongs to the user
-        const { data: job, error: jobErr } = await supabase
-          .from('job_descriptions')
-          .select('id')
-          .eq('id', jobId)
-          .eq('created_by', user.id)
-          .single();
+        const permanent = req.query.permanent === 'true';
 
-        if (jobErr || !job) return notFound(res, 'Job not found');
+        if (permanent) {
+          // Verify job belongs to user first
+          const { data: job } = await supabase
+            .from('job_descriptions')
+            .select('id')
+            .eq('id', jobId)
+            .eq('created_by', user.id)
+            .single();
 
-        // Cascade delete all related data for this job
+          if (!job) return notFound(res, 'Job not found');
 
-        // 1. Delete assessment sessions for this job
-        await supabase.from('assessment_sessions').delete().eq('job_id', jobId);
+          try {
+            // 1. Delete assessment sessions for this job
+            await supabase.from('assessment_sessions').delete().eq('job_id', jobId);
 
-        // 2. Delete AI interview sessions for this job
-        await supabase.from('ai_interview_sessions').delete().eq('job_id', jobId);
+            // 2. Delete interview sessions (and cascaded questions/responses/evaluations via DB FK)
+            await supabase.from('interview_sessions').delete().eq('job_id', jobId);
 
-        // 3. Delete ATS screenings for this job
-        await supabase.from('ats_screenings').delete().eq('job_id', jobId);
+            // 3. Delete ATS screenings for this job
+            await supabase.from('ats_screenings').delete().eq('job_id', jobId);
 
-        // 4. Get candidate IDs linked to this job before deleting applications
-        const { data: jobApps } = await supabase
-          .from('job_applications')
-          .select('candidate_id')
-          .eq('job_id', jobId);
-        const candidateIds = [...new Set((jobApps || []).map((a: any) => a.candidate_id))];
+            // 4. Delete job applications for this job
+            await supabase.from('job_applications').delete().eq('job_id', jobId);
 
-        // 5. Delete job applications for this job
-        await supabase.from('job_applications').delete().eq('job_id', jobId);
+            // 5. Delete candidates that are only associated with this job (no other job applications)
+            const { data: jobCandidates } = await supabase
+              .from('candidates')
+              .select('id, job_id')
+              .eq('job_id', jobId);
 
-        // 6. Delete orphaned candidates (those who have no other job applications)
-        if (candidateIds.length > 0) {
-          for (const cid of candidateIds) {
-            const { data: otherApps } = await supabase
-              .from('job_applications')
-              .select('id')
-              .eq('candidate_id', cid)
-              .limit(1);
-            if (!otherApps || otherApps.length === 0) {
-              await supabase.from('candidates').delete().eq('id', cid);
+            if (jobCandidates && jobCandidates.length > 0) {
+              for (const candidate of jobCandidates) {
+                // Check if candidate has applications to other jobs
+                const { data: otherApps } = await supabase
+                  .from('job_applications')
+                  .select('id')
+                  .eq('candidate_id', candidate.id)
+                  .neq('job_id', jobId)
+                  .limit(1);
+
+                // Check if candidate is linked to other jobs via other tables
+                const { data: otherAssessments } = await supabase
+                  .from('assessment_sessions')
+                  .select('id')
+                  .eq('candidate_id', candidate.id)
+                  .neq('job_id', jobId)
+                  .limit(1);
+
+                const { data: otherInterviews } = await supabase
+                  .from('interview_sessions')
+                  .select('id')
+                  .eq('candidate_id', candidate.id)
+                  .neq('job_id', jobId)
+                  .limit(1);
+
+                const hasOtherJobs = (otherApps && otherApps.length > 0) ||
+                  (otherAssessments && otherAssessments.length > 0) ||
+                  (otherInterviews && otherInterviews.length > 0);
+
+                if (!hasOtherJobs) {
+                  await supabase.from('candidates').delete().eq('id', candidate.id);
+                }
+              }
             }
+
+            // 6. Finally delete the job itself
+            const { error: delErr } = await supabase
+              .from('job_descriptions')
+              .delete()
+              .eq('id', jobId)
+              .eq('created_by', user.id);
+
+            if (delErr) return res.status(500).json({ error: delErr.message });
+
+            // Decrement usage counter
+            const profile = await getUserProfile(supabase, user.id);
+            if (profile && (profile.jobs_count || 0) > 0) {
+              await supabase.from('profiles').update({
+                jobs_count: (profile.jobs_count || 0) - 1,
+                updated_at: new Date().toISOString(),
+              }).eq('user_id', user.id);
+            }
+
+            return ok(res, { success: true, message: 'Job and all related data permanently deleted' });
+          } catch (e: any) {
+            return res.status(500).json({ error: `Failed to delete job: ${e.message}` });
           }
+        } else {
+          // Soft delete (archive)
+          const { data, error } = await supabase
+            .from('job_descriptions')
+            .update({ is_active: false })
+            .eq('id', jobId)
+            .eq('created_by', user.id)
+            .select()
+            .single();
+
+          if (error) return res.status(500).json({ error: error.message });
+          if (!data) return notFound(res, 'Job not found');
+          return ok(res, { success: true, message: 'Job archived successfully' });
         }
-
-        // 7. Delete the job itself
-        const { error: delErr } = await supabase
-          .from('job_descriptions')
-          .delete()
-          .eq('id', jobId)
-          .eq('created_by', user.id);
-
-        if (delErr) return res.status(500).json({ error: delErr.message });
-        return ok(res, { success: true, message: 'Job and all related data deleted successfully' });
       }
 
       return methodNotAllowed(res);
