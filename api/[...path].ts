@@ -708,7 +708,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           .update({
             subscription_plan: plan,
             subscription_id: session_id,
-            razorpay_payment_id: session.payment_intent || session_id,
+            stripe_payment_id: session.payment_intent || session_id,
             subscription_status: 'active',
             plan_selected_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
