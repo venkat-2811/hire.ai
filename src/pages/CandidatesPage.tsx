@@ -289,7 +289,7 @@ export default function CandidatesPage() {
       }
 
       const data = await response.json();
-      toast.success(`Interview invites sent to ${data.invites_sent} candidate(s)`);
+      toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
       setInterviewDialogOpen(false);
       setSelectedIds(new Set());
     } catch (e) {
