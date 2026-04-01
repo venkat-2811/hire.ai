@@ -214,7 +214,7 @@ function getGroqClient(): Groq {
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
   const client = getGroqClient();
   const completion = await client.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [{ role: 'user', content: prompt }],
     temperature: opts.temperature ?? 0.7,
     max_tokens: opts.maxTokens ?? 2048,
@@ -225,7 +225,7 @@ async function generateJSON<T>(prompt: string): Promise<T> {
   const client = getGroqClient();
   // Use Groq's native JSON mode for reliable JSON output
   const completion = await client.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
