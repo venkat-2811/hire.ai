@@ -1201,6 +1201,38 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           }
         }
 
+        // Enrich with ATS screening scores
+        if (result.length > 0) {
+          const { data: screenings } = await supabase
+            .from('ats_screenings')
+            .select('candidate_id, job_id, overall_score, skill_relevance_score, experience_score, education_score, credibility_score, shortlisted, shortlist_reason')
+            .in('candidate_id', candidateIds);
+
+          if (screenings && screenings.length > 0) {
+            // Build map keyed by "candidateId:jobId"
+            const screeningMap: Record<string, any> = {};
+            for (const s of screenings) {
+              screeningMap[`${s.candidate_id}:${s.job_id}`] = s;
+            }
+
+            for (const entry of result) {
+              const screening = screeningMap[`${entry.id}:${entry.job_id}`];
+              if (screening) {
+                entry.ats_score = screening.overall_score;
+                entry.skill_relevance_score = screening.skill_relevance_score;
+                entry.experience_score = screening.experience_score;
+                entry.education_score = screening.education_score;
+                entry.credibility_score = screening.credibility_score;
+                entry.shortlisted = screening.shortlisted;
+                entry.shortlist_reason = screening.shortlist_reason;
+              } else {
+                entry.ats_score = null;
+                entry.shortlisted = null;
+              }
+            }
+          }
+        }
+
         return ok(res, result);
       }
 

@@ -22,8 +22,9 @@ import {
   MessageSquare,
   ClipboardList,
   ExternalLink,
+  Shield,
 } from 'lucide-react';
-import { useCandidate } from '@/hooks/useCandidates';
+import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
 import { useProfile } from '@/hooks/useProfile';
 import { candidatesApi, type AssessmentDetails, type InterviewDetails } from '@/lib/api';
 import { ScoreBadge } from '@/components/ui/score-badge';
@@ -45,6 +46,10 @@ export default function CandidateDetailsPage() {
   const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '');
 
   const { data: profile } = useProfile();
+  const { data: screenings } = useCandidateScreenings(candidateId || '');
+  const screening = jobId
+    ? (screenings || []).find((s: any) => s.job_id === jobId)
+    : (screenings || [])[0] || null;
 
   const [assessmentDetails, setAssessmentDetails] = useState<AssessmentDetails | null>(null);
   const [interviewDetails, setInterviewDetails] = useState<InterviewDetails | null>(null);
@@ -478,6 +483,63 @@ export default function CandidateDetailsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ATS Screening Scores */}
+            {screening && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-primary" />
+                    Resume Score
+                  </CardTitle>
+                  <CardDescription>ATS screening analysis</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">Overall Score</p>
+                    <ScoreBadge score={screening.overall_score} size="lg" />
+                    {screening.shortlisted && (
+                      <Badge className="mt-2" variant="default">Shortlisted</Badge>
+                    )}
+                    {screening.shortlisted === false && (
+                      <Badge className="mt-2" variant="secondary">Not Shortlisted</Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {typeof screening.skill_relevance_score === 'number' && (
+                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                        <p className="text-xs text-muted-foreground mb-1">Skills</p>
+                        <ScoreBadge score={screening.skill_relevance_score} size="sm" />
+                      </div>
+                    )}
+                    {typeof screening.experience_score === 'number' && (
+                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                        <p className="text-xs text-muted-foreground mb-1">Experience</p>
+                        <ScoreBadge score={screening.experience_score} size="sm" />
+                      </div>
+                    )}
+                    {typeof screening.education_score === 'number' && (
+                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                        <p className="text-xs text-muted-foreground mb-1">Education</p>
+                        <ScoreBadge score={screening.education_score} size="sm" />
+                      </div>
+                    )}
+                    {typeof screening.credibility_score === 'number' && (
+                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                        <p className="text-xs text-muted-foreground mb-1">Credibility</p>
+                        <ScoreBadge score={screening.credibility_score} size="sm" />
+                      </div>
+                    )}
+                  </div>
+                  {screening.shortlist_reason && (
+                    <div className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg">
+                      <p className="font-medium text-foreground mb-1">Reason</p>
+                      {screening.shortlist_reason}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

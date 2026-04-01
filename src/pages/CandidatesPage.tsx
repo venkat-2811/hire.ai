@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Users,
   Briefcase,
+  Shield,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
@@ -500,6 +501,7 @@ export default function CandidatesPage() {
                           </TableHead>
                           <TableHead>Candidate</TableHead>
                           <TableHead>Resume</TableHead>
+                          <TableHead>ATS Score</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Interview</TableHead>
                           <TableHead>Applied</TableHead>
@@ -509,7 +511,7 @@ export default function CandidatesPage() {
                       <TableBody>
                         {jobCandidates.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                               No candidates in this job group.
                             </TableCell>
                           </TableRow>
@@ -550,6 +552,20 @@ export default function CandidatesPage() {
                                   <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
                                     No Resume
                                   </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {typeof (candidate as any).ats_score === 'number' ? (
+                                  <div className="flex items-center gap-2">
+                                    <ScoreBadge score={(candidate as any).ats_score} />
+                                    {(candidate as any).shortlisted && (
+                                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-success/10 text-success font-medium">
+                                        Shortlisted
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Not screened</span>
                                 )}
                               </TableCell>
                               <TableCell>
