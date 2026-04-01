@@ -31,9 +31,9 @@ const PLANS = [
     gradient: 'from-slate-500 to-slate-600',
     cardBg: 'bg-slate-500/5 border-slate-500/20',
     features: [
-      { text: 'Up to 2 job roles', highlight: false },
-      { text: '10 technical assessments', highlight: false },
-      { text: '10 AI interviews', highlight: false },
+      { text: 'Up to 10 job roles', highlight: false },
+      { text: '25 technical assessments', highlight: false },
+      { text: '25 AI interviews', highlight: false },
       { text: 'Basic analytics', highlight: false },
     ],
     cta: 'Start Free',

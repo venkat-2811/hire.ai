@@ -410,7 +410,7 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
 
 // ============== Plan Limits ==============
 const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
-  free: { max_jobs: 2, max_assessments: 10, max_interviews: 10, price: 0, label: 'Free' },
+  free: { max_jobs: 10, max_assessments: 25, max_interviews: 25, price: 0, label: 'Free' },
   pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 500, label: 'Pro' },       // price in cents ($5 = 500)
   premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 1000, label: 'Premium' }, // $10 = 1000
 };
@@ -1592,7 +1592,7 @@ ${resumeText.slice(0, 8000)}
       if (req.method !== 'POST') return methodNotAllowed(res);
 
       const { candidate_id, job_id } = req.body;
-      if (!candidate_id || !job_id) return badRequest(res, 'candidate_id and job_id required');
+      if (!candidate_id || !job_id) return badRequest(res, `candidate_id (${candidate_id}) and job_id (${job_id}) are required`);
 
       const { data: candidate } = await supabase
         .from('candidates')
@@ -1600,8 +1600,8 @@ ${resumeText.slice(0, 8000)}
         .eq('id', candidate_id)
         .single();
 
-      if (!candidate) return notFound(res, 'Candidate not found');
-      if (!candidate.resume_parsed_data) return badRequest(res, 'Resume not parsed');
+      if (!candidate) return notFound(res, `Candidate not found with ID: ${candidate_id}`);
+      if (!candidate.resume_parsed_data) return badRequest(res, `Resume not parsed for candidate: ${candidate_id}. Please ensure the resume is uploaded and processed first.`);
 
       const { data: job } = await supabase
         .from('job_descriptions')
