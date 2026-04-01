@@ -214,7 +214,7 @@ function getGroqClient(): Groq {
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
   const client = getGroqClient();
   const completion = await client.chat.completions.create({
-    model: 'llama3-70b-8192',
+    model: 'llama-3.3-70b-versatile',
     messages: [{ role: 'user', content: prompt }],
     temperature: opts.temperature ?? 0.7,
     max_tokens: opts.maxTokens ?? 2048,
@@ -225,7 +225,7 @@ async function generateJSON<T>(prompt: string): Promise<T> {
   const client = getGroqClient();
   // Use Groq's native JSON mode for reliable JSON output
   const completion = await client.chat.completions.create({
-    model: 'llama3-70b-8192',
+    model: 'llama-3.3-70b-versatile',
     messages: [
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
@@ -1485,8 +1485,8 @@ ${resumeText.slice(0, 8000)}
 `;
           resumeParsedData = await generateJSON<any>(prompt);
         } catch (err) {
-          console.error("Failed to parse resume:", err);
-          throw new Error("Failed to parse resume with AI. Please try again.");
+          console.error('Resume AI parsing failed (will save raw text anyway):', err);
+          resumeParsedData = null;
         }
 
         const { data: updated, error: upErr } = await supabase
@@ -1602,6 +1602,22 @@ ${resumeText.slice(0, 8000)}
         .single();
 
       if (!candidate) return notFound(res, `Candidate not found with ID: ${candidate_id}`);
+
+      // If resume_parsed_data is missing but resume_text exists, try to parse on-the-fly
+      if (!candidate.resume_parsed_data && candidate.resume_text) {
+        try {
+          const parsePrompt = `You are an expert resume parser.\n\nParse the following resume and return ONLY valid JSON in this exact format:\n{\n  "skills": ["skill1"],\n  "experience": [{"title":"","company":"","duration":"","description":""}],\n  "education": [{"degree":"","institution":"","year":""}],\n  "summary": "",\n  "total_experience_years": 0,\n  "certifications": ["cert1"]\n}\n\nRESUME TEXT:\n${candidate.resume_text.slice(0, 8000)}`;
+          const parsed = await generateJSON<any>(parsePrompt);
+          if (parsed) {
+            candidate.resume_parsed_data = parsed;
+            // Persist the parsed data for future use
+            await supabase.from('candidates').update({ resume_parsed_data: parsed, updated_at: new Date().toISOString() }).eq('id', candidate_id);
+          }
+        } catch (parseErr: any) {
+          console.error('On-the-fly resume parsing failed:', parseErr?.message);
+        }
+      }
+
       if (!candidate.resume_parsed_data) return badRequest(res, `Resume not parsed for candidate: ${candidate_id}. Please ensure the resume is uploaded and processed first.`);
 
       const { data: job } = await supabase
@@ -3284,8 +3300,8 @@ Evaluate and return JSON:
             const prompt = `You are an expert resume parser.\n\nParse the following resume and return ONLY valid JSON in this exact format:\n{\n  "skills": ["skill1"],\n  "experience": [{"title":"","company":"","duration":"","description":""}],\n  "education": [{"degree":"","institution":"","year":""}],\n  "summary": "",\n  "total_experience_years": 0,\n  "certifications": ["cert1"]\n}\n\nRESUME TEXT:\n${resumeText.slice(0, 8000)}`;
             resumeParsedData = await generateJSON<any>(prompt);
           } catch (err: any) {
-            console.error('Failed to parse resume during application:', err?.message);
-            throw new Error('Failed to parse resume with AI. Please try again.');
+            console.error('Resume AI parsing failed during application (will save raw text anyway):', err?.message);
+            resumeParsedData = null;
           }
 
           // Update candidate with resume data
