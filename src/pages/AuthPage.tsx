@@ -56,7 +56,7 @@ export default function AuthPage() {
             transition={{ delay: 0.3 }}
             className="text-lg text-white/70 max-w-md"
           >
-            Screen resumes,generate adaptive questions, and evaluate candidates
+            Screen resume,generate adaptive questions, and evaluate candidates
             with explainable AI — all in one platform.
           </motion.p>
         </div>
