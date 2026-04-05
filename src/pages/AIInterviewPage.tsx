@@ -84,6 +84,7 @@ export default function AIInterviewPage() {
   const [micEnabled, setMicEnabled] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isQuestionReadComplete, setIsQuestionReadComplete] = useState(false);
   const [questionDurationSeconds, setQuestionDurationSeconds] = useState(DEFAULT_QUESTION_WINDOW_SECONDS);
   const [questionTimeLeftSeconds, setQuestionTimeLeftSeconds] = useState(DEFAULT_QUESTION_WINDOW_SECONDS);
   const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
@@ -110,21 +111,31 @@ export default function AIInterviewPage() {
   const stopRecordingResolverRef = useRef<((blob: Blob | null) => void) | null>(null);
 
   // Speech synthesis - speak the question
-  const speakQuestion = useCallback((text: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
-      utterance.volume = 1;
-
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-
-      synthRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
+  const speakQuestion = useCallback((text: string, onComplete?: () => void) => {
+    if (!('speechSynthesis' in window)) {
+      setIsSpeaking(false);
+      onComplete?.();
+      return;
     }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      onComplete?.();
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      onComplete?.();
+    };
+
+    synthRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
   }, []);
 
   const queueServerTranscription = useCallback(async (
@@ -251,11 +262,12 @@ export default function AIInterviewPage() {
         return;
       }
 
+      setIsQuestionReadComplete(false);
       setCurrentQuestion(data);
 
       // Speak the question after a short delay
       setTimeout(() => {
-        speakQuestion(data.question_text);
+        speakQuestion(data.question_text, () => setIsQuestionReadComplete(true));
       }, 1000);
     } catch (e) {
       toast.error('Failed to load question');
@@ -493,7 +505,7 @@ export default function AIInterviewPage() {
 
   // Automatically start recording and countdown whenever a question appears.
   useEffect(() => {
-    if (!currentQuestion || showReadyScreen || isTerminated || isCompleted || isAutoAdvancing) return;
+    if (!currentQuestion || !isQuestionReadComplete || showReadyScreen || isTerminated || isCompleted || isAutoAdvancing) return;
 
     const questionWindowSeconds = DEFAULT_QUESTION_WINDOW_SECONDS;
     setQuestionDurationSeconds(questionWindowSeconds);
@@ -534,6 +546,7 @@ export default function AIInterviewPage() {
     };
   }, [
     currentQuestion,
+    isQuestionReadComplete,
     showReadyScreen,
     isTerminated,
     isCompleted,
@@ -834,17 +847,17 @@ export default function AIInterviewPage() {
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <CardTitle className="text-2xl">Current Question</CardTitle>
-                <div className="flex items-center gap-2 text-sm font-medium">
+                <div className="flex items-center gap-3 rounded-full border border-primary/20 bg-gradient-to-r from-primary/10 via-amber-100/40 to-destructive/10 px-4 py-2 shadow-sm">
                   <Clock3 className="h-4 w-4 text-primary" />
-                  {formatTime(questionTimeLeftSeconds)}
+                  <span className="text-lg font-semibold tabular-nums tracking-wider">{formatTime(questionTimeLeftSeconds)}</span>
                 </div>
               </div>
               <Progress
                 value={(questionTimeLeftSeconds / Math.max(questionDurationSeconds, 1)) * 100}
-                className="h-1.5"
+                className="h-2 [&>div]:bg-gradient-to-r [&>div]:from-emerald-500 [&>div]:via-amber-500 [&>div]:to-red-500"
               />
               <CardDescription>
-                Recording starts automatically for each question. Click Next when done, or it auto-advances at 00:00.
+                Timer starts after the question is read aloud. Click Next when done, or it auto-advances at 00:00.
               </CardDescription>
             </CardHeader>
             <CardContent className="h-full flex flex-col justify-center gap-6">
@@ -854,14 +867,20 @@ export default function AIInterviewPage() {
 
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 <Badge variant={isRecording ? 'destructive' : 'secondary'}>
-                  {isRecording ? 'Recording automatically' : isAutoAdvancing ? 'Saving response' : 'Preparing'}
+                  {isRecording
+                    ? 'Recording automatically'
+                    : isAutoAdvancing
+                      ? 'Saving response'
+                      : isSpeaking
+                        ? 'Reading question'
+                        : 'Preparing'}
                 </Badge>
                 {isSpeaking && <Badge variant="secondary">Reading question aloud</Badge>}
                 {isAutoAdvancing && <Badge variant="outline">Moving to next question...</Badge>}
               </div>
 
               <div>
-                <Button onClick={handleNextQuestion} disabled={isAutoAdvancing}>
+                <Button onClick={handleNextQuestion} disabled={isAutoAdvancing || !isQuestionReadComplete || !isRecording}>
                   Next
                 </Button>
               </div>
