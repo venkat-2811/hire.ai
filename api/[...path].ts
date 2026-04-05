@@ -7,6 +7,18 @@ import Busboy from 'busboy';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 
+/**
+ * AI Interview STT Route (server-side transcription)
+ * POST /api/ai-interview/:sessionId/transcribe-store
+ * Request JSON: {
+ *   question_index: number,
+ *   audio_base64: string,
+ *   mime_type?: string,
+ *   audio_duration_seconds?: number
+ * }
+ * Response JSON: { success: true, question_index: number, transcript_length: number }
+ */
+
 // ============== INLINE: Supabase ==============
 let _supabaseAdmin: SupabaseClient | null = null;
 function getSupabaseAdmin(): SupabaseClient {
@@ -2864,6 +2876,90 @@ Only return valid JSON, no additional text.`;
       }
     }
 
+    // POST /api/ai-interview/:sessionId/transcribe-store
+    // Accepts JSON body: { question_index: number, audio_base64: string, mime_type?: string, audio_duration_seconds?: number }
+    // Transcribes on server and stores transcript on the matching question response.
+    if (req.method === 'POST' && segments.length === 3 && segments[2] === 'transcribe-store') {
+      const sessionId = segments[1];
+      const body = req.body as {
+        question_index?: number;
+        audio_base64?: string;
+        mime_type?: string;
+        audio_duration_seconds?: number;
+      };
+
+      const { data: session } = await supabase
+        .from('ai_interview_sessions')
+        .select('id, status, responses')
+        .eq('id', sessionId)
+        .single();
+
+      if (!session) return notFound(res, 'Session not found');
+      if (!['in_progress', 'completed'].includes(session.status)) {
+        return badRequest(res, 'Interview not in progress');
+      }
+
+      if (typeof body?.question_index !== 'number' || body.question_index < 0) {
+        return badRequest(res, 'Missing or invalid question_index.');
+      }
+      if (!body?.audio_base64) {
+        return badRequest(res, 'Missing audio_base64 in request body.');
+      }
+
+      let audioBuffer: Buffer;
+      try {
+        audioBuffer = Buffer.from(body.audio_base64, 'base64');
+      } catch {
+        return badRequest(res, 'Invalid base64 audio data.');
+      }
+      if (audioBuffer.length === 0) {
+        return badRequest(res, 'Empty audio data received.');
+      }
+
+      try {
+        const transcript = await transcribeWithAssemblyAI(audioBuffer, body.mime_type || 'audio/webm');
+
+        const responses: any[] = Array.isArray(session.responses) ? [...session.responses] : [];
+        const existingIdx = responses.findIndex((r: any) => Number(r?.question_index) === body.question_index);
+        const existing = existingIdx >= 0 ? responses[existingIdx] : {};
+
+        const updatedResponse = {
+          ...existing,
+          question_index: body.question_index,
+          transcript,
+          audio_duration_seconds: typeof body.audio_duration_seconds === 'number'
+            ? body.audio_duration_seconds
+            : (existing?.audio_duration_seconds ?? 0),
+          confidence: typeof existing?.confidence === 'number' ? existing.confidence : 0.9,
+          transcribed_at: new Date().toISOString(),
+          submitted_at: existing?.submitted_at || new Date().toISOString(),
+        };
+
+        if (existingIdx >= 0) {
+          responses[existingIdx] = updatedResponse;
+        } else {
+          responses.push(updatedResponse);
+        }
+
+        await supabase
+          .from('ai_interview_sessions')
+          .update({ responses, updated_at: new Date().toISOString() })
+          .eq('id', sessionId);
+
+        return ok(res, {
+          success: true,
+          question_index: body.question_index,
+          transcript_length: transcript.length,
+        });
+      } catch (e: any) {
+        console.error('Transcription-store error:', e.message);
+        if (e.message.includes('ASSEMBLYAI_API_KEY')) {
+          return res.status(503).json({ error: e.message });
+        }
+        return res.status(500).json({ error: `Transcription failed: ${e.message}` });
+      }
+    }
+
     // POST /api/ai-interview/:sessionId/response
     if (req.method === 'POST' && segments.length === 3 && segments[2] === 'response') {
       const sessionId = segments[1];
@@ -2872,14 +2968,24 @@ Only return valid JSON, no additional text.`;
       const { data: session } = await supabase.from('ai_interview_sessions').select('*').eq('id', sessionId).single();
       if (!session) return notFound(res, 'Session not found');
 
-      const responses = session.responses || [];
-      responses.push({
+      const responses = Array.isArray(session.responses) ? [...session.responses] : [];
+      const existingIdx = responses.findIndex((r: any) => Number(r?.question_index) === Number(body.question_index));
+      const responsePayload = {
         question_index: body.question_index,
-        transcript: body.transcript,
+        transcript: typeof body.transcript === 'string' ? body.transcript : '',
         audio_duration_seconds: body.audio_duration_seconds,
         confidence: body.confidence,
         submitted_at: new Date().toISOString(),
-      });
+      };
+
+      if (existingIdx >= 0) {
+        responses[existingIdx] = {
+          ...responses[existingIdx],
+          ...responsePayload,
+        };
+      } else {
+        responses.push(responsePayload);
+      }
 
       const nextIndex = (session.current_question_index || 0) + 1;
       const isLast = nextIndex >= (session.questions || []).length;
