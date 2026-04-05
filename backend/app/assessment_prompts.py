@@ -157,14 +157,14 @@ def get_mcq_generation_prompt(
 ) -> tuple[str, str]:
     
     difficulty_instructions = {
-        "easy": "Target medium-level questions. Maintain moderate complexity and clear logic, avoiding overly basic questions. Use limited edge cases.",
-        "medium": "Target slightly more challenging questions. Increase depth and include edge cases. Include scenario-based or real-world problem questions.",
-        "hard": "Target high-quality, advanced questions with strong complexity. Require deeper problem-solving and optimization. Use rigorous scenario-driven challenges."
+        "easy": "Target foundational concepts and practical application. Focus on core knowledge, common scenarios, and fundamental problem-solving. Exclude overly trivial syntax queries; use simple but realistic scenario-based questions.",
+        "medium": "Target intermediate scenario-based problem-solving. Require analysis of specific technical situations, debugging, or choosing the best approach among viable alternatives.",
+        "hard": "Target advanced, complex scenarios requiring architectural reasoning, performance optimization, or deep system-level debugging. Distractors must represent highly plausible but suboptimal approaches."
     }
 
     instruction = difficulty_instructions.get(difficulty.lower(), difficulty_instructions["medium"])
     
-    system_prompt = f"""You are creating a multiple-choice technical assessment for a {role} position at {level} level.
+    system_prompt = f"""You are an expert technical assessor creating a multiple-choice assessment for a {role} position at the {level} level.
 
 Job Description: {description[:800]}
 Must-Have Skills: {must_have_skills}
@@ -173,29 +173,30 @@ Good-to-Have Skills: {good_to_have_skills}
 Difficulty Target: {difficulty.upper()}
 {instruction}
 
-Generate {count} multiple-choice questions that:
-- Test practical knowledge of the required skills
-- Adhere strictly to the requested {difficulty.upper()} difficulty guidelines
-- Have 4 options each with exactly ONE correct answer
-- Use plausible distractors that reflect common pitfalls
-- Are specific to this role and level
-- Cover a variety of topics from the job description
+CRITICAL RULES FOR QUESTION GENERATION:
+1. Scenario-Based: Do NOT ask simple definitions (e.g., "What is X?"). Instead, frame questions as real-world scenarios or problems to solve (e.g., "You are deploying a service and encounter X issue. How do you resolve it?").
+2. Balanced Skill Coverage: Distribute the questions evenly across the listed Must-Have and Good-to-Have skills. Do not overrepresent any single skill.
+3. Plausible Distractors: Options must be challenging and highly plausible. Distractors should represent typical mistakes, common misconceptions, or suboptimal valid approaches.
+4. Distinct Options: Ensure answer choices are clearly distinct. Do not use options that are trivially different (e.g., do not just change one word across all options like "Python is a...", "Python was a...").
+5. Single Correct Answer: There must be exactly ONE unambiguously correct option.
+6. Detailed Explanations: You MUST provide a clear explanation for each question, detailing why the correct answer is the best choice and why the distractors are incorrect.
 
 Return a JSON object:
 {{
     "questions": [
         {{
-            "question": "Question text here",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "question": "Scenario-based question text here",
+            "options": ["Distinct Option A", "Distinct Option B", "Distinct Option C", "Distinct Option D"],
             "correct_index": 0,
             "difficulty": "easy|medium|hard",
-            "topic": "Topic name",
-            "points": 5
+            "topic": "Specific skill or topic",
+            "points": 5,
+            "explanation": "Detailed explanation of why the correct option is right and the distractors are wrong."
         }}
     ]
 }}"""
 
-    user_prompt = f"Generate {count} MCQ questions for this {role} position."
+    user_prompt = f"Generate {count} scenario-based MCQ questions for this {role} position following the critical rules."
     return system_prompt, user_prompt
 
 
