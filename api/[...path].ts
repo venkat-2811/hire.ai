@@ -423,8 +423,10 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
 // ============== Plan Limits ==============
 const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
   free: { max_jobs: 10, max_assessments: 25, max_interviews: 25, price: 0, label: 'Free' },
-  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 500, label: 'Pro' },       // price in cents ($5 = 500)
-  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 1000, label: 'Premium' }, // $10 = 1000
+  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 1000, label: 'Pro (Monthly)' },
+  pro_yearly: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 10000, label: 'Pro (Yearly)' },
+  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 1500, label: 'Premium (Monthly)' },
+  premium_yearly: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 15000, label: 'Premium (Yearly)' },
 };
 
 function getPlanLimits(plan: string) {
@@ -758,6 +760,35 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
       if (upErr) return res.status(500).json({ error: upErr.message });
       return ok(res, { success: true, plan: 'free', profile: updated });
+    }
+
+    /**
+     * Cancel Subscription
+     * Method: POST
+     * Path: /api/subscription/cancel
+     * Request body: {}
+     * Response shape: { success: boolean, message: string }
+     */
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'cancel') {
+      const profile = await getUserProfile(supabase, user.id);
+      if (!profile || !profile.subscription_id) {
+        return badRequest(res, 'No active subscription found');
+      }
+
+      // We mark it as 'cancel_at_period_end' in our database
+      const { error: upErr } = await supabase
+        .from('profiles')
+        .update({
+          subscription_status: 'cancel_at_period_end',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+
+      if (upErr) return res.status(500).json({ error: upErr.message });
+      return ok(res, {
+        success: true,
+        message: 'Subscription cancelled. Access continues until the end of the billing period.'
+      });
     }
 
     return methodNotAllowed(res);

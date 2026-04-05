@@ -684,6 +684,9 @@ export const subscriptionApi = {
 
   selectFree: () =>
     request<{ success: boolean; plan: string }>('/subscription/select-free', { method: 'POST' }),
+
+  cancel: () =>
+    request<{ success: boolean; message: string }>('/subscription/cancel', { method: 'POST' }),
 };
 
 export const usageApi = {

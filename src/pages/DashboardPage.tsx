@@ -146,11 +146,12 @@ export default function DashboardPage() {
                       <p className="text-3xl font-bold mt-1">
                         {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stat.value}
                       </p>
-                      {stat.change ? (
-                        <p className={`text-sm mt-1 ${stat.change.startsWith('+') ? 'text-success' : 'text-warning'}`}>
-                          {stat.change} from last week
+                      {stat.change && (
+                        <p className="text-sm mt-1 opacity-0 select-none">
+                          &nbsp;
                         </p>
-                      ) : (
+                      )}
+                      {!stat.change && (
                         <p className="text-sm mt-1 opacity-0 select-none">
                           &nbsp;
                         </p>
@@ -267,50 +268,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Usage & Subscription */}
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap justify-between items-start gap-2">
-                <div>
-                  <CardTitle>Usage & Subscription</CardTitle>
-                  <CardDescription>
-                    Current plan: <span className="font-semibold text-foreground">{usageData?.plan_label || 'Loading...'}</span>
-                  </CardDescription>
-                </div>
-                {(usageData?.plan === 'free' || usageData?.plan === 'pro') && (
-                  <Button variant="outline" size="sm" onClick={() => setShowUpgrade(true)}>
-                    Upgrade Plan
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {usageLoading ? (
-                  <div className="flex justify-center p-4">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <>
-                    {Object.values(usageData?.usage || {}).map((item) => {
-                      const percent = Math.min(100, Math.round((item.used / item.limit) * 100));
-                      const isHigh = percent >= 80;
-                      return (
-                        <div key={item.label} className="space-y-1.5">
-                          <div className="flex justify-between items-end">
-                            <Label className="text-xs text-muted-foreground">{item.label}</Label>
-                            <span className="text-xs font-medium">
-                              {item.used} / {item.limit > 900000 ? '∞' : item.limit}
-                            </span>
-                          </div>
-                          <Progress
-                            value={percent}
-                            className={`h-2 ${isHigh ? '[&>div]:bg-destructive' : ''}`}
-                          />
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-              </CardContent>
-            </Card>
+
           </motion.div>
         </div>
 
