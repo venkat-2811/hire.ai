@@ -180,20 +180,23 @@ export default function CandidatesPage() {
 
   const toggleSelectAll = () => {
     // Get all candidates from all jobs
-    const allCandidates = Object.values(candidatesByJob).flat();
+    const allCandidates = Object.entries(candidatesByJob).flatMap(([jobId, candidates]) => 
+      candidates.map(c => `${c.id}_${jobId}`)
+    );
     if (selectedIds.size === allCandidates.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(allCandidates.map(c => c.id)));
+      setSelectedIds(new Set(allCandidates));
     }
   };
 
   const toggleSelect = (id: string, jobId: string) => {
+    const key = `${id}_${jobId}`;
     const newSet = new Set(selectedIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
+    if (newSet.has(key)) {
+      newSet.delete(key);
     } else {
-      newSet.add(id);
+      newSet.add(key);
     }
     setSelectedIds(newSet);
   };
@@ -227,7 +230,7 @@ export default function CandidatesPage() {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
-          candidate_ids: Array.from(selectedIds),
+          candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
           job_id: startJobId,
           deadline_hours: 72,
           mcq_question_count: includeMcq ? mcqCount : 0,
@@ -279,7 +282,7 @@ export default function CandidatesPage() {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
-          candidate_ids: Array.from(selectedIds),
+          candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
           job_id: startJobId,
         }),
       });
@@ -460,15 +463,15 @@ export default function CandidatesPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Checkbox
-                          checked={jobCandidates.length > 0 && jobCandidates.every(c => selectedIds.has(c.id))}
+                          checked={jobCandidates.length > 0 && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
                           onCheckedChange={(checked) => {
                             const newSet = new Set(selectedIds);
                             if (checked) {
                               // Select all candidates in this job
-                              jobCandidates.forEach(c => newSet.add(c.id));
+                              jobCandidates.forEach(c => newSet.add(`${c.id}_${jobId}`));
                             } else {
                               // Deselect all candidates in this job
-                              jobCandidates.forEach(c => newSet.delete(c.id));
+                              jobCandidates.forEach(c => newSet.delete(`${c.id}_${jobId}`));
                             }
                             setSelectedIds(newSet);
                           }}
@@ -485,15 +488,15 @@ export default function CandidatesPage() {
                         <TableRow>
                           <TableHead className="w-12">
                             <Checkbox
-                              checked={jobCandidates.length > 0 && jobCandidates.every(c => selectedIds.has(c.id))}
+                              checked={jobCandidates.length > 0 && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
                               onCheckedChange={(checked) => {
                                 const newSet = new Set(selectedIds);
                                 if (checked) {
                                   // Select all candidates in this job
-                                  jobCandidates.forEach(c => newSet.add(c.id));
+                                  jobCandidates.forEach(c => newSet.add(`${c.id}_${jobId}`));
                                 } else {
                                   // Deselect all candidates in this job
-                                  jobCandidates.forEach(c => newSet.delete(c.id));
+                                  jobCandidates.forEach(c => newSet.delete(`${c.id}_${jobId}`));
                                 }
                                 setSelectedIds(newSet);
                               }}
@@ -526,7 +529,7 @@ export default function CandidatesPage() {
                             >
                               <TableCell>
                                 <Checkbox
-                                  checked={selectedIds.has(candidate.id)}
+                                  checked={selectedIds.has(`${candidate.id}_${jobId}`)}
                                   onCheckedChange={() => toggleSelect(candidate.id, jobId)}
                                 />
                               </TableCell>
@@ -594,7 +597,7 @@ export default function CandidatesPage() {
                                       </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => {
-                                      setSelectedIds(new Set([candidate.id]));
+                                      setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
                                       setStartJobId(activeJobs[0]?.id || '');
                                       setAssessmentDialogOpen(true);
                                     }}>
@@ -602,7 +605,7 @@ export default function CandidatesPage() {
                                       Send Assessment
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => {
-                                      setSelectedIds(new Set([candidate.id]));
+                                      setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
                                       setStartJobId(activeJobs[0]?.id || '');
                                       setInterviewDialogOpen(true);
                                     }}>
