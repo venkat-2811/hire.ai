@@ -54,7 +54,6 @@ interface InterviewQuestion {
 }
 
 const DEFAULT_QUESTION_WINDOW_SECONDS = 60;
-const MAX_QUESTION_WINDOW_SECONDS = 120;
 
 interface InterviewEvaluationResult {
   overall_score: number;
@@ -263,12 +262,6 @@ export default function AIInterviewPage() {
     }
   }, [interviewData, speakQuestion]);
 
-  const resolveQuestionWindowSeconds = useCallback((question: InterviewQuestion) => {
-    const raw = Number(question.expected_duration_seconds || DEFAULT_QUESTION_WINDOW_SECONDS);
-    if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_QUESTION_WINDOW_SECONDS;
-    return Math.min(MAX_QUESTION_WINDOW_SECONDS, Math.max(DEFAULT_QUESTION_WINDOW_SECONDS, Math.round(raw)));
-  }, []);
-
   const advanceAfterTimeout = useCallback(async (question: InterviewQuestion, audioDurationSeconds: number, recordedBlob: Blob | null) => {
     if (!interviewData) return;
 
@@ -307,6 +300,16 @@ export default function AIInterviewPage() {
       toast.error('Failed to continue interview automatically. Please refresh and try again.');
     }
   }, [interviewData, loadCurrentQuestion, queueServerTranscription]);
+
+  const handleNextQuestion = useCallback(async () => {
+    if (!currentQuestion || isAutoAdvancing) return;
+
+    setIsAutoAdvancing(true);
+    const audioCapturedSeconds = Math.max(0, questionDurationSeconds - questionTimeLeftSeconds);
+    const recordedBlob = await stopRecording();
+    await advanceAfterTimeout(currentQuestion, audioCapturedSeconds, recordedBlob);
+    setIsAutoAdvancing(false);
+  }, [currentQuestion, isAutoAdvancing, questionDurationSeconds, questionTimeLeftSeconds, stopRecording, advanceAfterTimeout]);
 
   // Camera setup
   const setupCamera = useCallback(async () => {
@@ -492,7 +495,7 @@ export default function AIInterviewPage() {
   useEffect(() => {
     if (!currentQuestion || showReadyScreen || isTerminated || isCompleted || isAutoAdvancing) return;
 
-    const questionWindowSeconds = resolveQuestionWindowSeconds(currentQuestion);
+    const questionWindowSeconds = DEFAULT_QUESTION_WINDOW_SECONDS;
     setQuestionDurationSeconds(questionWindowSeconds);
     setQuestionTimeLeftSeconds(questionWindowSeconds);
 
@@ -535,7 +538,6 @@ export default function AIInterviewPage() {
     isTerminated,
     isCompleted,
     isAutoAdvancing,
-    resolveQuestionWindowSeconds,
     startRecording,
     stopRecording,
     advanceAfterTimeout,
@@ -748,7 +750,7 @@ export default function AIInterviewPage() {
               <p className="text-sm font-medium">Interview Details:</p>
               <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                 <p>Questions: {interviewData?.total_questions}</p>
-                <p>Time per question: 01:00 to 02:00 (auto)</p>
+                <p>Time per question: 01:00</p>
                 <p>Estimated Duration: {interviewData?.estimated_duration_minutes} minutes</p>
               </div>
             </div>
@@ -842,7 +844,7 @@ export default function AIInterviewPage() {
                 className="h-1.5"
               />
               <CardDescription>
-                Recording starts automatically for each question and advances when the timer reaches 00:00.
+                Recording starts automatically for each question. Click Next when done, or it auto-advances at 00:00.
               </CardDescription>
             </CardHeader>
             <CardContent className="h-full flex flex-col justify-center gap-6">
@@ -856,6 +858,12 @@ export default function AIInterviewPage() {
                 </Badge>
                 {isSpeaking && <Badge variant="secondary">Reading question aloud</Badge>}
                 {isAutoAdvancing && <Badge variant="outline">Moving to next question...</Badge>}
+              </div>
+
+              <div>
+                <Button onClick={handleNextQuestion} disabled={isAutoAdvancing}>
+                  Next
+                </Button>
               </div>
             </CardContent>
           </Card>
