@@ -75,21 +75,27 @@ export default function DashboardPage() {
     },
     {
       name: 'Selected',
-      value: candidatesAnalytics?.filter(c => c.recommendation?.includes('hire') && !c.recommendation?.includes('no_hire')).length.toString() || '0',
+      value: candidatesAnalytics?.filter(c => {
+        if (c.recommendation) return c.recommendation.includes('hire') && !c.recommendation.includes('no_hire');
+        return c.shortlisted === true;
+      }).length.toString() || '0',
       change: '',
       icon: CheckCircle,
       color: 'text-success bg-success/10'
     },
     {
       name: 'Rejected',
-      value: candidatesAnalytics?.filter(c => c.recommendation?.includes('no_hire')).length.toString() || '0',
+      value: candidatesAnalytics?.filter(c => {
+        if (c.recommendation) return c.recommendation.includes('no_hire');
+        return c.shortlisted === false;
+      }).length.toString() || '0',
       change: '',
       icon: XCircle,
       color: 'text-destructive bg-destructive/10'
     },
     {
       name: 'In Process',
-      value: candidatesAnalytics?.filter(c => !c.recommendation).length.toString() || stats?.pending_interviews?.toString() || '0',
+      value: candidatesAnalytics?.filter(c => !c.recommendation && c.shortlisted !== false && c.shortlisted !== true).length.toString() || stats?.pending_interviews?.toString() || '0',
       change: '',
       icon: Clock,
       color: 'text-warning bg-warning/10'

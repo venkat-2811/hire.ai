@@ -113,7 +113,7 @@ async def get_candidate_analytics(
     # Get candidates with their screenings, assessments, and AI interviews
     query = supabase.table("candidates").select(
         "id, full_name, "
-        "ats_screenings(overall_score, job_id, job_descriptions(title)), "
+        "ats_screenings(overall_score, shortlisted, job_id, job_descriptions(title)), "
         "assessment_sessions(total_score, status, job_id, completed_at, created_at), "
         "ai_interview_sessions(status, job_id, completed_at, created_at, final_evaluation)"
     )
@@ -202,7 +202,8 @@ async def get_candidate_analytics(
             interview_status=interview_status_enum,
             technical_score=interview_technical,
             overall_score=interview_overall,
-            recommendation=HireRecommendation(interview_recommendation) if interview_recommendation else None
+            recommendation=HireRecommendation(interview_recommendation) if interview_recommendation else None,
+            shortlisted=latest_screening.get("shortlisted") if latest_screening else None
         ))
     
     return analytics
