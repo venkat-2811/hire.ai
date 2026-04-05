@@ -200,7 +200,7 @@ export default function CandidatesPage() {
 
   const handleBulkAssessment = () => {
     if (selectedIds.size === 0) {
-      toast.error('Please select at least one candidate');
+      toast.error('Please select at least one of the candidate');
       return;
     }
     setAssessmentDialogOpen(true);
