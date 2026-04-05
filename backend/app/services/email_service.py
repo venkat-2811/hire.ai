@@ -87,55 +87,50 @@ class EmailService:
         deadline_text = deadline if deadline else "Not specified"
         
         html = f"""
-        <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #F7FAFC; padding: 20px; color: #4A5568; line-height: 1.6;">
-            <!-- Header -->
-            <div style="background-color: #2D3748; padding: 40px 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">Assessment Invitation</h1>
-                <p style="color: #A0AEC0; margin: 10px 0 0 0; font-size: 16px;">Next Step in Your Application at Hire.AI</p>
-            </div>
-            
-            <!-- Body -->
-            <div style="background-color: #ffffff; padding: 40px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <p style="font-size: 16px;">Dear <strong>{candidate_name}</strong>,</p>
-                
-                <p style="font-size: 16px;">Thank you for your interest in the position of <strong>{job_title}</strong> at Hire.AI.</p>
-                
-                <p style="font-size: 16px;">We are pleased to inform you that your application has been shortlisted for the next stage of our hiring process. As part of this, you are invited to complete an online assessment designed to evaluate your technical skills and problem-solving abilities.</p>
-                
-                <!-- Details Box -->
-                <div style="background-color: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 20px; margin: 25px 0;">
-                    <h3 style="margin-top: 0; color: #2D3748; font-size: 18px;">Assessment Details:</h3>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Position:</strong> {job_title}</p>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Deadline:</strong> {deadline_text}</p>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Mode:</strong> Online Assessment</p>
+        <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb; padding: 40px 20px; color: #4b5563; line-height: 1.6;">
+            <div style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <!-- Header -->
+                <div style="background-color: #7c3aed; padding: 40px 20px; text-align: center;">
+                    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: bold;">Assessment Invitation!</h1>
+                    <p style="color: #ddd6fe; margin: 10px 0 0 0; font-size: 14px;">Next Step in Your Application</p>
                 </div>
                 
-                <p style="font-size: 16px;">Please ensure that you complete the assessment before the deadline. We recommend attempting it in a distraction-free environment with a stable internet connection.</p>
-                
-                <p style="font-size: 16px;"><strong>Next Step:</strong><br>Click the link below to begin your assessment:</p>
-                
-                <div style="text-align: center; margin: 35px 0;">
-                    <a href="{assessment_link}" style="background-color: #4F46E5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px;">Start Assessment</a>
-                </div>
-                
-                <p style="font-size: 16px;">This is an important step in our evaluation process, and we encourage you to give it your best effort.</p>
-                
-                <p style="font-size: 16px;">If you face any issues or have questions, please feel free to reach out to our support team.</p>
-                
-                <p style="font-size: 16px;">We wish you the very best and look forward to reviewing your performance.</p>
-                
-                <p style="font-size: 16px;">Thank you for your time and interest in Hire.AI.</p>
-                
-                <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E2E8F0;">
-                    <p style="margin: 5px 0; font-size: 16px;">Warm regards,</p>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Hire.AI Team</strong></p>
-                    <p style="margin: 5px 0; font-size: 14px; color: #718096;">Intelligent Hiring Platform</p>
+                <!-- Body -->
+                <div style="padding: 40px; color: #4b5563; font-size: 15px;">
+                    <p style="margin-top: 0;">Dear <strong>{candidate_name}</strong>,</p>
+                    
+                    <p>Thank you for your interest in the position of <strong>{job_title}</strong> at Hire.AI.</p>
+                    
+                    <p>We are pleased to inform you that your application has been shortlisted for the next stage of our hiring process. As part of this, you are invited to complete an online assessment designed to evaluate your technical skills and problem-solving abilities.</p>
+                    
+                    <!-- Job Box styled like congratulations -->
+                    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 15px; text-align: center; margin: 25px 0;">
+                        <h3 style="margin: 0; color: #16a34a; font-size: 18px;">{job_title}</h3>
+                    </div>
+                    
+                    <p style="margin: 5px 0;"><strong>Deadline:</strong> {deadline_text}</p>
+                    <p style="margin: 5px 0;"><strong>Mode:</strong> Online Assessment</p>
+                    
+                    <p style="margin-top: 20px;">Please ensure that you complete the assessment before the deadline. We recommend attempting it in a distraction-free environment with a stable internet connection.</p>
+                    
+                    <div style="text-align: center; margin: 35px 0;">
+                        <a href="{assessment_link}" style="background-color: #6366f1; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px;">Start Assessment</a>
+                    </div>
+                    
+                    <p>This is an important step in our evaluation process, and we encourage you to give it your best effort.</p>
+                    <p>If you face any issues or have questions, please feel free to reach out to our support team.</p>
+                    <p>We wish you the very best and look forward to reviewing your performance.</p>
+                    
+                    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                    
+                    <p style="margin-bottom: 0; font-size: 14px;">Thank you for your time and interest in Hire.AI.</p>
                 </div>
             </div>
             
             <!-- Footer -->
-            <div style="text-align: center; padding: 20px; color: #A0AEC0; font-size: 12px;">
-                &copy; 2026 Hire.AI. All rights reserved.
+            <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px; margin-top: 10px;">
+                <p style="margin: 5px 0;">This email was sent by Hire.AI — Intelligent Hiring Platform</p>
+                <p style="margin: 5px 0;">&copy; 2026 Hire.AI. All rights reserved.</p>
             </div>
         </div>
         """
@@ -155,53 +150,49 @@ class EmailService:
         # We can ignore scheduled_time if it's not explicitly in the user's template, or add it if provided.
         # Format the template text
         html = f"""
-        <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #F7FAFC; padding: 20px; color: #4A5568; line-height: 1.6;">
-            <!-- Header -->
-            <div style="background-color: #2D3748; padding: 40px 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">Interview Invitation</h1>
-                <p style="color: #A0AEC0; margin: 10px 0 0 0; font-size: 16px;">Next Step in Your Application at Hire.AI</p>
-            </div>
-            
-            <!-- Body -->
-            <div style="background-color: #ffffff; padding: 40px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <p style="font-size: 16px;">Dear <strong>{candidate_name}</strong>,</p>
-                
-                <p style="font-size: 16px;">We are excited to inform you that you have successfully progressed to the next stage of our hiring process for the position of <strong>{job_title}</strong> at Hire.AI.</p>
-                
-                <p style="font-size: 16px;">Based on your profile and previous evaluation, we would like to invite you to participate in an AI-powered interview, where you will have the opportunity to showcase your skills, experience, and problem-solving approach.</p>
-                
-                <!-- Details Box -->
-                <div style="background-color: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 20px; margin: 25px 0;">
-                    <h3 style="margin-top: 0; color: #2D3748; font-size: 18px;">Interview Details:</h3>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Position:</strong> {job_title}</p>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Mode:</strong> AI Interview</p>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Platform:</strong> Online</p>
+        <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb; padding: 40px 20px; color: #4b5563; line-height: 1.6;">
+            <div style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <!-- Header -->
+                <div style="background-color: #7c3aed; padding: 40px 20px; text-align: center;">
+                    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: bold;">Interview Invitation!</h1>
+                    <p style="color: #ddd6fe; margin: 10px 0 0 0; font-size: 14px;">Next Step in Your Application</p>
                 </div>
                 
-                <p style="font-size: 16px;"><strong>Next Step:</strong><br>Click the link below to begin your interview:</p>
-                
-                <div style="text-align: center; margin: 35px 0;">
-                    <a href="{interview_link}" style="background-color: #4F46E5; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px;">Start Interview</a>
-                </div>
-                
-                <p style="font-size: 16px;">Please ensure you are in a quiet environment with a stable internet connection before starting the interview. Once started, we recommend completing it in one sitting for the best experience.</p>
-                
-                <p style="font-size: 16px;">This step is a crucial part of our selection process, and we are excited to learn more about you.</p>
-                
-                <p style="font-size: 16px;">If you have any questions or require assistance, feel free to contact our HR team.</p>
-                
-                <p style="font-size: 16px;">We look forward to your participation and wish you the best of luck!</p>
-                
-                <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E2E8F0;">
-                    <p style="margin: 5px 0; font-size: 16px;">Warm regards,</p>
-                    <p style="margin: 5px 0; font-size: 16px;"><strong>Hire.AI Team</strong></p>
-                    <p style="margin: 5px 0; font-size: 14px; color: #718096;">Intelligent Hiring Platform</p>
+                <!-- Body -->
+                <div style="padding: 40px; color: #4b5563; font-size: 15px;">
+                    <p style="margin-top: 0;">Dear <strong>{candidate_name}</strong>,</p>
+                    
+                    <p>We are excited to inform you that you have successfully progressed to the next stage of our hiring process for the position of <strong>{job_title}</strong> at Hire.AI.</p>
+                    
+                    <p>Based on your profile and previous evaluation, we would like to invite you to participate in an AI-powered interview, where you will have the opportunity to showcase your skills, experience, and problem-solving approach.</p>
+                    
+                    <!-- Job Box styled like congratulations -->
+                    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 15px; text-align: center; margin: 25px 0;">
+                        <h3 style="margin: 0; color: #16a34a; font-size: 18px;">{job_title}</h3>
+                    </div>
+                    
+                    <p style="margin: 5px 0;"><strong>Mode:</strong> AI Interview</p>
+                    <p style="margin: 5px 0;"><strong>Platform:</strong> Online</p>
+                    
+                    <p style="margin-top: 20px;">Please ensure you are in a quiet environment with a stable internet connection before starting the interview. Once started, we recommend completing it in one sitting for the best experience.</p>
+                    
+                    <div style="text-align: center; margin: 35px 0;">
+                        <a href="{interview_link}" style="background-color: #6366f1; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px;">Start Interview</a>
+                    </div>
+                    
+                    <p>This step is a crucial part of our selection process, and we are excited to learn more about you.</p>
+                    <p>If you have any questions or require assistance, feel free to contact our HR team.</p>
+                    
+                    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                    
+                    <p style="margin-bottom: 0; font-size: 14px;">We look forward to your participation and wish you the best of luck!</p>
                 </div>
             </div>
             
             <!-- Footer -->
-            <div style="text-align: center; padding: 20px; color: #A0AEC0; font-size: 12px;">
-                &copy; 2026 Hire.AI. All rights reserved.
+            <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px; margin-top: 10px;">
+                <p style="margin: 5px 0;">This email was sent by Hire.AI — Intelligent Hiring Platform</p>
+                <p style="margin: 5px 0;">&copy; 2026 Hire.AI. All rights reserved.</p>
             </div>
         </div>
         """
