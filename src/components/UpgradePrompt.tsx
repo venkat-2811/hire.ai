@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Zap, Crown, Loader2 } from 'lucide-react';
+import { Sparkles, Zap, Crown, Loader2, CheckCircle2 } from 'lucide-react';
 import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -26,7 +26,7 @@ const PLANS = [
   {
     id: 'pro',
     name: 'Pro',
-    price: '$5',
+    price: '$10',
     period: '/month',
     icon: Zap,
     color: 'from-blue-500 to-cyan-500',
@@ -35,7 +35,7 @@ const PLANS = [
   {
     id: 'premium',
     name: 'Premium',
-    price: '$10',
+    price: '$15',
     period: '/month',
     icon: Crown,
     color: 'from-purple-500 to-pink-500',
@@ -46,12 +46,14 @@ const PLANS = [
 
 export function UpgradePrompt({ open, onClose, resource, current, limit, plan }: UpgradePromptProps) {
   const [loading, setLoading] = useState<string | null>(null);
-  const navigate = useNavigate();
+  const [planForBilling, setPlanForBilling] = useState<'pro' | 'premium' | null>(null);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly' | null>(null);
 
-  const handleUpgrade = async (targetPlan: string) => {
-    setLoading(targetPlan);
+  const handleUpgrade = async () => {
+    if (!planForBilling || !billingCycle) return;
+    setLoading(planForBilling);
     try {
-      const session = await subscriptionApi.createOrder(targetPlan);
+      const session = await subscriptionApi.createOrder(planForBilling, billingCycle);
       // Redirect to Stripe Checkout
       window.location.href = session.url;
     } catch (err: any) {
@@ -61,7 +63,28 @@ export function UpgradePrompt({ open, onClose, resource, current, limit, plan }:
     }
   };
 
+  const openBillingSelector = (targetPlan: 'pro' | 'premium') => {
+    setPlanForBilling(targetPlan);
+    setBillingCycle(null);
+  };
+
+  const closeBillingSelector = () => {
+    setPlanForBilling(null);
+    setBillingCycle(null);
+  };
+
+  const cycleOptions = planForBilling === 'premium'
+    ? [
+      { id: 'monthly' as const, title: 'Monthly', priceText: '$15 / month', helper: 'Billed monthly' },
+      { id: 'yearly' as const, title: 'Yearly', priceText: '$150 / year', helper: 'Save ~17%' },
+    ]
+    : [
+      { id: 'monthly' as const, title: 'Monthly', priceText: '$10 / month', helper: 'Billed monthly' },
+      { id: 'yearly' as const, title: 'Yearly', priceText: '$100 / year', helper: 'Save ~17%' },
+    ];
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -112,12 +135,12 @@ export function UpgradePrompt({ open, onClose, resource, current, limit, plan }:
                     size="sm"
                     className="mt-2"
                     disabled={loading !== null}
-                    onClick={() => handleUpgrade(p.id)}
+                    onClick={() => openBillingSelector(p.id as 'pro' | 'premium')}
                   >
                     {loading === p.id ? (
                       <Loader2 className="h-3 w-3 animate-spin mr-1" />
                     ) : null}
-                    Upgrade
+                    Choose Billing
                   </Button>
                 </div>
               </div>
@@ -126,5 +149,50 @@ export function UpgradePrompt({ open, onClose, resource, current, limit, plan }:
         </div>
       </DialogContent>
     </Dialog>
+    <Dialog open={!!planForBilling} onOpenChange={(next) => { if (!next) closeBillingSelector(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Choose billing cycle</DialogTitle>
+          <DialogDescription>
+            Select your billing cycle for the {planForBilling === 'premium' ? 'Premium' : 'Pro'} plan.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3">
+          {cycleOptions.map((option) => {
+            const isSelected = billingCycle === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setBillingCycle(option.id)}
+                className={`w-full rounded-xl border p-4 text-left transition-all ${isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/40'}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{option.title} — {option.priceText}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{option.helper}</p>
+                  </div>
+                  {isSelected && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <DialogFooter className="items-center gap-2 sm:justify-between">
+          <button type="button" className="text-sm text-muted-foreground hover:text-foreground" onClick={closeBillingSelector}>
+            Cancel
+          </button>
+          {billingCycle && (
+            <Button onClick={handleUpgrade} disabled={loading !== null}>
+              {loading === planForBilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Continue
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

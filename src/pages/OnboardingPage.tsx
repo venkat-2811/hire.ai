@@ -8,6 +8,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { subscriptionApi } from '@/lib/api';
@@ -41,7 +49,7 @@ const PLANS = [
   {
     id: 'pro' as const,
     name: 'Pro',
-    price: '$5',
+    price: '$10',
     period: '/month',
     icon: Zap,
     gradient: 'from-blue-500 to-cyan-500',
@@ -52,12 +60,12 @@ const PLANS = [
       { text: '100+ AI interviews', highlight: true },
       { text: 'Priority support', highlight: false },
     ],
-    cta: 'Subscribe — $5/mo',
+    cta: 'Subscribe — $10/mo',
   },
   {
     id: 'premium' as const,
     name: 'Premium',
-    price: '$10',
+    price: '$15',
     period: '/month',
     icon: Crown,
     gradient: 'from-purple-500 to-pink-500',
@@ -69,7 +77,7 @@ const PLANS = [
       { text: 'Unlimited interviews', highlight: true },
       { text: 'Dedicated support', highlight: false },
     ],
-    cta: 'Subscribe — $10/mo',
+    cta: 'Subscribe — $15/mo',
   },
 ];
 
@@ -81,6 +89,8 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
+  const [billingPlan, setBillingPlan] = useState<'pro' | 'premium' | null>(null);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly' | null>(null);
 
   const initial = useMemo(() => ({
     organization_email: profile?.organization_email ?? '',
@@ -113,6 +123,7 @@ export default function OnboardingPage() {
 
     const sessionId = searchParams.get('session_id');
     const plan = searchParams.get('plan');
+    const billingCycleParam = searchParams.get('billing_cycle') === 'yearly' ? 'yearly' : 'monthly';
     const cancelled = searchParams.get('cancelled');
 
     if (cancelled) {
@@ -130,7 +141,7 @@ export default function OnboardingPage() {
       // Clean URL immediately to prevent re-triggering
       window.history.replaceState({}, '', '/onboarding');
 
-      subscriptionApi.verify({ session_id: sessionId, plan })
+      subscriptionApi.verify({ session_id: sessionId, plan, billing_cycle: billingCycleParam })
         .then(() => {
           toast.success(`${plan === 'pro' ? 'Pro' : 'Premium'} plan activated! 🎉`);
           updateProfile.mutate(
@@ -177,6 +188,13 @@ export default function OnboardingPage() {
   };
 
   const handlePlanSelect = async (planId: string) => {
+    if (planId !== 'free') {
+      setSelectedPlan(planId);
+      setBillingPlan(planId as 'pro' | 'premium');
+      setBillingCycle(null);
+      return;
+    }
+
     setSelectedPlan(planId);
     setProcessingPlan(true);
 
@@ -191,9 +209,20 @@ export default function OnboardingPage() {
         return;
       }
 
-      // Create Stripe Checkout session and redirect
-      const session = await subscriptionApi.createOrder(planId);
-      // Redirect to Stripe Checkout
+    } catch (err: any) {
+      toast.error(err.message || 'Something went wrong');
+      setProcessingPlan(false);
+      setSelectedPlan(null);
+    }
+  };
+
+  const handlePaidCheckout = async () => {
+    if (!billingPlan || !billingCycle) return;
+    setSelectedPlan(billingPlan);
+    setProcessingPlan(true);
+
+    try {
+      const session = await subscriptionApi.createOrder(billingPlan, billingCycle);
       window.location.href = session.url;
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong');
@@ -201,6 +230,22 @@ export default function OnboardingPage() {
       setSelectedPlan(null);
     }
   };
+
+  const closeBillingDialog = () => {
+    if (processingPlan) return;
+    setBillingPlan(null);
+    setBillingCycle(null);
+  };
+
+  const cycleOptions = billingPlan === 'premium'
+    ? [
+      { id: 'monthly' as const, label: 'Monthly — $15 / month', helper: 'Billed monthly' },
+      { id: 'yearly' as const, label: 'Yearly — $150 / year', helper: 'Save ~17%' },
+    ]
+    : [
+      { id: 'monthly' as const, label: 'Monthly — $10 / month', helper: 'Billed monthly' },
+      { id: 'yearly' as const, label: 'Yearly — $100 / year', helper: 'Save ~17%' },
+    ];
 
   if (isLoading) {
     return (
@@ -398,6 +443,43 @@ export default function OnboardingPage() {
           )}
         </AnimatePresence>
       </div>
+
+      <Dialog open={!!billingPlan} onOpenChange={(next) => { if (!next) closeBillingDialog(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Choose billing cycle</DialogTitle>
+            <DialogDescription>
+              Select a billing cycle for the {billingPlan === 'premium' ? 'Premium' : 'Pro'} plan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            {cycleOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setBillingCycle(option.id)}
+                className={`rounded-xl border p-4 text-left transition-all ${billingCycle === option.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+              >
+                <p className="font-medium">{option.label}</p>
+                <p className="text-xs text-muted-foreground mt-1">{option.helper}</p>
+              </button>
+            ))}
+          </div>
+
+          <DialogFooter className="items-center gap-2 sm:justify-between">
+            <button type="button" className="text-sm text-muted-foreground hover:text-foreground" onClick={closeBillingDialog}>
+              Cancel
+            </button>
+            {billingCycle && (
+              <Button onClick={handlePaidCheckout} disabled={processingPlan}>
+                {processingPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Continue
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

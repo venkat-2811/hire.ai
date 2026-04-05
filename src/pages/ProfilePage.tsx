@@ -6,15 +6,49 @@ import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { UpgradePrompt } from '@/components/UpgradePrompt';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { subscriptionApi, type SubscriptionInfo } from '@/lib/api';
+import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import type { Profile } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export default function ProfilePage() {
   const { user, loading } = useRequireAuth();
   const { data: profile, isLoading: profileLoading } = useProfile();
   const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
+  const queryClient = useQueryClient();
+
+  const { data: subscription, isLoading: subscriptionLoading } = useQuery<SubscriptionInfo>({
+    queryKey: ['subscription'],
+    queryFn: () => subscriptionApi.get(),
+    enabled: !loading && !profileLoading,
+  });
+
+  const cancelSubscriptionMutation = useMutation({
+    mutationFn: () => subscriptionApi.cancel(),
+    onSuccess: async (data) => {
+      const dateText = formatDate(data.current_period_end);
+      toast.success(`Subscription cancelled. Access continues until ${dateText}.`);
+      await queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      setShowCancelDialog(false);
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || 'Failed to cancel subscription. Please try again.');
+    },
+  });
 
   const [formData, setFormData] = useState<Partial<Profile>>({});
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -42,6 +76,16 @@ export default function ProfilePage() {
     e.preventDefault();
     updateProfile(formData);
   };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString();
+  };
+
+  const currentPlanLabel = subscription?.limits?.label || 'Free';
+  const renewalLabel = subscription?.cancel_at_period_end ? 'Cancels on' : 'Renews on';
 
   if (loading || profileLoading) {
     return (
@@ -74,6 +118,49 @@ export default function ProfilePage() {
                   <Input value={user?.email || ''} readOnly disabled className="bg-muted" />
                   <p className="text-xs text-muted-foreground mt-1">Email cannot be changed directly.</p>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Subscription</CardTitle>
+                  <CardDescription>Current plan: <span className="font-semibold text-foreground">{currentPlanLabel}</span></CardDescription>
+                </div>
+                {(subscription?.plan === 'free' || subscription?.plan === 'pro') && (
+                  <Button variant="outline" size="sm" onClick={() => setShowUpgrade(true)}>
+                    Upgrade / Change
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {subscriptionLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-muted-foreground">Billing cycle</p>
+                      <p className="font-medium capitalize">{subscription?.billing_cycle || 'monthly'}</p>
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                      <p className="text-muted-foreground">{renewalLabel}</p>
+                      <p className="font-medium">{formatDate(subscription?.current_period_end)}</p>
+                    </div>
+
+                    {subscription?.plan !== 'free' && !subscription?.cancel_at_period_end && (
+                      <button
+                        type="button"
+                        className="text-sm text-destructive/70 hover:text-destructive underline underline-offset-2"
+                        onClick={() => setShowCancelDialog(true)}
+                      >
+                        Cancel subscription
+                      </button>
+                    )}
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -200,6 +287,42 @@ export default function ProfilePage() {
             </Card>
           </div>
         </div>
+
+        {subscription && (
+          <UpgradePrompt
+            open={showUpgrade}
+            onClose={() => setShowUpgrade(false)}
+            resource="plan features"
+            current={subscription.usage.jobs_count}
+            limit={subscription.limits.max_jobs}
+            plan={subscription.limits.label}
+          />
+        )}
+
+        <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Cancel your subscription?</DialogTitle>
+              <DialogDescription>
+                You'll keep access until {formatDate(subscription?.current_period_end)}. After that, your account moves to the free plan.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:justify-end">
+              <Button onClick={() => setShowCancelDialog(false)} disabled={cancelSubscriptionMutation.isPending}>
+                Keep my plan
+              </Button>
+              <Button
+                variant="outline"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                onClick={() => cancelSubscriptionMutation.mutate()}
+                disabled={cancelSubscriptionMutation.isPending}
+              >
+                {cancelSubscriptionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Yes, cancel
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

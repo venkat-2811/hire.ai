@@ -423,12 +423,38 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
 // ============== Plan Limits ==============
 const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
   free: { max_jobs: 10, max_assessments: 25, max_interviews: 25, price: 0, label: 'Free' },
-  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 500, label: 'Pro' },       // price in cents ($5 = 500)
-  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 1000, label: 'Premium' }, // $10 = 1000
+  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 1000, label: 'Pro' },
+  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 1500, label: 'Premium' },
 };
 
-function getPlanLimits(plan: string) {
-  return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+function getPlanLimits(plan: string, billingCycle: 'monthly' | 'yearly' = 'monthly') {
+  const base = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+  if (plan === 'free') return base;
+  if (billingCycle === 'yearly') {
+    const yearlyPrice = plan === 'pro' ? 10000 : 15000;
+    return { ...base, price: yearlyPrice };
+  }
+  const monthlyPrice = plan === 'pro' ? 1000 : 1500;
+  return { ...base, price: monthlyPrice };
+}
+
+function getBillingCycleFromStatus(status?: string | null): 'monthly' | 'yearly' {
+  if (!status) return 'monthly';
+  return status.includes('yearly') ? 'yearly' : 'monthly';
+}
+
+function computeCurrentPeriodEnd(planSelectedAt?: string | null, billingCycle: 'monthly' | 'yearly' = 'monthly'): string | null {
+  if (!planSelectedAt) return null;
+  const start = new Date(planSelectedAt);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = new Date(start);
+  if (billingCycle === 'yearly') end.setFullYear(end.getFullYear() + 1);
+  else end.setMonth(end.getMonth() + 1);
+  return end.toISOString();
+}
+
+function isCancelAtPeriodEndStatus(status?: string | null): boolean {
+  return !!status && status.startsWith('cancel_at_period_end');
 }
 
 async function getUserProfile(supabase: SupabaseClient, userId: string) {
@@ -441,7 +467,14 @@ function getStripeSecretKey(): string {
   return process.env.STRIPE_SECRET_KEY || '';
 }
 
-async function createStripeCheckoutSession(amount: number, planLabel: string, planId: string, successUrl: string, cancelUrl: string) {
+async function createStripeCheckoutSession(
+  amount: number,
+  planLabel: string,
+  planId: string,
+  billingCycle: 'monthly' | 'yearly',
+  successUrl: string,
+  cancelUrl: string,
+) {
   const resp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
     headers: {
@@ -457,6 +490,7 @@ async function createStripeCheckoutSession(amount: number, planLabel: string, pl
       'success_url': successUrl,
       'cancel_url': cancelUrl,
       'metadata[plan]': planId,
+      'metadata[billing_cycle]': billingCycle,
     }).toString(),
   });
   if (!resp.ok) {
@@ -643,13 +677,19 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
       const plan = profile.subscription_plan || 'free';
-      const limits = getPlanLimits(plan);
+      const billingCycle = getBillingCycleFromStatus(profile.subscription_status);
+      const limits = getPlanLimits(plan, billingCycle);
+      const currentPeriodEnd = computeCurrentPeriodEnd(profile.plan_selected_at, billingCycle);
+      const cancelAtPeriodEnd = isCancelAtPeriodEndStatus(profile.subscription_status);
 
       return ok(res, {
         plan,
         status: profile.subscription_status || 'active',
         subscription_id: profile.subscription_id,
         plan_selected_at: profile.plan_selected_at,
+        billing_cycle: billingCycle,
+        current_period_end: currentPeriodEnd,
+        cancel_at_period_end: cancelAtPeriodEnd,
         limits,
         usage: {
           jobs_count: profile.jobs_count || 0,
@@ -661,11 +701,12 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
     // POST /api/subscription/create-order
     if (req.method === 'POST' && segments.length === 2 && segments[1] === 'create-order') {
-      const { plan } = req.body || {};
+      const { plan, billing_cycle } = req.body || {};
+      const billingCycle = billing_cycle === 'yearly' ? 'yearly' : 'monthly';
       if (!plan || !PLAN_LIMITS[plan]) return badRequest(res, 'Invalid plan');
       if (plan === 'free') return badRequest(res, 'Free plan does not require payment');
 
-      const limits = getPlanLimits(plan);
+      const limits = getPlanLimits(plan, billingCycle);
       
       // Dynamically resolve frontend URL from request headers
       const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
@@ -678,7 +719,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         frontendUrl = dynamicUrl;
       }
       
-      const successUrl = `${frontendUrl}/onboarding?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`;
+      const successUrl = `${frontendUrl}/onboarding?session_id={CHECKOUT_SESSION_ID}&plan=${plan}&billing_cycle=${billingCycle}`;
       const cancelUrl = `${frontendUrl}/onboarding?cancelled=true`;
 
       try {
@@ -686,6 +727,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           limits.price,
           limits.label,
           plan,
+          billingCycle,
           successUrl,
           cancelUrl,
         );
@@ -702,7 +744,8 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
     // POST /api/subscription/verify
     if (req.method === 'POST' && segments.length === 2 && segments[1] === 'verify') {
-      const { session_id, plan } = req.body || {};
+      const { session_id, plan, billing_cycle } = req.body || {};
+      const requestedCycle = billing_cycle === 'yearly' ? 'yearly' : 'monthly';
 
       if (!session_id || !plan) {
         return badRequest(res, 'Missing session_id or plan');
@@ -714,6 +757,8 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ error: 'Payment not completed' });
         }
 
+        const sessionCycle = session.metadata?.billing_cycle === 'yearly' ? 'yearly' : requestedCycle;
+
         // Activate the plan
         const { data: updated, error: upErr } = await supabase
           .from('profiles')
@@ -721,7 +766,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
             subscription_plan: plan,
             subscription_id: session_id,
             stripe_payment_id: session.payment_intent || session_id,
-            subscription_status: 'active',
+            subscription_status: `active_${sessionCycle}`,
             plan_selected_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
@@ -758,6 +803,41 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
       if (upErr) return res.status(500).json({ error: upErr.message });
       return ok(res, { success: true, plan: 'free', profile: updated });
+    }
+
+    /**
+     * Subscription cancel endpoint
+     * Method: POST
+     * Path: /api/subscription/cancel
+     * Request body: {}
+     * Response: { success: boolean, cancel_at_period_end: boolean, current_period_end: string | null }
+     */
+    // POST /api/subscription/cancel
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'cancel') {
+      const profile = await getUserProfile(supabase, user.id);
+      if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+      const plan = profile.subscription_plan || 'free';
+      if (plan === 'free') return badRequest(res, 'No active paid subscription to cancel');
+
+      const cycle = getBillingCycleFromStatus(profile.subscription_status);
+      const currentPeriodEnd = computeCurrentPeriodEnd(profile.plan_selected_at, cycle);
+
+      const { error: upErr } = await supabase
+        .from('profiles')
+        .update({
+          subscription_status: `cancel_at_period_end_${cycle}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+
+      if (upErr) return res.status(500).json({ error: upErr.message });
+
+      return ok(res, {
+        success: true,
+        cancel_at_period_end: true,
+        current_period_end: currentPeriodEnd,
+      });
     }
 
     return methodNotAllowed(res);

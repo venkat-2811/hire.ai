@@ -22,13 +22,8 @@ import { RoleBadge } from '@/components/ui/role-badge';
 import { useDashboardStats, useCandidateAnalytics, useHiringTrends } from '@/hooks/useAnalytics';
 import { useCandidates } from '@/hooks/useCandidates';
 import { useInterviews } from '@/hooks/useInterviews';
-import { useUsage } from '@/hooks/useUsage';
 import type { JobRole, InterviewStatus } from '@/types/database';
 import { AnalyticsCharts } from '@/components/dashboard/AnalyticsCharts';
-import { Progress } from '@/components/ui/progress';
-import { UpgradePrompt } from '@/components/UpgradePrompt';
-import { Label } from '@/components/ui/label';
-import { useState } from 'react';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
@@ -43,11 +38,8 @@ export default function DashboardPage() {
   const { data: interviews, isLoading: interviewsLoading } = useInterviews({ status: 'completed' });
   const { data: candidatesAnalytics, isLoading: analyticsLoading } = useCandidateAnalytics();
   const { data: trendsData, isLoading: trendsLoading } = useHiringTrends(30);
-  const { data: usageData, isLoading: usageLoading } = useUsage();
 
-  const [showUpgrade, setShowUpgrade] = useState(false);
-
-  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading || usageLoading;
+  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading;
 
   if (authLoading) {
     return (
@@ -59,38 +51,28 @@ export default function DashboardPage() {
     );
   }
 
-  const formatChange = (n?: number) => {
-    const value = typeof n === 'number' ? n : 0;
-    const sign = value > 0 ? '+' : '';
-    return `${sign}${value}`;
-  };
-
   const dashboardStats = [
     {
       name: 'Total Applicants',
       value: stats?.total_candidates?.toString() || '0',
-      change: formatChange(stats?.total_candidates_change),
       icon: Users,
       color: 'text-info'
     },
     {
       name: 'Selected',
       value: candidatesAnalytics?.filter(c => c.recommendation?.includes('hire') && !c.recommendation?.includes('no_hire')).length.toString() || '0',
-      change: '',
       icon: CheckCircle,
       color: 'text-success bg-success/10'
     },
     {
       name: 'Rejected',
       value: candidatesAnalytics?.filter(c => c.recommendation?.includes('no_hire')).length.toString() || '0',
-      change: '',
       icon: XCircle,
       color: 'text-destructive bg-destructive/10'
     },
     {
       name: 'In Process',
       value: candidatesAnalytics?.filter(c => !c.recommendation).length.toString() || stats?.pending_interviews?.toString() || '0',
-      change: '',
       icon: Clock,
       color: 'text-warning bg-warning/10'
     },
@@ -146,15 +128,6 @@ export default function DashboardPage() {
                       <p className="text-3xl font-bold mt-1">
                         {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stat.value}
                       </p>
-                      {stat.change ? (
-                        <p className={`text-sm mt-1 ${stat.change.startsWith('+') ? 'text-success' : 'text-warning'}`}>
-                          {stat.change} from last week
-                        </p>
-                      ) : (
-                        <p className="text-sm mt-1 opacity-0 select-none">
-                          &nbsp;
-                        </p>
-                      )}
                     </div>
                     <div className={`p-3 rounded-xl bg-muted ${stat.color}`}>
                       <stat.icon className="h-6 w-6" />
@@ -267,63 +240,8 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Usage & Subscription */}
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap justify-between items-start gap-2">
-                <div>
-                  <CardTitle>Usage & Subscription</CardTitle>
-                  <CardDescription>
-                    Current plan: <span className="font-semibold text-foreground">{usageData?.plan_label || 'Loading...'}</span>
-                  </CardDescription>
-                </div>
-                {(usageData?.plan === 'free' || usageData?.plan === 'pro') && (
-                  <Button variant="outline" size="sm" onClick={() => setShowUpgrade(true)}>
-                    Upgrade Plan
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {usageLoading ? (
-                  <div className="flex justify-center p-4">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <>
-                    {Object.values(usageData?.usage || {}).map((item) => {
-                      const percent = Math.min(100, Math.round((item.used / item.limit) * 100));
-                      const isHigh = percent >= 80;
-                      return (
-                        <div key={item.label} className="space-y-1.5">
-                          <div className="flex justify-between items-end">
-                            <Label className="text-xs text-muted-foreground">{item.label}</Label>
-                            <span className="text-xs font-medium">
-                              {item.used} / {item.limit > 900000 ? '∞' : item.limit}
-                            </span>
-                          </div>
-                          <Progress
-                            value={percent}
-                            className={`h-2 ${isHigh ? '[&>div]:bg-destructive' : ''}`}
-                          />
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-              </CardContent>
-            </Card>
           </motion.div>
         </div>
-
-        {usageData && (
-          <UpgradePrompt
-            open={showUpgrade}
-            onClose={() => setShowUpgrade(false)}
-            resource="plan features"
-            current={usageData.usage.jobs.used}
-            limit={usageData.usage.jobs.limit}
-            plan={usageData.plan_label}
-          />
-        )}
       </div>
     </DashboardLayout>
   );
