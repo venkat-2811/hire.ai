@@ -83,39 +83,43 @@ class EmailService:
     ) -> dict:
         """Send technical assessment invitation email."""
         subject = f"Technical Assessment Invitation - {job_title}"
-        deadline_text = f'<p style="font-size: 16px; color: #4B5563; line-height: 1.6;"><strong>Deadline:</strong> {deadline}</p>' if deadline else ""
+        deadline_html = f"""
+                <div style="background-color: #f8fafc; border-left: 4px solid #6366f1; padding: 15px 20px; margin-bottom: 30px; border-radius: 4px;">
+                    <p style="margin: 0; font-size: 15px;"><strong>Deadline:</strong> {deadline}</p>
+                </div>""" if deadline else ""
+        
         html = f"""
-        <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-            <div style="background-color: #3B82F6; color: white; padding: 40px 20px; text-align: center;">
-                <h1 style="margin: 0; font-size: 28px; font-weight: bold;">Technical Assessment</h1>
-                <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Next step in your hiring process at Hire.AI</p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="background-color: #2a323c; padding: 40px 20px; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">Technical Assessment</h1>
+                <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 16px;">Regarding your application at Hire.AI</p>
             </div>
-            <div style="padding: 40px 30px; background-color: white;">
-                <p style="margin-top: 0; font-size: 16px; color: #374151;">Dear <strong>{candidate_name}</strong>,</p>
-                <p style="font-size: 16px; color: #4B5563; line-height: 1.6;">
-                    Congratulations! You have been shortlisted for the <strong>{job_title}</strong> position. 
-                    We would like to invite you to complete a technical assessment as the next step in our hiring process.
-                </p>
-                {deadline_text}
+            <div style="padding: 40px 30px; color: #334155; line-height: 1.6;">
+                <p style="font-size: 16px; margin-bottom: 20px;">Dear <strong>{candidate_name}</strong>,</p>
+                <p style="font-size: 16px; margin-bottom: 20px;">Congratulations! You have been shortlisted for the <strong>{job_title}</strong> position and we would like to invite you to complete a technical assessment.</p>
                 
-                <div style="margin: 30px 0; text-align: center;">
-                    <a href="{assessment_link}" style="background-color: #10B981; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
-                        Start Assessment
-                    </a>
-                </div>
+                {deadline_html}
                 
-                <div style="background-color: #FFFBEB; border: 1px solid #FEF3C7; border-radius: 6px; padding: 20px; margin-top: 30px;">
-                    <h3 style="margin-top: 0; color: #B45309; font-size: 16px;">Important Instructions:</h3>
-                    <ul style="margin-bottom: 0; color: #92400E; padding-left: 20px; font-size: 14px; line-height: 1.5;">
-                        <li>The assessment must be completed in one sitting.</li>
-                        <li>Ensure you have a stable internet connection.</li>
-                        <li>Full-screen mode is required throughout the assessment.</li>
-                        <li>Tab switching or leaving the assessment window will end your session.</li>
+                <div style="border: 1px solid #fed7aa; border-radius: 8px; padding: 20px; margin-bottom: 30px; background-color: #fffaf5;">
+                    <p style="margin: 0 0 10px 0; color: #9a3412;"><strong>Please note:</strong></p>
+                    <ul style="margin: 0; padding-left: 20px; color: #9a3412; font-size: 14px;">
+                        <li style="margin-bottom: 8px;">The assessment must be completed in one sitting.</li>
+                        <li style="margin-bottom: 8px;">Ensure you have a stable internet connection.</li>
+                        <li style="margin-bottom: 8px;">Full-screen mode is required throughout the assessment.</li>
+                        <li>Tab switching or exiting full-screen will automatically terminate your session.</li>
                     </ul>
                 </div>
                 
-                <p style="margin-top: 30px; font-size: 16px; color: #4B5563;">Best of luck!</p>
-                <p style="font-size: 16px; color: #4B5563; margin-bottom: 0;">Best regards,<br><strong>The Hiring Team</strong></p>
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="{assessment_link}" style="background-color: #2563eb; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Start Assessment</a>
+                </div>
+                
+                <p style="font-size: 16px; margin-bottom: 10px;">Best of luck!</p>
+                <p style="font-size: 16px; color: #64748b; margin: 0;">Best regards,<br>The Hiring Team</p>
+            </div>
+            <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 14px;">
+                <p style="margin: 0;">If you're having trouble clicking the button, copy and paste this link into your browser:</p>
+                <p style="margin: 10px 0 0 0;"><a href="{assessment_link}" style="color: #2563eb; word-break: break-all;">{assessment_link}</a></p>
             </div>
         </div>
         """
@@ -131,39 +135,44 @@ class EmailService:
     ) -> dict:
         """Send AI interview invitation email."""
         subject = f"Interview Invitation - {job_title}"
-        time_text = f'<p style="font-size: 16px; color: #4B5563; line-height: 1.6;"><strong>Scheduled Time:</strong> {scheduled_time}</p>' if scheduled_time else ""
+        time_html = f"""
+                <div style="background-color: #f8fafc; border-left: 4px solid #6366f1; padding: 15px 20px; margin-bottom: 30px; border-radius: 4px;">
+                    <p style="margin: 0; font-size: 15px;"><strong>Scheduled Time:</strong> {scheduled_time}</p>
+                </div>""" if scheduled_time else ""
+        
         html = f"""
-        <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-            <div style="background-color: #8B5CF6; color: white; padding: 40px 20px; text-align: center;">
-                <h1 style="margin: 0; font-size: 28px; font-weight: bold;">Interview Invitation</h1>
-                <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Hiring process at Hire.AI</p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="background-color: #2a323c; padding: 40px 20px; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">Interview Invitation</h1>
+                <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 16px;">Regarding your application at Hire.AI</p>
             </div>
-            <div style="padding: 40px 30px; background-color: white;">
-                <p style="margin-top: 0; font-size: 16px; color: #374151;">Dear <strong>{candidate_name}</strong>,</p>
-                <p style="font-size: 16px; color: #4B5563; line-height: 1.6;">
-                    Congratulations on successfully completing the technical assessment for the <strong>{job_title}</strong> position! 
-                    We are pleased to invite you to the next stage: an AI-powered interview.
-                </p>
-                {time_text}
+            <div style="padding: 40px 30px; color: #334155; line-height: 1.6;">
+                <p style="font-size: 16px; margin-bottom: 20px;">Dear <strong>{candidate_name}</strong>,</p>
+                <p style="font-size: 16px; margin-bottom: 20px;">Congratulations on successfully completing the technical assessment! We are pleased to invite you to the next stage for the <strong>{job_title}</strong> position: an AI-powered interview.</p>
                 
-                <div style="margin: 30px 0; text-align: center;">
-                    <a href="{interview_link}" style="background-color: #8B5CF6; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
-                        Start Interview
-                    </a>
-                </div>
+                {time_html}
                 
-                <div style="background-color: #EEF2FF; border: 1px solid #E0E7FF; border-radius: 6px; padding: 20px; margin-top: 30px;">
-                    <h3 style="margin-top: 0; color: #3730A3; font-size: 16px;">Important Instructions:</h3>
-                    <ul style="margin-bottom: 0; color: #4338CA; padding-left: 20px; font-size: 14px; line-height: 1.5;">
-                        <li>Ensure you have a working webcam and microphone.</li>
-                        <li>Find a quiet, well-lit environment.</li>
-                        <li>The interview will be conducted entirely by AI via voice.</li>
-                        <li>Your camera will be monitored; full-screen mode is required.</li>
+                <div style="border: 1px solid #fed7aa; border-radius: 8px; padding: 20px; margin-bottom: 30px; background-color: #fffaf5;">
+                    <p style="margin: 0 0 10px 0; color: #9a3412;"><strong>Please note:</strong></p>
+                    <ul style="margin: 0; padding-left: 20px; color: #9a3412; font-size: 14px;">
+                        <li style="margin-bottom: 8px;">Ensure you have a working webcam and microphone in a quiet, well-lit environment.</li>
+                        <li style="margin-bottom: 8px;">The interview will be conducted entirely by an AI agent.</li>
+                        <li style="margin-bottom: 8px;">Questions will be asked via speech, and you will respond verbally.</li>
+                        <li style="margin-bottom: 8px;">Your camera will be monitored continuously.</li>
+                        <li>Full-screen mode is mandatory for the duration of the interview.</li>
                     </ul>
                 </div>
                 
-                <p style="margin-top: 30px; font-size: 16px; color: #4B5563;">Best of luck!</p>
-                <p style="font-size: 16px; color: #4B5563; margin-bottom: 0;">Best regards,<br><strong>The Hiring Team</strong></p>
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="{interview_link}" style="background-color: #2563eb; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Join Interview</a>
+                </div>
+                
+                <p style="font-size: 16px; margin-bottom: 10px;">Best of luck!</p>
+                <p style="font-size: 16px; color: #64748b; margin: 0;">Best regards,<br>The Hiring Team</p>
+            </div>
+            <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 14px;">
+                <p style="margin: 0;">If you're having trouble clicking the button, copy and paste this link into your browser:</p>
+                <p style="margin: 10px 0 0 0;"><a href="{interview_link}" style="color: #2563eb; word-break: break-all;">{interview_link}</a></p>
             </div>
         </div>
         """
