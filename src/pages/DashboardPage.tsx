@@ -22,8 +22,13 @@ import { RoleBadge } from '@/components/ui/role-badge';
 import { useDashboardStats, useCandidateAnalytics, useHiringTrends } from '@/hooks/useAnalytics';
 import { useCandidates } from '@/hooks/useCandidates';
 import { useInterviews } from '@/hooks/useInterviews';
+import { useUsage } from '@/hooks/useUsage';
 import type { JobRole, InterviewStatus } from '@/types/database';
 import { AnalyticsCharts } from '@/components/dashboard/AnalyticsCharts';
+import { Progress } from '@/components/ui/progress';
+import { UpgradePrompt } from '@/components/UpgradePrompt';
+import { Label } from '@/components/ui/label';
+import { useState } from 'react';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
@@ -38,8 +43,11 @@ export default function DashboardPage() {
   const { data: interviews, isLoading: interviewsLoading } = useInterviews({ status: 'completed' });
   const { data: candidatesAnalytics, isLoading: analyticsLoading } = useCandidateAnalytics();
   const { data: trendsData, isLoading: trendsLoading } = useHiringTrends(30);
+  const { data: usageData, isLoading: usageLoading } = useUsage();
 
-  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading;
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading || usageLoading;
 
   if (authLoading) {
     return (
@@ -51,28 +59,38 @@ export default function DashboardPage() {
     );
   }
 
+  const formatChange = (n?: number) => {
+    const value = typeof n === 'number' ? n : 0;
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${value}`;
+  };
+
   const dashboardStats = [
     {
       name: 'Total Applicants',
       value: stats?.total_candidates?.toString() || '0',
+      change: formatChange(stats?.total_candidates_change),
       icon: Users,
       color: 'text-info'
     },
     {
       name: 'Selected',
       value: candidatesAnalytics?.filter(c => c.recommendation?.includes('hire') && !c.recommendation?.includes('no_hire')).length.toString() || '0',
+      change: '',
       icon: CheckCircle,
       color: 'text-success bg-success/10'
     },
     {
       name: 'Rejected',
       value: candidatesAnalytics?.filter(c => c.recommendation?.includes('no_hire')).length.toString() || '0',
+      change: '',
       icon: XCircle,
       color: 'text-destructive bg-destructive/10'
     },
     {
       name: 'In Process',
       value: candidatesAnalytics?.filter(c => !c.recommendation).length.toString() || stats?.pending_interviews?.toString() || '0',
+      change: '',
       icon: Clock,
       color: 'text-warning bg-warning/10'
     },
@@ -128,6 +146,16 @@ export default function DashboardPage() {
                       <p className="text-3xl font-bold mt-1">
                         {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stat.value}
                       </p>
+                      {stat.change && (
+                        <p className="text-sm mt-1 opacity-0 select-none">
+                          &nbsp;
+                        </p>
+                      )}
+                      {!stat.change && (
+                        <p className="text-sm mt-1 opacity-0 select-none">
+                          &nbsp;
+                        </p>
+                      )}
                     </div>
                     <div className={`p-3 rounded-xl bg-muted ${stat.color}`}>
                       <stat.icon className="h-6 w-6" />
@@ -240,8 +268,20 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
+
           </motion.div>
         </div>
+
+        {usageData && (
+          <UpgradePrompt
+            open={showUpgrade}
+            onClose={() => setShowUpgrade(false)}
+            resource="plan features"
+            current={usageData.usage.jobs.used}
+            limit={usageData.usage.jobs.limit}
+            plan={usageData.plan_label}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

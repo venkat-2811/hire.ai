@@ -640,9 +640,6 @@ export interface SubscriptionInfo {
   status: string;
   subscription_id: string | null;
   plan_selected_at: string | null;
-  billing_cycle: 'monthly' | 'yearly';
-  current_period_end: string | null;
-  cancel_at_period_end: boolean;
   limits: {
     max_jobs: number;
     max_assessments: number;
@@ -670,16 +667,15 @@ export interface UsageInfo {
 export const subscriptionApi = {
   get: () => request<SubscriptionInfo>('/subscription'),
 
-  createOrder: (plan: string, billing_cycle: 'monthly' | 'yearly' = 'monthly') =>
+  createOrder: (plan: string) =>
     request<{ session_id: string; url: string; plan: string }>(
       '/subscription/create-order',
-      { method: 'POST', body: { plan, billing_cycle } },
+      { method: 'POST', body: { plan } },
     ),
 
   verify: (data: {
     session_id: string;
     plan: string;
-    billing_cycle?: 'monthly' | 'yearly';
   }) =>
     request<{ success: boolean; plan: string; message: string }>(
       '/subscription/verify',
@@ -690,10 +686,7 @@ export const subscriptionApi = {
     request<{ success: boolean; plan: string }>('/subscription/select-free', { method: 'POST' }),
 
   cancel: () =>
-    request<{ success: boolean; cancel_at_period_end: boolean; current_period_end: string | null }>(
-      '/subscription/cancel',
-      { method: 'POST' },
-    ),
+    request<{ success: boolean; message: string }>('/subscription/cancel', { method: 'POST' }),
 };
 
 export const usageApi = {

@@ -6,49 +6,29 @@ import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { UpgradePrompt } from '@/components/UpgradePrompt';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { subscriptionApi, type SubscriptionInfo } from '@/lib/api';
-import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
-import type { Profile } from '@/lib/api';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { subscriptionApi, type Profile } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { UpgradePrompt } from '@/components/UpgradePrompt';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import { Progress } from '@/components/ui/progress';
 
 export default function ProfilePage() {
   const { user, loading } = useRequireAuth();
   const { data: profile, isLoading: profileLoading } = useProfile();
   const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
-  const queryClient = useQueryClient();
 
-  const { data: subscription, isLoading: subscriptionLoading } = useQuery<SubscriptionInfo>({
+  const { data: subData, isLoading: subLoading, refetch: refetchSub } = useQuery({
     queryKey: ['subscription'],
     queryFn: () => subscriptionApi.get(),
-    enabled: !loading && !profileLoading,
-  });
-
-  const cancelSubscriptionMutation = useMutation({
-    mutationFn: () => subscriptionApi.cancel(),
-    onSuccess: async (data) => {
-      const dateText = formatDate(data.current_period_end);
-      toast.success(`Subscription cancelled. Access continues until ${dateText}.`);
-      await queryClient.invalidateQueries({ queryKey: ['subscription'] });
-      setShowCancelDialog(false);
-    },
-    onError: (error: any) => {
-      toast.error(error?.message || 'Failed to cancel subscription. Please try again.');
-    },
+    enabled: !!user,
   });
 
   const [formData, setFormData] = useState<Partial<Profile>>({});
   const [showUpgrade, setShowUpgrade] = useState(false);
-  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -77,15 +57,32 @@ export default function ProfilePage() {
     updateProfile(formData);
   };
 
-  const formatDate = (value?: string | null) => {
-    if (!value) return '—';
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString();
+  const handleCancelClick = async () => {
+    setCancelLoading(true);
+    try {
+      const res = await subscriptionApi.cancel();
+      toast.success(res.message);
+      setShowCancelModal(false);
+      refetchSub();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to cancel subscription');
+    } finally {
+      setCancelLoading(false);
+    }
   };
 
-  const currentPlanLabel = subscription?.limits?.label || 'Free';
-  const renewalLabel = subscription?.cancel_at_period_end ? 'Cancels on' : 'Renews on';
+  const getBillingCycle = (planStr: string) => planStr.includes('yearly') ? 'Yearly' : 'Monthly';
+  
+  const getRenewalDate = (dateStr?: string | null, planStr?: string) => {
+    if (!dateStr || !planStr) return 'N/A';
+    const date = new Date(dateStr);
+    if (planStr.includes('yearly')) {
+      date.setFullYear(date.getFullYear() + 1);
+    } else {
+      date.setMonth(date.getMonth() + 1);
+    }
+    return date.toLocaleDateString();
+  };
 
   if (loading || profileLoading) {
     return (
@@ -96,6 +93,10 @@ export default function ProfilePage() {
       </DashboardLayout>
     );
   }
+
+  const cycle = subData?.plan ? getBillingCycle(subData.plan) : 'Monthly';
+  const renewalDate = getRenewalDate(subData?.plan_selected_at, subData?.plan);
+  const isCancelled = subData?.status === 'cancel_at_period_end';
 
   return (
     <DashboardLayout>
@@ -121,46 +122,84 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
 
+            {/* Subscription Block moved from Dashboard */}
             <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3">
-                <div>
-                  <CardTitle>Subscription</CardTitle>
-                  <CardDescription>Current plan: <span className="font-semibold text-foreground">{currentPlanLabel}</span></CardDescription>
-                </div>
-                {(subscription?.plan === 'free' || subscription?.plan === 'pro') && (
-                  <Button variant="outline" size="sm" onClick={() => setShowUpgrade(true)}>
-                    Upgrade / Change
-                  </Button>
-                )}
+              <CardHeader className="space-y-1">
+                <CardTitle>Usage & Subscription</CardTitle>
+                <CardDescription>Manage your current plan</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
-                {subscriptionLoading ? (
-                  <div className="flex justify-center py-6">
+                {subLoading ? (
+                  <div className="flex justify-center p-4">
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
-                ) : (
+                ) : subData ? (
                   <>
-                    <div className="space-y-2 text-sm">
-                      <p className="text-muted-foreground">Billing cycle</p>
-                      <p className="font-medium capitalize">{subscription?.billing_cycle || 'monthly'}</p>
+                    <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium">Plan</span>
+                        <span className="text-sm font-semibold">{subData.limits.label}</span>
+                      </div>
+                      {subData.plan !== 'free' && (
+                        <>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Billing Cycle</span>
+                            <span className="text-sm">{cycle}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">
+                              {isCancelled ? 'Cancels on' : 'Renews on'}
+                            </span>
+                            <span className="text-sm">{renewalDate}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
 
-                    <div className="space-y-2 text-sm">
-                      <p className="text-muted-foreground">{renewalLabel}</p>
-                      <p className="font-medium">{formatDate(subscription?.current_period_end)}</p>
+                    <div className="space-y-4">
+                      {Object.entries({
+                        'Job Roles': { used: subData.usage.jobs_count, limit: subData.limits.max_jobs },
+                        'Technical Assessments': { used: subData.usage.assessments_count, limit: subData.limits.max_assessments },
+                        'Interviews': { used: subData.usage.interviews_count, limit: subData.limits.max_interviews }
+                      }).map(([label, { used, limit }]) => {
+                        const percent = Math.min(100, Math.round((used / limit) * 100));
+                        const isHigh = percent >= 80;
+                        return (
+                          <div key={label} className="space-y-1.5">
+                            <div className="flex justify-between items-end">
+                              <Label className="text-xs text-muted-foreground">{label}</Label>
+                              <span className="text-xs font-medium">
+                                {used} / {limit > 900000 ? '∞' : limit}
+                              </span>
+                            </div>
+                            <Progress
+                              value={percent}
+                              className={`h-2 ${isHigh ? '[&>div]:bg-destructive' : ''}`}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    {subscription?.plan !== 'free' && !subscription?.cancel_at_period_end && (
-                      <button
-                        type="button"
-                        className="text-sm text-destructive/70 hover:text-destructive underline underline-offset-2"
-                        onClick={() => setShowCancelDialog(true)}
-                      >
-                        Cancel subscription
-                      </button>
-                    )}
+                    <div className="pt-2 flex flex-col gap-2">
+                      <Button variant="outline" className="w-full" onClick={() => setShowUpgrade(true)}>
+                        {subData.plan === 'free' ? 'Upgrade Plan' : 'Change Plan'}
+                      </Button>
+                      
+                      {subData.plan !== 'free' && !isCancelled && (
+                        <div className="flex justify-center mt-2">
+                          <button 
+                            type="button" 
+                            onClick={() => setShowCancelModal(true)}
+                            className="text-xs text-muted-foreground hover:text-destructive underline decoration-muted-foreground hover:decoration-destructive transition-colors"
+                          >
+                            Cancel subscription
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </>
-                )}
+                ) : null}
               </CardContent>
             </Card>
           </div>
@@ -288,37 +327,37 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {subscription && (
+        {subData && (
           <UpgradePrompt
             open={showUpgrade}
             onClose={() => setShowUpgrade(false)}
-            resource="plan features"
-            current={subscription.usage.jobs_count}
-            limit={subscription.limits.max_jobs}
-            plan={subscription.limits.label}
+            resource="operations"
+            current={subData.usage.jobs_count}
+            limit={subData.limits.max_jobs}
+            plan={subData.limits.label}
           />
         )}
 
-        <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-          <DialogContent>
+        <Dialog open={showCancelModal} onOpenChange={setShowCancelModal}>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Cancel your subscription?</DialogTitle>
-              <DialogDescription>
-                You'll keep access until {formatDate(subscription?.current_period_end)}. After that, your account moves to the free plan.
+              <DialogDescription className="pt-2 text-base">
+                You'll keep access until <strong>{renewalDate}</strong>. After that, your account moves to the free plan.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter className="gap-2 sm:justify-end">
-              <Button onClick={() => setShowCancelDialog(false)} disabled={cancelSubscriptionMutation.isPending}>
-                Keep my plan
-              </Button>
-              <Button
-                variant="outline"
-                className="border-destructive/40 text-destructive hover:bg-destructive/10"
-                onClick={() => cancelSubscriptionMutation.mutate()}
-                disabled={cancelSubscriptionMutation.isPending}
+            <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-4 sm:justify-end">
+              <Button 
+                variant="outline" 
+                className="text-destructive hover:bg-destructive hover:text-white"
+                onClick={handleCancelClick}
+                disabled={cancelLoading}
               >
-                {cancelSubscriptionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {cancelLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Yes, cancel
+              </Button>
+              <Button onClick={() => setShowCancelModal(false)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                Keep my plan
               </Button>
             </DialogFooter>
           </DialogContent>
