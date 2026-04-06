@@ -220,7 +220,7 @@ export default function AssessmentPage() {
 
     if (count >= MAX_NO_FACE_VIOLATIONS) {
       setTerminated(true);
-      setWarningMessage('Assessment terminated: face not visible 3 times.');
+      setWarningMessage('Assessment Terminated: face not visible 3 times.');
       setShowWarning(true);
       // Also report to backend
       if (assessmentData) {
