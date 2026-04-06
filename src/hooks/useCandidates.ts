@@ -90,7 +90,7 @@ export function useDeleteCandidate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => candidatesApi.delete(id),
+    mutationFn: ({ id, jobId }: { id: string; jobId?: string }) => candidatesApi.delete(id, jobId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
       toast.success('Candidate deleted successfully');

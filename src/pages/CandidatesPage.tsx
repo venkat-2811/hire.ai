@@ -120,7 +120,7 @@ export default function CandidatesPage() {
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [candidateToDelete, setCandidateToDelete] = useState<string | null>(null);
+  const [candidateToDelete, setCandidateToDelete] = useState<{ id: string; jobId: string } | null>(null);
 
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
@@ -624,7 +624,7 @@ export default function CandidatesPage() {
                                     <DropdownMenuItem
                                       className="text-destructive"
                                       onClick={() => {
-                                        setCandidateToDelete(candidate.id);
+                                        setCandidateToDelete({ id: candidate.id, jobId });
                                         setDeleteDialogOpen(true);
                                       }}
                                     >

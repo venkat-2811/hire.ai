@@ -241,8 +241,8 @@ export const candidatesApi = {
 
   getInterviewDetails: (id: string, jobId?: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details${jobId ? `?job_id=${jobId}` : ''}`),
 
-  delete: (id: string) =>
-    request<{ success: boolean; message: string }>(`/candidates/${id}`, { method: 'DELETE' }),
+  delete: (id: string, jobId?: string) =>
+    request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${jobId}` : ''}`, { method: 'DELETE' }),
 };
 
 // ============== Assessment Details ==============
