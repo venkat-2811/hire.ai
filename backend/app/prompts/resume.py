@@ -1,9 +1,6 @@
 import json
-from typing import Dict, Any, List, Optional
-
-# ==========================================
-# RESUME & ATS SCREENING PROMPTS
-# ==========================================
+from typing import Dict, Any
+from .base import NO_HALLUCINATIONS_RULE
 
 def get_analyze_resume_prompt(resume_text: str) -> tuple[str, str]:
     system_instruction = """You are an expert, meticulous resume data extraction engine.
@@ -12,7 +9,7 @@ Your sole purpose is to extract structured JSON data faithfully from the provide
     user_prompt = f"""Analyze the provided resume and extract information following these strict rules:
 
 CRITICAL RULES:
-1. No Hallucinations: If any information is missing or unclear in the resume, you MUST return `null` for that field. Do not guess, infer, or hallucinate missing data.
+1. {NO_HALLUCINATIONS_RULE}
 2. Skill Normalization: Deduplicate and normalize skills (e.g., combine "Python" and "python" into a single "Python"; standardize variations of frameworks/tools).
 3. Date Formatting: Standardize all dates to exactly "YYYY-MM" format. If day or exact month is missing, estimate cautiously (e.g., "Jan 2020" -> "2020-01", "2021" -> "2021-01"). If a date cannot be determined or is labeled "Present", use `null` for end_date.
 4. Total Experience: The `total_experience_years` field must be logically calculated by summing the total non-overlapping duration of extracted professional experience entries. Do not rely entirely on the candidate's stated summary. 
@@ -70,7 +67,7 @@ CRITICAL RULES:
 1. Strict Skill Matching: All skills analyzed must have clear evidence backing them. Provide a `match_type` of either "exact" (skill is explicitly written) or "inferred" (strong contextual evidence of skill application without exact keyword). If there is no evidence, mark it as "missing".
 2. Evaluation by Relevance: Experience evaluation MUST consider the actual relevance of the past roles to this specific job, prioritizing depth and relevance over pure cumulative duration.
 3. Logical Shortlisting: To be shortlisted (`shortlisted: true`), the candidate MUST meet a minimum `overall_score` of 65 AND possess at least 70% of the must-have skills with explicit evidence.
-4. No Assumptions: Do not invent missing details. Base the entire analysis truthfully on the provided resume JSON.
+4. {NO_HALLUCINATIONS_RULE} Base the entire analysis truthfully on the provided resume JSON.
 
 Job Requirements:
 - Title: {job_description.get('title', 'N/A')}
@@ -120,6 +117,3 @@ Provide screening results in this exact JSON format:
 }}
 """
     return system_instruction, user_prompt
-
-
-# ==========================================

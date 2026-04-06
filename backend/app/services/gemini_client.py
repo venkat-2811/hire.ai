@@ -5,10 +5,9 @@ import re
 from typing import Optional, Dict, Any, List
 from app.config import get_settings
 from app.prompts import (
+    STRICT_JSON_INSTRUCTION,
     get_analyze_resume_prompt,
-    get_screen_candidate_prompt
-)
-from app.assessment_prompts import (
+    get_screen_candidate_prompt,
     get_interview_questions_general_prompt,
     get_evaluate_response_prompt,
     get_generate_practical_assessment_prompt,
@@ -72,10 +71,7 @@ class GeminiService:
         raise_on_error: bool = False,
     ) -> Dict[str, Any]:
         """Generate and parse JSON response from Groq."""
-        json_instruction = """
-You must respond with valid JSON only. No markdown, no code blocks, no explanation.
-Just the raw JSON object.
-"""
+        json_instruction = STRICT_JSON_INSTRUCTION
         full_system = f"{system_instruction}\n\n{json_instruction}" if system_instruction else json_instruction
         
         response_text = await self.generate_text(

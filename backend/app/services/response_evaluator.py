@@ -4,7 +4,7 @@ from app.models.schemas import (
 )
 from app.models.enums import AssessmentType
 from app.services.gemini_client import get_gemini_service
-from app.assessment_prompts import (
+from app.prompts import (
     get_evaluate_technical_response_prompt,
     get_evaluate_behavioral_response_prompt,
     get_calculate_communication_score_prompt
