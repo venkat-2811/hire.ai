@@ -594,6 +594,7 @@ export interface CandidateAnalytics {
   technical_score: number | null;
   overall_score: number | null;
   recommendation: string | null;
+  shortlisted: boolean | null;
 }
 
 export const analyticsApi = {

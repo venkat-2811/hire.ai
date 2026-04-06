@@ -308,10 +308,6 @@ export default function ResultsDashboardPage() {
         toast.success('Rejection emails sent');
       }
 
-      // Auto-delete rejected candidates locally (and backend handles DB)
-      // Note: Backend might delete, here we just refresh or filter out
-      setCandidates(prev => prev.filter(c => !candidateIds.includes(c.candidate_id)));
-
       setRejectDialogOpen(false);
       setSelectedCandidates(new Set());
     } catch (e) {

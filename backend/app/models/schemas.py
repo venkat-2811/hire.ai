@@ -338,6 +338,7 @@ class CandidateAnalytics(BaseModel):
     technical_score: Optional[float] = None  # form interview
     overall_score: Optional[float] = None    # form interview
     recommendation: Optional[HireRecommendation] = None
+    shortlisted: Optional[bool] = None
 
 
 # ============== API Responses ==============
