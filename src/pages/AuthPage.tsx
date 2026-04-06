@@ -57,7 +57,7 @@ export default function AuthPage() {
             className="text-lg text-white/70 max-w-md"
           >
             Screen resume,generate adaptive questions, and evaluate candidates
-            with explainable AI — all in one platform.
+            with explainable AI — all in the one platform.
           </motion.p>
         </div>
 
