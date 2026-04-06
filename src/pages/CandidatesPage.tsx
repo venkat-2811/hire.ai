@@ -868,7 +868,7 @@ export default function CandidatesPage() {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => {
                   if (candidateToDelete) {
-                    deleteCandidate.mutate(candidateToDelete);
+                    deleteCandidate.mutate({ id: candidateToDelete.id, jobId: candidateToDelete.jobId });
                     setCandidateToDelete(null);
                   }
                 }}

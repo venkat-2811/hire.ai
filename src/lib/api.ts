@@ -242,7 +242,7 @@ export const candidatesApi = {
   getInterviewDetails: (id: string, jobId?: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details${jobId ? `?job_id=${jobId}` : ''}`),
 
   delete: (id: string, jobId?: string) =>
-    request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${jobId}` : ''}`, { method: 'DELETE' }),
+    request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`, { method: 'DELETE' }),
 };
 
 // ============== Assessment Details ==============

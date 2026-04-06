@@ -154,7 +154,7 @@ async def update_candidate(candidate_id: str, candidate: CandidateUpdate):
 
 
 @router.delete("/{candidate_id}", response_model=APIResponse)
-async def delete_candidate(candidate_id: str, job_id: Optional[str] = None):
+async def delete_candidate(candidate_id: str):
     """Delete a candidate."""
     supabase = get_supabase_client()
     
@@ -164,18 +164,11 @@ async def delete_candidate(candidate_id: str, job_id: Optional[str] = None):
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     try:
-        if job_id:
-            # Delete specific job application link
-            supabase.table("job_applications").delete().eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
-            
-            # If no other job applications exist, delete candidate record
-            remaining = supabase.table("job_applications").select("id").eq("candidate_id", candidate_id).execute()
-            if not remaining.data:
-                supabase.table("candidates").delete().eq("id", candidate_id).execute()
-            return APIResponse(success=True, message="Candidate removed from job successfully")
-        else:
-            supabase.table("candidates").delete().eq("id", candidate_id).execute()
-            return APIResponse(success=True, message="Candidate deleted successfully")
+        # DB is expected to have ON DELETE CASCADE for related tables (interviews, assessments, etc.)
+        # If not, we would need to manually delete them here.
+        # Assuming CASCADE is configured for now based on existing bulk logic.
+        supabase.table("candidates").delete().eq("id", candidate_id).execute()
+        return APIResponse(success=True, message="Candidate deleted successfully")
     except Exception as e:
         print(f"Error deleting candidate {candidate_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete candidate: {str(e)}")
