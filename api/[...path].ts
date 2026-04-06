@@ -1489,6 +1489,48 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const user = await requireAuth(req, res);
         if (!user) return;
 
+        const scopedJobId = typeof req.query.job_id === 'string' ? req.query.job_id : undefined;
+
+        if (scopedJobId) {
+          // Verify the requested job belongs to the current user.
+          const { data: job } = await supabase
+            .from('job_descriptions')
+            .select('id')
+            .eq('id', scopedJobId)
+            .eq('created_by', user.id)
+            .single();
+
+          if (!job) return notFound(res, 'Job not found or access denied');
+
+          // Remove job-scoped records first.
+          await Promise.all([
+            supabase.from('job_applications').delete().eq('candidate_id', candidateId).eq('job_id', scopedJobId),
+            supabase.from('ats_screenings').delete().eq('candidate_id', candidateId).eq('job_id', scopedJobId),
+            supabase.from('assessment_sessions').delete().eq('candidate_id', candidateId).eq('job_id', scopedJobId),
+            supabase.from('interview_sessions').delete().eq('candidate_id', candidateId).eq('job_id', scopedJobId),
+            supabase.from('ai_interview_sessions').delete().eq('candidate_id', candidateId).eq('job_id', scopedJobId),
+          ]);
+
+          // Keep candidate if still associated with any other jobs.
+          const { count: remainingAppsCount, error: appCountErr } = await supabase
+            .from('job_applications')
+            .select('id', { count: 'exact', head: true })
+            .eq('candidate_id', candidateId);
+
+          if (appCountErr) return res.status(500).json({ error: appCountErr.message });
+
+          if ((remainingAppsCount || 0) === 0) {
+            const { error: deleteCandidateErr } = await supabase
+              .from('candidates')
+              .delete()
+              .eq('id', candidateId);
+            if (deleteCandidateErr) return res.status(500).json({ error: deleteCandidateErr.message });
+            return ok(res, { success: true, message: 'Candidate removed from this job and deleted (no other job associations).' });
+          }
+
+          return ok(res, { success: true, message: 'Candidate removed from this job only.' });
+        }
+
         const { error } = await supabase.from('candidates').delete().eq('id', candidateId);
         if (error) return res.status(500).json({ error: error.message });
         return ok(res, { success: true, message: 'Candidate deleted successfully' });

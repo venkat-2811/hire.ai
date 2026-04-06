@@ -241,8 +241,8 @@ export const candidatesApi = {
 
   getInterviewDetails: (id: string, jobId?: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details${jobId ? `?job_id=${jobId}` : ''}`),
 
-  delete: (id: string) =>
-    request<{ success: boolean; message: string }>(`/candidates/${id}`, { method: 'DELETE' }),
+  delete: (id: string, jobId?: string) =>
+    request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`, { method: 'DELETE' }),
 };
 
 // ============== Assessment Details ==============
@@ -588,13 +588,19 @@ export interface DashboardStats {
 export interface CandidateAnalytics {
   candidate_id: string;
   candidate_name: string;
+  candidate_email?: string;
   job_title: string;
-  ats_score: number;
-  interview_status: string;
+  job_id?: string;
+  application_status?: string;
+  ats_score: number | null;
+  shortlisted?: boolean | null;
+  assessment_score: number | null;
+  assessment_status?: string | null;
+  interview_score: number | null;
+  interview_status: string | null;
   technical_score: number | null;
   overall_score: number | null;
   recommendation: string | null;
-  shortlisted: boolean | null;
 }
 
 export const analyticsApi = {

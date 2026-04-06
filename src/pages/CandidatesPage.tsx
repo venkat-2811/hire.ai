@@ -68,6 +68,7 @@ import type { JobRole, InterviewStatus } from '@/types/database';
 import { useCandidates, useDeleteCandidate } from '@/hooks/useCandidates';
 import { useCreateInterview, useStartInterview, useInterviews } from '@/hooks/useInterviews';
 import { useJobs } from '@/hooks/useJobs';
+import { useCandidateAnalytics } from '@/hooks/useAnalytics';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
@@ -102,6 +103,7 @@ export default function CandidatesPage() {
   const startInterview = useStartInterview();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
   const { data: interviews } = useInterviews();
+  const { data: analytics } = useCandidateAnalytics();
 
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [startCandidateId, setStartCandidateId] = useState<string | null>(null);
@@ -118,7 +120,7 @@ export default function CandidatesPage() {
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [candidateToDelete, setCandidateToDelete] = useState<string | null>(null);
+  const [candidateToDelete, setCandidateToDelete] = useState<{ id: string; jobId: string } | null>(null);
 
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
@@ -506,7 +508,7 @@ export default function CandidatesPage() {
                           <TableHead>Candidate</TableHead>
                           <TableHead>Resume</TableHead>
                           <TableHead>ATS Score</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableHead>Assessment</TableHead>
                           <TableHead>Interview</TableHead>
                           <TableHead>Applied</TableHead>
                           <TableHead className="w-12"></TableHead>
@@ -573,14 +575,17 @@ export default function CandidatesPage() {
                                 )}
                               </TableCell>
                               <TableCell>
-                                <span className="text-sm text-muted-foreground">
-                                  {candidate.consent_given ? 'Consent Given' : 'Pending Consent'}
-                                </span>
+                                {(() => {
+                                  const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                  const status = candidateAnalytics?.assessment_score != null ? "completed" : "pending";
+                                  return <StatusBadge status={status} />;
+                                })()}
                               </TableCell>
                               <TableCell>
                                 {(() => {
-                                  const interview = interviews?.find(i => i.candidate_id === candidate.id && i.job_id === jobId);
-                                  return <StatusBadge status={interview?.status || "pending"} />;
+                                  const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                  const status = candidateAnalytics?.interview_score != null ? "completed" : "pending";
+                                  return <StatusBadge status={status} />;
                                 })()}
                               </TableCell>
                               <TableCell className="text-muted-foreground">
@@ -619,7 +624,7 @@ export default function CandidatesPage() {
                                     <DropdownMenuItem
                                       className="text-destructive"
                                       onClick={() => {
-                                        setCandidateToDelete(candidate.id);
+                                        setCandidateToDelete({ id: candidate.id, jobId });
                                         setDeleteDialogOpen(true);
                                       }}
                                     >
@@ -863,7 +868,7 @@ export default function CandidatesPage() {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => {
                   if (candidateToDelete) {
-                    deleteCandidate.mutate(candidateToDelete);
+                    deleteCandidate.mutate({ id: candidateToDelete.id, jobId: candidateToDelete.jobId });
                     setCandidateToDelete(null);
                   }
                 }}
