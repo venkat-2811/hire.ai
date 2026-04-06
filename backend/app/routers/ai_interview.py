@@ -493,6 +493,8 @@ Include a mix of:
 - 2 Situational/problem-solving questions
 - 1 Question about career goals and motivation
 
+CRITICAL REQUIREMENT: This is an audio-based interview where candidates respond verbally. ALL questions MUST be purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking (e.g., 'How would you approach...', 'Explain how...', 'What are the trade-offs...').
+
 {"Consider the candidate's background: " + str(resume_data)[:500] if resume_data else ""}
 
 Return as JSON array with format:

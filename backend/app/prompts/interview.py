@@ -16,12 +16,13 @@ Must-Have Skills: {must_have}
 Good-to-Have Skills: {good_to_have}
 
 Guidelines:
-- Questions should be specific and test real-world knowledge
-- Difficulty should range from {min_diff} to {max_diff} (scale 1-5)
-- Include a mix of conceptual and scenario-based questions
-- Questions should be answerable in 2-5 minutes
-- Use the seed "{seed}" to ensure uniqueness
-- Tailor questions to the candidate's background when relevant
+- Questions must be purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers.
+- Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking.
+- Questions should sound natural in a live audio interview and be answerable verbally (e.g., “How would you approach…”, “What are the trade-offs…”, “Explain how…”).
+- Difficulty should range from {min_diff} to {max_diff} (scale 1-5).
+- Questions should be answerable verbally in 2-5 minutes.
+- Use the seed "{seed}" to ensure uniqueness.
+- Tailor questions to the candidate's background when relevant.
 {previous_q_text}
 
 Return a JSON object with this structure:
@@ -84,8 +85,8 @@ Return JSON:
 
 
 def get_interview_questions_general_prompt(job_description: Dict[str, Any], resume_data: Dict[str, Any], num_technical: int, num_behavioral: int, difficulty: int) -> tuple[str, str]:
-    system_instruction = """You are an expert technical interviewer.
-Generate relevant, challenging, and fair interview questions."""
+    system_instruction = """You are an expert technical interviewer conducting an audio-based interview.
+Generate relevant, challenging, and fair interview questions that are purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers."""
     
     user_prompt = f"""Generate interview questions for this candidate and role.
 
@@ -100,6 +101,9 @@ Experience Years: {resume_data.get('total_experience_years', 0)}
 
 Generate {num_technical} technical questions and {num_behavioral} behavioral questions.
 Difficulty level: {difficulty}/5
+
+CRITICAL REQUIREMENT:
+Since these questions will be asked verbally in an audio-based interview, they must strictly be conceptual and discussion-based. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking (e.g., 'How would you approach...', 'Explain how...', 'What are the trade-offs...'). Absolutely NO coding, implementations, or syntax-heavy queries.
 
 Return as JSON array:
 [

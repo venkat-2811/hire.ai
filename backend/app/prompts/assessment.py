@@ -24,8 +24,8 @@ Difficulty Target: {difficulty.upper()}
 CRITICAL RULES FOR QUESTION GENERATION:
 1. Scenario-Based: Do NOT ask simple definitions (e.g., "What is X?"). Instead, frame questions as real-world scenarios or problems to solve.
 2. Balanced Skill Coverage: Distribute the questions evenly across the listed Must-Have and Good-to-Have skills.
-3. Plausible Distractors: Options must be challenging and highly plausible. Distractors should represent typical mistakes.
-4. Distinct Options: Ensure answer choices are clearly distinct.
+3. Fully Distinct Questions: Questions within the assessment MUST be completely unique. Do not repeat questions or test the exact same concept using variations. Each question should cover a different idea or angle.
+4. Plausible & 100% Unique Distractors: Options must be challenging and plausible, representing typical mistakes. IMPORTANT: Each question must include exactly four answer options, and all options must be completely unique with no repetition, overlap, or slightly reworded versions of the same option.
 5. Single Correct Answer: There must be exactly ONE unambiguously correct option.
 6. Detailed Explanations: You MUST provide a clear explanation for each question, detailing why the correct answer is the best choice and why the distractors are incorrect.
 
