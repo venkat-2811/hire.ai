@@ -66,7 +66,7 @@ import {
 } from '@/components/ui/collapsible';
 import type { JobRole, InterviewStatus } from '@/types/database';
 import { useCandidates, useDeleteCandidate } from '@/hooks/useCandidates';
-import { useCreateInterview, useStartInterview } from '@/hooks/useInterviews';
+import { useCreateInterview, useStartInterview, useInterviews } from '@/hooks/useInterviews';
 import { useJobs } from '@/hooks/useJobs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
@@ -101,6 +101,7 @@ export default function CandidatesPage() {
   const createInterview = useCreateInterview();
   const startInterview = useStartInterview();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
+  const { data: interviews } = useInterviews();
 
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [startCandidateId, setStartCandidateId] = useState<string | null>(null);
@@ -577,7 +578,10 @@ export default function CandidatesPage() {
                                 </span>
                               </TableCell>
                               <TableCell>
-                                <StatusBadge status="pending" />
+                                {(() => {
+                                  const interview = interviews?.find(i => i.candidate_id === candidate.id && i.job_id === jobId);
+                                  return <StatusBadge status={interview?.status || "pending"} />;
+                                })()}
                               </TableCell>
                               <TableCell className="text-muted-foreground">
                                 {new Date(candidate.created_at).toLocaleDateString()}

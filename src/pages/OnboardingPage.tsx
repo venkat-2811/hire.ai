@@ -21,12 +21,14 @@ const TIMEZONES = [
   'Europe/London', 'Europe/Berlin', 'Asia/Singapore', 'Australia/Sydney',
 ];
 
-const PLANS = [
+const BASE_PLANS = [
   {
-    id: 'free' as const,
+    id: 'free',
     name: 'Free',
-    price: '$0',
-    period: 'forever',
+    priceMonthly: '$0',
+    priceYearly: '$0',
+    periodMonthly: 'forever',
+    periodYearly: 'forever',
     icon: Sparkles,
     gradient: 'from-slate-500 to-slate-600',
     cardBg: 'bg-slate-500/5 border-slate-500/20',
@@ -39,10 +41,12 @@ const PLANS = [
     cta: 'Start Free',
   },
   {
-    id: 'pro' as const,
+    id: 'pro',
     name: 'Pro',
-    price: '$5',
-    period: '/month',
+    priceMonthly: '$10',
+    priceYearly: '$100',
+    periodMonthly: '/mo',
+    periodYearly: '/yr',
     icon: Zap,
     gradient: 'from-blue-500 to-cyan-500',
     cardBg: 'bg-blue-500/5 border-blue-500/20',
@@ -52,13 +56,15 @@ const PLANS = [
       { text: '100+ AI interviews', highlight: true },
       { text: 'Priority support', highlight: false },
     ],
-    cta: 'Subscribe — $5/mo',
+    cta: 'Subscribe',
   },
   {
-    id: 'premium' as const,
+    id: 'premium',
     name: 'Premium',
-    price: '$10',
-    period: '/month',
+    priceMonthly: '$15',
+    priceYearly: '$150',
+    periodMonthly: '/mo',
+    periodYearly: '/yr',
     icon: Crown,
     gradient: 'from-purple-500 to-pink-500',
     cardBg: 'bg-purple-500/5 border-purple-500/30',
@@ -69,7 +75,7 @@ const PLANS = [
       { text: 'Unlimited interviews', highlight: true },
       { text: 'Dedicated support', highlight: false },
     ],
-    cta: 'Subscribe — $10/mo',
+    cta: 'Subscribe',
   },
 ];
 
@@ -81,6 +87,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
 
   const initial = useMemo(() => ({
     organization_email: profile?.organization_email ?? '',
@@ -331,19 +338,43 @@ export default function OnboardingPage() {
               <div className="mb-6 text-center">
                 <h1 className="text-2xl lg:text-3xl font-bold">Choose Your Plan</h1>
                 <p className="text-muted-foreground mt-1">Select a plan that fits your hiring needs. You can upgrade or downgrade anytime.</p>
+                
+                <div className="flex items-center justify-center gap-3 mt-6">
+                  <span className={`text-sm font-medium ${billingCycle === 'monthly' ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
+                  <button
+                    type="button"
+                    className="relative inline-flex h-6 w-11 items-center rounded-full bg-primary/20 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                    onClick={() => setBillingCycle(c => c === 'monthly' ? 'yearly' : 'monthly')}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-primary transition-transform ${
+                        billingCycle === 'yearly' ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-sm font-medium flex items-center gap-1.5 ${billingCycle === 'yearly' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    Yearly <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Save ~17%</Badge>
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {PLANS.map((plan) => (
+                {BASE_PLANS.map((plan) => {
+                  const isYearly = billingCycle === 'yearly';
+                  const actualPlanId = plan.id === 'free' ? 'free' : `${plan.id}${isYearly ? '_yearly' : ''}`;
+                  const price = isYearly ? plan.priceYearly : plan.priceMonthly;
+                  const period = isYearly ? plan.periodYearly : plan.periodMonthly;
+                  
+                  return (
                   <motion.div
                     key={plan.id}
                     whileHover={{ scale: 1.02 }}
-                    className={`relative rounded-2xl border-2 p-6 transition-all cursor-pointer ${
-                      selectedPlan === plan.id
+                    className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all cursor-pointer ${
+                      selectedPlan === actualPlanId
                         ? 'border-primary shadow-lg shadow-primary/10'
                         : plan.cardBg
                     } ${plan.popular ? 'ring-2 ring-purple-500/30' : ''}`}
-                    onClick={() => !processingPlan && setSelectedPlan(plan.id)}
+                    onClick={() => !processingPlan && setSelectedPlan(actualPlanId)}
                   >
                     {plan.popular && (
                       <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-3">
@@ -356,13 +387,13 @@ export default function OnboardingPage() {
                         <plan.icon className="h-6 w-6 text-white" />
                       </div>
                       <h3 className="text-lg font-bold">{plan.name}</h3>
-                      <div className="mt-1">
-                        <span className="text-3xl font-extrabold">{plan.price}</span>
-                        <span className="text-sm text-muted-foreground ml-1">{plan.period}</span>
+                      <div className="mt-1 flex items-baseline justify-center gap-1">
+                        <span className="text-3xl font-extrabold">{price}</span>
+                        <span className="text-sm text-muted-foreground">{period}</span>
                       </div>
                     </div>
 
-                    <ul className="space-y-2.5 mb-6">
+                    <ul className="space-y-2.5 mb-6 flex-grow">
                       {plan.features.map((f) => (
                         <li key={f.text} className="flex items-center gap-2 text-sm">
                           <Check className={`h-4 w-4 flex-shrink-0 ${f.highlight ? 'text-green-500' : 'text-muted-foreground'}`} />
@@ -372,21 +403,22 @@ export default function OnboardingPage() {
                     </ul>
 
                     <Button
-                      className="w-full"
+                      className="w-full mt-auto"
                       variant={plan.id === 'premium' ? 'default' : plan.id === 'pro' ? 'default' : 'outline'}
                       disabled={processingPlan}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handlePlanSelect(plan.id);
+                        handlePlanSelect(actualPlanId);
                       }}
                     >
-                      {processingPlan && selectedPlan === plan.id ? (
+                      {processingPlan && selectedPlan === actualPlanId ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       ) : null}
-                      {plan.cta}
+                      {plan.id === 'free' ? plan.cta : `${plan.cta} — ${price}${period}`}
                     </Button>
                   </motion.div>
-                ))}
+                );
+                })}
               </div>
 
               <div className="mt-6 text-center">
