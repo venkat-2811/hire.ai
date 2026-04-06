@@ -28,8 +28,8 @@ async def list_interviews(
     """List interview sessions with optional filters."""
     supabase = get_supabase_client()
     
+    # Fetch standard interview sessions
     query = supabase.table("interview_sessions").select("*")
-    
     if status:
         query = query.eq("status", status.value)
     if candidate_id:
@@ -42,8 +42,49 @@ async def list_interviews(
     sessions = []
     for row in result.data:
         sessions.append(_row_to_session(row))
+
+    # Fetch AI interview sessions
+    query_ai = supabase.table("ai_interview_sessions").select("*")
+    if status:
+        # ai_interview_sessions uses string literal statuses matching the enum plus 'terminated'
+        query_ai = query_ai.eq("status", status.value)
+    if candidate_id:
+        query_ai = query_ai.eq("candidate_id", candidate_id)
+    if job_id:
+        query_ai = query_ai.eq("job_id", job_id)
+        
+    result_ai = query_ai.order("created_at", desc=True).limit(limit).execute()
     
-    return sessions
+    for row in result_ai.data:
+        proctoring = row.get("proctoring_data", {})
+        
+        # Map status
+        st = row.get("status", "pending")
+        mapped_status = InterviewStatus.CANCELLED if st == "terminated" else InterviewStatus(st)
+        
+        sessions.append(InterviewSession(
+            id=row["id"],
+            candidate_id=row["candidate_id"],
+            job_id=row["job_id"],
+            screening_id=None,
+            status=mapped_status,
+            scheduled_at=None,
+            started_at=row.get("started_at"),
+            completed_at=row.get("completed_at"),
+            question_seed=None,
+            proctoring_data=ProctoringData(
+                tab_switches=proctoring.get("tab_switches", 0),
+                copy_paste_count=0,
+                fullscreen_exits=proctoring.get("fullscreen_exits", 0)
+            ),
+            integrity_score=None,
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at", row.get("created_at"))
+        ))
+    
+    # Sort merged sessions by created_at descending
+    sessions.sort(key=lambda s: s.created_at or "", reverse=True)
+    return sessions[:limit]
 
 
 @router.get("/{session_id}", response_model=InterviewSession)
