@@ -11,6 +11,7 @@ from app.models.schemas import (
 )
 from app.models.enums import InterviewStatus, HireRecommendation
 from app.database import get_supabase_client
+from app.database.supabase_client import get_supabase_admin_client
 from app.services.question_generator import get_question_generator
 from app.services.response_evaluator import get_response_evaluator
 from app.services.practical_evaluator import get_practical_evaluator
@@ -44,10 +45,8 @@ async def list_interviews(
         sessions.append(_row_to_session(row))
 
     # Fetch AI interview sessions
-    query_ai = supabase.table("ai_interview_sessions").select("*")
-    if status:
-        # ai_interview_sessions uses string literal statuses matching the enum plus 'terminated'
-        query_ai = query_ai.eq("status", status.value)
+    admin_supabase = get_supabase_admin_client()
+    query_ai = admin_supabase.table("ai_interview_sessions").select("*")
     if candidate_id:
         query_ai = query_ai.eq("candidate_id", candidate_id)
     if job_id:
@@ -58,9 +57,17 @@ async def list_interviews(
     for row in result_ai.data:
         proctoring = row.get("proctoring_data", {})
         
-        # Map status
-        st = row.get("status", "pending")
-        mapped_status = InterviewStatus.CANCELLED if st == "terminated" else InterviewStatus(st)
+        # User requested logic: if score is present, make it completed. 
+        # If score is empty, make it pending.
+        final_eval = row.get("final_evaluation")
+        if final_eval and isinstance(final_eval, dict) and final_eval.get("overall_score") is not None:
+            mapped_status = InterviewStatus.COMPLETED
+        else:
+            mapped_status = InterviewStatus.PENDING
+            
+        # Optional: if client requested a specific status, filter here since we dynamically overrode it
+        if status and mapped_status != status:
+            continue
         
         sessions.append(InterviewSession(
             id=row["id"],
