@@ -8,7 +8,7 @@ supabase==2.3.4
 python-dotenv==1.0.0
 
 # AI/ML
-groq>=0.4.0
+openai>=1.10.0
 
 # Document parsing
 pypdf2==3.0.1

@@ -1,8 +1,7 @@
-from groq import Groq
-import asyncio
 import json
 import re
 from typing import Optional, Dict, Any, List
+from openai import AsyncOpenAI
 from app.config import get_settings
 from app.prompts import (
     STRICT_JSON_INSTRUCTION,
@@ -15,19 +14,18 @@ from app.prompts import (
 )
 
 
-class GeminiService:
-    """Centralized Groq API client for all AI operations.
+class OpenAIService:
+    """Centralized OpenAI API client for all AI operations.
     
-    NOTE: Class name kept as GeminiService to avoid breaking imports across
-    the codebase. Internally uses Groq with DeepSeek-R1-Distill-Llama-70b.
+    Internally uses OpenAI with model gpt-4o-mini-2024-07-18.
     """
     
     def __init__(self):
         settings = get_settings()
-        if not settings.groq_api_key:
-            raise RuntimeError("GROQ_API_KEY is not set")
-        self.client = Groq(api_key=settings.groq_api_key)
-        self._model_name = "DeepSeek-R1-Distill-Llama-70b"
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set")
+        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self._model_name = "gpt-4o-mini-2024-07-18"
 
     @property
     def model_name(self) -> str:
@@ -40,15 +38,14 @@ class GeminiService:
         temperature: float = 0.7,
         max_tokens: int = 4096
     ) -> str:
-        """Generate text completion using Groq."""
+        """Generate text completion using OpenAI."""
         messages: List[Dict[str, str]] = []
         if system_instruction:
             messages.append({"role": "system", "content": system_instruction})
         messages.append({"role": "user", "content": prompt})
 
         try:
-            response = await asyncio.to_thread(
-                self.client.chat.completions.create,
+            response = await self.client.chat.completions.create(
                 model=self._model_name,
                 messages=messages,
                 temperature=temperature,
@@ -57,9 +54,9 @@ class GeminiService:
             text = response.choices[0].message.content
             if text and text.strip():
                 return text.strip()
-            raise RuntimeError("Groq returned empty response")
+            raise RuntimeError("OpenAI returned empty response")
         except Exception as e:
-            print(f"Groq API error: {e}")
+            print(f"OpenAI API error: {e}")
             raise
     
     async def generate_json(
@@ -70,82 +67,34 @@ class GeminiService:
         max_tokens: int = 4096,
         raise_on_error: bool = False,
     ) -> Dict[str, Any]:
-        """Generate and parse JSON response from Groq."""
+        """Generate and parse JSON response from OpenAI."""
         json_instruction = STRICT_JSON_INSTRUCTION
         full_system = f"{system_instruction}\n\n{json_instruction}" if system_instruction else json_instruction
-        
-        response_text = await self.generate_text(
-            prompt=prompt,
-            system_instruction=full_system,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        
-        # Clean up response - remove markdown code blocks if present
-        cleaned = response_text.strip()
-        
-        # Remove opening markdown blocks
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:]
-        elif cleaned.startswith("```"):
-            cleaned = cleaned[3:]
-        
-        # Remove closing markdown blocks  
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        
-        cleaned = cleaned.strip()
-        
-        # Additional cleanup: remove any remaining backticks at start/end
-        while cleaned.startswith("`"):
-            cleaned = cleaned[1:]
-        while cleaned.endswith("`"):
-            cleaned = cleaned[:-1]
-        
-        cleaned = cleaned.strip()
 
-        extracted_candidates: List[str] = []
-        if cleaned:
-            extracted_candidates.append(cleaned)
+        messages: List[Dict[str, str]] = []
+        if full_system:
+            messages.append({"role": "system", "content": full_system})
+        messages.append({"role": "user", "content": prompt})
 
-        first_obj = cleaned.find("{")
-        last_obj = cleaned.rfind("}")
-        if first_obj != -1 and last_obj != -1 and last_obj > first_obj:
-            extracted_candidates.append(cleaned[first_obj : last_obj + 1])
-
-        first_arr = cleaned.find("[")
-        last_arr = cleaned.rfind("]")
-        if first_arr != -1 and last_arr != -1 and last_arr > first_arr:
-            extracted_candidates.append(cleaned[first_arr : last_arr + 1])
-
-        seen = set()
-        unique_candidates: List[str] = []
-        for c in extracted_candidates:
-            if c in seen:
-                continue
-            seen.add(c)
-            unique_candidates.append(c)
-
-        def _cleanup_json_like(text: str) -> str:
-            t = text.strip()
-            t = re.sub(r",\s*(\}|\])", r"\\1", t)
-            return t.strip()
-        
-        last_error: Optional[Exception] = None
-        for candidate in unique_candidates:
-            try:
-                return json.loads(_cleanup_json_like(candidate))
-            except json.JSONDecodeError as e:
-                last_error = e
-
-        # If we couldn't parse anything, optionally raise to let callers fall back.
-        if raise_on_error:
-            raise RuntimeError(f"Failed to parse Groq JSON response: {last_error}")
-
-        print(f"JSON parse error: {last_error}")
-        print(f"Response was: {response_text}")
-        # Return empty dict on parse failure
-        return {}
+        try:
+            response = await self.client.chat.completions.create(
+                model=self._model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"}
+            )
+            text = response.choices[0].message.content
+            
+            if not text:
+                return {}
+            
+            return json.loads(text.strip())
+        except Exception as e:
+            if raise_on_error:
+                raise RuntimeError(f"Failed to parse OpenAI JSON response: {e}")
+            print(f"JSON api or parse error: {e}")
+            return {}
     
     async def analyze_resume(self, resume_text: str) -> Dict[str, Any]:
         """Parse and analyze resume content."""
@@ -208,12 +157,12 @@ class GeminiService:
 
 
 # Singleton instance
-_gemini_service: Optional[GeminiService] = None
+_openai_service: Optional[OpenAIService] = None
 
 
-def get_gemini_service() -> GeminiService:
-    """Get or create Groq service instance."""
-    global _gemini_service
-    if _gemini_service is None:
-        _gemini_service = GeminiService()
-    return _gemini_service
+def get_openai_service() -> OpenAIService:
+    """Get or create OpenAI service instance."""
+    global _openai_service
+    if _openai_service is None:
+        _openai_service = OpenAIService()
+    return _openai_service

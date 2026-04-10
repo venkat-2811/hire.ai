@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import get_settings, ensure_directories
-from app.services.gemini_client import get_gemini_service
+from app.services.openai_client import get_openai_service
 from app.routers import (
     jobs_router,
     candidates_router,
@@ -71,12 +71,12 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.get("/ai/gemini/ping")
-async def gemini_ping():
-    gemini = get_gemini_service()
+@app.get("/ai/openai/ping")
+async def openai_ping():
+    openai = get_openai_service()
     try:
         response_text = await asyncio.wait_for(
-            gemini.generate_text(
+            openai.generate_text(
                 prompt="pong",
                 temperature=0.2,
                 max_tokens=64,
@@ -84,10 +84,10 @@ async def gemini_ping():
             timeout=20,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini ping failed: {e}")
+        raise HTTPException(status_code=500, detail=f"OpenAI ping failed: {e}")
 
     return {
         "ok": True,
-        "model": getattr(gemini, "model_name", None),
+        "model": getattr(openai, "model_name", None),
         "response": (response_text or "").strip()[:200],
     }

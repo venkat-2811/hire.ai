@@ -3,7 +3,7 @@ from app.models.schemas import (
     InterviewQuestion, CandidateResponse, ResponseEvaluationResult
 )
 from app.models.enums import AssessmentType
-from app.services.gemini_client import get_gemini_service
+from app.services.openai_client import get_openai_service
 from app.prompts import (
     get_evaluate_technical_response_prompt,
     get_evaluate_behavioral_response_prompt,
@@ -18,7 +18,7 @@ class ResponseEvaluatorService:
     """
     
     def __init__(self):
-        self.gemini = get_gemini_service()
+        self.openai = get_openai_service()
     
     async def evaluate_response(
         self,
@@ -60,7 +60,7 @@ class ResponseEvaluatorService:
         )
 
         try:
-            result = await self.gemini.generate_json(
+            result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.3
@@ -105,7 +105,7 @@ class ResponseEvaluatorService:
         )
 
         try:
-            result = await self.gemini.generate_json(
+            result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.3
@@ -186,7 +186,7 @@ class ResponseEvaluatorService:
         system_prompt, user_prompt = get_calculate_communication_score_prompt(all_text[:4000])
 
         try:
-            result = await self.gemini.generate_json(
+            result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.3

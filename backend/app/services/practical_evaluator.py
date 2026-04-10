@@ -5,7 +5,7 @@ from app.models.schemas import (
     AIEvaluation, CriteriaScore, EvaluationCriterion, JobDescription
 )
 from app.models.enums import RoleLevel
-from app.services.gemini_client import get_gemini_service
+from app.services.openai_client import get_openai_service
 from app.prompts import (
     get_generate_tasks_with_ai_prompt,
     get_evaluate_practical_task_submission_prompt
@@ -19,7 +19,7 @@ class PracticalEvaluatorService:
     """
     
     def __init__(self):
-        self.gemini = get_gemini_service()
+        self.openai = get_openai_service()
         
         # Role-specific practical task templates
         self.task_templates = {
@@ -209,7 +209,7 @@ Identify gaps, prioritize them, and recommend solutions.""",
             skills=", ".join(job.must_have_skills)
         )
 
-        result = await self.gemini.generate_json(
+        result = await self.openai.generate_json(
             prompt=user_prompt,
             system_instruction=system_prompt,
             temperature=0.7
@@ -311,7 +311,7 @@ Identify gaps, prioritize them, and recommend solutions.""",
         )
 
         try:
-            result = await self.gemini.generate_json(
+            result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.3

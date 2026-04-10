@@ -3,4 +3,4 @@ from .ats_screening import ATSScreeningService
 from .question_generator import QuestionGeneratorService
 from .response_evaluator import ResponseEvaluatorService
 from .practical_evaluator import PracticalEvaluatorService
-from .gemini_client import GeminiService, get_gemini_service
+from .openai_client import OpenAIService, get_openai_service

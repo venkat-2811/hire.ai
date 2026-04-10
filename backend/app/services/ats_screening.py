@@ -4,7 +4,7 @@ from app.models.schemas import (
     DetailedAnalysis, SkillMatch
 )
 from app.models.enums import ReasonCodeType, SkillRelevance, RoleLevel
-from app.services.gemini_client import get_gemini_service
+from app.services.openai_client import get_openai_service
 import uuid
 from datetime import datetime
 
@@ -16,7 +16,7 @@ class ATSScreeningService:
     """
     
     def __init__(self):
-        self.gemini = get_gemini_service()
+        self.openai = get_openai_service()
         
         # Role-specific skill weights
         # Note: These are legacy weights. New dynamic analysis should ideally imply weights from JD.

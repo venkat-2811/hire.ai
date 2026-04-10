@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import Groq from 'groq-sdk';
+import OpenAI from 'openai';
 import * as jose from 'jose';
 import crypto from 'node:crypto';
 import Busboy from 'busboy';
@@ -213,20 +213,20 @@ async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): 
   throw new Error('AssemblyAI transcription timed out after 120 seconds');
 }
 
-// ============== INLINE: Groq ==============
-let _groq: Groq | null = null;
-function getGroqClient(): Groq {
-  if (!_groq) {
-    const k = process.env.GROQ_API_KEY;
-    if (!k) throw new Error('GROQ_API_KEY not configured');
-    _groq = new Groq({ apiKey: k });
+// ============== INLINE: OpenAI ==============
+let _openai: OpenAI | null = null;
+function getOpenAIClient(): OpenAI {
+  if (!_openai) {
+    const k = process.env.OPENAI_API_KEY;
+    if (!k) throw new Error('OPENAI_API_KEY not configured');
+    _openai = new OpenAI({ apiKey: k });
   }
-  return _groq;
+  return _openai;
 }
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  const client = getGroqClient();
+  const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: 'gpt-4o-mini-2024-07-18',
     messages: [{ role: 'user', content: prompt }],
     temperature: opts.temperature ?? 0.7,
     max_tokens: opts.maxTokens ?? 2048,
@@ -234,10 +234,9 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
   return completion.choices[0]?.message?.content || '';
 }
 async function generateJSON<T>(prompt: string): Promise<T> {
-  const client = getGroqClient();
-  // Use Groq's native JSON mode for reliable JSON output
+  const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: 'gpt-4o-mini-2024-07-18',
     messages: [
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
@@ -250,7 +249,6 @@ async function generateJSON<T>(prompt: string): Promise<T> {
   if (!text) throw new Error('Empty AI response');
   try { return JSON.parse(text) as T; }
   catch (e) {
-    // Fallback: try to extract JSON from response
     let jsonStr = text;
     const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
     if (jsonMatch) jsonStr = jsonMatch[1].trim();
@@ -525,7 +523,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       SUPABASE_SERVICE_KEY: !!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
       CLERK_JWKS_URL: !!process.env.CLERK_JWKS_URL,
       CLERK_ISSUER: !!process.env.CLERK_ISSUER,
-      GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+      OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
       RESEND_API_KEY: !!process.env.RESEND_API_KEY,
       FRONTEND_URL: !!process.env.FRONTEND_URL,
       HACKEREARTH_CLIENT_SECRET: !!process.env.HACKEREARTH_CLIENT_SECRET,

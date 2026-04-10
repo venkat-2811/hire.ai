@@ -6,7 +6,7 @@ from app.models.schemas import (
     ResumeData, JobDescription, InterviewQuestionGenerated, InterviewQuestion
 )
 from app.models.enums import RoleLevel, AssessmentType
-from app.services.gemini_client import get_gemini_service
+from app.services.openai_client import get_openai_service
 from app.prompts import (
     get_technical_questions_prompt,
     get_behavioral_questions_prompt,
@@ -22,7 +22,7 @@ class QuestionGeneratorService:
     """
     
     def __init__(self):
-        self.gemini = get_gemini_service()
+        self.openai = get_openai_service()
         
         
         # Difficulty scaling by level
@@ -132,7 +132,7 @@ class QuestionGeneratorService:
         )
 
         try:
-            result = await self.gemini.generate_json(
+            result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.8
@@ -180,7 +180,7 @@ class QuestionGeneratorService:
         )
 
         try:
-            result = await self.gemini.generate_json(
+            result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7
@@ -225,47 +225,13 @@ class QuestionGeneratorService:
         )
 
         try:
-            from app.config import get_settings
-            import httpx
-            import json
-            
-            settings = get_settings()
-            api_key = settings.gemini_api_key
-            if not api_key:
-                raise RuntimeError("GEMINI_API_KEY not set")
-            
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-            
-            payload = {
-                "contents": [
-                    {
-                        "role": "user",
-                        "parts": [{"text": user_prompt}]
-                    }
-                ],
-                "systemInstruction": {
-                    "role": "model",
-                    "parts": [{"text": system_prompt}]
-                },
-                "generationConfig": {
-                    "temperature": 0.7,
-                    "maxOutputTokens": 8192,
-                    "responseMimeType": "application/json"
-                }
-            }
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, timeout=60.0)
-                
-            if response.status_code != 200:
-                raise RuntimeError(f"Gemini API error: {response.text}")
-                
-            data = response.json()
-            try:
-                content_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                result = json.loads(content_text)
-            except (KeyError, IndexError, json.JSONDecodeError) as e:
-                raise RuntimeError(f"Failed to parse Gemini response: {e}")
+            result = await self.openai.generate_json(
+                prompt=user_prompt,
+                system_instruction=system_prompt,
+                temperature=0.7,
+                max_tokens=8192,
+                raise_on_error=True
+            )
             
             questions = []
             for q in result.get("questions", [])[:count]:
@@ -295,7 +261,7 @@ class QuestionGeneratorService:
                 })
             
             if not questions:
-                raise RuntimeError("Groq returned no valid MCQ questions")
+                raise RuntimeError("OpenAI returned no valid MCQ questions")
 
             return questions
             
@@ -324,7 +290,7 @@ class QuestionGeneratorService:
         )
 
         try:
-            result = await self.gemini.generate_json(
+            result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7,
@@ -349,7 +315,7 @@ class QuestionGeneratorService:
                 })
             
             if not challenges:
-                raise RuntimeError("Groq returned no coding challenges")
+                raise RuntimeError("OpenAI returned no coding challenges")
 
             return challenges
             
