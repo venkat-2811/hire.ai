@@ -17,7 +17,7 @@ from app.prompts import (
 class OpenAIService:
     """Centralized OpenAI API client for all AI operations.
     
-    Internally uses OpenAI with model gpt-4o-mini-2024-07-18.
+    Internally uses OpenAI with model gpt-4.1-mini-2025-04-14.
     """
     
     def __init__(self):
@@ -25,7 +25,7 @@ class OpenAIService:
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is not set")
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self._model_name = "gpt-4o-mini-2024-07-18"
+        self._model_name = "gpt-4.1-mini-2025-04-14"
 
     @property
     def model_name(self) -> str:
