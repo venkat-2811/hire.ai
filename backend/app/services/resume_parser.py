@@ -96,7 +96,7 @@ class ResumeParserService:
                 skills=result.get("skills", []),
                 experience=experience,
                 education=education,
-                summary=result.get("summary", ""),
+                summary=result.get("summary") or "",
                 contact=contact,
                 total_experience_years=float(result.get("total_experience_years", 0)),
                 certifications=result.get("certifications", [])

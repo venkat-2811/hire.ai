@@ -1,175 +1,197 @@
 from typing import Dict, Any
 
 def get_evaluate_response_prompt(question: str, question_type: str, expected_answer: str, candidate_response: str) -> tuple[str, str]:
-    system_instruction = """You are an expert interview evaluator.
-Provide fair, detailed, and constructive feedback."""
+    system_instruction = """You are an expert interview evaluator with advanced analytical capabilities.
+Your role is to provide fair, constructive, and detailed feedback."""
     
-    user_prompt = f"""Evaluate this interview response.
+    user_prompt = f"""Evaluate this interview response with precision and insight.
 
-Question ({question_type}): {question}
+QUESTION DETAILS:
+- Type: {question_type}
+- Question: {question}
+- Expected Answer: {expected_answer}
 
-Expected Answer Points: {expected_answer}
+CANDIDATE RESPONSE:
+{candidate_response}
 
-Candidate's Response: {candidate_response}
+EVALUATION CRITERIA:
+1. RELEVANCE: How well does response address the question?
+2. ACCURACY: Technical correctness and factual accuracy
+3. COMPLETENESS: Thoroughness of the answer
+4. COMMUNICATION: Clarity and articulation
+5. CONFIDENCE: Level of confidence demonstrated
 
-Provide evaluation in this JSON format:
+SCORING GUIDELINES:
+- Score: 1-10 scale
+- Max Score: 10 points
+- Provide specific feedback
+- Identify strengths and improvements
+
+Return JSON:
 {{
     "score": 7,
     "max_score": 10,
-    "feedback": "Detailed feedback",
-    "strengths": ["strength1", "strength2"],
-    "improvements": ["area1", "area2"],
+    "feedback": "Comprehensive evaluation feedback",
+    "strengths": ["specific strength 1", "specific strength 2"],
+    "improvements": ["specific improvement 1", "specific improvement 2"],
     "technical_accuracy": 0.8,
     "communication_score": 0.75,
     "completeness": 0.7
-}}
-"""
+}}"""
+    
     return system_instruction, user_prompt
 
 
 def get_evaluate_practical_submission_prompt(assessment: Dict[str, Any], submission: str) -> tuple[str, str]:
-    system_instruction = """You are an expert code reviewer and evaluator.
-Provide thorough, fair, and constructive evaluation."""
+    system_instruction = """You are an expert code reviewer with advanced evaluation capabilities.
+Your role is to provide thorough, fair, and constructive assessment."""
     
-    user_prompt = f"""Evaluate this practical assessment submission.
+    user_prompt = f"""Evaluate this practical assessment submission with precision.
 
-Assessment:
+ASSESSMENT DETAILS:
 - Title: {assessment.get('title', 'N/A')}
 - Description: {assessment.get('description', 'N/A')}
 - Requirements: {assessment.get('requirements', [])}
 - Evaluation Criteria: {assessment.get('evaluation_criteria', [])}
 
-Candidate's Submission:
+CANDIDATE SUBMISSION:
 {submission}
 
-Provide evaluation in this JSON format:
+EVALUATION STANDARDS:
+1. FUNCTIONALITY: Does code work correctly?
+2. CODE QUALITY: Structure, naming, documentation
+3. EFFICIENCY: Performance and optimization
+4. BEST PRACTICES: Industry standards and patterns
+5. REQUIREMENTS COMPLIANCE: Meets specified criteria
+
+SCORING CRITERIA:
+- Overall Score: 0-100 scale
+- Individual Criteria: Each with specific weight
+- Detailed Feedback: Specific, actionable comments
+- Strengths: Positive aspects to highlight
+- Improvements: Areas for development
+
+Return JSON:
 {{
     "overall_score": 75,
     "max_score": 100,
     "criteria_scores": [
-        {{"criterion": "Code Quality", "score": 20, "max": 25, "feedback": "Good structure"}},
-        {{"criterion": "Correctness", "score": 30, "max": 35, "feedback": "Mostly correct"}}
+        {{"criterion": "Code Quality", "score": 20, "max": 25, "feedback": "Good structure"}}
     ],
+    "detailed_feedback": "Comprehensive evaluation comments",
     "strengths": ["strength1", "strength2"],
-    "improvements": ["improvement1", "improvement2"],
-    "detailed_feedback": "Overall detailed feedback",
-    "code_quality_notes": "Notes on code quality",
-    "would_pass": true
-}}
-"""
+    "improvements": ["improvement1", "improvement2"]
+}}"""
+    
     return system_instruction, user_prompt
 
 def get_evaluate_practical_task_submission_prompt(role: str, criteria_text: str, task_title: str, task_description: str, submitted_content: str, time_taken: str, time_limit: int) -> tuple[str, str]:
-    system_prompt = f"""You are an expert evaluator for {role} practical assessments.
+    system_instruction = """You are an expert evaluator for {role} practical assessments.
+Your role is to provide thorough, fair, and constructive evaluation."""
+    
+    user_prompt = f"""Evaluate this practical task submission with precision.
 
-Evaluate the submission against these criteria:
+TASK DETAILS:
+- Title: {task_title}
+- Description: {task_description}
+- Time Limit: {time_limit} minutes
+- Time Taken: {time_taken}
+- Role: {role}
+
+EVALUATION CRITERIA:
 {criteria_text}
 
-Be fair but thorough. Provide specific, actionable feedback.
-
-Return JSON:
-{{
-    "criteria_scores": [
-        {{
-            "criterion": "Criterion Name",
-            "score": 20,
-            "max_score": 25,
-            "feedback": "Specific feedback for this criterion"
-        }}
-    ],
-    "overall_assessment": "Summary of the submission quality",
-    "suggestions": ["Suggestion 1", "Suggestion 2"]
-}}"""
-
-    user_prompt = f"""Evaluate this submission:
-
-Task: {task_title}
-Description: {task_description}
-
-Submission:
-```
+CANDIDATE SUBMISSION:
 {submitted_content}
 ```
 
 Time taken: {time_taken} seconds
 Time limit: {time_limit} minutes"""
-    return system_prompt, user_prompt
+    return system_instruction, user_prompt
 
 
 def get_evaluate_technical_response_prompt(question_text: str, expected_answer: str, candidate_response: str, time_taken: str, max_score: int) -> tuple[str, str]:
-    system_prompt = """You are an expert technical interviewer evaluating a candidate's response.
-Provide a fair, detailed evaluation based on:
-1. Technical accuracy
-2. Depth of understanding
-3. Practical application
-4. Communication clarity
+    system_instruction = """You are an expert technical interviewer evaluating candidate responses.
+Your role is to provide precise, fair, and constructive feedback."""
+    
+    user_prompt = f"""Evaluate this technical response:
 
-Return JSON:
-{
-    "score": 75,
-    "feedback": "Detailed feedback on the response",
-    "strengths": ["Strength 1", "Strength 2"],
-    "improvements": ["Area for improvement 1", "Area for improvement 2"]
-}
+QUESTION DETAILS:
+- Question: {question_text}
+- Expected Answer: {expected_answer}
+- Time Allowed: {max_score} minutes
+- Time Taken: {time_taken}
 
-Score guidelines:
+CANDIDATE RESPONSE:
+{candidate_response}
+
+SCORING RUBRIC:
 - 90-100: Exceptional, demonstrates expert-level knowledge
 - 75-89: Strong, covers key points with good depth
 - 60-74: Adequate, covers basics but lacks depth
 - 40-59: Partial, some understanding but significant gaps
-- 0-39: Insufficient, major gaps or incorrect information"""
+- 0-39: Insufficient, major gaps or incorrect information
 
-    user_prompt = f"""Evaluate this technical response:
-
-Question: {question_text}
-
-Expected Answer Points: {expected_answer}
-
-Candidate's Response:
-{candidate_response}
-
-Time taken: {time_taken} seconds
-Max score: {max_score}"""
-    return system_prompt, user_prompt
+Return JSON:
+{{
+    "score": 7,
+    "max_score": {max_score},
+    "feedback": "Detailed evaluation feedback",
+    "strengths": ["specific strength 1", "specific strength 2"],
+    "improvements": ["specific improvement 1", "specific improvement 2"],
+    "technical_accuracy": 0.8,
+    "communication_score": 0.75,
+    "completeness": 0.7
+}}"""
+    
+    return system_instruction, user_prompt
 
 
 def get_evaluate_behavioral_response_prompt(question_text: str, competency: str, candidate_response: str) -> tuple[str, str]:
-    system_prompt = """You are an expert behavioral interviewer evaluating responses using the STAR method.
+    system_instruction = """You are an expert behavioral interviewer using STAR evaluation methodology.
+Your role is to provide structured, fair feedback."""
+    
+    user_prompt = f"""Evaluate this behavioral response using STAR method.
 
-Evaluate based on:
-1. Situation: Did they describe a specific context?
-2. Task: Did they explain their responsibility?
-3. Action: Did they detail specific actions THEY took?
-4. Result: Did they share measurable outcomes?
+QUESTION DETAILS:
+- Question: {question_text}
+- Target Competency: {competency}
 
-Also assess:
-- Relevance to the question
-- Communication clarity
-- Self-awareness and reflection
+CANDIDATE RESPONSE:
+{candidate_response}
+
+EVALUATION CRITERIA:
+1. SITUATION: Did they provide specific context?
+2. TASK: Did they explain their responsibility clearly?
+3. ACTION: Did they describe specific actions taken?
+4. RESULT: Did they share measurable outcomes?
+5. COMMUNICATION: Clarity and structure of response
+6. RELEVANCE: Alignment with target competency
+
+SCORING GUIDELINES:
+- Score: 1-10 scale
+- Provide specific feedback
+- Identify STAR components present
+- Highlight strengths and improvement areas
 
 Return JSON:
-{
-    "score": 75,
-    "feedback": "Detailed feedback",
-    "strengths": ["Strength 1"],
-    "improvements": ["Improvement 1"],
-    "star_analysis": {
-        "situation": true,
-        "task": true,
-        "action": true,
-        "result": false
-    }
-}"""
-
-    user_prompt = f"""Evaluate this behavioral response:
-
-Question: {question_text}
-
-Competency being assessed: {competency}
-
-Candidate's Response:
-{candidate_response}"""
-    return system_prompt, user_prompt
+{{
+    "score": 7,
+    "max_score": 10,
+    "feedback": "STAR-based evaluation feedback",
+    "strengths": ["specific strength 1", "specific strength 2"],
+    "improvements": ["specific improvement 1", "specific improvement 2"],
+    "communication_score": 0.75,
+    "completeness": 0.7,
+    "star_components": {{
+        "situation": "present|missing|partial",
+        "task": "present|missing|partial",
+        "action": "present|missing|partial",
+        "result": "present|missing|partial"
+    }}
+}}"""
+    
+    return system_instruction, user_prompt
 
 
 def get_calculate_communication_score_prompt(all_text: str) -> tuple[str, str]:

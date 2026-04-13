@@ -6,46 +6,43 @@ def get_technical_questions_prompt(
     candidate_skills: str, experience_years: float, num_questions: int
 ) -> tuple[str, str]:
     
-    system_prompt = f"""You are an expert technical interviewer for {role} positions.
-Generate unique, challenging technical interview questions based strictly on the Job Description and Skills provided.
+    system_prompt = f"""You are an expert technical interviewer creating advanced interview questions.
+Your role is to generate thoughtful, scenario-based questions that assess deep technical understanding."""
+    
+    user_prompt = f"""Generate {num_questions} unique technical interview questions for a {role} position at {level} level.
 
-Role: {role}
-Level: {level}
-Job Description Summary: {description[:800]}
-Must-Have Skills: {must_have}
-Good-to-Have Skills: {good_to_have}
+CONTEXT:
+- Role: {role}
+- Level: {level}
+- Experience Required: {description[:800]}
+- Must-Have Skills: {must_have}
+- Preferred Skills: {good_to_have}
+- Candidate Background: {candidate_skills} ( {experience_years} years experience)
+- Difficulty Range: {min_diff}-{max_diff} (scale 1-5)
+- Uniqueness Seed: {seed}
 
-Guidelines:
-- Questions must be purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers.
-- Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking.
-- Questions should sound natural in a live audio interview and be answerable verbally (e.g., “How would you approach…”, “What are the trade-offs…”, “Explain how…”).
-- Difficulty should range from {min_diff} to {max_diff} (scale 1-5).
-- Questions should be answerable verbally in 2-5 minutes.
-- Use the seed "{seed}" to ensure uniqueness.
-- Tailor questions to the candidate's background when relevant.
-{previous_q_text}
+QUESTION REQUIREMENTS:
+1. SCENARIO-BASED: Present realistic technical scenarios, not abstract questions
+2. CONCEPTUAL FOCUS: Test understanding, reasoning, and problem-solving approaches
+3. VERBAL-FRIENDLY: Questions answerable in 2-5 minutes verbally
+4. DIFFICULTY PROGRESSION: Mix difficulty levels appropriately
+5. UNIQUE CONTENT: Use seed {seed} to ensure originality
+6. PRACTICAL RELEVANCE: Focus on real-world challenges in this role
+7. NO CODE REQUIREMENTS: Emphasize concepts over syntax
 
-Return a JSON object with this structure:
+Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "The question",
+            "question_text": "Scenario-based technical question",
             "difficulty_level": 3,
-            "expected_answer": "Key points for a good answer",
+            "expected_answer": "Key points for comprehensive answer",
             "time_limit_seconds": 180,
-            "focus_area": "Specific topic being tested"
+            "focus_area": "Technical domain being assessed"
         }}
     ]
 }}"""
-
-    user_prompt = f"""Generate {num_questions} technical interview questions for this candidate.
-
-Candidate Skills: {candidate_skills}
-Experience: {experience_years} years
-Job Description: {description[:500]}
-
-Generate unique questions that assess their fit for this role."""
-
+    
     return system_prompt, user_prompt
 
 
@@ -53,69 +50,85 @@ def get_behavioral_questions_prompt(
     role: str, level: str, experience_context: str, seed: str, num_questions: int
 ) -> tuple[str, str]:
     
-    system_prompt = f"""You are an expert behavioral interviewer.
-Generate STAR-format behavioral questions that assess soft skills and cultural fit.
+    system_prompt = f"""You are an expert behavioral interviewer specializing in professional assessment.
+Your role is to create insightful behavioral questions that evaluate soft skills and cultural fit."""
+    
+    user_prompt = f"""Generate {num_questions} behavioral interview questions for a {role} position at {level} level.
 
-Role: {role}
-Level: {level}
-{experience_context}
+CONTEXT:
+- Role: {role}
+- Level: {level}
+- Candidate Experience: {experience_context}
+- Uniqueness Seed: {seed}
 
-Focus on:
-- Problem-solving approach
-- Communication skills
-- Teamwork and collaboration
-- Handling pressure and deadlines
-- Learning and adaptability
-
-Use seed "{seed}" for uniqueness.
+BEHAVIORAL QUESTION REQUIREMENTS:
+1. SITUATIONAL FOCUS: Present realistic work scenarios
+2. STAR METHOD: Questions should elicit Situation, Task, Action, Result responses
+3. COMPETENCY ASSESSMENT: Evaluate key professional competencies
+4. ROLE RELEVANCE: Tailor scenarios to {role} responsibilities
+5. EXPERIENCE LEVEL: Match questions to {level} seniority
+6. OPEN-ENDED: Encourage detailed, thoughtful responses
+7. CULTURAL FIT: Assess alignment with modern workplace practices
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Tell me about a time when...",
-            "expected_answer": "Look for: specific situation, actions taken, measurable results",
-            "competency": "Problem Solving"
+            "question_text": "Describe a situation where you had to...",
+            "competency": "Leadership|Teamwork|Problem-solving|Communication",
+            "difficulty_level": 3,
+            "time_limit_seconds": 300,
+            "focus_area": "Professional competency being assessed"
         }}
     ]
 }}"""
-
-    user_prompt = f"Generate {num_questions} behavioral questions."
+    
     return system_prompt, user_prompt
 
 
 def get_interview_questions_general_prompt(job_description: Dict[str, Any], resume_data: Dict[str, Any], num_technical: int, num_behavioral: int, difficulty: int) -> tuple[str, str]:
-    system_instruction = """You are an expert technical interviewer conducting an audio-based interview.
-Generate relevant, challenging, and fair interview questions that are purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers."""
+    system_instruction = """You are an expert interview conductor creating comprehensive assessment questions.
+Your role is to generate balanced, relevant questions for fair candidate evaluation."""
     
     user_prompt = f"""Generate interview questions for this candidate and role.
 
-Job:
+JOB DETAILS:
 - Title: {job_description.get('title', 'N/A')}
 - Role: {job_description.get('role', 'N/A')}
 - Level: {job_description.get('level', 'N/A')}
-- Required Skills: {job_description.get('must_have_skills', [])}
+- Description: {job_description.get('description', 'N/A')[:800]}
+- Must-Have Skills: {job_description.get('must_have_skills', [])}
+- Preferred Skills: {job_description.get('good_to_have_skills', [])}
 
-Candidate Skills: {resume_data.get('skills', [])}
-Experience Years: {resume_data.get('total_experience_years', 0)}
+CANDIDATE PROFILE:
+{json.dumps(resume_data, indent=2)}
 
-Generate {num_technical} technical questions and {num_behavioral} behavioral questions.
-Difficulty level: {difficulty}/5
+INTERVIEW REQUIREMENTS:
+- Technical Questions: {num_technical}
+- Behavioral Questions: {num_behavioral}
+- Target Difficulty: {difficulty}/5
+- Focus: Conceptual understanding, not code syntax
+- Format: Discussion-based, verbal-friendly
 
-CRITICAL REQUIREMENT:
-Since these questions will be asked verbally in an audio-based interview, they must strictly be conceptual and discussion-based. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking (e.g., 'How would you approach...', 'Explain how...', 'What are the trade-offs...'). Absolutely NO coding, implementations, or syntax-heavy queries.
+QUESTION STANDARDS:
+1. RELEVANCE: Align with job requirements and candidate background
+2. FAIRNESS: Accessible questions appropriate for experience level
+3. COMPREHENSIVE: Cover key technical and behavioral competencies
+4. UNIQUENESS: Original questions not found elsewhere
+5. CLARITY: Clear, unambiguous questions
 
-Return as JSON array:
-[
-    {{
-        "question_text": "The question",
-        "question_type": "technical",
-        "difficulty_level": 3,
-        "expected_answer": "Key points for ideal answer",
-        "time_limit_seconds": 300,
-        "max_score": 10,
-        "metadata": {{"topic": "Python", "subtopic": "OOP"}}
-    }}
-]
-"""
+Return JSON:
+{{
+    "questions": [
+        {{
+            "question_text": "Comprehensive interview question",
+            "question_type": "technical|behavioral",
+            "difficulty_level": 3,
+            "expected_answer": "Key assessment criteria",
+            "time_limit_seconds": 180,
+            "focus_area": "Domain being evaluated"
+        }}
+    ]
+}}"""
+    
     return system_instruction, user_prompt

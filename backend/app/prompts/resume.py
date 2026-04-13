@@ -3,85 +3,93 @@ from typing import Dict, Any
 from .base import NO_HALLUCINATIONS_RULE
 
 def get_analyze_resume_prompt(resume_text: str) -> tuple[str, str]:
-    system_instruction = """You are an expert, meticulous resume data extraction engine.
-Your sole purpose is to extract structured JSON data faithfully from the provided text WITHOUT any hallucinations or assumptions."""
+    system_instruction = """You are an expert resume analysis AI with advanced natural language processing capabilities.
+Your task is to extract comprehensive, accurate structured data from resumes while maintaining data integrity."""
     
-    user_prompt = f"""Analyze the provided resume and extract information following these strict rules:
+    user_prompt = f"""Analyze the following resume and extract structured information with high precision.
 
-CRITICAL RULES:
-1. {NO_HALLUCINATIONS_RULE}
-2. Skill Normalization: Deduplicate and normalize skills (e.g., combine "Python" and "python" into a single "Python"; standardize variations of frameworks/tools).
-3. Date Formatting: Standardize all dates to exactly "YYYY-MM" format. If day or exact month is missing, estimate cautiously (e.g., "Jan 2020" -> "2020-01", "2021" -> "2021-01"). If a date cannot be determined or is labeled "Present", use `null` for end_date.
-4. Total Experience: The `total_experience_years` field must be logically calculated by summing the total non-overlapping duration of extracted professional experience entries. Do not rely entirely on the candidate's stated summary. 
-5. Explicit Statements Only: Extract only what is explicitly written. Never assume proficiency, education, or experience that is not explicitly stated.
+RESUME TEXT:
+{resume_text}
 
-JSON Format Requirements:
+ANALYSIS REQUIREMENTS:
+1. ACCURACY FIRST: Only extract information that is explicitly stated in the resume
+2. SKILL NORMALIZATION: Standardize skill names (e.g., "Python", "python" → "Python")
+3. EXPERIENCE CALCULATION: Calculate total years from actual work periods, not stated totals
+4. DATE STANDARDIZATION: Convert all dates to YYYY-MM format, use null for uncertain dates
+5. EDUCATION EXTRACTION: Identify degrees, institutions, and graduation years
+6. CONTACT INFORMATION: Extract email, phone, and professional social links
+7. NO HALLUCINATIONS: Never invent skills, experiences, or qualifications
+
+Return valid JSON:
 {{
-    "skills": ["Normalized Skill 1", "Normalized Skill 2"],
+    "skills": ["skill1", "skill2", "skill3"],
     "experience": [
         {{
             "title": "Job Title",
             "company": "Company Name",
-            "duration": "Duration string (e.g., Jan 2020 - Present) or null",
-            "description": "Brief description or null",
-            "start_date": "YYYY-MM or null",
-            "end_date": "YYYY-MM or null"
+            "duration": "Jan 2020 - Present",
+            "description": "Role description with key achievements",
+            "start_date": "2020-01",
+            "end_date": null
         }}
     ],
     "education": [
         {{
-            "degree": "Degree Name or null",
-            "institution": "Institution Name or null",
-            "year": "Graduation Year (YYYY) or null"
+            "degree": "Degree Name",
+            "institution": "Institution Name",
+            "year": "2020"
         }}
     ],
-    "summary": "Brief professional summary or null",
+    "summary": "Professional summary or null",
     "contact": {{
-        "email": "email string or null",
-        "phone": "phone string or null",
-        "linkedin": "linkedin url or null"
+        "email": "email@example.com",
+        "phone": "+1234567890",
+        "linkedin": "linkedin.com/in/username"
     }},
-    "total_experience_years": 0.0,
+    "total_experience_years": 5.5,
     "certifications": ["cert1", "cert2"]
-}}
-
-Resume:
-{resume_text}
-"""
+}}"""
+    
     return system_instruction, user_prompt
 
 
 def get_screen_candidate_prompt(job_description: Dict[str, Any], resume_data: Dict[str, Any]) -> tuple[str, str]:
-    system_instruction = """You are a strictly deterministic Applicant Tracking System (ATS).
-Your core engine provides fair, evidence-based, explainable screening results devoid of hallucinations and subjectivity."""
+    system_instruction = """You are an intelligent applicant evaluation system with advanced analytical capabilities.
+Your purpose is to provide fair, evidence-based candidate screening with transparent scoring."""
     
-    user_prompt = f"""Screen this candidate against the job requirements based strictly on the provided resume data. 
+    user_prompt = f"""Evaluate this candidate against job requirements using evidence-based analysis.
 
-SCORING GUIDELINES (0-100 scale):
-- 90-100: Exceptional match. Exceeds experience relevance, matches all must-have and most good-to-have skills precisely.
-- 75-89: Strong match. Meets experience requirements well and accurately possesses all must-have skills.
-- 60-74: Potential match. Might be slightly under experience criteria or missing 1-2 must-have skills, but exhibits strong potential.
-- Below 60: Poor match. Unmistakably lacks crucial skills or significantly falls short of the duration/relevance of the required experience.
-
-CRITICAL RULES:
-1. Strict Skill Matching: All skills analyzed must have clear evidence backing them. Provide a `match_type` of either "exact" (skill is explicitly written) or "inferred" (strong contextual evidence of skill application without exact keyword). If there is no evidence, mark it as "missing".
-2. Evaluation by Relevance: Experience evaluation MUST consider the actual relevance of the past roles to this specific job, prioritizing depth and relevance over pure cumulative duration.
-3. Logical Shortlisting: To be shortlisted (`shortlisted: true`), the candidate MUST meet a minimum `overall_score` of 65 AND possess at least 70% of the must-have skills with explicit evidence.
-4. {NO_HALLUCINATIONS_RULE} Base the entire analysis truthfully on the provided resume JSON.
-
-Job Requirements:
+JOB REQUIREMENTS:
 - Title: {job_description.get('title', 'N/A')}
 - Role: {job_description.get('role', 'N/A')}
 - Level: {job_description.get('level', 'N/A')}
-- Description: {job_description.get('description', 'N/A')}
-- Must Have Skills: {job_description.get('must_have_skills', [])}
-- Good to Have Skills: {job_description.get('good_to_have_skills', [])}
+- Must-Have Skills: {job_description.get('must_have_skills', [])}
+- Good-to-Have Skills: {job_description.get('good_to_have_skills', [])}
 - Min Experience: {job_description.get('min_experience_years', 0)} years
 
-Candidate Resume Data:
+CANDIDATE DATA:
 {json.dumps(resume_data, indent=2)}
 
-Provide screening results in this exact JSON format:
+EVALUATION CRITERIA:
+1. SKILL ASSESSMENT: Match candidate skills with job requirements
+2. EXPERIENCE RELEVANCE: Evaluate work history relevance to target role
+3. EDUCATION ALIGNMENT: Assess educational background match
+4. OVERALL FIT: Comprehensive evaluation of candidate suitability
+
+SCORING SCALE (0-100):
+- 90-100: Exceptional candidate
+- 80-89: Strong candidate
+- 70-79: Good candidate
+- 60-69: Average candidate
+- Below 60: Below requirements
+
+SCREENING REQUIREMENTS:
+- Provide specific evidence for each assessment
+- Use consistent scoring methodology
+- Include clear shortlist recommendation
+- Support decisions with concrete data points
+
+Return JSON:
 {{
     "overall_score": 75,
     "skill_relevance_score": 80,
@@ -89,7 +97,7 @@ Provide screening results in this exact JSON format:
     "education_score": 75,
     "credibility_score": 85,
     "shortlisted": true,
-    "shortlist_reason": "Provide deterministic reasoning based heavily on scoring thresholds and must-have skill checks.",
+    "shortlist_reason": "Evidence-based recommendation with clear rationale",
     "reason_codes": [
         {{
             "code": "SKILL_MATCH",
@@ -105,15 +113,15 @@ Provide screening results in this exact JSON format:
                 "found": true,
                 "match_type": "exact|inferred|missing",
                 "relevance": "must_have|good_to_have",
-                "evidence": "Quoted evidence from resume or null",
+                "evidence": "Quoted evidence from resume",
                 "confidence": 0.9
             }}
         ],
-        "experience_analysis": "Detailed review of both work duration AND specific relevance to the current role",
-        "education_analysis": "Review of education matching",
-        "career_gap_analysis": "Identification of any gaps or null if none",
-        "credibility_flags": ["Strict anomaly list or empty array"]
+        "experience_analysis": "Detailed relevance evaluation of work history",
+        "education_analysis": "Educational background assessment",
+        "career_gap_analysis": "Gap identification or none",
+        "credibility_flags": ["Specific issues or empty array"]
     }}
-}}
-"""
+}}"""
+    
     return system_instruction, user_prompt

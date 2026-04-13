@@ -209,10 +209,22 @@ class QuestionGeneratorService:
         count: int = 20,
         difficulty: str = "medium"
     ) -> List[dict]:
-        """Generate MCQ questions for technical assessment based on job description."""
+        """Generate MCQ questions for technical assessment based on job description.
         
+        Supports 1-100 questions with quality validation and difficulty adherence.
+        """
+        
+        # Validate count parameter
+        if count < 1:
+            count = 1
+        elif count > 100:
+            count = 100
+            
         must_have_skills = ", ".join(job.must_have_skills)
         good_to_have_skills = ", ".join(job.good_to_have_skills)
+        
+        # Adjust token limit based on question count
+        max_tokens = min(16384, 4096 + (count * 150))
         
         system_prompt, user_prompt = get_mcq_generation_prompt(
             role=job.role,
@@ -229,46 +241,97 @@ class QuestionGeneratorService:
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7,
-                max_tokens=8192,
+                max_tokens=max_tokens,
                 raise_on_error=True
             )
             
             questions = []
-            for q in result.get("questions", [])[:count]:
-                options = q.get("options", [])
-                if not isinstance(options, list):
-                    options = []
-                options = [str(o) for o in options][:4]
-                if len(options) != 4:
-                    continue
-
-                correct_index = q.get("correct_index", 0)
-                try:
-                    correct_index = int(correct_index)
-                except Exception:
-                    correct_index = 0
-                if correct_index < 0 or correct_index > 3:
-                    correct_index = 0
-
-                questions.append({
-                    "id": str(uuid.uuid4()),
-                    "question": q.get("question", ""),
-                    "options": options,
-                    "correct_index": correct_index,
-                    "difficulty": q.get("difficulty", "medium"),
-                    "topic": q.get("topic", "General"),
-                    "points": q.get("points", 5),
-                })
+            generated_questions = result.get("questions", [])
+            
+            # Enhanced validation and quality control
+            for q in generated_questions[:count]:
+                question_data = self._validate_and_format_question(q, difficulty)
+                if question_data:
+                    questions.append(question_data)
+            
+            # If we don't have enough valid questions, try to generate more
+            if len(questions) < count and len(questions) > 0:
+                additional_needed = count - len(questions)
+                print(f"Generated {len(questions)} valid questions, need {additional_needed} more")
+                # Could implement recursive call here or use fallback
             
             if not questions:
-                raise RuntimeError("OpenAI returned no valid MCQ questions")
+                raise RuntimeError(f"Failed to generate any valid MCQ questions for {count} requested")
 
+            print(f"Successfully generated {len(questions)} MCQ questions out of {count} requested")
             return questions
             
         except Exception as e:
             print(f"Error generating MCQ questions: {e}")
-            # Return generic fallback questions
+            # Return fallback questions matching requested count
             return self._get_fallback_mcq_questions(count)
+    
+    def _validate_and_format_question(self, question_data: dict, target_difficulty: str) -> dict:
+        """Validate and format a single MCQ question."""
+        try:
+            # Validate options
+            options = question_data.get("options", [])
+            if not isinstance(options, list) or len(options) != 4:
+                return None
+                
+            # Convert options to strings and ensure uniqueness
+            formatted_options = []
+            seen_options = set()
+            for opt in options[:4]:
+                opt_str = str(opt).strip()
+                if opt_str and opt_str not in seen_options:
+                    formatted_options.append(opt_str)
+                    seen_options.add(opt_str)
+                    
+            if len(formatted_options) != 4:
+                return None
+            
+            # Validate correct index
+            correct_index = question_data.get("correct_index", 0)
+            try:
+                correct_index = int(correct_index)
+                if correct_index < 0 or correct_index > 3:
+                    correct_index = 0
+            except (ValueError, TypeError):
+                correct_index = 0
+            
+            # Validate question text
+            question_text = question_data.get("question", "").strip()
+            if not question_text or len(question_text) < 10:
+                return None
+            
+            # Validate difficulty
+            difficulty = question_data.get("difficulty", target_difficulty)
+            if difficulty not in ["easy", "medium", "hard"]:
+                difficulty = target_difficulty
+            
+            # Validate points
+            points = question_data.get("points", 5)
+            try:
+                points = int(points)
+                if points < 1 or points > 20:
+                    points = 5
+            except (ValueError, TypeError):
+                points = 5
+            
+            return {
+                "id": str(uuid.uuid4()),
+                "question": question_text,
+                "options": formatted_options,
+                "correct_index": correct_index,
+                "difficulty": difficulty,
+                "topic": question_data.get("topic", "General"),
+                "points": points,
+            }
+            
+        except Exception as e:
+            print(f"Question validation failed: {e}")
+            return None
     
     async def generate_coding_challenges(
         self,
@@ -324,49 +387,160 @@ class QuestionGeneratorService:
             return self._get_fallback_coding_challenges(count)
     
     def _get_fallback_mcq_questions(self, count: int) -> List[dict]:
-        """Fallback MCQ questions if AI generation fails."""
-        fallbacks = [
+        """Fallback MCQ questions if AI generation fails. Supports 1-100 questions."""
+        
+        # Expanded fallback pool with diverse topics and difficulties
+        fallback_pool = [
+            # Easy questions
             {
-                "id": str(uuid.uuid4()),
                 "question": "What is the primary purpose of version control systems like Git?",
                 "options": [
                     "To compile code faster",
                     "To track changes and collaborate on code",
-                    "To deploy applications",
+                    "To deploy applications", 
                     "To write documentation"
                 ],
                 "correct_index": 1,
                 "difficulty": "easy",
                 "topic": "Version Control",
-                "points": 5,
+                "points": 3,
             },
             {
-                "id": str(uuid.uuid4()),
                 "question": "Which data structure uses LIFO (Last In, First Out) principle?",
                 "options": ["Queue", "Stack", "Array", "Linked List"],
                 "correct_index": 1,
-                "difficulty": "easy",
+                "difficulty": "easy", 
                 "topic": "Data Structures",
-                "points": 5,
+                "points": 3,
             },
             {
-                "id": str(uuid.uuid4()),
-                "question": "What is the time complexity of binary search?",
+                "question": "What does API stand for in software development?",
+                "options": [
+                    "Application Programming Interface",
+                    "Advanced Programming Integration",
+                    "Automated Process Implementation",
+                    "Application Process Integration"
+                ],
+                "correct_index": 0,
+                "difficulty": "easy",
+                "topic": "Software Development",
+                "points": 3,
+            },
+            {
+                "question": "Which HTTP method is typically used to retrieve data from a server?",
+                "options": ["POST", "GET", "DELETE", "PUT"],
+                "correct_index": 1,
+                "difficulty": "easy",
+                "topic": "Web Development",
+                "points": 3,
+            },
+            # Medium questions
+            {
+                "question": "What is the time complexity of binary search in a sorted array?",
                 "options": ["O(n)", "O(log n)", "O(n²)", "O(1)"],
                 "correct_index": 1,
                 "difficulty": "medium",
                 "topic": "Algorithms",
-                "points": 10,
+                "points": 5,
             },
+            {
+                "question": "Which principle states that software entities should be open for extension but closed for modification?",
+                "options": [
+                    "DRY (Don't Repeat Yourself)",
+                    "SOLID (Open/Closed Principle)",
+                    "KISS (Keep It Simple, Stupid)",
+                    "YAGNI (You Aren't Gonna Need It)"
+                ],
+                "correct_index": 1,
+                "difficulty": "medium",
+                "topic": "Software Design",
+                "points": 5,
+            },
+            {
+                "question": "In object-oriented programming, what is encapsulation?",
+                "options": [
+                    "The ability of a class to inherit from multiple classes",
+                    "Bundling data and methods that operate on that data",
+                    "The process of converting objects to strings",
+                    "Creating multiple methods with the same name"
+                ],
+                "correct_index": 1,
+                "difficulty": "medium",
+                "topic": "Object-Oriented Programming",
+                "points": 5,
+            },
+            {
+                "question": "What is the primary benefit of using containerization with Docker?",
+                "options": [
+                    "Automatic code compilation",
+                    "Consistent environments across development and production",
+                    "Built-in version control",
+                    "Enhanced security by default"
+                ],
+                "correct_index": 1,
+                "difficulty": "medium",
+                "topic": "DevOps",
+                "points": 5,
+            },
+            # Hard questions
+            {
+                "question": "In distributed systems, what does the CAP theorem state about consistency, availability, and partition tolerance?",
+                "options": [
+                    "You can only have all three simultaneously",
+                    "You can have any two of the three properties simultaneously",
+                    "You must choose between consistency and availability only",
+                    "Partition tolerance is optional in most systems"
+                ],
+                "correct_index": 1,
+                "difficulty": "hard",
+                "topic": "Distributed Systems",
+                "points": 8,
+            },
+            {
+                "question": "What is the primary difference between NoSQL and SQL databases regarding data consistency?",
+                "options": [
+                    "NoSQL databases don't support any consistency guarantees",
+                    "NoSQL typically prioritizes availability over strict consistency",
+                    "SQL databases are always faster than NoSQL databases",
+                    "NoSQL databases cannot handle transactions"
+                ],
+                "correct_index": 1,
+                "difficulty": "hard",
+                "topic": "Databases",
+                "points": 8,
+            },
+            {
+                "question": "In microservices architecture, what pattern helps manage service discovery and load balancing?",
+                "options": [
+                    "Circuit Breaker Pattern",
+                    "API Gateway Pattern",
+                    "Event Sourcing Pattern",
+                    "CQRS Pattern"
+                ],
+                "correct_index": 1,
+                "difficulty": "hard",
+                "topic": "Software Architecture",
+                "points": 8,
+            }
         ]
         
-        # Repeat to reach count
+        # Shuffle and select requested count
+        import random
+        random.shuffle(fallback_pool)
+        
         result = []
+        for i in range(min(count, len(fallback_pool))):
+            question = fallback_pool[i].copy()
+            question["id"] = str(uuid.uuid4())
+            result.append(question)
+        
+        # If more questions needed than in pool, repeat with variations
         while len(result) < count:
-            for q in fallbacks:
-                if len(result) >= count:
-                    break
-                result.append(q.copy())
+            base_question = fallback_pool[len(result) % len(fallback_pool)]
+            question = base_question.copy()
+            question["id"] = str(uuid.uuid4())
+            question["question"] = f"[Variation {len(result)+1}] {question['question']}"
+            result.append(question)
         
         return result[:count]
     
