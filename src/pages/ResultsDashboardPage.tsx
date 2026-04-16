@@ -399,8 +399,14 @@ export default function ResultsDashboardPage() {
   };
 
   const handleSendOfferLetter = async () => {
-    if (!offerLetterCandidate || !selectedJobId) return;
+    if (!offerLetterCandidate) return;
     if (!validateOfferForm()) return;
+
+    const resolvedJobId = selectedJobId || offerLetterCandidate.job_id || '';
+    if (!resolvedJobId) {
+      toast.error('Please select a job first');
+      return;
+    }
 
     setSendingOfferLetter(true);
     try {
@@ -425,10 +431,15 @@ export default function ResultsDashboardPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
+          // Send both snake_case and camelCase to be resilient to API expectations.
           candidate_id: offerLetterCandidate.candidate_id,
-          job_id: selectedJobId,
+          candidateId: offerLetterCandidate.candidate_id,
+          job_id: resolvedJobId,
+          jobId: resolvedJobId,
           company_name: companyName,
+          companyName,
           pdf_base64: pdfBase64,
+          pdfBase64: pdfBase64,
         }),
       });
 

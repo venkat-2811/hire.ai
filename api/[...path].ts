@@ -1508,9 +1508,14 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       const user = await requireAuth(req, res);
       if (!user) return;
 
-      const { candidate_id, job_id, company_name, pdf_base64 } = req.body as any;
+      const body = (req.body || {}) as any;
+      const candidate_id = body.candidate_id ?? body.candidateId;
+      const job_id = body.job_id ?? body.jobId;
+      const company_name = body.company_name ?? body.companyName;
+      const pdf_base64 = body.pdf_base64 ?? body.pdfBase64;
+
       if (!candidate_id || !job_id || !pdf_base64) {
-        return badRequest(res, 'candidate_id, job_id, and pdf_base64 are required');
+        return badRequest(res, `candidate_id, job_id, and pdf_base64 are required (received candidate_id=${Boolean(candidate_id)}, job_id=${Boolean(job_id)}, pdf_base64=${Boolean(pdf_base64)})`);
       }
 
       const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
