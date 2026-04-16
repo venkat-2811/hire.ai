@@ -265,13 +265,17 @@ async function generateJSON<T>(prompt: string): Promise<T> {
 }
 
 // ============== INLINE: Email ==============
-async function sendEmail(to: string, subject: string, html: string) {
+async function sendEmail(to: string, subject: string, html: string, attachments?: any[]) {
   const k = process.env.RESEND_API_KEY;
   if (!k) { console.warn('RESEND_API_KEY missing, skipping email'); return; }
+  
+  const payload: any = { from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev', to, subject, html };
+  if (attachments) payload.attachments = attachments;
+
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${k}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev', to, subject, html }),
+    body: JSON.stringify(payload),
   });
   if (!r.ok) throw new Error(`Email failed: ${await r.text()}`);
 }
@@ -382,6 +386,55 @@ async function sendRejectionEmail(to: string, name: string, job: string) {
 </body>
 </html>`;
   await sendEmail(to, `Update on your application — ${job}`, html);
+}
+
+async function sendOfferLetterEmail(
+  to: string,
+  candidateName: string,
+  jobTitle: string,
+  companyName: string,
+  pdfBase64: string
+) {
+  const html = `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; border-radius: 8px; overflow: hidden;">
+      <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 32px 40px;">
+          <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 700;">${companyName}</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 14px;">Talent Acquisition Team</p>
+      </div>
+      <div style="padding: 32px 40px;">
+          <h2 style="color: #1a1a2e; margin-top: 0;">🎉 Congratulations, ${candidateName}!</h2>
+          <p style="color: #444; line-height: 1.6;">
+              We are delighted to extend a formal offer of employment to you for the position of
+              <strong>${jobTitle}</strong> at <strong>${companyName}</strong>.
+          </p>
+          <p style="color: #444; line-height: 1.6;">
+              Please find your <strong>Offer Letter</strong> attached to this email as a PDF document.
+          </p>
+          <div style="background: #f0f4ff; border-left: 4px solid #6366f1; padding: 16px 20px; border-radius: 4px; margin: 24px 0;">
+              <p style="margin: 0; color: #4f46e5; font-weight: 600;">📋 Next Steps</p>
+              <ul style="margin: 10px 0 0 0; padding-left: 18px; color: #444; line-height: 1.8;">
+                  <li>Review the attached offer letter carefully</li>
+                  <li>If you accept, please reply to this email confirming your acceptance</li>
+                  <li>Our HR team will follow up with onboarding details</li>
+              </ul>
+          </div>
+          <p style="color: #444; margin-bottom: 0;">
+              Warm regards,<br/>
+              <strong>Talent Acquisition Team</strong><br/>
+              ${companyName}
+          </p>
+      </div>
+  </div>`;
+  
+  const attachments = [
+    {
+      filename: `Offer_Letter_${candidateName.replace(/\s+/g, '_')}.pdf`,
+      content: pdfBase64,
+      content_type: 'application/pdf',
+    }
+  ];
+
+  await sendEmail(to, `Formal Offer Letter – ${jobTitle} at ${companyName}`, html, attachments);
 }
 
 // ============== Helpers ==============
@@ -1448,6 +1501,34 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       }
 
       return ok(res, { success: emailsSent > 0, emails_sent: emailsSent, error_messages: errorMessages });
+    }
+
+    // POST /api/candidates/send-offer-letter
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'send-offer-letter') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const { candidate_id, job_id, company_name, pdf_base64 } = req.body as any;
+      if (!candidate_id || !job_id || !pdf_base64) {
+        return badRequest(res, 'candidate_id, job_id, and pdf_base64 are required');
+      }
+
+      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      const { data: candidate } = await supabase.from('candidates').select('id, email, full_name').eq('id', candidate_id).single();
+      if (!candidate) return notFound(res, 'Candidate not found');
+
+      try {
+        await sendOfferLetterEmail(candidate.email, candidate.full_name, job.title, company_name || 'Our Company', pdf_base64);
+        
+        // Update job_applications status
+        await supabase.from('job_applications').update({ final_status: 'offer_sent' }).eq('candidate_id', candidate_id).eq('job_id', job_id);
+
+        return ok(res, { success: true, message: 'Offer letter sent successfully' });
+      } catch (e: any) {
+        return res.status(500).json({ error: `Failed to send offer letter: ${e.message}` });
+      }
     }
 
     if (segments.length === 2) {

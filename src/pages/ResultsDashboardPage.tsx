@@ -407,6 +407,17 @@ export default function ResultsDashboardPage() {
       const token = await getToken();
       const companyName = profile?.company_name || 'Our Company';
 
+      // Generate the PDF as base64 on the client
+      const pdfBase64 = PDFExportService.generateOfferLetterBase64(
+        offerLetterCandidate.candidate_name,
+        offerLetterCandidate.job_title,
+        companyName,
+        offerLetterForm.offered_salary.trim(),
+        offerLetterForm.start_date.trim() || undefined,
+        offerLetterForm.reporting_manager.trim() || undefined,
+        offerLetterForm.location.trim() || undefined
+      );
+
       const response = await fetch(`${API_BASE_URL}/candidates/send-offer-letter`, {
         method: 'POST',
         headers: {
@@ -416,11 +427,8 @@ export default function ResultsDashboardPage() {
         body: JSON.stringify({
           candidate_id: offerLetterCandidate.candidate_id,
           job_id: selectedJobId,
-          offered_salary: offerLetterForm.offered_salary.trim(),
-          start_date: offerLetterForm.start_date.trim() || undefined,
-          reporting_manager: offerLetterForm.reporting_manager.trim() || undefined,
-          location: offerLetterForm.location.trim() || undefined,
           company_name: companyName,
+          pdf_base64: pdfBase64,
         }),
       });
 
@@ -844,8 +852,8 @@ export default function ResultsDashboardPage() {
                                           onClick={() => openOfferLetterDialog(candidate)}
                                           className={
                                             isOfferSent
-                                              ? 'border-indigo-300 text-indigo-600 hover:bg-indigo-50'
-                                              : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-sm'
+                                              ? 'border-primary/50 text-primary hover:bg-primary/10'
+                                              : 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
                                           }
                                         >
                                           <SendHorizonal className="h-3.5 w-3.5 mr-1.5" />
@@ -1055,7 +1063,7 @@ export default function ResultsDashboardPage() {
                     <Button
                       onClick={handleSendOfferLetter}
                       disabled={sendingOfferLetter}
-                      className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white"
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
                     >
                       {sendingOfferLetter ? (
                         <>

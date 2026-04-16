@@ -167,5 +167,199 @@ export const PDFExportService = {
 
         const fileName = `${candidate.full_name.replace(/\s+/g, '_')}_Report.pdf`;
         doc.save(fileName);
+    },
+
+    generateOfferLetterBase64: (
+        candidateName: string,
+        jobTitle: string,
+        companyName: string,
+        offeredSalary: string,
+        startDate?: string,
+        reportingManager?: string,
+        location?: string
+    ): string => {
+        const doc = new jsPDF();
+        
+        // Brand Setup
+        const brandColor: [number, number, number] = [79, 70, 229]; // Indigo-600
+        
+        // Header
+        doc.setFontSize(22);
+        doc.setTextColor(...brandColor);
+        doc.text(companyName, 14, 25);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text('Talent Acquisition · People & Culture', 14, 32);
+        
+        doc.setDrawColor(...brandColor);
+        doc.setLineWidth(0.8);
+        doc.line(14, 38, 196, 38);
+        
+        // Title
+        doc.setFontSize(18);
+        doc.setTextColor(20);
+        doc.text('OFFER OF EMPLOYMENT', 105, 52, { align: 'center' });
+        
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        const today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        doc.text(`Date: ${today}`, 105, 60, { align: 'center' });
+        
+        // Greeting
+        let startY = 75;
+        doc.setFontSize(11);
+        doc.setTextColor(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Dear ${candidateName},`, 14, startY);
+        
+        startY += 8;
+        doc.setFont('helvetica', 'normal');
+        const introText = `We are delighted to offer you the position of ${jobTitle} at ${companyName}. After a thorough review of your qualifications and your outstanding performance throughout our hiring process, we believe you will be a valuable addition to our team. This letter outlines the terms and conditions of your employment.`;
+        const splitIntro = doc.splitTextToSize(introText, 180);
+        doc.text(splitIntro, 14, startY);
+        startY += (splitIntro.length * 6) + 5;
+        
+        // Section: Employment Details
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...brandColor);
+        doc.text('1. Employment Details', 14, startY);
+        startY += 5;
+        
+        doc.setDrawColor(200);
+        doc.setLineWidth(0.2);
+        doc.line(14, startY, 196, startY);
+        startY += 5;
+        
+        autoTable(doc, {
+            startY: startY,
+            body: [
+                ['Position', jobTitle],
+                ['Department', 'As Applicable'],
+                ['Location', location || 'As Agreed'],
+                ['Reporting To', reportingManager || '[To be communicated]'],
+                ['Proposed Start Date', startDate || '[To be communicated]'],
+                ['Employment Type', 'Full-Time, Permanent']
+            ],
+            theme: 'grid',
+            styles: { fontSize: 10, cellPadding: 4, textColor: [30, 30, 30] },
+            columnStyles: {
+                0: { fontStyle: 'bold', fillColor: [240, 244, 255] as [number, number, number], cellWidth: 50 },
+                1: { cellWidth: 130 } // 130 instead of 132 for better margin
+            },
+            margin: { left: 14, right: 14 }
+        });
+        
+        startY = (doc as any).lastAutoTable.finalY + 10;
+        
+        // Section: Compensation
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...brandColor);
+        doc.text('2. Compensation & Benefits', 14, startY);
+        startY += 5;
+        doc.line(14, startY, 196, startY);
+        startY += 5;
+        
+        autoTable(doc, {
+            startY: startY,
+            body: [
+                ['Offered Salary (CTC)', offeredSalary],
+                ['Pay Frequency', 'Monthly']
+            ],
+            theme: 'grid',
+            styles: { fontSize: 10, cellPadding: 4, textColor: [30, 30, 30] },
+            columnStyles: {
+                0: { fontStyle: 'bold', fillColor: [240, 244, 255] as [number, number, number], cellWidth: 50 },
+                1: { cellWidth: 130 }
+            },
+            margin: { left: 14, right: 14 }
+        });
+        
+        startY = (doc as any).lastAutoTable.finalY + 8;
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text('Additional benefits including health insurance, paid leave, and performance bonuses will be detailed in the Employee Handbook provided during onboarding.', 14, startY, { maxWidth: 180 });
+        startY += 15;
+        
+        // Ensure space for terms
+        if (startY > 230) {
+            doc.addPage();
+            startY = 20;
+        }
+        
+        // Terms
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(...brandColor);
+        doc.text('3. General Employment Terms', 14, startY);
+        startY += 5;
+        doc.line(14, startY, 196, startY);
+        startY += 6;
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(20);
+        const terms = [
+            "Probationary Period: Your first 90 days of employment shall constitute a probationary period.",
+            "Working Hours: Standard working hours are 9:00 AM – 6:00 PM, Monday through Friday.",
+            "Leave Entitlement: You are entitled to paid annual leave, sick leave, and public holidays as per policy.",
+            "Confidentiality: You agree to maintain strict confidentiality of all company proprietary information."
+        ];
+        
+        terms.forEach(term => {
+            const split = doc.splitTextToSize(`• ${term}`, 180);
+            doc.text(split, 14, startY);
+            startY += (split.length * 5) + 2;
+        });
+        
+        startY += 12;
+        
+        // Signature Block
+        // Avoid page break inside signature
+        if (startY > 240) {
+             doc.addPage();
+             startY = 20;
+        }
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...brandColor);
+        doc.text('4. Acceptance of Offer', 14, startY);
+        startY += 5;
+        doc.line(14, startY, 196, startY);
+        startY += 6;
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(20);
+        doc.text("Please confirm your acceptance of this offer by replying to the offer email within 7 business days.", 14, startY, { maxWidth: 180 });
+        startY += 25;
+        
+        doc.line(14, startY, 196, startY);
+        
+        startY += 5;
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text('For the Company', 14, startY);
+        doc.text('Candidate Acknowledgement', 110, startY);
+        
+        startY += 15;
+        doc.setFontSize(10);
+        doc.setTextColor(20);
+        doc.text('________________________', 14, startY);
+        doc.text('________________________', 110, startY);
+        
+        startY += 5;
+        doc.text(`Authorised Signatory\n${companyName}`, 14, startY);
+        doc.text(`${candidateName}\nDate: _________________`, 110, startY);
+        
+        // Footer (Bottom of page always)
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        const footerY = 285;
+        doc.text(`This document is confidential. © ${new Date().getFullYear()} ${companyName}. All rights reserved.`, 105, footerY, { align: 'center' });
+        
+        // Extract base64 without the 'data:application/pdf;base64,' prefix
+        const dataUri = doc.output('datauristring');
+        return dataUri.split(',')[1];
     }
 };
