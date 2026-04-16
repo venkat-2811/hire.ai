@@ -191,7 +191,7 @@ async def get_candidate_analytics(
         if recommendation and interview_recommendation:
             if interview_recommendation != recommendation.value:
                 continue
-        
+
         analytics.append(CandidateAnalytics(
             candidate_id=row["id"],
             candidate_name=row["full_name"],
@@ -203,10 +203,30 @@ async def get_candidate_analytics(
             technical_score=interview_technical,
             overall_score=interview_overall,
             recommendation=HireRecommendation(interview_recommendation) if interview_recommendation else None,
-            shortlisted=latest_screening.get("shortlisted") if latest_screening else None
+            shortlisted=latest_screening.get("shortlisted") if latest_screening else None,
+            final_status=None,  # will be backfilled below
         ))
     
+    # Backfill final_status from job_applications for accepted/offer_sent candidates
+    if analytics and job_id:
+        candidate_ids = [a.candidate_id for a in analytics]
+        try:
+            apps_result = supabase.table("job_applications").select(
+                "candidate_id, final_status"
+            ).in_("candidate_id", candidate_ids).eq("job_id", job_id).execute()
+            
+            final_status_map = {
+                app["candidate_id"]: app.get("final_status")
+                for app in (apps_result.data or [])
+            }
+            
+            for item in analytics:
+                item.final_status = final_status_map.get(item.candidate_id)
+        except Exception as e:
+            print(f"Failed to fetch final_status from job_applications: {e}")
+    
     return analytics
+
 
 
 @router.get("/job/{job_id}/summary")

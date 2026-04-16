@@ -237,6 +237,7 @@ export interface CandidateAnalytics {
   job_title: string;
   job_id?: string;
   application_status?: string;
+  final_status?: string | null;
   ats_score: number | null;
   shortlisted?: boolean | null;
   assessment_score: number | null;

@@ -335,10 +335,11 @@ class CandidateAnalytics(BaseModel):
     assessment_score: Optional[float] = None
     interview_score: Optional[float] = None
     interview_status: InterviewStatus
-    technical_score: Optional[float] = None  # form interview
-    overall_score: Optional[float] = None    # form interview
+    technical_score: Optional[float] = None  # from interview
+    overall_score: Optional[float] = None    # from interview
     recommendation: Optional[HireRecommendation] = None
     shortlisted: Optional[bool] = None
+    final_status: Optional[str] = None  # from job_applications (accepted, offer_sent, etc.)
 
 
 # ============== API Responses ==============

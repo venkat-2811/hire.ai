@@ -2,6 +2,7 @@
 Email service using Resend API for sending transactional emails.
 """
 import httpx
+import base64
 from typing import Optional, List
 from app.config import get_settings
 
@@ -197,6 +198,120 @@ class EmailService:
         </div>
         """
         return await self.send_email(to, subject, html)
+
+    async def send_email_with_attachment(
+        self,
+        to: str | List[str],
+        subject: str,
+        html: str,
+        attachment_content: bytes,
+        attachment_filename: str,
+        attachment_content_type: str = "application/pdf",
+        text: Optional[str] = None,
+    ) -> dict:
+        """Send an email with a single file attachment using Resend API."""
+        if not self.api_key:
+            raise RuntimeError("RESEND_API_KEY is not configured")
+
+        recipients = [to] if isinstance(to, str) else to
+
+        payload = {
+            "from": self.from_email,
+            "to": recipients,
+            "subject": subject,
+            "html": html,
+            "attachments": [
+                {
+                    "filename": attachment_filename,
+                    "content": base64.b64encode(attachment_content).decode("utf-8"),
+                    "content_type": attachment_content_type,
+                }
+            ],
+        }
+
+        if text:
+            payload["text"] = text
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.BASE_URL}/emails",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=60.0,
+            )
+
+            if response.status_code >= 400:
+                raise RuntimeError(f"Resend API error: {response.status_code} - {response.text}")
+
+            return response.json()
+
+    async def send_offer_letter_email(
+        self,
+        to: str,
+        candidate_name: str,
+        job_title: str,
+        company_name: str,
+        pdf_bytes: bytes,
+    ) -> dict:
+        """Send formal offer letter email with PDF attachment."""
+        subject = f"Formal Offer Letter – {job_title} at {company_name}"
+        html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; border-radius: 8px; overflow: hidden;">
+            <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 32px 40px;">
+                <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 700;">{company_name}</h1>
+                <p style="color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 14px;">Talent Acquisition Team</p>
+            </div>
+            <div style="padding: 32px 40px;">
+                <h2 style="color: #1a1a2e; margin-top: 0;">🎉 Congratulations, {candidate_name}!</h2>
+                <p style="color: #444; line-height: 1.6;">
+                    We are delighted to extend a formal offer of employment to you for the position of
+                    <strong>{job_title}</strong> at <strong>{company_name}</strong>.
+                </p>
+                <p style="color: #444; line-height: 1.6;">
+                    Please find your <strong>Offer Letter</strong> attached to this email as a PDF document.
+                    It contains all the details of your employment, including your compensation, start date,
+                    reporting structure, and key policies.
+                </p>
+                <div style="background: #f0f4ff; border-left: 4px solid #6366f1; padding: 16px 20px; border-radius: 4px; margin: 24px 0;">
+                    <p style="margin: 0; color: #4f46e5; font-weight: 600;">📋 Next Steps</p>
+                    <ul style="margin: 10px 0 0 0; padding-left: 18px; color: #444; line-height: 1.8;">
+                        <li>Review the attached offer letter carefully</li>
+                        <li>If you accept, please reply to this email confirming your acceptance</li>
+                        <li>Our HR team will follow up with onboarding details</li>
+                    </ul>
+                </div>
+                <p style="color: #444; line-height: 1.6;">
+                    If you have any questions or need clarification on any aspect of the offer,
+                    please do not hesitate to reach out to us.
+                </p>
+                <p style="color: #444;">
+                    We look forward to welcoming you to the team!
+                </p>
+                <p style="color: #444; margin-bottom: 0;">
+                    Warm regards,<br/>
+                    <strong>Talent Acquisition Team</strong><br/>
+                    {company_name}
+                </p>
+            </div>
+            <div style="background: #f0f0f0; padding: 16px 40px; text-align: center;">
+                <p style="color: #888; font-size: 12px; margin: 0;">
+                    This is a confidential communication. If you received this in error, please notify us immediately.
+                </p>
+            </div>
+        </div>
+        """
+        filename = f"Offer_Letter_{candidate_name.replace(' ', '_')}.pdf"
+        return await self.send_email_with_attachment(
+            to=to,
+            subject=subject,
+            html=html,
+            attachment_content=pdf_bytes,
+            attachment_filename=filename,
+            attachment_content_type="application/pdf",
+        )
 
 
 _email_service: Optional[EmailService] = None

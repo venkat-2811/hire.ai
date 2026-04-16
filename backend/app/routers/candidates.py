@@ -397,6 +397,109 @@ async def bulk_delete_candidates(candidate_ids: List[str]):
     return {"success": True, "deleted": deleted}
 
 
+class SendOfferLetterRequest(BaseModel):
+    candidate_id: str
+    job_id: str
+    offered_salary: str
+    start_date: Optional[str] = None
+    reporting_manager: Optional[str] = None
+    location: Optional[str] = None
+    company_name: Optional[str] = None
+
+
+class SendOfferLetterResponse(BaseModel):
+    success: bool
+    message: str
+
+
+@router.post("/send-offer-letter", response_model=SendOfferLetterResponse)
+async def send_offer_letter(request: SendOfferLetterRequest):
+    """
+    Generate a PDF offer letter and email it to a single candidate.
+    Requires the acceptance email to have been sent first (final_status = 'accepted').
+    """
+    from app.services.email_service import get_email_service
+    from app.services.offer_letter_service import generate_offer_letter_pdf
+
+    supabase = get_supabase_admin_client()
+    email_service = get_email_service()
+
+    # Validate that the candidate was formally accepted
+    app_result = supabase.table("job_applications").select(
+        "final_status"
+    ).eq("candidate_id", request.candidate_id).eq("job_id", request.job_id).execute()
+
+    if not app_result.data:
+        raise HTTPException(
+            status_code=404,
+            detail="No job application found for this candidate and job."
+        )
+
+    final_status = app_result.data[0].get("final_status")
+    if final_status not in ("accepted", "offer_sent"):
+        raise HTTPException(
+            status_code=400,
+            detail="Offer letter can only be sent after the candidate has been formally accepted."
+        )
+
+    # Get candidate details
+    candidate_result = supabase.table("candidates").select(
+        "id, email, full_name"
+    ).eq("id", request.candidate_id).single().execute()
+
+    if not candidate_result.data:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    candidate = candidate_result.data
+
+    # Get job details for title
+    job_result = supabase.table("job_descriptions").select("title").eq("id", request.job_id).execute()
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_title = job_result.data[0]["title"]
+    company_name = request.company_name or "Our Company"
+
+    try:
+        # Generate the PDF
+        pdf_bytes = generate_offer_letter_pdf(
+            candidate_name=candidate["full_name"],
+            candidate_email=candidate["email"],
+            job_title=job_title,
+            company_name=company_name,
+            offered_salary=request.offered_salary,
+            start_date=request.start_date,
+            reporting_manager=request.reporting_manager,
+            location=request.location,
+        )
+
+        # Send the email with attachment
+        await email_service.send_offer_letter_email(
+            to=candidate["email"],
+            candidate_name=candidate["full_name"],
+            job_title=job_title,
+            company_name=company_name,
+            pdf_bytes=pdf_bytes,
+        )
+
+        # Update the application status to offer_sent
+        supabase.table("job_applications").update({
+            "final_status": "offer_sent"
+        }).eq("candidate_id", request.candidate_id).eq("job_id", request.job_id).execute()
+
+        return SendOfferLetterResponse(
+            success=True,
+            message=f"Offer letter sent successfully to {candidate['email']}"
+        )
+
+    except Exception as e:
+        print(f"Failed to send offer letter to {candidate['email']}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send offer letter: {str(e)}"
+        )
+
+
 def _row_to_candidate(row: dict, job_id: str = None) -> Candidate:
     """Convert database row to Candidate model."""
     parsed_data = None
