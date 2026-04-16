@@ -83,7 +83,7 @@ export default function EditJobPage() {
       toast.success('Job updated successfully');
       navigate(`/jobs/${jobId}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update job');
+      toast.error(e instanceof Error ? e.message : 'Failed to update a job');
     } finally {
       setSaving(false);
     }
