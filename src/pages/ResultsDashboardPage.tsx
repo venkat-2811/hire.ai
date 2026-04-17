@@ -75,6 +75,7 @@ type SortOrder = 'asc' | 'desc';
 
 // Offer letter form state
 interface OfferLetterForm {
+  company_name: string;
   offered_salary: string;
   start_date: string;
   reporting_manager: string;
@@ -82,6 +83,7 @@ interface OfferLetterForm {
 }
 
 const emptyOfferForm: OfferLetterForm = {
+  company_name: '',
   offered_salary: '',
   start_date: '',
   reporting_manager: '',
@@ -384,14 +386,17 @@ export default function ResultsDashboardPage() {
 
   const openOfferLetterDialog = (candidate: CandidateAnalytics) => {
     setOfferLetterCandidate(candidate);
-    setOfferLetterForm(emptyOfferForm);
+    setOfferLetterForm({ ...emptyOfferForm, company_name: profile?.company_name || '' });
     setOfferFormErrors({});
     setOfferLetterDialogOpen(true);
   };
 
   const validateOfferForm = (): boolean => {
     const errors: Partial<OfferLetterForm> = {};
-    if (!offerLetterForm.offered_salary.trim()) {
+    if (!offerLetterForm.company_name?.trim()) {
+      errors.company_name = 'Company Name is required to send the offer letter';
+    }
+    if (!offerLetterForm.offered_salary?.trim()) {
       errors.offered_salary = 'Offered salary is required';
     }
     setOfferFormErrors(errors);
@@ -411,18 +416,7 @@ export default function ResultsDashboardPage() {
     setSendingOfferLetter(true);
     try {
       const token = await getToken();
-      const companyName = profile?.company_name || 'Our Company';
-
-      // Generate the PDF as base64 on the client
-      const pdfBase64 = PDFExportService.generateOfferLetterBase64(
-        offerLetterCandidate.candidate_name,
-        offerLetterCandidate.job_title,
-        companyName,
-        offerLetterForm.offered_salary.trim(),
-        offerLetterForm.start_date.trim() || undefined,
-        offerLetterForm.reporting_manager.trim() || undefined,
-        offerLetterForm.location.trim() || undefined
-      );
+      const companyName = offerLetterForm.company_name.trim();
 
       const response = await fetch(`${API_BASE_URL}/candidates/send-offer-letter`, {
         method: 'POST',
@@ -440,6 +434,10 @@ export default function ResultsDashboardPage() {
           companyName,
           pdf_base64: pdfBase64,
           pdfBase64: pdfBase64,
+          offered_salary: offerLetterForm.offered_salary.trim(),
+          start_date: offerLetterForm.start_date.trim() || undefined,
+          reporting_manager: offerLetterForm.reporting_manager.trim() || undefined,
+          location: offerLetterForm.location.trim() || undefined,
         }),
       });
 
@@ -852,55 +850,30 @@ export default function ResultsDashboardPage() {
                                     <Eye className="h-4 w-4" />
                                   </Button>
 
-                                  {/* Send Offer Letter — gated by acceptance */}
-                                  {isAccepted ? (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          id={`offer-letter-btn-${candidate.candidate_id}`}
-                                          variant={isOfferSent ? 'outline' : 'default'}
-                                          size="sm"
-                                          onClick={() => openOfferLetterDialog(candidate)}
-                                          className={
-                                            isOfferSent
-                                              ? 'border-primary/50 text-primary hover:bg-primary/10'
-                                              : 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
-                                          }
-                                        >
-                                          <SendHorizonal className="h-3.5 w-3.5 mr-1.5" />
-                                          {isOfferSent ? 'Resend Offer' : 'Send Offer Letter'}
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        {isOfferSent
-                                          ? 'Offer letter already sent. Click to resend.'
-                                          : 'Generate & send a formal offer letter with PDF attachment'}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  ) : (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span tabIndex={0}>
-                                          <Button
-                                            size="sm"
-                                            disabled
-                                            variant="outline"
-                                            className="opacity-40 cursor-not-allowed"
-                                          >
-                                            <LockKeyhole className="h-3.5 w-3.5 mr-1.5" />
-                                            Offer Letter
-                                          </Button>
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="left">
-                                        <p className="text-xs max-w-[200px]">
-                                          Select this candidate and click <strong>Accept</strong> to
-                                          send an acceptance email first. The offer letter button
-                                          unlocks after acceptance.
-                                        </p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
+                                  {/* Send Offer Letter */}
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        id={`offer-letter-btn-${candidate.candidate_id}`}
+                                        variant={isOfferSent ? 'outline' : 'default'}
+                                        size="sm"
+                                        onClick={() => openOfferLetterDialog(candidate)}
+                                        className={
+                                          isOfferSent
+                                            ? 'border-primary/50 text-primary hover:bg-primary/10'
+                                            : 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
+                                        }
+                                      >
+                                        <SendHorizonal className="h-3.5 w-3.5 mr-1.5" />
+                                        {isOfferSent ? 'Resend Offer' : 'Send Offer Letter'}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {isOfferSent
+                                        ? 'Offer letter already sent. Click to resend.'
+                                        : 'Generate & send a formal offer letter with PDF attachment'}
+                                    </TooltipContent>
+                                  </Tooltip>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -988,6 +961,27 @@ export default function ResultsDashboardPage() {
                   </DialogHeader>
 
                   <div className="space-y-5 py-2">
+                    {/* Company Name — required */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="offer-company" className="flex items-center gap-1">
+                        Company Name <span className="text-destructive text-sm">*</span>
+                      </Label>
+                      <Input
+                        id="offer-company"
+                        placeholder="e.g. Acme Corp"
+                        value={offerLetterForm.company_name}
+                        onChange={(e) =>
+                          setOfferLetterForm((f) => ({ ...f, company_name: e.target.value }))
+                        }
+                        className={offerFormErrors.company_name ? 'border-destructive' : ''}
+                      />
+                      {offerFormErrors.company_name && (
+                        <p className="text-destructive text-xs mt-1">
+                          {offerFormErrors.company_name}
+                        </p>
+                      )}
+                    </div>
+
                     {/* Salary — required */}
                     <div className="space-y-1.5">
                       <Label htmlFor="offer-salary" className="flex items-center gap-1">
