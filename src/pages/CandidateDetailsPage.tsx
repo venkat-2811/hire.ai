@@ -136,7 +136,7 @@ export default function CandidateDetailsPage() {
               <p className="text-muted-foreground">{safeRender(candidate.email)}</p>
             </div>
           </div>
-          <Button variant="outline" onClick={handleDownloadReport}>
+          <Button variant="outline" onClick={handleDownloadReport} className="w-full sm:w-auto mt-2 sm:mt-0">
             <Download className="mr-2 h-4 w-4" />
             Download Candidate Report
           </Button>

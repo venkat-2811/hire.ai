@@ -627,6 +627,7 @@ export default function ResultsDashboardPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => setShowFilters(!showFilters)}
+                          className="flex-1 sm:flex-none"
                         >
                           <Filter className="mr-2 h-4 w-4" />
                           Filters
@@ -634,6 +635,7 @@ export default function ResultsDashboardPage() {
                         <Button
                           variant="outline"
                           size="sm"
+                          className="flex-1 sm:flex-none"
                           onClick={handleDownloadReport}
                           disabled={!selectedJobId || processedCandidates.length === 0}
                         >
@@ -642,13 +644,14 @@ export default function ResultsDashboardPage() {
                         </Button>
                         {selectedCandidates.size > 0 && (
                           <>
-                            <Button size="sm" onClick={() => setAcceptDialogOpen(true)}>
+                            <Button size="sm" className="flex-1 sm:flex-none mt-2 sm:mt-0" onClick={() => setAcceptDialogOpen(true)}>
                               <ThumbsUp className="mr-2 h-4 w-4" />
                               Accept
                             </Button>
                             <Button
                               size="sm"
                               variant="destructive"
+                              className="flex-1 sm:flex-none mt-2 sm:mt-0"
                               onClick={() => setRejectDialogOpen(true)}
                             >
                               <ThumbsDown className="mr-2 h-4 w-4" />

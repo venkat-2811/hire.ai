@@ -106,7 +106,7 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <motion.h1
               initial={{ opacity: 0, y: -10 }}
@@ -119,13 +119,13 @@ export default function DashboardPage() {
               See how your hiring pipeline is performing today.
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" asChild className="w-full sm:w-auto">
+          <div className="flex flex-wrap gap-3 w-full lg:w-auto mt-2 lg:mt-0">
+            <Button variant="outline" asChild className="flex-1 sm:flex-none">
               <Link to="/candidates">
                 View All Candidates
               </Link>
             </Button>
-            <Button asChild className="w-full sm:w-auto">
+            <Button asChild className="flex-1 sm:flex-none">
               <Link to="/candidates/new">
                 <Plus className="mr-2 h-4 w-4" />
                 Add Candidate

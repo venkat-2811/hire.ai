@@ -83,9 +83,9 @@ export default function JobDetailsPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => navigate('/jobs')} className="shrink-0">
               <ArrowLeft className="h-4 w-4" />
@@ -110,17 +110,17 @@ export default function JobDetailsPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 w-full lg:w-auto mt-2 lg:mt-0">
-            <Button variant="outline" onClick={copyApplicationLink}>
+            <Button variant="outline" onClick={copyApplicationLink} className="flex-1 sm:flex-none">
               {copiedLink ? <Check className="mr-2 h-4 w-4" /> : <LinkIcon className="mr-2 h-4 w-4" />}
               Copy Link
             </Button>
-            <Button variant="outline" asChild>
+            <Button variant="outline" asChild className="flex-1 sm:flex-none">
               <Link to={`/jobs/${jobId}/edit`}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
               </Link>
             </Button>
-            <Button variant="outline" onClick={handleArchive}>
+            <Button variant="outline" onClick={handleArchive} className="flex-1 sm:flex-none">
               <Archive className="mr-2 h-4 w-4" />
               {job.is_active ? 'Archive' : 'Activate'}
             </Button>
