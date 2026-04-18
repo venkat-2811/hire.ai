@@ -86,19 +86,19 @@ export default function JobDetailsPage() {
       <div className="p-6 lg:p-8 space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/jobs')}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/jobs')} className="shrink-0">
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
+            <div className="min-w-0">
               <motion.h1 
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-2xl lg:text-3xl font-bold"
+                className="text-2xl lg:text-3xl font-bold truncate"
               >
                 {job.title}
               </motion.h1>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex flex-wrap items-center gap-2 mt-2">
                 <RoleBadge role={job.role as JobRole} size="sm" />
                 <Badge variant="outline">
                   {LEVEL_CONFIG[job.level as RoleLevel]?.label || job.level}
@@ -109,7 +109,7 @@ export default function JobDetailsPage() {
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 w-full lg:w-auto mt-2 lg:mt-0">
             <Button variant="outline" onClick={copyApplicationLink}>
               {copiedLink ? <Check className="mr-2 h-4 w-4" /> : <LinkIcon className="mr-2 h-4 w-4" />}
               Copy Link

@@ -104,7 +104,7 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-8">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
@@ -119,13 +119,13 @@ export default function DashboardPage() {
               See how your hiring pipeline is performing today.
             </p>
           </div>
-          <div className="flex gap-3">
-            <Button variant="outline" asChild>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button variant="outline" asChild className="w-full sm:w-auto">
               <Link to="/candidates">
                 View All Candidates
               </Link>
             </Button>
-            <Button asChild>
+            <Button asChild className="w-full sm:w-auto">
               <Link to="/candidates/new">
                 <Plus className="mr-2 h-4 w-4" />
                 Add Candidate
@@ -208,14 +208,14 @@ export default function DashboardPage() {
                         className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                       >
                         <div className="flex items-center gap-4">
-                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                          <div className="h-10 w-10 flex-shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
                             <span className="text-sm font-medium text-primary">
                               {candidate.full_name.split(' ').map(n => n[0]).join('')}
                             </span>
                           </div>
-                          <div>
-                            <p className="font-medium">{candidate.full_name}</p>
-                            <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{candidate.full_name}</p>
+                            <p className="text-sm text-muted-foreground truncate">{candidate.email}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-4">

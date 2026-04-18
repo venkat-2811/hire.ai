@@ -518,7 +518,7 @@ export default function ResultsDashboardPage() {
   return (
     <TooltipProvider>
       <DashboardLayout>
-        <div className="p-6 lg:p-8 space-y-6">
+        <div className="p-4 sm:p-6 lg:p-8 space-y-6">
           {/* Header */}
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
@@ -534,18 +534,20 @@ export default function ResultsDashboardPage() {
               </p>
             </div>
 
-            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="Select a job to view results" />
-              </SelectTrigger>
-              <SelectContent>
-                {jobs?.map((job) => (
-                  <SelectItem key={job.id} value={job.id}>
-                    {job.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="w-full sm:w-auto">
+              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+                <SelectTrigger className="w-full sm:w-[280px]">
+                  <SelectValue placeholder="Select a job to view results" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs?.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {!selectedJobId ? (
@@ -611,16 +613,16 @@ export default function ResultsDashboardPage() {
                 <CardContent className="py-4">
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
-                      <div className="relative w-full sm:w-1/3">
+                      <div className="relative w-full sm:w-auto flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                           placeholder="Search candidates..."
-                          className="pl-10"
+                          className="pl-10 w-full"
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                         />
                       </div>
-                      <div className="flex gap-2 w-full sm:w-auto">
+                      <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                         <Button
                           variant="outline"
                           size="sm"

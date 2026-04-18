@@ -102,7 +102,7 @@ export default function JobsPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
@@ -117,7 +117,7 @@ export default function JobsPage() {
               Manage job descriptions and requirements
             </p>
           </div>
-          <Button asChild>
+          <Button asChild className="w-full lg:w-auto">
             <Link to="/jobs/new">
               <Plus className="mr-2 h-4 w-4" />
               Create Job
