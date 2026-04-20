@@ -577,14 +577,24 @@ export default function CandidatesPage() {
                               <TableCell>
                                 {(() => {
                                   const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
-                                  const status = candidateAnalytics?.assessment_score != null ? "completed" : "pending";
+                                  const rawStatus = candidateAnalytics?.assessment_status;
+                                  const status = rawStatus === 'completed' || rawStatus === 'terminated'
+                                    ? 'completed'
+                                    : rawStatus === 'in_progress'
+                                      ? 'in_progress'
+                                      : 'pending';
                                   return <StatusBadge status={status} />;
                                 })()}
                               </TableCell>
                               <TableCell>
                                 {(() => {
                                   const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
-                                  const status = candidateAnalytics?.interview_score != null ? "completed" : "pending";
+                                  const rawStatus = candidateAnalytics?.interview_status;
+                                  const status = rawStatus === 'completed' || rawStatus === 'terminated'
+                                    ? 'completed'
+                                    : rawStatus === 'in_progress'
+                                      ? 'in_progress'
+                                      : 'pending';
                                   return <StatusBadge status={status} />;
                                 })()}
                               </TableCell>

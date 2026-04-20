@@ -708,14 +708,18 @@ export default function AssessmentPage() {
       // Submit coding solutions (if coding section exists)
       if (codingChallenges.length > 0) {
         for (const [challengeId, code] of Object.entries(codingSolutions)) {
-          if (!code?.trim()) continue; // Skip empty solutions
+          const challenge = codingChallenges.find((c) => c.id === challengeId);
+          const lang = codingLanguages[challengeId] || 'python3';
+          const starter = challenge?.starter_code?.[lang] || '';
+          // Only submit if candidate actually changed starter code.
+          if (!code?.trim() || code === starter) continue;
           await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               challenge_id: challengeId,
               code,
-              language: codingLanguages[challengeId] || 'python3',
+              language: lang,
               time_taken_seconds: 0,
             }),
           });
@@ -1013,6 +1017,12 @@ export default function AssessmentPage() {
   const currentMcq = mcqQuestions[currentMcqIndex];
   const currentCoding = codingChallenges[currentCodingIndex];
   const mcqProgress = mcqQuestions.length === 0 ? 0 : (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
+  const attemptedCodingCount = Object.keys(codingSolutions).filter((id) => {
+    const challenge = codingChallenges.find((c) => c.id === id);
+    const lang = codingLanguages[id] || 'python3';
+    const starter = challenge?.starter_code?.[lang] || '';
+    return !!challenge && (codingSolutions[id] || '').trim() !== '' && codingSolutions[id] !== starter;
+  }).length;
   const codingProgress = codingChallenges.length === 0 ? 0 : (Object.keys(codingSolutions).filter(k => {
     const challenge = codingChallenges.find(c => c.id === k);
     const lang = codingLanguages[k] || 'python3';
@@ -1057,11 +1067,11 @@ export default function AssessmentPage() {
                     <div className="flex justify-between text-sm">
                       <span>Coding Challenges:</span>
                       <span className="font-medium">
-                        {Object.keys(codingSolutions).filter(id => codingSolutions[id]?.trim()).length} / {codingChallenges.length} attempted
+                        {attemptedCodingCount} / {codingChallenges.length} attempted
                       </span>
                     </div>
                     <Progress 
-                      value={(Object.keys(codingSolutions).filter(id => codingSolutions[id]?.trim()).length / codingChallenges.length) * 100} 
+                      value={(attemptedCodingCount / codingChallenges.length) * 100} 
                       className="h-2"
                     />
                     
@@ -1382,9 +1392,9 @@ export default function AssessmentPage() {
                 </div>
 
                 {currentCoding && (
-                  <div className="grid lg:grid-cols-2 gap-4" style={{ minHeight: '70vh' }}>
+                  <div className="grid lg:grid-cols-2 gap-4 h-[74vh] min-h-[620px]">
                     {/* LEFT: Problem Description Panel */}
-                    <div className="flex flex-col border rounded-lg overflow-hidden bg-card">
+                    <div className="flex flex-col h-full min-h-0 border rounded-lg overflow-hidden bg-card">
                       {/* Problem Header */}
                       <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
                         <div className="flex items-center gap-2">
@@ -1592,7 +1602,7 @@ export default function AssessmentPage() {
                     </div>
 
                     {/* RIGHT: Code Editor Panel */}
-                    <div className="flex flex-col border rounded-lg overflow-hidden bg-card">
+                    <div className="flex flex-col h-full min-h-0 border rounded-lg overflow-hidden bg-card">
                       {/* Editor Toolbar */}
                       <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                         <div className="flex items-center gap-2">

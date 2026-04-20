@@ -36,10 +36,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -52,14 +49,10 @@ import {
   Mail,
   ThumbsUp,
   ThumbsDown,
-  Eye,
   BarChart3,
   Filter,
   ArrowUpDown,
   Search,
-  FileText,
-  SendHorizonal,
-  LockKeyhole,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CandidateAnalytics, HireRecommendation } from '@/types/database';
@@ -72,21 +65,6 @@ const API_BASE_URL = '/api';
 
 type SortField = 'name' | 'ats_score' | 'assessment_score' | 'interview_score' | 'total_score';
 type SortOrder = 'asc' | 'desc';
-
-// Offer letter form state
-interface OfferLetterForm {
-  offered_salary: string;
-  start_date: string;
-  reporting_manager: string;
-  location: string;
-}
-
-const emptyOfferForm: OfferLetterForm = {
-  offered_salary: '',
-  start_date: '',
-  reporting_manager: '',
-  location: '',
-};
 
 export default function ResultsDashboardPage() {
   const { loading: authLoading } = useRequireAuth();
@@ -116,16 +94,6 @@ export default function ResultsDashboardPage() {
   const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [selectedCandidateForDetail, setSelectedCandidateForDetail] =
-    useState<CandidateAnalytics | null>(null);
-
-  // Offer Letter Dialog State
-  const [offerLetterDialogOpen, setOfferLetterDialogOpen] = useState(false);
-  const [offerLetterCandidate, setOfferLetterCandidate] = useState<CandidateAnalytics | null>(null);
-  const [offerLetterForm, setOfferLetterForm] = useState<OfferLetterForm>(emptyOfferForm);
-  const [sendingOfferLetter, setSendingOfferLetter] = useState(false);
-  const [offerFormErrors, setOfferFormErrors] = useState<Partial<OfferLetterForm>>({});
 
   // Load results when job is selected
   useEffect(() => {
@@ -377,92 +345,6 @@ export default function ResultsDashboardPage() {
       toast.error('Failed to send rejection emails');
     } finally {
       setSendingEmails(false);
-    }
-  };
-
-  // ─── Offer Letter Logic ───────────────────────────────────────────────────
-
-  const openOfferLetterDialog = (candidate: CandidateAnalytics) => {
-    setOfferLetterCandidate(candidate);
-    setOfferLetterForm(emptyOfferForm);
-    setOfferFormErrors({});
-    setOfferLetterDialogOpen(true);
-  };
-
-  const validateOfferForm = (): boolean => {
-    const errors: Partial<OfferLetterForm> = {};
-    if (!offerLetterForm.offered_salary.trim()) {
-      errors.offered_salary = 'Offered salary is required';
-    }
-    setOfferFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleSendOfferLetter = async () => {
-    if (!offerLetterCandidate) return;
-    if (!validateOfferForm()) return;
-
-    const resolvedJobId = selectedJobId || offerLetterCandidate.job_id || '';
-    if (!resolvedJobId) {
-      toast.error('Please select a job first');
-      return;
-    }
-
-    setSendingOfferLetter(true);
-    try {
-      const token = await getToken();
-      const companyName = profile?.company_name || 'Our Company';
-
-      // Generate the PDF as base64 on the client
-      const pdfBase64 = PDFExportService.generateOfferLetterBase64(
-        offerLetterCandidate.candidate_name,
-        offerLetterCandidate.job_title,
-        companyName,
-        offerLetterForm.offered_salary.trim(),
-        offerLetterForm.start_date.trim() || undefined,
-        offerLetterForm.reporting_manager.trim() || undefined,
-        offerLetterForm.location.trim() || undefined
-      );
-
-      const response = await fetch(`${API_BASE_URL}/candidates/send-offer-letter`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          // Send both snake_case and camelCase to be resilient to API expectations.
-          candidate_id: offerLetterCandidate.candidate_id,
-          candidateId: offerLetterCandidate.candidate_id,
-          job_id: resolvedJobId,
-          jobId: resolvedJobId,
-          company_name: companyName,
-          companyName,
-          pdf_base64: pdfBase64,
-          pdfBase64: pdfBase64,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        const msg = data?.error || data?.detail || 'Failed to send offer letter';
-        toast.error(msg);
-        return;
-      }
-
-      toast.success(`Offer letter sent to ${offerLetterCandidate.candidate_name}! 🎉`);
-
-      // Mark as offer sent
-      const newOfferSent = new Set(offerSentIds);
-      newOfferSent.add(offerLetterCandidate.candidate_id);
-      setOfferSentIds(newOfferSent);
-
-      setOfferLetterDialogOpen(false);
-      setOfferLetterCandidate(null);
-    } catch (e) {
-      toast.error('Failed to send offer letter. Please try again.');
-    } finally {
-      setSendingOfferLetter(false);
     }
   };
 
@@ -749,14 +631,13 @@ export default function ResultsDashboardPage() {
                           </Button>
                         </TableHead>
                         <TableHead>Recommendation</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {processedCandidates.length === 0 ? (
                         <TableRow>
                           <TableCell
-                            colSpan={8}
+                            colSpan={7}
                             className="text-center py-8 text-muted-foreground"
                           >
                             No candidates found matching filters.
@@ -845,64 +726,6 @@ export default function ResultsDashboardPage() {
                               <TableCell>
                                 {getRecommendationBadge(candidate.recommendation)}
                               </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  {/* View Details */}
-                                  <Button variant="ghost" size="sm">
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-
-                                  {/* Send Offer Letter — gated by acceptance */}
-                                  {isAccepted ? (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          id={`offer-letter-btn-${candidate.candidate_id}`}
-                                          variant={isOfferSent ? 'outline' : 'default'}
-                                          size="sm"
-                                          onClick={() => openOfferLetterDialog(candidate)}
-                                          className={
-                                            isOfferSent
-                                              ? 'border-primary/50 text-primary hover:bg-primary/10'
-                                              : 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
-                                          }
-                                        >
-                                          <SendHorizonal className="h-3.5 w-3.5 mr-1.5" />
-                                          {isOfferSent ? 'Resend Offer' : 'Send Offer Letter'}
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        {isOfferSent
-                                          ? 'Offer letter already sent. Click to resend.'
-                                          : 'Generate & send a formal offer letter with PDF attachment'}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  ) : (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span tabIndex={0}>
-                                          <Button
-                                            size="sm"
-                                            disabled
-                                            variant="outline"
-                                            className="opacity-40 cursor-not-allowed"
-                                          >
-                                            <LockKeyhole className="h-3.5 w-3.5 mr-1.5" />
-                                            Offer Letter
-                                          </Button>
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="left">
-                                        <p className="text-xs max-w-[200px]">
-                                          Select this candidate and click <strong>Accept</strong> to
-                                          send an acceptance email first. The offer letter button
-                                          unlocks after acceptance.
-                                        </p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                </div>
-                              </TableCell>
                             </TableRow>
                           );
                         })
@@ -971,126 +794,7 @@ export default function ResultsDashboardPage() {
                 </DialogContent>
               </Dialog>
 
-              {/* ─── Offer Letter Dialog ───────────────────────────────────────── */}
-              <Dialog open={offerLetterDialogOpen} onOpenChange={setOfferLetterDialogOpen}>
-                <DialogContent className="sm:max-w-[540px]">
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-indigo-500" />
-                      Send Offer Letter
-                    </DialogTitle>
-                    <DialogDescription>
-                      Generate and email a formal offer letter PDF to{' '}
-                      <strong>{offerLetterCandidate?.candidate_name}</strong> for the{' '}
-                      <strong>{offerLetterCandidate?.job_title}</strong> role. The PDF will be
-                      attached to the email automatically.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="space-y-5 py-2">
-                    {/* Salary — required */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="offer-salary" className="flex items-center gap-1">
-                        Offered Salary (CTC){' '}
-                        <span className="text-destructive text-sm">*</span>
-                      </Label>
-                      <Input
-                        id="offer-salary"
-                        placeholder="e.g. ₹12,00,000 per annum"
-                        value={offerLetterForm.offered_salary}
-                        onChange={(e) =>
-                          setOfferLetterForm((f) => ({ ...f, offered_salary: e.target.value }))
-                        }
-                        className={offerFormErrors.offered_salary ? 'border-destructive' : ''}
-                      />
-                      {offerFormErrors.offered_salary && (
-                        <p className="text-destructive text-xs mt-1">
-                          {offerFormErrors.offered_salary}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Start Date — optional */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="offer-start-date">Proposed Start Date</Label>
-                      <Input
-                        id="offer-start-date"
-                        type="date"
-                        value={offerLetterForm.start_date}
-                        onChange={(e) =>
-                          setOfferLetterForm((f) => ({ ...f, start_date: e.target.value }))
-                        }
-                      />
-                    </div>
-
-                    {/* Reporting Manager — optional */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="offer-manager">Reporting Manager</Label>
-                      <Input
-                        id="offer-manager"
-                        placeholder="e.g. Rajesh Kumar — Engineering Manager"
-                        value={offerLetterForm.reporting_manager}
-                        onChange={(e) =>
-                          setOfferLetterForm((f) => ({
-                            ...f,
-                            reporting_manager: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    {/* Location — optional */}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="offer-location">Work Location</Label>
-                      <Input
-                        id="offer-location"
-                        placeholder="e.g. Hyderabad / Remote"
-                        value={offerLetterForm.location}
-                        onChange={(e) =>
-                          setOfferLetterForm((f) => ({ ...f, location: e.target.value }))
-                        }
-                      />
-                    </div>
-
-                    {/* Info note */}
-                    <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3 text-sm text-indigo-700 flex gap-2">
-                      <FileText className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                      <span>
-                        A professionally formatted PDF offer letter will be generated with your
-                        company branding and all entered details, then emailed directly to{' '}
-                        <strong>{offerLetterCandidate?.candidate_name}</strong>.
-                      </span>
-                    </div>
-                  </div>
-
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => setOfferLetterDialogOpen(false)}
-                      disabled={sendingOfferLetter}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleSendOfferLetter}
-                      disabled={sendingOfferLetter}
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                    >
-                      {sendingOfferLetter ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Generating & Sending…
-                        </>
-                      ) : (
-                        <>
-                          <SendHorizonal className="mr-2 h-4 w-4" />
-                          Generate & Send Offer Letter
-                        </>
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              {/* Offer letter functionality temporarily disabled. */}
             </>
           )}
         </div>

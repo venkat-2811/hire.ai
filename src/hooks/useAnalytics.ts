@@ -13,6 +13,8 @@ export function useCandidateAnalytics(params?: { job_id?: string; status?: strin
   return useQuery({
     queryKey: ['analytics', 'candidates', params],
     queryFn: () => analyticsApi.getCandidates(params),
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
   });
 }
 

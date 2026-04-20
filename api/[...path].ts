@@ -1508,6 +1508,9 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       const user = await requireAuth(req, res);
       if (!user) return;
 
+      // Offer letter flow is temporarily disabled.
+      return res.status(503).json({ error: 'Offer letter functionality is temporarily disabled.' });
+
       const body = (req.body || {}) as any;
       const candidate_id = body.candidate_id ?? body.candidateId;
       const job_id = body.job_id ?? body.jobId;
@@ -2091,15 +2094,20 @@ Return JSON:
       // Get applications scoped to user's jobs
       let appQuery = supabase
         .from('job_applications')
-        .select('candidate_id, job_id, status, applied_at')
+        .select('candidate_id, job_id, status, final_status, applied_at')
         .in('job_id', jobId ? [jobId] : userJobIds)
         .order('applied_at', { ascending: false })
         .limit(limit);
 
       const { data: applications } = await appQuery;
       const applicationsMap: Record<string, any> = {};
+      const toMillis = (value?: string | null) => (value ? new Date(value).getTime() : 0);
       for (const app of applications || []) {
-        applicationsMap[app.candidate_id] = app;
+        const key = `${app.candidate_id}:${app.job_id}`;
+        const existing = applicationsMap[key];
+        if (!existing || toMillis(app.applied_at) > toMillis(existing.applied_at)) {
+          applicationsMap[key] = app;
+        }
       }
 
       const candidateIds = [...new Set((applications || []).map((a: any) => a.candidate_id))];
@@ -2112,18 +2120,26 @@ Return JSON:
         .in('id', candidateIds);
       if (error) return res.status(500).json({ error: error.message });
       if (!candidates?.length) return ok(res, []);
+      const candidateMap: Record<string, any> = {};
+      for (const c of candidates) candidateMap[c.id] = c;
 
       const effectiveJobIds = jobId ? [jobId] : userJobIds;
+      const makeKey = (candidateId: string, jobIdValue: string) => `${candidateId}:${jobIdValue}`;
 
       // Fetch ATS screenings
       const screeningsMap: Record<string, any> = {};
       const { data: screenings } = await supabase
         .from('ats_screenings')
-        .select('candidate_id, overall_score, job_id, shortlisted')
+        .select('candidate_id, overall_score, job_id, shortlisted, created_at')
         .in('candidate_id', candidateIds)
         .in('job_id', effectiveJobIds);
       for (const s of screenings || []) {
-        screeningsMap[s.candidate_id] = s;
+        if (!s?.candidate_id || !s?.job_id) continue;
+        const key = makeKey(s.candidate_id, s.job_id);
+        const existing = screeningsMap[key];
+        if (!existing || toMillis(s.created_at) > toMillis(existing.created_at)) {
+          screeningsMap[key] = s;
+        }
       }
 
       // Fetch assessment sessions
@@ -2131,11 +2147,20 @@ Return JSON:
       try {
         const { data: assessments } = await supabase
           .from('assessment_sessions')
-          .select('candidate_id, total_score, status, job_id, completed_at')
+          .select('candidate_id, total_score, status, job_id, completed_at, updated_at, created_at')
           .in('candidate_id', candidateIds)
           .in('job_id', effectiveJobIds);
         for (const a of assessments || []) {
-          assessmentsMap[a.candidate_id] = a;
+          if (!a?.candidate_id || !a?.job_id) continue;
+          const key = makeKey(a.candidate_id, a.job_id);
+          const existing = assessmentsMap[key];
+          const aTs = toMillis(a.completed_at) || toMillis(a.updated_at) || toMillis(a.created_at);
+          const eTs = existing
+            ? (toMillis(existing.completed_at) || toMillis(existing.updated_at) || toMillis(existing.created_at))
+            : 0;
+          if (!existing || aTs >= eTs) {
+            assessmentsMap[key] = a;
+          }
         }
       } catch { /* table may not exist */ }
 
@@ -2144,21 +2169,35 @@ Return JSON:
       try {
         const { data: interviews } = await supabase
           .from('ai_interview_sessions')
-          .select('candidate_id, status, job_id, completed_at, final_evaluation')
+          .select('candidate_id, status, job_id, completed_at, updated_at, created_at, final_evaluation')
           .in('candidate_id', candidateIds)
           .in('job_id', effectiveJobIds);
         for (const i of interviews || []) {
-          interviewsMap[i.candidate_id] = i;
+          if (!i?.candidate_id || !i?.job_id) continue;
+          const key = makeKey(i.candidate_id, i.job_id);
+          const existing = interviewsMap[key];
+          const iTs = toMillis(i.completed_at) || toMillis(i.updated_at) || toMillis(i.created_at);
+          const eTs = existing
+            ? (toMillis(existing.completed_at) || toMillis(existing.updated_at) || toMillis(existing.created_at))
+            : 0;
+          if (!existing || iTs >= eTs) {
+            interviewsMap[key] = i;
+          }
         }
       } catch { /* table may not exist */ }
 
-      const analytics = candidates.map((row: any) => {
-        const application = applicationsMap[row.id];
-        const screening = screeningsMap[row.id];
-        const assessment = assessmentsMap[row.id];
-        const interview = interviewsMap[row.id];
+      const analytics = Object.values(applicationsMap).map((application: any) => {
+        const row = candidateMap[application.candidate_id];
+        if (!row) return null;
+
+        const key = makeKey(application.candidate_id, application.job_id);
+        const screening = screeningsMap[key];
+        const assessment = assessmentsMap[key];
+        const interview = interviewsMap[key];
         const finalEval = interview?.final_evaluation || {};
-        const appliedJobId = application?.job_id || jobId;
+        const appliedJobId = application?.job_id || jobId || null;
+        const assessmentTerminated = assessment?.status === 'terminated';
+        const interviewTerminated = interview?.status === 'terminated';
 
         return {
           candidate_id: row.id,
@@ -2167,17 +2206,18 @@ Return JSON:
           job_title: appliedJobId ? (jobTitleMap[appliedJobId] || 'N/A') : 'N/A',
           job_id: appliedJobId,
           application_status: application?.status || 'applied',
+          final_status: application?.final_status ?? null,
           ats_score: screening?.overall_score ?? null,
           shortlisted: screening?.shortlisted ?? null,
-          assessment_score: assessment?.total_score ?? null,
+          assessment_score: assessmentTerminated ? 0 : (assessment?.total_score ?? null),
           assessment_status: assessment?.status ?? null,
           interview_status: interview?.status ?? null,
-          interview_score: finalEval.overall_score ?? null,
-          technical_score: finalEval.technical_score ?? null,
-          overall_score: finalEval.overall_score ?? null,
-          recommendation: finalEval.recommendation ?? null,
+          interview_score: interviewTerminated ? 0 : (finalEval.overall_score ?? null),
+          technical_score: interviewTerminated ? 0 : (finalEval.technical_score ?? null),
+          overall_score: interviewTerminated ? 0 : (finalEval.overall_score ?? null),
+          recommendation: interviewTerminated ? 'no_hire' : (finalEval.recommendation ?? null),
         };
-      });
+      }).filter(Boolean);
 
       return ok(res, analytics);
     }
@@ -2806,6 +2846,9 @@ Only return valid JSON, no additional text.`;
           proctoring_data: proctoring,
           status: 'terminated',
           completed_at: new Date().toISOString(),
+          mcq_score: 0,
+          coding_score: 0,
+          total_score: 0,
         }).eq('id', sessionId);
         return ok(res, { warning: false, terminated: true, message: terminationReason, violations_remaining: 0 });
       }
@@ -3200,10 +3243,21 @@ Only return valid JSON, no additional text.`;
       if (shouldTerminate) {
         proctoring.terminated = true;
         proctoring.termination_reason = terminationReason;
+        const terminatedEvaluation = {
+          overall_score: 0,
+          technical_score: 0,
+          communication_score: 0,
+          confidence_score: 0,
+          recommendation: 'no_hire',
+          strengths: [],
+          areas_for_improvement: ['Interview terminated due to proctoring violations.'],
+          detailed_feedback: terminationReason,
+        };
         await supabase.from('ai_interview_sessions').update({
           proctoring_data: proctoring,
           status: 'terminated',
           completed_at: new Date().toISOString(),
+          final_evaluation: terminatedEvaluation,
         }).eq('id', sessionId);
         return ok(res, { terminated: true, message: terminationReason });
       }
@@ -3718,6 +3772,16 @@ function normalizeOutput(s: string | null | undefined): string {
   return s.replace(/\r\n/g, '\n').trim().replace(/\n+$/, '');
 }
 
+function outputsEquivalent(expectedValue: string | null | undefined, actualValue: string | null | undefined): boolean {
+  const expected = normalizeOutput(expectedValue);
+  const actual = normalizeOutput(actualValue);
+  if (actual === expected) return true;
+
+  // Fallback: ignore all whitespace-only differences (e.g. array formatting like [1, 2, 3] vs [1,2,3]).
+  const compact = (v: string) => v.replace(/\s+/g, '');
+  return compact(actual) === compact(expected);
+}
+
 type TCInput = { id: string; input: string; expected_output: string; visibility?: string; time_limit_ms?: number; memory_limit_kb?: number };
 type TCResult = {
   test_case_id: string; input: string; expected_output: string;
@@ -3876,10 +3940,8 @@ async function submitAndEvalSingleHE(
         stdout: stdoutRaw, stderr: stderrRaw };
     }
 
-    // Strict output comparison
-    const expected = normalizeOutput(tc.expected_output);
     const actual = normalizeOutput(stdoutRaw);
-    const passed = actual === expected;
+    const passed = outputsEquivalent(tc.expected_output, stdoutRaw);
 
     return { test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
       actual_output: actual, passed, status: passed ? 'AC' : 'WA',
@@ -3965,8 +4027,7 @@ async function runSinglePiston(
         visibility: vis, error: `Runtime Error: ${stderr}` };
     }
 
-    const expected = normalizeOutput(tc.expected_output);
-    const passed = stdout === expected;
+    const passed = outputsEquivalent(tc.expected_output, stdout);
     return { test_case_id: tc.id, input: tc.input, expected_output: tc.expected_output,
       actual_output: stdout, passed, status: passed ? 'AC' : 'WA',
       time_used: null, memory_used: null, visibility: vis,
