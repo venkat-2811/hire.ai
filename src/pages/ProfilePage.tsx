@@ -100,7 +100,7 @@ export default function ProfilePage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-6 max-w-4xl">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold">Profile</h1>
           <p className="text-muted-foreground mt-1">Manage your account and company details</p>

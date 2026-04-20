@@ -255,8 +255,9 @@ class EmailService:
         job_title: str,
         company_name: str,
         pdf_bytes: bytes,
+        acceptance_link: str,
     ) -> dict:
-        """Send formal offer letter email with PDF attachment."""
+        """Send formal offer letter email with PDF attachment and acceptance link."""
         subject = f"Formal Offer Letter – {job_title} at {company_name}"
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; border-radius: 8px; overflow: hidden;">
@@ -279,9 +280,12 @@ class EmailService:
                     <p style="margin: 0; color: #4f46e5; font-weight: 600;">📋 Next Steps</p>
                     <ul style="margin: 10px 0 0 0; padding-left: 18px; color: #444; line-height: 1.8;">
                         <li>Review the attached offer letter carefully</li>
-                        <li>If you accept, please reply to this email confirming your acceptance</li>
+                        <li>Click the button below to formally accept the offer</li>
                         <li>Our HR team will follow up with onboarding details</li>
                     </ul>
+                </div>
+                <div style="text-align: center; margin: 32px 0;">
+                    <a href="{acceptance_link}" style="background: #4f46e5; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Accept Offer Letter</a>
                 </div>
                 <p style="color: #444; line-height: 1.6;">
                     If you have any questions or need clarification on any aspect of the offer,

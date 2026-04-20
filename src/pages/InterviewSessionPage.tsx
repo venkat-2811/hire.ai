@@ -209,7 +209,7 @@ export default function InterviewSessionPage() {
   if (phase === 'completed' || session.status === 'completed') {
     return (
       <DashboardLayout>
-        <div className="p-6 lg:p-8 max-w-4xl mx-auto">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -290,7 +290,7 @@ export default function InterviewSessionPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
         {/* Header with proctoring indicators */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">

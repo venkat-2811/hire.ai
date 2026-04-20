@@ -102,9 +102,9 @@ export default function JobsPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <motion.h1 
               initial={{ opacity: 0, y: -10 }}
@@ -117,7 +117,7 @@ export default function JobsPage() {
               Manage job descriptions and requirements
             </p>
           </div>
-          <Button asChild>
+          <Button asChild className="w-full sm:w-auto mt-2 sm:mt-0">
             <Link to="/jobs/new">
               <Plus className="mr-2 h-4 w-4" />
               Create Job
@@ -126,11 +126,11 @@ export default function JobsPage() {
         </div>
 
         {/* Search */}
-        <div className="relative max-w-md">
+        <div className="relative w-full sm:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search jobs..."
-            className="pl-10"
+            className="pl-10 w-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

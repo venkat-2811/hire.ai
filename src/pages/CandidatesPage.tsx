@@ -348,9 +348,9 @@ export default function CandidatesPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <motion.h1
               initial={{ opacity: 0, y: -10 }}
@@ -363,7 +363,7 @@ export default function CandidatesPage() {
               Manage and review all candidate applications
             </p>
           </div>
-          <Button asChild>
+          <Button asChild className="w-full sm:w-auto mt-2 sm:mt-0">
             <Link to="/candidates/new">
               <Plus className="mr-2 h-4 w-4" />
               Add Candidate
@@ -375,12 +375,12 @@ export default function CandidatesPage() {
         <Card>
           <CardContent className="py-4">
             <div className="flex flex-col gap-4">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+                <div className="relative w-full sm:flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Search candidates..."
-                    className="pl-10"
+                    className="pl-10 w-full"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
@@ -388,6 +388,7 @@ export default function CandidatesPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="w-full sm:w-auto"
                   onClick={() => setShowFilters(!showFilters)}
                 >
                   <Filter className="mr-2 h-4 w-4" />
@@ -427,21 +428,23 @@ export default function CandidatesPage() {
         {selectedIds.size > 0 && (
           <Card>
             <CardContent className="py-4">
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-medium">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                <span className="text-sm font-medium w-full sm:w-auto mb-2 sm:mb-0">
                   {selectedIds.size} candidate(s) selected
                 </span>
-                <Button size="sm" onClick={handleBulkAssessment}>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Send Assessment
-                </Button>
-                <Button size="sm" variant="secondary" onClick={handleBulkInterview}>
-                  <Play className="mr-2 h-4 w-4" />
-                  Send Interview Invite
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
-                  Clear Selection
-                </Button>
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  <Button size="sm" className="flex-1 sm:flex-none" onClick={handleBulkAssessment}>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Send Assessment
+                  </Button>
+                  <Button size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={handleBulkInterview}>
+                    <Play className="mr-2 h-4 w-4" />
+                    Send Interview Invite
+                  </Button>
+                  <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedIds(new Set())}>
+                    Clear Selection
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

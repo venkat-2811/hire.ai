@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -435,11 +436,16 @@ async def send_offer_letter(request: SendOfferLetterRequest):
             detail="No job application found for this candidate and job."
         )
 
-    final_status = app_result.data[0].get("final_status")
-    if final_status not in ("accepted", "offer_sent"):
+    if final_status == "rejected":
         raise HTTPException(
             status_code=400,
-            detail="Offer letter can only be sent after the candidate has been formally accepted."
+            detail="Cannot send an offer letter to a rejected candidate."
+        )
+
+    if not request.company_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Company name is required to send an offer letter."
         )
 
     # Get candidate details
@@ -473,13 +479,33 @@ async def send_offer_letter(request: SendOfferLetterRequest):
             location=request.location,
         )
 
-        # Send the email with attachment
+        # Generate the Acceptance Link securely
+        from jose import jwt
+        from datetime import timedelta
+        
+        settings = get_settings()
+        secret = settings.supabase_service_key or "default_hireai_secret"
+        payload = {
+            "candidate_id": candidate["id"],
+            "job_id": request.job_id,
+            "exp": datetime.utcnow() + timedelta(days=7)
+        }
+        token = jwt.encode(payload, secret, algorithm="HS256")
+        
+        # Use backend URL to process acceptance directly
+        # In production this should use the proper backend base URL, but for simple app frontend_url/api is often proxied
+        # To be safe, we will just use settings.frontend_url /api/candidates/accept-offer as it handles routing
+        base_url = str(settings.frontend_url).rstrip("/")
+        acceptance_link = f"{base_url}/api/candidates/accept-offer?token={token}"
+
+        # Send the email with attachment and the acceptance link
         await email_service.send_offer_letter_email(
             to=candidate["email"],
             candidate_name=candidate["full_name"],
             job_title=job_title,
             company_name=company_name,
             pdf_bytes=pdf_bytes,
+            acceptance_link=acceptance_link,
         )
 
         # Update the application status to offer_sent
@@ -498,6 +524,79 @@ async def send_offer_letter(request: SendOfferLetterRequest):
             status_code=500,
             detail=f"Failed to send offer letter: {str(e)}"
         )
+
+
+@router.get("/accept-offer", response_class=HTMLResponse)
+async def accept_offer(request: Request, token: str):
+    """Endpoint for candidates to accept an offer letter via email link."""
+    from jose import jwt, JWTError
+    settings = get_settings()
+    secret = settings.supabase_service_key or "default_hireai_secret"
+    
+    try:
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        candidate_id = payload.get("candidate_id")
+        job_id = payload.get("job_id")
+        if not candidate_id or not job_id:
+            raise JWTError("Invalid payload data")
+    except JWTError:
+        return """
+        <html>
+            <body style='font-family: sans-serif; text-align: center; padding: 50px;'>
+                <h2 style='color: #e11d48;'>Invalid or Expired Link</h2>
+                <p>This offer acceptance link is no longer valid. Please contact your recruiter.</p>
+            </body>
+        </html>
+        """
+        
+    supabase = get_supabase_admin_client()
+    
+    # Check current status
+    app_result = supabase.table("job_applications").select("final_status, notes").eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
+    
+    if not app_result.data:
+        return "<h2 style='text-align:center;'>Job application not found.</h2>"
+        
+    app_data = app_result.data[0]
+    if app_data.get("final_status") == "accepted":
+        return """
+        <html>
+            <body style='font-family: sans-serif; text-align: center; padding: 50px;'>
+                <h2 style='color: #059669;'>Offer Already Accepted!</h2>
+                <p>You have already accepted this offer letter.</p>
+            </body>
+        </html>
+        """
+        
+    # Prepare audit metadata
+    client_ip = request.client.host if request.client else "Unknown IP"
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    existing_notes = app_data.get("notes") or ""
+    metadata_note = f"\n[Offer Acceptance Audit]\nAccepted at: {timestamp}\nIP Address: {client_ip}\n"
+    new_notes = existing_notes + metadata_note
+    
+    # Update status to accepted and store metadata in notes
+    supabase.table("job_applications").update({
+        "final_status": "accepted",
+        "notes": new_notes.strip()
+    }).eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
+    
+    return """
+    <html>
+        <body style='font-family: sans-serif; text-align: center; padding: 50px; background-color: #f8fafc;'>
+            <div style='max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);'>
+                <div style='font-size: 48px; margin-bottom: 20px;'>🎉</div>
+                <h2 style='color: #0ea5e9; margin-top: 0;'>Offer Accepted Successfully!</h2>
+                <p style='color: #475569; line-height: 1.6;'>
+                    Thank you for accepting the offer letter. Your acceptance has been digitally recorded. 
+                    Our HR team will be securely notified and will get back to you shortly with the onboarding details.
+                </p>
+                <p style='color: #475569; font-weight: bold;'>Welcome aboard!</p>
+            </div>
+        </body>
+    </html>
+    """
 
 
 def _row_to_candidate(row: dict, job_id: str = None) -> Candidate:

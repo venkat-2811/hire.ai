@@ -28,7 +28,7 @@ const navigation = [
   { name: 'Profile', href: '/profile', icon: UserCircle },
 ];
 
-export function Sidebar() {
+export function Sidebar({ isMobile, className }: { isMobile?: boolean; className?: string }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut } = useAuth();
@@ -43,8 +43,10 @@ export function Sidebar() {
   return (
     <div
       className={cn(
-        "flex flex-col h-screen bg-sidebar text-sidebar-foreground transition-all duration-300",
-        collapsed ? "w-16" : "w-64"
+        "flex flex-col h-full bg-sidebar text-sidebar-foreground transition-all duration-300",
+        !isMobile && collapsed ? "w-16" : "w-64",
+        isMobile && "w-full",
+        className
       )}
     >
       {/* Logo */}
@@ -53,7 +55,7 @@ export function Sidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
             <Sparkles className="h-4 w-4 text-sidebar-primary-foreground" />
           </div>
-          {!collapsed && (
+          {!((!isMobile && collapsed)) && (
             <div className="flex flex-col">
               <span className="text-lg font-bold text-sidebar-foreground inline-flex items-center gap-2">
                 HireAI
@@ -87,7 +89,7 @@ export function Sidebar() {
               )}
             >
               <item.icon className="h-5 w-5 flex-shrink-0" />
-              {!collapsed && <span>{item.name}</span>}
+              {!((!isMobile && collapsed)) && <span>{item.name}</span>}
             </Link>
           );
         })}
@@ -99,26 +101,28 @@ export function Sidebar() {
           variant="ghost"
           className={cn(
             "w-full justify-start gap-3 text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-            collapsed && "justify-center"
+            (!isMobile && collapsed) && "justify-center"
           )}
           onClick={handleLogout}
         >
           <LogOut className="h-5 w-5" />
-          {!collapsed && <span>Logout</span>}
+          {!((!isMobile && collapsed)) && <span>Logout</span>}
         </Button>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="w-full text-sidebar-foreground/50 hover:text-sidebar-foreground"
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </Button>
+        {!isMobile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-full text-sidebar-foreground/50 hover:text-sidebar-foreground"
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            {collapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </Button>
+        )}
       </div>
     </div>
   );
