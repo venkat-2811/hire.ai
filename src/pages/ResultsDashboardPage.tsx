@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth, useRequireAuth } from '@/hooks/useAuth';
 import { useJobs } from '@/hooks/useJobs';
-import { analyticsApi, type JobDescription } from '@/lib/api';
+import { analyticsApi, type CandidateAnalytics, type JobDescription } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -55,7 +55,7 @@ import {
   Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { CandidateAnalytics, HireRecommendation } from '@/types/database';
+import { HireRecommendation } from '@/types/database';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { PDFExportService } from '@/lib/pdf-export';
 import { useProfile } from '@/hooks/useProfile';
@@ -74,7 +74,9 @@ export default function ResultsDashboardPage() {
 
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [candidates, setCandidates] = useState<CandidateAnalytics[]>([]);
+  const [globalCandidates, setGlobalCandidates] = useState<CandidateAnalytics[]>([]);
   const [loadingResults, setLoadingResults] = useState(false);
+  const [loadingGlobalResults, setLoadingGlobalResults] = useState(false);
   const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
 
   // Track which candidates have had acceptance emails sent (keyed by candidate_id)
@@ -94,6 +96,23 @@ export default function ResultsDashboardPage() {
   const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
+
+  useEffect(() => {
+    async function loadGlobalResults() {
+      setLoadingGlobalResults(true);
+      try {
+        const data = await analyticsApi.getCandidates();
+        setGlobalCandidates(data);
+      } catch (e) {
+        console.error('Error loading candidates', e);
+        toast.error('Failed to load candidate data');
+      } finally {
+        setLoadingGlobalResults(false);
+      }
+    }
+
+    loadGlobalResults();
+  }, []);
 
   // Load results when job is selected
   useEffect(() => {
@@ -350,9 +369,10 @@ export default function ResultsDashboardPage() {
 
   // ─── Render Helpers ───────────────────────────────────────────────────────
 
-  const getRecommendationBadge = (recommendation: HireRecommendation | null) => {
+  const getRecommendationBadge = (recommendation: string | null) => {
     if (!recommendation) return <Badge variant="outline">Pending</Badge>;
-    switch (recommendation) {
+    const normalized = recommendation as HireRecommendation;
+    switch (normalized) {
       case 'strong_hire':
         return <Badge className="bg-success text-success-foreground">Strong Hire</Badge>;
       case 'hire':
@@ -385,9 +405,39 @@ export default function ResultsDashboardPage() {
     return count ? sum / count : 0;
   }, [processedCandidates]);
 
-  const strongHiresCount = processedCandidates.filter(
-    (c) => c.recommendation === 'strong_hire'
-  ).length;
+  const globalTotalCandidates = useMemo(() => {
+    const s = new Set<string>();
+    globalCandidates.forEach((c) => {
+      if (c.candidate_id) s.add(c.candidate_id);
+    });
+    return s.size;
+  }, [globalCandidates]);
+
+  const globalAvgTotalScore = useMemo(() => {
+    if (!globalCandidates.length) return 0;
+    let sum = 0;
+    let count = 0;
+    globalCandidates.forEach((c) => {
+      const scores = [c.ats_score, c.assessment_score, c.interview_score].filter(
+        (s) => s !== null
+      ) as number[];
+      if (scores.length) {
+        sum += scores.reduce((a, b) => a + b, 0) / scores.length;
+        count++;
+      }
+    });
+    return count ? sum / count : 0;
+  }, [globalCandidates]);
+
+  const globalHiresCount = useMemo(() => {
+    return globalCandidates.filter(
+      (c) => c.final_status === 'accepted' || c.final_status === 'offer_sent'
+    ).length;
+  }, [globalCandidates]);
+
+  const globalRejectionsCount = useMemo(() => {
+    return globalCandidates.filter((c) => c.final_status === 'rejected').length;
+  }, [globalCandidates]);
 
   if (authLoading || jobsLoading) {
     return (
@@ -433,12 +483,92 @@ export default function ResultsDashboardPage() {
           </div>
 
           {!selectedJobId ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">Select a job to view candidate results</p>
-              </CardContent>
-            </Card>
+            loadingGlobalResults ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2 bg-primary/10 rounded-lg">
+                          <BarChart3 className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">{jobs?.length || 0}</p>
+                          <p className="text-xs text-muted-foreground">Total Number of Jobs</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2 bg-primary/10 rounded-lg">
+                          <Users className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">{globalTotalCandidates}</p>
+                          <p className="text-xs text-muted-foreground">Total Number of Candidates</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2 bg-info/10 rounded-lg">
+                          <TrendingUp className="h-5 w-5 text-info" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">{globalAvgTotalScore.toFixed(0)}%</p>
+                          <p className="text-xs text-muted-foreground">Avg Overall Score</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2 bg-success/10 rounded-lg">
+                          <ThumbsUp className="h-5 w-5 text-success" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">{globalHiresCount}</p>
+                          <p className="text-xs text-muted-foreground">Total Number of Hires</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2 bg-destructive/10 rounded-lg">
+                          <ThumbsDown className="h-5 w-5 text-destructive" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">{globalRejectionsCount}</p>
+                          <p className="text-xs text-muted-foreground">Total Number of Rejections</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">Select a job to view job-wise results</p>
+                  </CardContent>
+                </Card>
+              </>
+            )
           ) : loadingResults ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -446,7 +576,21 @@ export default function ResultsDashboardPage() {
           ) : (
             <>
               {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-4">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        <BarChart3 className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">1</p>
+                        <p className="text-xs text-muted-foreground">Total Number of Jobs</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
                 <Card>
                   <CardContent className="pt-6">
                     <div className="flex items-center gap-4">
@@ -455,7 +599,7 @@ export default function ResultsDashboardPage() {
                       </div>
                       <div>
                         <p className="text-2xl font-bold">{candidates.length}</p>
-                        <p className="text-xs text-muted-foreground">Total Candidates</p>
+                        <p className="text-xs text-muted-foreground">Total Number of Candidates</p>
                       </div>
                     </div>
                   </CardContent>
@@ -479,11 +623,33 @@ export default function ResultsDashboardPage() {
                   <CardContent className="pt-6">
                     <div className="flex items-center gap-4">
                       <div className="p-2 bg-success/10 rounded-lg">
-                        <Trophy className="h-5 w-5 text-success" />
+                        <ThumbsUp className="h-5 w-5 text-success" />
                       </div>
                       <div>
-                        <p className="text-2xl font-bold">{strongHiresCount}</p>
-                        <p className="text-xs text-muted-foreground">Strong Hires</p>
+                        <p className="text-2xl font-bold">
+                          {
+                            processedCandidates.filter(
+                              (c) => c.final_status === 'accepted' || c.final_status === 'offer_sent'
+                            ).length
+                          }
+                        </p>
+                        <p className="text-xs text-muted-foreground">Total Number of Hires</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-4">
+                      <div className="p-2 bg-destructive/10 rounded-lg">
+                        <ThumbsDown className="h-5 w-5 text-destructive" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">
+                          {processedCandidates.filter((c) => c.final_status === 'rejected').length}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Total Number of Rejections</p>
                       </div>
                     </div>
                   </CardContent>

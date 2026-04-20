@@ -45,6 +45,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 const API_BASE_URL = '/api';
@@ -133,6 +140,7 @@ export default function AssessmentPage() {
   const [problemTab, setProblemTab] = useState<'description' | 'submissions'>('description');
   const [activeTestCaseTab, setActiveTestCaseTab] = useState(0);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1185,6 +1193,71 @@ export default function AssessmentPage() {
           </div>
 
           <div className="flex items-center gap-4">
+            <Dialog open={instructionsOpen} onOpenChange={setInstructionsOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  aria-label="Assessment Instructions"
+                  title="Instructions"
+                >
+                  i
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Assessment Instructions</DialogTitle>
+                </DialogHeader>
+
+                <div className="space-y-4 text-sm">
+                  <div className="space-y-2">
+                    <div className="font-semibold text-destructive">Strict Proctoring Rules</div>
+                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
+                        <span>Exiting fullscreen results in immediate termination.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
+                        <span>Switching tabs/minimizing the window results in immediate termination.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <XCircle className="h-4 w-4 mt-0.5 text-destructive" />
+                        <span>Clicking outside the assessment window results in immediate termination.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 text-warning" />
+                        <span>Face not visible 3 times results in termination.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 text-warning" />
+                        <span>Copy/paste, right-click, or DevTools attempts are recorded.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="font-semibold">General Guidelines</div>
+                    <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <Camera className="h-4 w-4 mt-0.5 text-primary" />
+                        <span>Keep your camera on and face visible throughout the assessment.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <Clock className="h-4 w-4 mt-0.5 text-primary" />
+                        <span>Timer is shown on the top bar. Submit before time runs out.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <FileQuestion className="h-4 w-4 mt-0.5 text-primary" />
+                        <span>Complete MCQ and/or Coding sections as provided for this assessment.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             {/* Face detection warning indicator */}
             {noFaceCountRef.current > 0 && (
               <Badge variant="destructive">
