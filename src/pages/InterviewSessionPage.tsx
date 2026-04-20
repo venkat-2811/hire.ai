@@ -227,55 +227,6 @@ export default function InterviewSessionPage() {
                     </p>
                   </div>
 
-                  {evaluation && (
-                    <div className="w-full max-w-md space-y-4 mt-6">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 rounded-lg bg-muted">
-                          <p className="text-sm text-muted-foreground">Overall Score</p>
-                          <p className="text-3xl font-bold">{evaluation.overall_score}%</p>
-                        </div>
-                        <div className="p-4 rounded-lg bg-muted">
-                          <p className="text-sm text-muted-foreground">Recommendation</p>
-                          <p className="text-lg font-semibold capitalize">
-                            {evaluation.recommendation?.replace('_', ' ')}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Technical</span>
-                          <span>{evaluation.technical_score}%</span>
-                        </div>
-                        <Progress value={evaluation.technical_score || 0} />
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Problem Solving</span>
-                          <span>{evaluation.problem_solving_score}%</span>
-                        </div>
-                        <Progress value={evaluation.problem_solving_score || 0} />
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Communication</span>
-                          <span>{evaluation.communication_score}%</span>
-                        </div>
-                        <Progress value={evaluation.communication_score || 0} />
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Integrity</span>
-                          <span>{evaluation.integrity_score}%</span>
-                        </div>
-                        <Progress value={evaluation.integrity_score || 0} />
-                      </div>
-                    </div>
-                  )}
-
                   <Button onClick={() => navigate('/interviews')} className="mt-4">
                     Back to Interviews
                   </Button>

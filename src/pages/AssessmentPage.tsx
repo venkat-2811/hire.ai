@@ -784,11 +784,6 @@ export default function AssessmentPage() {
             <CardTitle>Assessment Unavailable</CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
-          <CardContent className="flex justify-center">
-            <Button variant="outline" onClick={() => navigate('/')}>
-              Return Home
-            </Button>
-          </CardContent>
         </Card>
       </div>
     );

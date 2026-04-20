@@ -331,7 +331,7 @@ export default function CandidateDetailsPage() {
                                       {Array.isArray(sub.test_results) && sub.test_results.map((tr, ti) => (
                                         <div key={ti} className={`flex items-center gap-2 text-xs ${tr.passed ? 'text-success' : 'text-destructive'}`}>
                                           {tr.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                                          <span>Input: {safeRender(tr.input)} → Expected: {safeRender(tr.expected)}, Got: {safeRender(tr.actual) || 'Error'}</span>
+                                          <span>Input: {safeRender(tr.input)} → Expected: {safeRender(tr.expected_output)}, Got: {safeRender(tr.actual_output) || 'Error'}</span>
                                         </div>
                                       ))}
                                     </div>
@@ -347,24 +347,6 @@ export default function CandidateDetailsPage() {
                     {/* Interview Tab */}
                     {interviewDetails && (
                       <TabsContent value="interview" className="space-y-6">
-                        {/* Evaluation Summary */}
-                        {interviewDetails.final_evaluation && (
-                          <div className="grid grid-cols-3 gap-4">
-                            <div className="text-center p-4 bg-muted/50 rounded-lg">
-                              <p className="text-xs text-muted-foreground mb-1">Overall Score</p>
-                              <ScoreBadge score={interviewDetails.final_evaluation.overall_score} size="lg" />
-                            </div>
-                            <div className="text-center p-4 bg-muted/50 rounded-lg">
-                              <p className="text-xs text-muted-foreground mb-1">Technical</p>
-                              <ScoreBadge score={interviewDetails.final_evaluation.technical_score} size="lg" />
-                            </div>
-                            <div className="text-center p-4 bg-muted/50 rounded-lg">
-                              <p className="text-xs text-muted-foreground mb-1">Communication</p>
-                              <ScoreBadge score={interviewDetails.final_evaluation.communication_score} size="lg" />
-                            </div>
-                          </div>
-                        )}
-
                         {/* Recommendation */}
                         {typeof interviewDetails.final_evaluation?.recommendation === 'string' && (
                           <div className="p-4 rounded-lg bg-muted/50">

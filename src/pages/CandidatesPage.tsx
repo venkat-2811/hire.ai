@@ -96,6 +96,7 @@ export default function CandidatesPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string>('');
 
   const { data: candidates, isLoading: candidatesLoading } = useCandidates();
   const deleteCandidate = useDeleteCandidate();
@@ -125,9 +126,18 @@ export default function CandidatesPage() {
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
 
+  useEffect(() => {
+    if (!selectedJobId) {
+      const defaultJobId = activeJobs[0]?.id || allJobs[0]?.id;
+      if (defaultJobId) setSelectedJobId(defaultJobId);
+    }
+  }, [activeJobs, allJobs, selectedJobId]);
+
   // Group candidates by job
   const candidatesByJob = useMemo(() => {
     const result = candidates || [];
+
+    if (!selectedJobId) return {};
 
     // Apply search filter
     let filtered = result;
@@ -146,6 +156,7 @@ export default function CandidatesPage() {
     filtered.forEach(candidate => {
       const jobId = (candidate as any).job_id;
       if (!jobId) return; // Skip candidates without job assignments
+      if (jobId !== selectedJobId) return;
       if (!grouped[jobId]) {
         grouped[jobId] = [];
       }
@@ -172,7 +183,7 @@ export default function CandidatesPage() {
     });
 
     return grouped;
-  }, [candidates, searchQuery, sortField, sortOrder]);
+  }, [candidates, searchQuery, sortField, sortOrder, selectedJobId]);
 
   // Get job title by ID
   const getJobTitle = (jobId: string) => {
@@ -182,10 +193,9 @@ export default function CandidatesPage() {
   };
 
   const toggleSelectAll = () => {
-    // Get all candidates from all jobs
-    const allCandidates = Object.entries(candidatesByJob).flatMap(([jobId, candidates]) => 
-      candidates.map(c => `${c.id}_${jobId}`)
-    );
+    if (!selectedJobId) return;
+    const jobCandidates = candidatesByJob[selectedJobId] || [];
+    const allCandidates = jobCandidates.map(c => `${c.id}_${selectedJobId}`);
     if (selectedIds.size === allCandidates.length) {
       setSelectedIds(new Set());
     } else {
@@ -209,11 +219,16 @@ export default function CandidatesPage() {
       toast.error('Please select at least one of the candidate');
       return;
     }
+    if (!selectedJobId) {
+      toast.error('Please select a job');
+      return;
+    }
+    setStartJobId(selectedJobId);
     setAssessmentDialogOpen(true);
   };
 
   const sendAssessmentInvites = async () => {
-    if (!startJobId) {
+    if (!selectedJobId) {
       toast.error('Please select a job');
       return;
     }
@@ -234,7 +249,7 @@ export default function CandidatesPage() {
         },
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
-          job_id: startJobId,
+          job_id: selectedJobId,
           deadline_hours: 72,
           mcq_question_count: includeMcq ? mcqCount : 0,
           coding_challenge_count: includeCoding ? codingCount : 0,
@@ -266,11 +281,16 @@ export default function CandidatesPage() {
       toast.error('Please select at least one candidate');
       return;
     }
+    if (!selectedJobId) {
+      toast.error('Please select a job');
+      return;
+    }
+    setStartJobId(selectedJobId);
     setInterviewDialogOpen(true);
   };
 
   const sendInterviewInvites = async () => {
-    if (!startJobId) {
+    if (!selectedJobId) {
       toast.error('Please select a job');
       return;
     }
@@ -286,7 +306,7 @@ export default function CandidatesPage() {
         },
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
-          job_id: startJobId,
+          job_id: selectedJobId,
         }),
       });
 
@@ -308,7 +328,7 @@ export default function CandidatesPage() {
 
   const handleStartInterview = (candidateId: string) => {
     setStartCandidateId(candidateId);
-    setStartJobId(activeJobs[0]?.id || '');
+    setStartJobId(selectedJobId || activeJobs[0]?.id || '');
     setStartDialogOpen(true);
   };
 
@@ -370,6 +390,30 @@ export default function CandidatesPage() {
             </Link>
           </Button>
         </div>
+
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="text-sm font-medium w-full sm:w-auto">Job</div>
+              <Select value={selectedJobId} onValueChange={(v) => {
+                setSelectedJobId(v);
+                setSelectedIds(new Set());
+                setStartJobId(v);
+              }}>
+                <SelectTrigger className="w-full sm:w-[320px]" disabled={jobsLoading || allJobs.length === 0}>
+                  <SelectValue placeholder={jobsLoading ? 'Loading jobs...' : 'Select a job'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {allJobs.map((j) => (
+                    <SelectItem key={j.id} value={j.id}>
+                      {j.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Filters */}
         <Card>
@@ -531,7 +575,7 @@ export default function CandidatesPage() {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ delay: index * 0.05 }}
-                              className={`group ${selectedIds.has(candidate.id) ? 'bg-primary/5' : ''}`}
+                              className={`group ${selectedIds.has(`${candidate.id}_${jobId}`) ? 'bg-primary/5' : ''}`}
                             >
                               <TableCell>
                                 <Checkbox
@@ -613,14 +657,14 @@ export default function CandidatesPage() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuItem asChild>
-                                      <Link to={`/candidates/${candidate.id}${candidate.job_id ? `?job_id=${candidate.job_id}` : ''}`}>
+                                      <Link to={`/candidates/${candidate.id}${jobId ? `?job_id=${jobId}` : ''}`}>
                                         <Eye className="mr-2 h-4 w-4" />
                                         View Details
                                       </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => {
                                       setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
-                                      setStartJobId(activeJobs[0]?.id || '');
+                                      setStartJobId(jobId);
                                       setAssessmentDialogOpen(true);
                                     }}>
                                       <FileText className="mr-2 h-4 w-4" />
@@ -628,7 +672,7 @@ export default function CandidatesPage() {
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => {
                                       setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
-                                      setStartJobId(activeJobs[0]?.id || '');
+                                      setStartJobId(jobId);
                                       setInterviewDialogOpen(true);
                                     }}>
                                       <Play className="mr-2 h-4 w-4" />
@@ -670,22 +714,6 @@ export default function CandidatesPage() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Select Job Position</Label>
-                <Select value={startJobId} onValueChange={setStartJobId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a job" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeJobs.map((j) => (
-                      <SelectItem key={j.id} value={j.id}>
-                        {j.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Include Technical MCQs</Label>
@@ -764,7 +792,7 @@ export default function CandidatesPage() {
               <Button variant="outline" onClick={() => setAssessmentDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={sendAssessmentInvites} disabled={!startJobId || sendingInvites}>
+              <Button onClick={sendAssessmentInvites} disabled={!selectedJobId || sendingInvites}>
                 {sendingInvites ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</>
                 ) : (
@@ -786,22 +814,6 @@ export default function CandidatesPage() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Select Job Position</Label>
-                <Select value={startJobId} onValueChange={setStartJobId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a job" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeJobs.map((j) => (
-                      <SelectItem key={j.id} value={j.id}>
-                        {j.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="text-sm text-muted-foreground">
                 Candidates will receive an email with a link to complete an AI-powered interview.
                 The interview uses speech recognition and camera proctoring.
@@ -812,7 +824,7 @@ export default function CandidatesPage() {
               <Button variant="outline" onClick={() => setInterviewDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={sendInterviewInvites} disabled={!startJobId || sendingInvites}>
+              <Button onClick={sendInterviewInvites} disabled={!selectedJobId || sendingInvites}>
                 {sendingInvites ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</>
                 ) : (
@@ -827,24 +839,8 @@ export default function CandidatesPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Interview Session</DialogTitle>
-              <DialogDescription>Select a job position to generate questions for this candidate.</DialogDescription>
+              <DialogDescription>Start an interview session for the selected candidate.</DialogDescription>
             </DialogHeader>
-
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Job</div>
-              <Select value={startJobId} onValueChange={(v) => setStartJobId(v)}>
-                <SelectTrigger disabled={jobsLoading || activeJobs.length === 0}>
-                  <SelectValue placeholder={jobsLoading ? 'Loading jobs...' : 'Select a job'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeJobs.map((j) => (
-                    <SelectItem key={j.id} value={j.id}>
-                      {j.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
             <DialogFooter>
               <Button

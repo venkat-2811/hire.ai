@@ -642,11 +642,6 @@ export default function AIInterviewPage() {
             <CardTitle>Interview Unavailable</CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
-          <CardContent className="flex justify-center">
-            <Button variant="outline" onClick={() => navigate('/')}>
-              Return Home
-            </Button>
-          </CardContent>
         </Card>
       </div>
     );
@@ -695,10 +690,6 @@ export default function AIInterviewPage() {
               <p className="text-sm text-muted-foreground">
                 The hiring team will review your interview and contact you regarding the next steps.
               </p>
-              {finalEvaluation?.overall_score != null && (
-                <p className="text-sm font-medium">Evaluation score: {finalEvaluation.overall_score}%</p>
-              )}
-              <Button onClick={() => navigate('/')}>Return Home</Button>
             </CardContent>
           </Card>
         </motion.div>
