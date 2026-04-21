@@ -36,6 +36,8 @@ class InterviewInviteRequest(BaseModel):
     candidate_ids: List[str]
     job_id: str
     scheduled_time: Optional[str] = None
+    question_count: Optional[int] = 5
+    difficulty: Optional[str] = 'medium'
 
 
 class InterviewInviteResponse(BaseModel):
@@ -131,9 +133,13 @@ async def send_interview_invites(
             # Generate unique interview token
             token = secrets.token_urlsafe(32)
             
+            # Validate question count
+            question_count = min(30, max(1, request.question_count or 5))
+            difficulty = request.difficulty or 'medium'
+            
             # Generate interview questions using AI
             questions = await generate_interview_questions(
-                openai, job, candidate.get("resume_parsed_data")
+                openai, job, candidate.get("resume_parsed_data"), question_count, difficulty
             )
             
             # Create AI interview session
@@ -154,6 +160,8 @@ async def send_interview_invites(
                     "camera_enabled": False,
                     "microphone_enabled": False,
                 },
+                "difficulty": difficulty,
+                "question_count": question_count,
                 "created_at": datetime.utcnow().isoformat(),
             }
             
@@ -283,6 +291,59 @@ async def transcribe_interview_audio(
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
     return {"transcript": transcript}
+
+
+class TranscribeStoreRequest(BaseModel):
+    question_index: int
+    audio_base64: str
+    mime_type: str
+    audio_duration_seconds: float
+
+
+@router.post("/{session_id}/transcribe-store")
+async def transcribe_store_audio(
+    session_id: str,
+    request: TranscribeStoreRequest,
+):
+    """Store audio data for later transcription (background task)."""
+    supabase = get_supabase_admin_client()
+
+    session = supabase.table("ai_interview_sessions").select("id, status, responses").eq("id", session_id).execute()
+    if not session.data:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session_data = session.data[0]
+    if session_data.get("status") not in ["in_progress", "completed"]:
+        raise HTTPException(status_code=400, detail="Interview not in progress")
+
+    # Store the audio data in the responses array for the specific question
+    responses = session_data.get("responses", []) or []
+    
+    # Find or create the response for this question index
+    response_found = False
+    for resp in responses:
+        if resp.get("question_index") == request.question_index:
+            resp["audio_base64"] = request.audio_base64
+            resp["audio_mime_type"] = request.mime_type
+            resp["audio_duration"] = request.audio_duration_seconds
+            response_found = True
+            break
+    
+    if not response_found:
+        responses.append({
+            "question_index": request.question_index,
+            "audio_base64": request.audio_base64,
+            "audio_mime_type": request.mime_type,
+            "audio_duration": request.audio_duration_seconds,
+            "submitted_at": datetime.utcnow().isoformat(),
+        })
+
+    # Update the session with the stored audio data
+    supabase.table("ai_interview_sessions").update({
+        "responses": responses
+    }).eq("id", session_id).execute()
+
+    return {"success": True, "message": "Audio stored for transcription"}
 
 
 @router.post("/{session_id}/response")
@@ -479,19 +540,35 @@ async def get_interview_results(
     return results.data or []
 
 
-async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict]) -> List[dict]:
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = 'medium') -> List[dict]:
     """Generate personalized interview questions using AI."""
     role = job.get("role", "developer")
     level = job.get("level", "mid")
     title = job.get("title", "Software Developer")
     
-    prompt = f"""Generate 8 interview questions for a {level} {title} position.
+    # Calculate question distribution based on count
+    technical_count = max(1, int(question_count * 0.4))
+    behavioral_count = max(1, int(question_count * 0.3))
+    situational_count = max(1, int(question_count * 0.2))
+    motivation_count = question_count - technical_count - behavioral_count - situational_count
     
+    # Adjust difficulty descriptions
+    difficulty_descriptions = {
+        'easy': 'fundamental concepts, basic scenarios, and straightforward questions suitable for junior candidates',
+        'medium': 'intermediate concepts, practical scenarios, and balanced questions suitable for mid-level candidates',
+        'hard': 'advanced concepts, complex scenarios, and challenging questions suitable for senior candidates'
+    }
+    difficulty_desc = difficulty_descriptions.get(difficulty, difficulty_descriptions['medium'])
+    
+    prompt = f"""Generate {question_count} interview questions for a {level} {title} position with {difficulty} difficulty level.
+
+The questions should focus on {difficulty_desc}.
+
 Include a mix of:
-- 3 Technical questions specific to {role}
-- 2 Behavioral questions (STAR format expected)
-- 2 Situational/problem-solving questions
-- 1 Question about career goals and motivation
+- {technical_count} Technical questions specific to {role}
+- {behavioral_count} Behavioral questions (STAR format expected)
+- {situational_count} Situational/problem-solving questions
+- {motivation_count} Question about career goals and motivation
 
 CRITICAL REQUIREMENT: This is an audio-based interview where candidates respond verbally. ALL questions MUST be purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking (e.g., 'How would you approach...', 'Explain how...', 'What are the trade-offs...').
 
