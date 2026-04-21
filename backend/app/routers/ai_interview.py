@@ -36,6 +36,8 @@ class InterviewInviteRequest(BaseModel):
     candidate_ids: List[str]
     job_id: str
     scheduled_time: Optional[str] = None
+    question_count: Optional[int] = 8
+    difficulty: Optional[str] = 'medium'
 
 
 class InterviewInviteResponse(BaseModel):
@@ -133,7 +135,7 @@ async def send_interview_invites(
             
             # Generate interview questions using AI
             questions = await generate_interview_questions(
-                openai, job, candidate.get("resume_parsed_data")
+                openai, job, candidate.get("resume_parsed_data"), request.question_count, request.difficulty
             )
             
             # Create AI interview session
@@ -479,26 +481,81 @@ async def get_interview_results(
     return results.data or []
 
 
-async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict]) -> List[dict]:
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 8, difficulty: str = 'medium') -> List[dict]:
     """Generate personalized interview questions using AI."""
     role = job.get("role", "developer")
     level = job.get("level", "mid")
     title = job.get("title", "Software Developer")
     
-    prompt = f"""Generate 8 interview questions for a {level} {title} position.
+    # Adjust question distribution based on count and difficulty
+    total_questions = min(max(1, question_count), 30)  # Ensure between 1 and 30
+    
+    if difficulty == 'easy':
+        technical_ratio = 0.25  # 25% technical
+        behavioral_ratio = 0.35  # 35% behavioral
+        situational_ratio = 0.30  # 30% situational
+        motivational_ratio = 0.10  # 10% motivational
+    elif difficulty == 'hard':
+        technical_ratio = 0.50  # 50% technical
+        behavioral_ratio = 0.20  # 20% behavioral
+        situational_ratio = 0.25  # 25% situational
+        motivational_ratio = 0.05  # 5% motivational
+    else:  # medium
+        technical_ratio = 0.375  # 37.5% technical
+        behavioral_ratio = 0.25  # 25% behavioral
+        situational_ratio = 0.25  # 25% situational
+        motivational_ratio = 0.125  # 12.5% motivational
+    
+    technical_count = max(1, int(total_questions * technical_ratio))
+    behavioral_count = max(1, int(total_questions * behavioral_ratio))
+    situational_count = max(1, int(total_questions * situational_ratio))
+    motivational_count = max(1, int(total_questions * motivational_ratio))
+    
+    # Adjust for rounding errors
+    current_total = technical_count + behavioral_count + situational_count + motivational_count
+    if current_total < total_questions:
+        # Add remaining questions to technical for hard difficulty, behavioral for easy, situational for medium
+        if difficulty == 'hard':
+            technical_count += total_questions - current_total
+        elif difficulty == 'easy':
+            behavioral_count += total_questions - current_total
+        else:
+            situational_count += total_questions - current_total
+    elif current_total > total_questions:
+        # Remove excess questions from motivational first, then situational
+        excess = current_total - total_questions
+        if motivational_count > excess:
+            motivational_count -= excess
+        else:
+            motivational_count = 1
+            excess -= 1
+            if situational_count > excess:
+                situational_count -= excess
+    
+    difficulty_descriptors = {
+        'easy': 'fundamental concepts and basic understanding',
+        'medium': 'intermediate concepts and practical experience',
+        'hard': 'advanced concepts and complex problem-solving'
+    }
+    
+    descriptor = difficulty_descriptors.get(difficulty, 'intermediate concepts and practical experience')
+    
+    prompt = f"""Generate {total_questions} interview questions for a {level} {title} position at {difficulty} difficulty level.
     
 Include a mix of:
-- 3 Technical questions specific to {role}
-- 2 Behavioral questions (STAR format expected)
-- 2 Situational/problem-solving questions
-- 1 Question about career goals and motivation
+- {technical_count} Technical questions specific to {role} (focus on {descriptor})
+- {behavioral_count} Behavioral questions (STAR format expected)
+- {situational_count} Situational/problem-solving questions
+- {motivational_count} Question about career goals and motivation
 
 CRITICAL REQUIREMENT: This is an audio-based interview where candidates respond verbally. ALL questions MUST be purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking (e.g., 'How would you approach...', 'Explain how...', 'What are the trade-offs...').
+
+Difficulty level {difficulty} means: {descriptor}
 
 {"Consider the candidate's background: " + str(resume_data)[:500] if resume_data else ""}
 
 Return as JSON array with format:
-[{{"text": "question text", "type": "technical|behavioral|situational", "duration": 120, "key_points": ["point1", "point2"]}}]
+[{{"text": "question text", "type": "technical|behavioral|situational|motivational", "duration": 120, "key_points": ["point1", "point2"]}}]
 """
     
     try:

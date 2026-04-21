@@ -872,7 +872,7 @@ export default function AIInterviewPage() {
 
               <div>
                 <Button onClick={handleNextQuestion} disabled={isAutoAdvancing || !isQuestionReadComplete || !isRecording}>
-                  Next
+                  {(currentQuestion?.index || 0) >= (interviewData?.total_questions || 1) - 1 ? 'Submit' : 'Next'}
                 </Button>
               </div>
             </CardContent>
