@@ -109,12 +109,21 @@ async def send_interview_invites(
     settings = get_settings()
     email_service = get_email_service()
     
+    # Debug: Print received parameters
+    print(f"Received interview invite request:")
+    print(f"  - Job ID: {request.job_id}")
+    print(f"  - Candidate IDs: {request.candidate_ids}")
+    print(f"  - Question Count: {request.question_count}")
+    print(f"  - Difficulty: {request.difficulty}")
+    print(f"  - Scheduled Time: {request.scheduled_time}")
+    
     # Verify job exists
     job_result = supabase.table("job_descriptions").select("id, title, role, level").eq("id", request.job_id).execute()
     if not job_result.data:
         raise HTTPException(status_code=404, detail="Job not found")
     
     job = job_result.data[0]
+    print(f"Job details: {job}")
     
     # Get candidate details
     candidates_result = supabase.table("candidates").select(
@@ -130,6 +139,8 @@ async def send_interview_invites(
     
     for candidate in candidates_result.data:
         try:
+            print(f"Processing candidate: {candidate['full_name']} ({candidate['id']})")
+            
             # Generate unique interview token
             token = secrets.token_urlsafe(32)
             
@@ -137,6 +148,8 @@ async def send_interview_invites(
             questions = await generate_interview_questions(
                 openai, job, candidate.get("resume_parsed_data"), request.question_count, request.difficulty
             )
+            
+            print(f"Generated {len(questions)} questions for candidate {candidate['id']}")
             
             # Create AI interview session
             session_data = {
@@ -515,22 +528,59 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
     current_total = technical_count + behavioral_count + situational_count + motivational_count
     if current_total < total_questions:
         # Add remaining questions to technical for hard difficulty, behavioral for easy, situational for medium
+        remaining = total_questions - current_total
         if difficulty == 'hard':
-            technical_count += total_questions - current_total
+            technical_count += remaining
         elif difficulty == 'easy':
-            behavioral_count += total_questions - current_total
+            behavioral_count += remaining
         else:
-            situational_count += total_questions - current_total
+            situational_count += remaining
     elif current_total > total_questions:
-        # Remove excess questions from motivational first, then situational
+        # Remove excess questions from motivational first, then situational, then behavioral
         excess = current_total - total_questions
-        if motivational_count > excess:
-            motivational_count -= excess
+        removal_order = ['motivational', 'situational', 'behavioral', 'technical']
+        counts = {'motivational': motivational_count, 'situational': situational_count, 
+                 'behavioral': behavioral_count, 'technical': technical_count}
+        
+        for q_type in removal_order:
+            if excess <= 0:
+                break
+            if counts[q_type] > 1:  # Keep at least 1 of each type if possible
+                can_remove = min(counts[q_type] - 1, excess)
+                counts[q_type] -= can_remove
+                excess -= can_remove
+        
+        motivational_count = counts['motivational']
+        situational_count = counts['situational']
+        behavioral_count = counts['behavioral']
+        technical_count = counts['technical']
+    
+    # Ensure we have exactly the right number of questions
+    final_total = technical_count + behavioral_count + situational_count + motivational_count
+    if final_total != total_questions:
+        # Final adjustment - add or remove from the most appropriate type
+        diff = total_questions - final_total
+        if diff > 0:
+            # Need to add questions
+            if difficulty == 'hard':
+                technical_count += diff
+            elif difficulty == 'easy':
+                behavioral_count += diff
+            else:
+                situational_count += diff
         else:
-            motivational_count = 1
-            excess -= 1
-            if situational_count > excess:
-                situational_count -= excess
+            # Need to remove questions
+            diff = abs(diff)
+            if difficulty == 'hard' and technical_count > diff:
+                technical_count -= diff
+            elif difficulty == 'easy' and behavioral_count > diff:
+                behavioral_count -= diff
+            elif situational_count > diff:
+                situational_count -= diff
+            elif behavioral_count > diff:
+                behavioral_count -= diff
+            else:
+                technical_count = max(1, technical_count - diff)
     
     difficulty_descriptors = {
         'easy': 'fundamental concepts and basic understanding',
@@ -559,21 +609,148 @@ Return as JSON array with format:
 """
     
     try:
+        print(f"Generating {total_questions} questions with difficulty: {difficulty}")
+        print(f"Question distribution: Technical={technical_count}, Behavioral={behavioral_count}, Situational={situational_count}, Motivational={motivational_count}")
+        
         result = await openai.generate_json(prompt)
+        print(f"AI generation result: {result}")
+        
+        questions = []
         if isinstance(result, list):
-            return result
-        return result.get("questions", [])
+            questions = result
+        elif isinstance(result, dict) and "questions" in result:
+            questions = result["questions"]
+        
+        print(f"Generated {len(questions)} questions from AI")
+        
+        # Validate we got the right number of questions
+        if len(questions) != total_questions:
+            print(f"Expected {total_questions} questions but got {len(questions)}. Adjusting...")
+            
+            # If we got fewer questions, pad with generic questions
+            if len(questions) < total_questions:
+                generic_questions = [
+                    {"text": "Tell me about yourself and your experience.", "type": "behavioral", "duration": 120},
+                    {"text": "What interests you about this role?", "type": "behavioral", "duration": 90},
+                    {"text": "Describe a challenging project you worked on.", "type": "situational", "duration": 150},
+                    {"text": "How do you approach problem-solving?", "type": "situational", "duration": 120},
+                    {"text": "What are your technical strengths?", "type": "technical", "duration": 120},
+                    {"text": "Where do you see yourself in 5 years?", "type": "behavioral", "duration": 90},
+                    {"text": "What motivates you in your work?", "type": "motivational", "duration": 90},
+                    {"text": "Describe your experience with teamwork.", "type": "behavioral", "duration": 120},
+                    {"text": "How do you handle tight deadlines?", "type": "situational", "duration": 120},
+                    {"text": "What technical skills are you currently developing?", "type": "technical", "duration": 120},
+                ]
+                
+                # Add generic questions to reach the desired count
+                while len(questions) < total_questions:
+                    generic_q = generic_questions[len(questions) % len(generic_questions)].copy()
+                    # Adjust type distribution based on difficulty
+                    if difficulty == 'hard' and len(questions) < technical_count:
+                        generic_q["type"] = "technical"
+                    elif difficulty == 'easy' and len(questions) < behavioral_count:
+                        generic_q["type"] = "behavioral"
+                    questions.append(generic_q)
+            
+            # If we got too many questions, truncate
+            elif len(questions) > total_questions:
+                questions = questions[:total_questions]
+        
+        print(f"Final question count: {len(questions)}")
+        return questions
+        
     except Exception as e:
         print(f"Failed to generate questions: {e}")
-        # Fallback questions
-        return [
+        print(f"Using fallback to generate exactly {total_questions} questions")
+        
+        # Generate fallback questions that match the exact count and difficulty distribution
+        fallback_questions = []
+        
+        # Expanded question pools for each type with difficulty-appropriate content
+        technical_questions = [
+            {"text": "What are your technical strengths?", "type": "technical", "duration": 120},
+            {"text": "What technical skills are you currently developing?", "type": "technical", "duration": 120},
+            {"text": "How do you stay updated with the latest technology trends?", "type": "technical", "duration": 120},
+            {"text": "Describe your experience with version control systems.", "type": "technical", "duration": 120},
+            {"text": "What programming languages are you most comfortable with?", "type": "technical", "duration": 120},
+            {"text": "How do you approach debugging complex technical issues?", "type": "technical", "duration": 150},
+            {"text": "What's your experience with testing and quality assurance?", "type": "technical", "duration": 120},
+            {"text": "How do you ensure code quality and maintainability?", "type": "technical", "duration": 120},
+        ]
+        
+        behavioral_questions = [
             {"text": "Tell me about yourself and your experience.", "type": "behavioral", "duration": 120},
             {"text": "What interests you about this role?", "type": "behavioral", "duration": 90},
+            {"text": "Where do you see yourself in 5 years?", "type": "behavioral", "duration": 90},
+            {"text": "What motivates you in your work?", "type": "motivational", "duration": 90},
+            {"text": "Describe your experience with teamwork.", "type": "behavioral", "duration": 120},
+            {"text": "How do you handle constructive feedback?", "type": "behavioral", "duration": 120},
+            {"text": "Tell me about a time you had to learn something new quickly.", "type": "behavioral", "duration": 120},
+            {"text": "How do you prioritize your work when dealing with multiple tasks?", "type": "behavioral", "duration": 120},
+        ]
+        
+        situational_questions = [
             {"text": "Describe a challenging project you worked on.", "type": "situational", "duration": 150},
             {"text": "How do you approach problem-solving?", "type": "situational", "duration": 120},
-            {"text": "What are your technical strengths?", "type": "technical", "duration": 120},
-            {"text": "Where do you see yourself in 5 years?", "type": "behavioral", "duration": 90},
+            {"text": "How do you handle tight deadlines?", "type": "situational", "duration": 120},
+            {"text": "Tell me about a time you had to deal with a difficult team member.", "type": "situational", "duration": 150},
+            {"text": "How would you handle a situation where you disagree with your manager?", "type": "situational", "duration": 120},
+            {"text": "Describe a time you had to make a decision with incomplete information.", "type": "situational", "duration": 150},
         ]
+        
+        motivational_questions = [
+            {"text": "What motivates you in your work?", "type": "motivational", "duration": 90},
+            {"text": "Why are you interested in this company/role?", "type": "motivational", "duration": 90},
+            {"text": "What are your long-term career goals?", "type": "motivational", "duration": 90},
+            {"text": "What kind of work environment do you thrive in?", "type": "motivational", "duration": 90},
+        ]
+        
+        # Create questions according to the calculated distribution
+        question_index = 0
+        
+        # Add technical questions
+        for i in range(technical_count):
+            q = technical_questions[i % len(technical_questions)].copy()
+            # Adjust difficulty for technical questions
+            if difficulty == 'hard':
+                q["duration"] = 150
+            elif difficulty == 'easy':
+                q["duration"] = 90
+            fallback_questions.append(q)
+            question_index += 1
+        
+        # Add behavioral questions
+        for i in range(behavioral_count):
+            q = behavioral_questions[i % len(behavioral_questions)].copy()
+            fallback_questions.append(q)
+            question_index += 1
+        
+        # Add situational questions
+        for i in range(situational_count):
+            q = situational_questions[i % len(situational_questions)].copy()
+            # Adjust difficulty for situational questions
+            if difficulty == 'hard':
+                q["duration"] = 180
+            elif difficulty == 'easy':
+                q["duration"] = 90
+            fallback_questions.append(q)
+            question_index += 1
+        
+        # Add motivational questions
+        for i in range(motivational_count):
+            q = motivational_questions[i % len(motivational_questions)].copy()
+            fallback_questions.append(q)
+            question_index += 1
+        
+        # Shuffle questions to mix them up, but keep the first few for consistency
+        if len(fallback_questions) > 3:
+            import random
+            first_three = fallback_questions[:3]
+            remaining = fallback_questions[3:]
+            random.shuffle(remaining)
+            fallback_questions = first_three + remaining
+        
+        return fallback_questions
 
 
 async def evaluate_speech_response(openai, question: dict, transcript: str) -> dict:
