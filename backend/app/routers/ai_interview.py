@@ -36,8 +36,6 @@ class InterviewInviteRequest(BaseModel):
     candidate_ids: List[str]
     job_id: str
     scheduled_time: Optional[str] = None
-    question_count: Optional[int] = 8
-    difficulty: Optional[str] = "medium"
 
 
 class InterviewInviteResponse(BaseModel):
@@ -135,7 +133,7 @@ async def send_interview_invites(
             
             # Generate interview questions using AI
             questions = await generate_interview_questions(
-                openai, job, candidate.get("resume_parsed_data"), request.question_count, request.difficulty
+                openai, job, candidate.get("resume_parsed_data")
             )
             
             # Create AI interview session
@@ -481,30 +479,19 @@ async def get_interview_results(
     return results.data or []
 
 
-async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 8, difficulty: str = "medium") -> List[dict]:
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict]) -> List[dict]:
     """Generate personalized interview questions using AI."""
     role = job.get("role", "developer")
     level = job.get("level", "mid")
     title = job.get("title", "Software Developer")
     
-    # Calculate question distribution based on count
-    technical_count = max(1, int(question_count * 0.4))  # 40% technical
-    behavioral_count = max(1, int(question_count * 0.3))  # 30% behavioral
-    situational_count = max(1, int(question_count * 0.2))  # 20% situational
-    motivation_count = question_count - technical_count - behavioral_count - situational_count  # Remaining for motivation
-    
-    prompt = f"""Generate {question_count} interview questions for a {level} {title} position at {difficulty} difficulty level.
+    prompt = f"""Generate 8 interview questions for a {level} {title} position.
     
 Include a mix of:
-- {technical_count} Technical questions specific to {role}
-- {behavioral_count} Behavioral questions (STAR format expected)
-- {situational_count} Situational/problem-solving questions
-- {motivation_count} Question about career goals and motivation
-
-Difficulty level: {difficulty}
-- Easy: Focus on fundamental concepts, basic experience, and straightforward scenarios
-- Medium: Include intermediate concepts, practical experience, and moderately complex scenarios
-- Hard: Cover advanced concepts, deep expertise, and complex problem-solving scenarios
+- 3 Technical questions specific to {role}
+- 2 Behavioral questions (STAR format expected)
+- 2 Situational/problem-solving questions
+- 1 Question about career goals and motivation
 
 CRITICAL REQUIREMENT: This is an audio-based interview where candidates respond verbally. ALL questions MUST be purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking (e.g., 'How would you approach...', 'Explain how...', 'What are the trade-offs...').
 

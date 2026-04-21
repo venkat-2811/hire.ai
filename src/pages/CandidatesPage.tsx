@@ -112,8 +112,6 @@ export default function CandidatesPage() {
   const [assessmentDialogOpen, setAssessmentDialogOpen] = useState(false);
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [sendingInvites, setSendingInvites] = useState(false);
-  const [interviewQuestionCount, setInterviewQuestionCount] = useState(8);
-  const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [mcqCount, setMcqCount] = useState(20);
   const [codingCount, setCodingCount] = useState(2);
   const [assessmentDifficulty, setAssessmentDifficulty] = useState<'easy' | 'medium' | 'hard'>('hard');
@@ -309,8 +307,6 @@ export default function CandidatesPage() {
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
           job_id: selectedJobId,
-          question_count: interviewQuestionCount,
-          difficulty: interviewDifficulty,
         }),
       });
 
@@ -818,34 +814,6 @@ export default function CandidatesPage() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Number of Questions</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={interviewQuestionCount}
-                  onChange={(e) => setInterviewQuestionCount(Math.min(30, Math.max(1, Number(e.target.value) || 1)))}
-                />
-                <div className="text-xs text-muted-foreground">
-                  Maximum 30 questions allowed
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Difficulty Level</Label>
-                <Select value={interviewDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setInterviewDifficulty(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="easy">Easy</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="hard">Hard</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="text-sm text-muted-foreground">
                 Candidates will receive an email with a link to complete an AI-powered interview.
                 The interview uses speech recognition and camera proctoring.

@@ -96,10 +96,6 @@ export default function AIInterviewPage() {
   const [violationThreshold, setViolationThreshold] = useState(3);
   const [showWarning, setShowWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
-  
-  // Permission state
-  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
-  const [permissionsGranted, setPermissionsGranted] = useState(false);
 
   // Face detection state
   const noFaceCountRef = useRef(0);
@@ -326,26 +322,6 @@ export default function AIInterviewPage() {
     await advanceAfterTimeout(currentQuestion, audioCapturedSeconds, recordedBlob);
     setIsAutoAdvancing(false);
   }, [currentQuestion, isAutoAdvancing, questionDurationSeconds, questionTimeLeftSeconds, stopRecording, advanceAfterTimeout]);
-
-  // Request permissions
-  const requestPermissions = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 640, height: 480 },
-        audio: true,
-      });
-
-      // Stop the stream immediately after getting permission
-      stream.getTracks().forEach(track => track.stop());
-      
-      setPermissionsGranted(true);
-      setShowPermissionDialog(false);
-      return true;
-    } catch (e) {
-      toast.error('Failed to access camera/microphone. Please grant permissions to proceed.');
-      return false;
-    }
-  }, []);
 
   // Camera setup
   const setupCamera = useCallback(async () => {
@@ -628,11 +604,6 @@ export default function AIInterviewPage() {
 
   // Start interview after setup
   const handleStartInterview = async () => {
-    if (!permissionsGranted) {
-      setShowPermissionDialog(true);
-      return;
-    }
-
     const cameraOk = await setupCamera();
     if (!cameraOk) return;
 
@@ -821,32 +792,6 @@ export default function AIInterviewPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Permission Dialog */}
-      <AlertDialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Camera & Microphone Required
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This interview requires access to your camera and microphone for AI proctoring and speech recognition.
-              <br /><br />
-              <strong>Camera:</strong> Monitors for proctoring compliance
-              <br />
-              <strong>Microphone:</strong> Records your verbal responses
-              <br /><br />
-              Please click "Allow Permissions" to grant access to both camera and microphone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={requestPermissions}>
-              Allow Permissions
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
@@ -927,7 +872,7 @@ export default function AIInterviewPage() {
 
               <div>
                 <Button onClick={handleNextQuestion} disabled={isAutoAdvancing || !isQuestionReadComplete || !isRecording}>
-                  {currentQuestion && interviewData && (currentQuestion.index + 1) >= interviewData.total_questions ? 'Submit' : 'Next'}
+                  Next
                 </Button>
               </div>
             </CardContent>
