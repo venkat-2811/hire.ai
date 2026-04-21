@@ -118,6 +118,8 @@ export default function CandidatesPage() {
   const [includeMcq, setIncludeMcq] = useState(true);
   const [includeCoding, setIncludeCoding] = useState(true);
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
+  const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
+  const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -295,6 +297,11 @@ export default function CandidatesPage() {
       return;
     }
 
+    if (interviewQuestionCount < 1 || interviewQuestionCount > 30) {
+      toast.error('Question count must be between 1 and 30');
+      return;
+    }
+
     setSendingInvites(true);
     try {
       const token = await getToken();
@@ -307,6 +314,8 @@ export default function CandidatesPage() {
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
           job_id: selectedJobId,
+          question_count: interviewQuestionCount,
+          difficulty: interviewDifficulty,
         }),
       });
 
@@ -814,6 +823,34 @@ export default function CandidatesPage() {
             </DialogHeader>
 
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Number of Questions (Max: 30)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={interviewQuestionCount}
+                  onChange={(e) => setInterviewQuestionCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Candidates will answer {interviewQuestionCount} question{interviewQuestionCount !== 1 ? 's' : ''} in the interview.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Difficulty Level</Label>
+                <Select value={interviewDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setInterviewDifficulty(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="text-sm text-muted-foreground">
                 Candidates will receive an email with a link to complete an AI-powered interview.
                 The interview uses speech recognition and camera proctoring.

@@ -91,6 +91,7 @@ export default function AIInterviewPage() {
 
   // Proctoring state
   const [showReadyScreen, setShowReadyScreen] = useState(true);
+  const [showPermissionDialog, setShowPermissionDialog] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const [violationThreshold, setViolationThreshold] = useState(3);
@@ -604,9 +605,6 @@ export default function AIInterviewPage() {
 
   // Start interview after setup
   const handleStartInterview = async () => {
-    const cameraOk = await setupCamera();
-    if (!cameraOk) return;
-
     await enterFullscreen();
     setShowReadyScreen(false);
     await loadCurrentQuestion();
@@ -693,6 +691,62 @@ export default function AIInterviewPage() {
             </CardContent>
           </Card>
         </motion.div>
+      </div>
+    );
+  }
+
+  // Permission request gate
+  if (showPermissionDialog) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-2xl w-full">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <Shield className="h-8 w-8 text-primary" />
+            </div>
+            <CardTitle className="text-2xl">Permissions Required</CardTitle>
+            <CardDescription className="text-base">
+              This interview requires camera and microphone access for proctoring and speech recognition.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex items-start gap-4 p-4 bg-muted/50 rounded-lg">
+                <Video className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold mb-1">Camera Access</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Required for AI-powered face detection and proctoring to ensure interview integrity.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-4 bg-muted/50 rounded-lg">
+                <Mic className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold mb-1">Microphone Access</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Required to record your verbal responses to interview questions using speech recognition.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+              <p className="text-sm font-medium text-destructive">
+                By clicking "Allow & Continue", you agree to grant these permissions for the duration of the interview.
+              </p>
+            </div>
+
+            <Button className="w-full" size="lg" onClick={async () => {
+              const cameraOk = await setupCamera();
+              if (cameraOk) {
+                setShowPermissionDialog(false);
+              }
+            }}>
+              Allow & Continue
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -872,7 +926,7 @@ export default function AIInterviewPage() {
 
               <div>
                 <Button onClick={handleNextQuestion} disabled={isAutoAdvancing || !isQuestionReadComplete || !isRecording}>
-                  Next
+                  {currentQuestion && currentQuestion.index >= (interviewData?.total_questions || 1) - 1 ? 'Submit' : 'Next'}
                 </Button>
               </div>
             </CardContent>
