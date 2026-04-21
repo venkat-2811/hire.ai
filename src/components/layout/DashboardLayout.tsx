@@ -2,6 +2,8 @@ import { ReactNode, useEffect, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useProfile } from "@/hooks/useProfile";
+import { useQuery } from "@tanstack/react-query";
+import { billingApi } from "@/lib/api";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { data: profile } = useProfile();
+  const { data: billingUsage } = useQuery({
+    queryKey: ['layout-billing-usage'],
+    queryFn: () => billingApi.usage(),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
 
   useEffect(() => {
     if (location.pathname === '/onboarding') return;
@@ -49,6 +57,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </header>
         
         <main className="flex-1 overflow-auto bg-background">
+          {billingUsage?.status === 'paused' && location.pathname !== '/billing' && (
+            <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 flex items-center justify-between gap-3">
+              <p className="text-sm text-destructive">
+                Billing paused: wallet exhausted. Add funds to resume AI features.
+              </p>
+              <Button size="sm" variant="destructive" onClick={() => navigate('/billing')}>
+                Pay Now
+              </Button>
+            </div>
+          )}
           {children}
         </main>
       </div>

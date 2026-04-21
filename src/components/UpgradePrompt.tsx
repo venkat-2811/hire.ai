@@ -26,28 +26,28 @@ const PLANS = [
   {
     id: 'pro',
     name: 'Pro',
-    price: '$10',
+    price: '$36.13',
     period: '/month',
     icon: Zap,
     color: 'from-blue-500 to-cyan-500',
     features: ['Up to 15 job roles', '100+ technical assessments', '100+ interviews', 'Priority support'],
     cycleOptions: [
-      { id: 'pro', label: 'Monthly — $10 / month' },
-      { id: 'pro_yearly', label: 'Yearly — $100 / year', suffix: '(save ~17%)' },
+      { id: 'pro', label: 'Monthly — $36.13 / month' },
+      { id: 'pro_yearly', label: 'Yearly — $361.33 / year', suffix: '(save ~17%)' },
     ]
   },
   {
     id: 'premium',
     name: 'Premium',
-    price: '$15',
+    price: '$96.37',
     period: '/month',
     icon: Crown,
     color: 'from-purple-500 to-pink-500',
     features: ['50+ job roles (unlimited)', 'Unlimited assessments', 'Unlimited interviews', 'Dedicated support'],
     popular: true,
     cycleOptions: [
-      { id: 'premium', label: 'Monthly — $15 / month' },
-      { id: 'premium_yearly', label: 'Yearly — $150 / year', suffix: '(save ~17%)' },
+      { id: 'premium', label: 'Monthly — $96.37 / month' },
+      { id: 'premium_yearly', label: 'Yearly — $963.73 / year', suffix: '(save ~17%)' },
     ]
   },
 ];

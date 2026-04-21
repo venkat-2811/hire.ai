@@ -43,8 +43,8 @@ const BASE_PLANS = [
   {
     id: 'pro',
     name: 'Pro',
-    priceMonthly: '$10',
-    priceYearly: '$100',
+    priceMonthly: '$36.13',
+    priceYearly: '$361.33',
     periodMonthly: '/mo',
     periodYearly: '/yr',
     icon: Zap,
@@ -61,8 +61,8 @@ const BASE_PLANS = [
   {
     id: 'premium',
     name: 'Premium',
-    priceMonthly: '$15',
-    priceYearly: '$150',
+    priceMonthly: '$96.37',
+    priceYearly: '$963.73',
     periodMonthly: '/mo',
     periodYearly: '/yr',
     icon: Crown,

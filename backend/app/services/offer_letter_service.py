@@ -42,7 +42,7 @@ def generate_offer_letter_pdf(
         candidate_email: Email address of the candidate
         job_title: Title of the offered role
         company_name: Name of the hiring company
-        offered_salary: Salary string (e.g. "₹12,00,000 per annum")
+        offered_salary: Salary string (e.g. "$120,000 per annum")
         start_date: Optional proposed start date string
         reporting_manager: Optional name of reporting manager
         location: Optional work location

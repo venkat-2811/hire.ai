@@ -474,14 +474,350 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
 // ============== Plan Limits ==============
 const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
   free: { max_jobs: 10, max_assessments: 25, max_interviews: 25, price: 0, label: 'Free' },
-  pro: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 1000, label: 'Pro (Monthly)' },
-  pro_yearly: { max_jobs: 15, max_assessments: 999999, max_interviews: 999999, price: 10000, label: 'Pro (Yearly)' },
-  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 1500, label: 'Premium (Monthly)' },
-  premium_yearly: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 15000, label: 'Premium (Yearly)' },
+  pro: { max_jobs: 1000, max_assessments: 999999, max_interviews: 999999, price: 3613, label: 'Pro (Monthly)' },
+  pro_yearly: { max_jobs: 1000, max_assessments: 999999, max_interviews: 999999, price: 36133, label: 'Pro (Yearly)' },
+  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 9637, label: 'Premium (Monthly)' },
+  premium_yearly: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 96373, label: 'Premium (Yearly)' },
 };
 
 function getPlanLimits(plan: string) {
   return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+}
+
+type BillingPlan = 'free' | 'pro' | 'premium';
+type BillingStatus = 'active' | 'paused' | 'overdue' | 'cancel_at_period_end';
+type BillableFeature =
+  | 'create_job'
+  | 'resume_parse'
+  | 'candidate_scoring'
+  | 'assessment_invite'
+  | 'ai_interview_invite'
+  | 'regenerate_interview_questions'
+  | 'assessment_mcq_generation';
+
+const BILLING_PLAN_CONFIG: Record<BillingPlan, {
+  monthly_deposit: number;
+  free_caps: Partial<Record<BillableFeature, number>>;
+  overage_cap: number | null;
+}> = {
+  free: {
+    monthly_deposit: 0,
+    free_caps: {
+      create_job: 10,
+      resume_parse: 30,
+      candidate_scoring: 60,
+      assessment_invite: 25,
+      ai_interview_invite: 25,
+      regenerate_interview_questions: 20,
+      assessment_mcq_generation: 40,
+    },
+    overage_cap: 0,
+  },
+  pro: {
+    monthly_deposit: 36.13,
+    free_caps: {},
+    overage_cap: 180.72,
+  },
+  premium: {
+    monthly_deposit: 96.37,
+    free_caps: {},
+    overage_cap: null,
+  },
+};
+
+const FEATURE_COSTS: Record<BillableFeature, number> = {
+  create_job: 0.18,
+  resume_parse: 0.1,
+  candidate_scoring: 0.14,
+  assessment_invite: 0.12,
+  ai_interview_invite: 0.3,
+  regenerate_interview_questions: 0.06,
+  assessment_mcq_generation: 0.24,
+};
+
+function normalizeBillingPlan(rawPlan: string | null | undefined): BillingPlan {
+  const p = String(rawPlan || 'free').toLowerCase();
+  if (p.startsWith('pro')) return 'pro';
+  if (p.startsWith('premium')) return 'premium';
+  return 'free';
+}
+
+async function getOrCreateSubscription(supabase: SupabaseClient, userId: string) {
+  const { data: existing } = await supabase
+    .from('subscriptions')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (existing) return existing;
+
+  const profile = await getUserProfile(supabase, userId);
+  const plan = normalizeBillingPlan(profile?.subscription_plan);
+  const cfg = BILLING_PLAN_CONFIG[plan];
+  const now = new Date();
+  const cycleEnd = new Date(now);
+  cycleEnd.setMonth(cycleEnd.getMonth() + 1);
+
+  const { data: created, error } = await supabase
+    .from('subscriptions')
+    .insert({
+      user_id: userId,
+      plan,
+      status: (profile?.subscription_status || 'active') as BillingStatus,
+      deposit_amount: cfg.monthly_deposit,
+      wallet_balance: cfg.monthly_deposit,
+      billing_cycle_start: now.toISOString(),
+      billing_cycle_end: cycleEnd.toISOString(),
+      overage_amount: 0,
+      overage_cap: cfg.overage_cap,
+      metadata: { source: 'auto-bootstrap' },
+    })
+    .select('*')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return created;
+}
+
+async function aggregateUsageByFeature(
+  supabase: SupabaseClient,
+  userId: string,
+  fromIso: string,
+  toIso: string,
+) {
+  const { data } = await supabase
+    .from('usage_events')
+    .select('feature_type, quantity, unit_cost, total_cost, created_at')
+    .eq('user_id', userId)
+    .gte('created_at', fromIso)
+    .lte('created_at', toIso)
+    .order('created_at', { ascending: false });
+
+  const byFeature: Record<string, { quantity: number; total_cost: number }> = {};
+  let totalCost = 0;
+  for (const ev of (data || [])) {
+    const f = String(ev.feature_type);
+    if (!byFeature[f]) byFeature[f] = { quantity: 0, total_cost: 0 };
+    byFeature[f].quantity += Number(ev.quantity || 1);
+    byFeature[f].total_cost += Number(ev.total_cost || 0);
+    totalCost += Number(ev.total_cost || 0);
+  }
+
+  return { byFeature, totalCost };
+}
+
+async function createInvoiceForOverage(
+  supabase: SupabaseClient,
+  userId: string,
+  amount: number,
+  lineItems: any[],
+) {
+  if (amount <= 0) return null;
+
+  const { data: existingPending } = await supabase
+    .from('invoices')
+    .select('id, total')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingPending) {
+    await supabase
+      .from('invoices')
+      .update({
+        total: Number(existingPending.total || 0) + amount,
+        subtotal: Number(existingPending.total || 0) + amount,
+        line_items: lineItems,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingPending.id);
+    return existingPending.id;
+  }
+
+  const now = new Date();
+  const due = new Date(now);
+  due.setDate(due.getDate() + 7);
+
+  const { data: created, error } = await supabase
+    .from('invoices')
+    .insert({
+      user_id: userId,
+      period_start: now.toISOString(),
+      period_end: now.toISOString(),
+      line_items: lineItems,
+      subtotal: amount,
+      tax_amount: 0,
+      total: amount,
+      status: 'pending',
+      due_date: due.toISOString(),
+    })
+    .select('id')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return created?.id || null;
+}
+
+async function sendBillingWarningEmail(userEmail: string, plan: BillingPlan, walletBalance: number) {
+  if (!userEmail) return;
+  await sendEmail(
+    userEmail,
+    'Your HireAI wallet is running low',
+    `<h2>Wallet usage alert</h2><p>Your ${plan.toUpperCase()} wallet balance is now <strong>$${walletBalance.toFixed(2)}</strong>.</p><p>Top up now to avoid service interruptions.</p>`,
+  );
+}
+
+async function sendBillingPausedEmail(userEmail: string) {
+  if (!userEmail) return;
+  await sendEmail(
+    userEmail,
+    'Services paused — pay now to resume',
+    `<h2>Services paused</h2><p>Your HireAI wallet is exhausted. New job posting and AI generation features are paused.</p><p>Please add funds or pay pending invoices to resume service.</p>`,
+  );
+}
+
+async function checkPlanAccess(
+  supabase: SupabaseClient,
+  userId: string,
+  feature: BillableFeature,
+  options?: { quantity?: number; jobId?: string; candidateId?: string; metadata?: Record<string, any> },
+) {
+  const quantity = Math.max(1, Number(options?.quantity || 1));
+  const profile = await getUserProfile(supabase, userId);
+  const subscription = await getOrCreateSubscription(supabase, userId);
+  const plan = normalizeBillingPlan(subscription.plan || profile?.subscription_plan);
+  const cfg = BILLING_PLAN_CONFIG[plan];
+
+  if (subscription.status === 'paused' || subscription.status === 'overdue') {
+    return {
+      allowed: false,
+      status: 402,
+      error: 'billing_paused',
+      message: 'Your account is paused due to insufficient wallet balance. Please pay invoice/top up to continue.',
+      plan,
+      wallet_balance: Number(subscription.wallet_balance || 0),
+    };
+  }
+
+  if (plan === 'free') {
+    const cap = cfg.free_caps[feature] ?? 0;
+    const cycleStart = subscription.billing_cycle_start || new Date(new Date().setDate(1)).toISOString();
+    const cycleEnd = subscription.billing_cycle_end || new Date().toISOString();
+    const usage = await aggregateUsageByFeature(supabase, userId, cycleStart, cycleEnd);
+    const used = usage.byFeature[feature]?.quantity || 0;
+
+    if (cap > 0 && used + quantity > cap) {
+      return {
+        allowed: false,
+        status: 402,
+        error: 'plan_limit_exceeded',
+        message: `Free plan limit reached for ${feature}. Please upgrade your plan.`,
+        plan,
+        current: used,
+        limit: cap,
+      };
+    }
+
+    const totalCost = 0;
+    await supabase.from('usage_events').insert({
+      user_id: userId,
+      feature_type: feature,
+      unit_cost: 0,
+      quantity,
+      total_cost: totalCost,
+      job_id: options?.jobId || null,
+      candidate_id: options?.candidateId || null,
+      metadata: options?.metadata || {},
+    });
+
+    return { allowed: true, plan, wallet_balance: Number(subscription.wallet_balance || 0), charged: totalCost };
+  }
+
+  const unitCost = FEATURE_COSTS[feature] ?? 0;
+  const totalCost = unitCost * quantity;
+  const currentWallet = Number(subscription.wallet_balance || 0);
+  const newWallet = currentWallet - totalCost;
+
+  await supabase.from('usage_events').insert({
+    user_id: userId,
+    feature_type: feature,
+    unit_cost: unitCost,
+    quantity,
+    total_cost: totalCost,
+    job_id: options?.jobId || null,
+    candidate_id: options?.candidateId || null,
+    metadata: options?.metadata || {},
+  });
+
+  const updatePayload: Record<string, any> = {
+    wallet_balance: Math.max(0, newWallet),
+    updated_at: new Date().toISOString(),
+  };
+
+  const startBalance = cfg.monthly_deposit || Number(subscription.deposit_amount || 0) || 1;
+  const consumedRatio = 1 - (Math.max(0, newWallet) / startBalance);
+
+  if (consumedRatio >= 0.8 && !subscription.warning_80_sent_at) {
+    updatePayload.warning_80_sent_at = new Date().toISOString();
+    if (profile?.email) {
+      sendBillingWarningEmail(profile.email, plan, Math.max(0, newWallet)).catch(() => null);
+    }
+  }
+
+  if (newWallet <= 0) {
+    const overage = Math.abs(newWallet);
+    updatePayload.status = 'paused';
+    updatePayload.paused_at = new Date().toISOString();
+    updatePayload.overage_amount = Number(subscription.overage_amount || 0) + overage;
+
+    const invoiceId = await createInvoiceForOverage(
+      supabase,
+      userId,
+      overage,
+      [
+        {
+          feature,
+          quantity,
+          unit_cost: unitCost,
+          total: totalCost,
+          overage_component: overage,
+          at: new Date().toISOString(),
+        },
+      ],
+    );
+
+    if (profile?.email) {
+      sendBillingPausedEmail(profile.email).catch(() => null);
+      sendEmail(
+        profile.email,
+        'Invoice generated for usage overage',
+        `<h2>Invoice generated</h2><p>Your account exceeded wallet balance and invoice <strong>${invoiceId || ''}</strong> has been generated.</p><p>Please complete payment to resume all services.</p>`,
+      ).catch(() => null);
+    }
+  }
+
+  await supabase.from('subscriptions').update(updatePayload).eq('id', subscription.id);
+
+  if (newWallet <= 0) {
+    return {
+      allowed: false,
+      status: 402,
+      error: 'billing_paused',
+      message: 'Wallet exhausted. Services are paused. Please top up or pay invoice to resume.',
+      plan,
+      wallet_balance: 0,
+      charged: totalCost,
+    };
+  }
+
+  return {
+    allowed: true,
+    plan,
+    wallet_balance: Math.max(0, newWallet),
+    charged: totalCost,
+  };
 }
 
 async function getUserProfile(supabase: SupabaseClient, userId: string) {
@@ -494,23 +830,38 @@ function getStripeSecretKey(): string {
   return process.env.STRIPE_SECRET_KEY || '';
 }
 
-async function createStripeCheckoutSession(amount: number, planLabel: string, planId: string, successUrl: string, cancelUrl: string) {
+async function createStripeCheckoutSession(
+  amount: number,
+  planLabel: string,
+  planId: string,
+  successUrl: string,
+  cancelUrl: string,
+  metadata?: Record<string, string>,
+) {
+  const payload = new URLSearchParams({
+    'mode': 'payment',
+    'line_items[0][price_data][currency]': 'usd',
+    'line_items[0][price_data][product_data][name]': `Hire.AI ${planLabel}`,
+    'line_items[0][price_data][unit_amount]': String(amount),
+    'line_items[0][quantity]': '1',
+    'success_url': successUrl,
+    'cancel_url': cancelUrl,
+    'metadata[plan]': planId,
+  });
+
+  if (metadata) {
+    Object.entries(metadata).forEach(([key, value]) => {
+      payload.append(`metadata[${key}]`, String(value));
+    });
+  }
+
   const resp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${getStripeSecretKey()}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({
-      'mode': 'payment',
-      'line_items[0][price_data][currency]': 'usd',
-      'line_items[0][price_data][product_data][name]': `Hire.AI ${planLabel} Plan`,
-      'line_items[0][price_data][unit_amount]': String(amount),
-      'line_items[0][quantity]': '1',
-      'success_url': successUrl,
-      'cancel_url': cancelUrl,
-      'metadata[plan]': planId,
-    }).toString(),
+    body: payload.toString(),
   });
   if (!resp.ok) {
     const err = await resp.text();
@@ -868,6 +1219,242 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  // /api/billing/*
+  if (segments[0] === 'billing') {
+    // POST /api/billing/webhook (Stripe)
+    if (segments.length === 2 && segments[1] === 'webhook' && req.method === 'POST') {
+      const event = req.body || {};
+      const type = String(event?.type || '');
+      const obj = event?.data?.object || {};
+      if (type === 'checkout.session.completed') {
+        const metadata = obj.metadata || {};
+        const userId = metadata.user_id as string | undefined;
+        const action = metadata.action as string | undefined;
+        const amount = Number((obj.amount_total || 0) / 100);
+        if (userId && amount > 0) {
+          const sub = await getOrCreateSubscription(supabase, userId);
+          if (action === 'topup' || action === 'invoice_payment') {
+            await supabase.from('subscriptions').update({
+              wallet_balance: Number(sub.wallet_balance || 0) + amount,
+              status: 'active',
+              resumed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sub.id);
+
+            const profile = await getUserProfile(supabase, userId);
+            if (profile?.email) {
+              await sendEmail(
+                profile.email,
+                'Services restored',
+                `<h2>Payment confirmed</h2><p>Your payment of <strong>$${amount.toFixed(2)}</strong> was successful and services have been restored.</p>`,
+              );
+            }
+
+            if (action === 'invoice_payment' && metadata.invoice_id) {
+              await supabase.from('invoices').update({
+                status: 'paid',
+                paid_at: new Date().toISOString(),
+                payment_reference: obj.payment_intent || obj.id,
+                updated_at: new Date().toISOString(),
+              }).eq('id', metadata.invoice_id);
+            }
+          }
+
+          if (action === 'subscribe') {
+            const nextPlan = normalizeBillingPlan(metadata.plan as string);
+            const cfg = BILLING_PLAN_CONFIG[nextPlan];
+            const now = new Date();
+            const cycleEnd = new Date(now);
+            cycleEnd.setMonth(cycleEnd.getMonth() + 1);
+
+            await supabase.from('subscriptions').update({
+              plan: nextPlan,
+              status: 'active',
+              deposit_amount: amount || cfg.monthly_deposit,
+              wallet_balance: amount || cfg.monthly_deposit,
+              billing_cycle_start: now.toISOString(),
+              billing_cycle_end: cycleEnd.toISOString(),
+              paused_at: null,
+              resumed_at: now.toISOString(),
+              warning_80_sent_at: null,
+              updated_at: now.toISOString(),
+            }).eq('id', sub.id);
+
+            await supabase.from('profiles').update({
+              subscription_plan: nextPlan,
+              subscription_status: 'active',
+              subscription_id: obj.id,
+              stripe_payment_id: obj.payment_intent || obj.id,
+              plan_selected_at: now.toISOString(),
+              updated_at: now.toISOString(),
+            }).eq('user_id', userId);
+          }
+        }
+      }
+      return ok(res, { received: true });
+    }
+
+    const user = await requireAuth(req, res);
+    if (!user) return;
+
+    // POST /api/billing/subscribe
+    if (segments.length === 2 && segments[1] === 'subscribe' && req.method === 'POST') {
+      const requestedPlan = normalizeBillingPlan(req.body?.plan);
+      if (requestedPlan === 'free') {
+        return badRequest(res, 'Use free plan selection endpoint for free tier');
+      }
+
+      const cfg = BILLING_PLAN_CONFIG[requestedPlan];
+      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+      const isLocalhost = String(hostHeader).includes('localhost');
+      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
+      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
+      const frontendUrl = process.env.FRONTEND_URL || dynamicUrl;
+      const successUrl = `${frontendUrl}/billing?checkout=success&action=subscribe`;
+      const cancelUrl = `${frontendUrl}/billing?checkout=cancelled&action=subscribe`;
+
+      const session = await createStripeCheckoutSession(
+        Math.round(cfg.monthly_deposit * 100),
+        `${requestedPlan.toUpperCase()} Deposit`,
+        requestedPlan,
+        successUrl,
+        cancelUrl,
+        {
+          action: 'subscribe',
+          user_id: user.id,
+          plan: requestedPlan,
+        },
+      );
+
+      return ok(res, {
+        success: true,
+        session_id: session.id,
+        checkout_url: session.url,
+        plan: requestedPlan,
+        deposit_amount: cfg.monthly_deposit,
+      });
+    }
+
+    // GET /api/billing/usage
+    if (segments.length === 2 && segments[1] === 'usage' && req.method === 'GET') {
+      const subscription = await getOrCreateSubscription(supabase, user.id);
+      const plan = normalizeBillingPlan(subscription.plan);
+      const cfg = BILLING_PLAN_CONFIG[plan];
+      const periodStart = subscription.billing_cycle_start || new Date(new Date().setDate(1)).toISOString();
+      const periodEnd = subscription.billing_cycle_end || new Date().toISOString();
+      const aggregated = await aggregateUsageByFeature(supabase, user.id, periodStart, periodEnd);
+
+      return ok(res, {
+        plan,
+        status: subscription.status,
+        wallet_balance: Number(subscription.wallet_balance || 0),
+        deposit_amount: Number(subscription.deposit_amount || 0),
+        overage_amount: Number(subscription.overage_amount || 0),
+        overage_cap: subscription.overage_cap,
+        billing_cycle_start: subscription.billing_cycle_start,
+        billing_cycle_end: subscription.billing_cycle_end,
+        limits: {
+          free_caps: cfg.free_caps,
+          feature_costs: FEATURE_COSTS,
+        },
+        usage_breakdown: aggregated.byFeature,
+        usage_total_cost: aggregated.totalCost,
+      });
+    }
+
+    // POST /api/billing/topup
+    if (segments.length === 2 && segments[1] === 'topup' && req.method === 'POST') {
+      const amount = Number(req.body?.amount || 0);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return badRequest(res, 'Valid amount is required');
+      }
+
+      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+      const isLocalhost = String(hostHeader).includes('localhost');
+      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
+      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
+      const frontendUrl = process.env.FRONTEND_URL || dynamicUrl;
+
+      const session = await createStripeCheckoutSession(
+        Math.round(amount * 100),
+        'Wallet Top-up',
+        'topup',
+        `${frontendUrl}/billing?checkout=success&action=topup`,
+        `${frontendUrl}/billing?checkout=cancelled&action=topup`,
+        {
+          action: 'topup',
+          user_id: user.id,
+          amount: String(amount),
+        },
+      );
+
+      return ok(res, {
+        success: true,
+        session_id: session.id,
+        checkout_url: session.url,
+      });
+    }
+
+    // POST /api/billing/pay-invoice
+    if (segments.length === 2 && segments[1] === 'pay-invoice' && req.method === 'POST') {
+      const invoiceId = String(req.body?.invoice_id || '');
+      if (!invoiceId) return badRequest(res, 'invoice_id is required');
+
+      const { data: invoice } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('id', invoiceId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (!invoice) return notFound(res, 'Invoice not found');
+      if (invoice.status === 'paid') return ok(res, { success: true, already_paid: true });
+
+      const total = Number(invoice.total || 0);
+      if (total <= 0) {
+        return badRequest(res, 'Invoice total is invalid');
+      }
+
+      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+      const isLocalhost = String(hostHeader).includes('localhost');
+      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
+      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
+      const frontendUrl = process.env.FRONTEND_URL || dynamicUrl;
+
+      const session = await createStripeCheckoutSession(
+        Math.round(total * 100),
+        `Invoice ${invoiceId}`,
+        'invoice_payment',
+        `${frontendUrl}/billing?checkout=success&action=invoice_payment`,
+        `${frontendUrl}/billing?checkout=cancelled&action=invoice_payment`,
+        {
+          action: 'invoice_payment',
+          user_id: user.id,
+          invoice_id: invoiceId,
+        },
+      );
+
+      return ok(res, {
+        success: true,
+        session_id: session.id,
+        checkout_url: session.url,
+      });
+    }
+
+    // GET /api/billing/invoices
+    if (segments.length === 2 && segments[1] === 'invoices' && req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return ok(res, data || []);
+    }
+
+    return methodNotAllowed(res);
+  }
+
   // /api/dsa-problems - DSA Problem Bank Management
   if (segments[0] === 'dsa-problems') {
     if (segments.length === 1) {
@@ -978,6 +1565,11 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       if (req.method === 'POST') {
         const user = await requireAuth(req, res);
         if (!user) return;
+
+        const billingGate = await checkPlanAccess(supabase, user.id, 'create_job');
+        if (!billingGate.allowed) {
+          return res.status(billingGate.status || 402).json(billingGate);
+        }
 
         // ---- Usage Limit Check ----
         const profile = await getUserProfile(supabase, user.id);
@@ -1195,6 +1787,11 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     if (segments.length === 3 && segments[2] === 'regenerate-questions' && req.method === 'POST') {
       const user = await requireAuth(req, res);
       if (!user) return;
+
+      const billingGate = await checkPlanAccess(supabase, user.id, 'regenerate_interview_questions');
+      if (!billingGate.allowed) {
+        return res.status(billingGate.status || 402).json(billingGate);
+      }
 
       const jobId = segments[1];
       const { data: job, error } = await supabase
@@ -1510,33 +2107,6 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
       // Offer letter flow is temporarily disabled.
       return res.status(503).json({ error: 'Offer letter functionality is temporarily disabled.' });
-
-      const body = (req.body || {}) as any;
-      const candidate_id = body.candidate_id ?? body.candidateId;
-      const job_id = body.job_id ?? body.jobId;
-      const company_name = body.company_name ?? body.companyName;
-      const pdf_base64 = body.pdf_base64 ?? body.pdfBase64;
-
-      if (!candidate_id || !job_id || !pdf_base64) {
-        return badRequest(res, `candidate_id, job_id, and pdf_base64 are required (received candidate_id=${Boolean(candidate_id)}, job_id=${Boolean(job_id)}, pdf_base64=${Boolean(pdf_base64)})`);
-      }
-
-      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', job_id).eq('created_by', user.id).single();
-      if (!job) return notFound(res, 'Job not found or access denied');
-
-      const { data: candidate } = await supabase.from('candidates').select('id, email, full_name').eq('id', candidate_id).single();
-      if (!candidate) return notFound(res, 'Candidate not found');
-
-      try {
-        await sendOfferLetterEmail(candidate.email, candidate.full_name, job.title, company_name || 'Our Company', pdf_base64);
-        
-        // Update job_applications status
-        await supabase.from('job_applications').update({ final_status: 'offer_sent' }).eq('candidate_id', candidate_id).eq('job_id', job_id);
-
-        return ok(res, { success: true, message: 'Offer letter sent successfully' });
-      } catch (e: any) {
-        return res.status(500).json({ error: `Failed to send offer letter: ${e.message}` });
-      }
     }
 
     if (segments.length === 2) {
@@ -1647,6 +2217,11 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     if (segments.length === 3 && segments[2] === 'upload-resume') {
       const user = await requireAuth(req, res);
       if (!user) return;
+
+      const billingGate = await checkPlanAccess(supabase, user.id, 'resume_parse');
+      if (!billingGate.allowed) {
+        return res.status(billingGate.status || 402).json(billingGate);
+      }
 
       const candidateId = segments[1];
       if (req.method !== 'POST') return methodNotAllowed(res);
@@ -1795,6 +2370,11 @@ ${resumeText.slice(0, 8000)}
       const user = await requireAuth(req, res);
       if (!user) return;
       if (req.method !== 'POST') return methodNotAllowed(res);
+
+      const billingGate = await checkPlanAccess(supabase, user.id, 'candidate_scoring');
+      if (!billingGate.allowed) {
+        return res.status(billingGate.status || 402).json(billingGate);
+      }
 
       const { candidate_id, job_id } = req.body;
       if (!candidate_id || !job_id) return badRequest(res, `candidate_id (${candidate_id}) and job_id (${job_id}) are required`);
@@ -1952,8 +2532,6 @@ Return JSON:
           .eq('created_by', user.id)
           .eq('is_active', true)
           .lt('created_at', weekAgoStr)
-          .then(res => res)
-          .catch(() => ({ count: 0 }))
       ]);
 
       const activeJobs = activeJobsRes.count || 0;
@@ -1994,18 +2572,14 @@ Return JSON:
             .from('job_applications')
             .select('candidate_id', { count: 'exact', head: true })
             .in('job_id', userJobIds)
-            .lt('applied_at', weekAgoStr)
-            .then(res => res)
-            .catch(() => ({ count: 0 })),
+            .lt('applied_at', weekAgoStr),
 
           // Handle potential missing tables gracefully
           supabase
             .from('ai_interview_sessions')
             .select('id', { count: 'exact', head: true })
             .in('job_id', userJobIds)
-            .eq('status', 'pending')
-            .then(res => res)
-            .catch(() => ({ count: 0 })),
+            .eq('status', 'pending'),
 
           supabase
             .from('ats_screenings')
@@ -2017,9 +2591,7 @@ Return JSON:
             .select('id', { count: 'exact', head: true })
             .in('job_id', userJobIds)
             .eq('status', 'completed')
-            .gte('completed_at', todayStart.toISOString())
-            .then(res => res)
-            .catch(() => ({ count: 0 })),
+            .gte('completed_at', todayStart.toISOString()),
 
           supabase
             .from('ai_interview_sessions')
@@ -2028,8 +2600,6 @@ Return JSON:
             .eq('status', 'completed')
             .gte('completed_at', yesterdayStart.toISOString())
             .lt('completed_at', todayStart.toISOString())
-            .then(res => res)
-            .catch(() => ({ count: 0 }))
         ]);
 
         totalCandidates = candCountRes.count || 0;
@@ -2327,6 +2897,18 @@ Return JSON:
 
       const { data: job } = await supabase.from('job_descriptions').select('*').eq('id', session.job_id).single();
       if (!job) return notFound(res, 'Job not found');
+
+      const { data: ownerJob } = await supabase
+        .from('job_descriptions')
+        .select('created_by')
+        .eq('id', session.job_id)
+        .single();
+      if (ownerJob?.created_by) {
+        const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
+        if (!billingGate.allowed) {
+          return res.status(billingGate.status || 402).json(billingGate);
+        }
+      }
 
       const count = session.mcq_question_count || 20;
       const difficulty = assessmentConfig.difficulty || 'medium';
@@ -2905,6 +3487,13 @@ Only return valid JSON, no additional text.`;
       const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
       const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
 
+      const billingGate = await checkPlanAccess(supabase, user.id, 'assessment_invite', {
+        quantity: Math.max(1, (candidateIds || []).length),
+      });
+      if (!billingGate.allowed) {
+        return res.status(billingGate.status || 402).json(billingGate);
+      }
+
       const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', jobId).eq('created_by', user.id).single();
       if (!job) return notFound(res, 'Job not found');
 
@@ -3337,6 +3926,13 @@ Evaluate and return JSON:
 
       const { candidate_ids, job_id, scheduled_time } = req.body;
 
+      const billingGate = await checkPlanAccess(supabase, user.id, 'ai_interview_invite', {
+        quantity: Math.max(1, (candidate_ids || []).length),
+      });
+      if (!billingGate.allowed) {
+        return res.status(billingGate.status || 402).json(billingGate);
+      }
+
       const { data: job } = await supabase
         .from('job_descriptions')
         .select('id, title, role, level, must_have_skills, interview_question_pool')
@@ -3622,7 +4218,8 @@ Evaluate and return JSON:
       let resumeText = '';
       if (resumeFile) {
         try {
-          const rawText = await extractResumeText(resumeFile.buffer, resumeFile.filename);
+          const uploadedResume = resumeFile as { filename: string; mimeType: string; buffer: Buffer };
+          const rawText = await extractResumeText(uploadedResume.buffer, uploadedResume.filename);
           resumeText = String(rawText)
             .replace(/\x00/g, '')
             .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
