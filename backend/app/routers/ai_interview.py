@@ -106,21 +106,19 @@ async def send_interview_invites(
 ):
     """Send AI interview invitations to candidates who passed assessment."""
     supabase = get_supabase_admin_client()
-    settings = get_settings()
     email_service = get_email_service()
     
-    # Verify job exists
-    job_result = supabase.table("job_descriptions").select("id, title, role, level").eq("id", request.job_id).execute()
+    print(f"Received interview invite request - question_count: {request.question_count}, difficulty: {request.difficulty}")
+    
+    # Fetch job details
+    job_result = supabase.table("job_descriptions").select("*").eq("id", request.job_id).execute()
     if not job_result.data:
         raise HTTPException(status_code=404, detail="Job not found")
     
     job = job_result.data[0]
     
-    # Get candidate details
-    candidates_result = supabase.table("candidates").select(
-        "id, email, full_name, resume_parsed_data"
-    ).in_("id", request.candidate_ids).execute()
-    
+    # Fetch candidates
+    candidates_result = supabase.table("candidates").select("*").in_("id", request.candidate_ids).execute()
     if not candidates_result.data:
         raise HTTPException(status_code=404, detail="No candidates found")
     
@@ -137,10 +135,14 @@ async def send_interview_invites(
             question_count = min(30, max(1, request.question_count or 5))
             difficulty = request.difficulty or 'medium'
             
+            print(f"Generating {question_count} questions for candidate {candidate['id']} with difficulty {difficulty}")
+            
             # Generate interview questions using AI
             questions = await generate_interview_questions(
                 openai, job, candidate.get("resume_parsed_data"), question_count, difficulty
             )
+            
+            print(f"Generated {len(questions)} questions for candidate {candidate['id']}")
             
             # Create AI interview session
             session_data = {
@@ -165,7 +167,9 @@ async def send_interview_invites(
                 "created_at": datetime.utcnow().isoformat(),
             }
             
+            print(f"Storing session with {len(session_data['questions'])} questions")
             supabase.table("ai_interview_sessions").insert(session_data).execute()
+            print(f"Session stored successfully for candidate {candidate['id']}")
             
             # Generate interview link
             interview_link = f"{settings.frontend_url}/ai-interview/{token}"
@@ -540,6 +544,35 @@ async def get_interview_results(
     return results.data or []
 
 
+def get_fallback_questions(question_count: int, role: str = "developer") -> List[dict]:
+    """Generate fallback questions that respect the requested count and are purely verbal."""
+    base_questions = [
+        {"text": "Tell me about yourself and your experience.", "type": "behavioral", "duration": 120},
+        {"text": "What interests you about this role?", "type": "behavioral", "duration": 90},
+        {"text": "Describe a challenging project you worked on.", "type": "situational", "duration": 150},
+        {"text": "How do you approach problem-solving?", "type": "situational", "duration": 120},
+        {"text": "What are your technical strengths?", "type": "technical", "duration": 120},
+        {"text": "Where do you see yourself in 5 years?", "type": "behavioral", "duration": 90},
+        {"text": "How do you handle tight deadlines?", "type": "situational", "duration": 120},
+        {"text": "Explain your experience with team collaboration.", "type": "behavioral", "duration": 120},
+        {"text": "How do you stay updated with technology trends?", "type": "technical", "duration": 120},
+        {"text": "Describe a time you had to learn a new technology quickly.", "type": "situational", "duration": 150},
+        {"text": "What motivates you in your work?", "type": "behavioral", "duration": 90},
+        {"text": "How do you handle constructive feedback?", "type": "behavioral", "duration": 120},
+        {"text": "Explain your approach to debugging complex issues.", "type": "technical", "duration": 150},
+        {"text": "How do you ensure code quality in your work?", "type": "technical", "duration": 120},
+        {"text": "Describe your ideal work environment.", "type": "behavioral", "duration": 120},
+        {"text": "How do you prioritize tasks when everything seems urgent?", "type": "situational", "duration": 150},
+        {"text": "What do you consider your greatest professional achievement?", "type": "behavioral", "duration": 150},
+        {"text": "How do you handle disagreements with team members?", "type": "situational", "duration": 120},
+        {"text": "Explain your experience with system design principles.", "type": "technical", "duration": 150},
+        {"text": "How do you approach technical documentation?", "type": "technical", "duration": 120},
+    ]
+    
+    # Return exactly the requested number of questions
+    return base_questions[:question_count]
+
+
 async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = 'medium') -> List[dict]:
     """Generate personalized interview questions using AI."""
     role = job.get("role", "developer")
@@ -560,7 +593,7 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
     }
     difficulty_desc = difficulty_descriptions.get(difficulty, difficulty_descriptions['medium'])
     
-    prompt = f"""Generate {question_count} interview questions for a {level} {title} position with {difficulty} difficulty level.
+    prompt = f"""Generate EXACTLY {question_count} interview questions for a {level} {title} position with {difficulty} difficulty level.
 
 The questions should focus on {difficulty_desc}.
 
@@ -570,30 +603,64 @@ Include a mix of:
 - {situational_count} Situational/problem-solving questions
 - {motivation_count} Question about career goals and motivation
 
-CRITICAL REQUIREMENT: This is an audio-based interview where candidates respond verbally. ALL questions MUST be purely conceptual and discussion-based. Do NOT ask for code, implementations, or syntax-heavy answers. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking (e.g., 'How would you approach...', 'Explain how...', 'What are the trade-offs...').
+CRITICAL REQUIREMENTS:
+1. This is an audio-based interview where candidates respond verbally. ALL questions MUST be purely conceptual and discussion-based.
+2. ABSOLUTELY NO coding, implementation, or hands-on task-based questions. Do NOT ask candidates to:
+   - Write code or SQL queries
+   - Debug code snippets
+   - Implement algorithms
+   - Write function implementations
+   - Provide syntax examples
+   - Complete coding exercises
+3. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking.
+4. Use question formats like: "How would you approach...", "Explain how...", "What are the trade-offs...", "Describe your experience with...", "How do you handle..."
+5. You MUST return EXACTLY {question_count} questions - no more, no less.
 
 {"Consider the candidate's background: " + str(resume_data)[:500] if resume_data else ""}
 
-Return as JSON array with format:
+Return as JSON array with EXACTLY {question_count} questions:
 [{{"text": "question text", "type": "technical|behavioral|situational", "duration": 120, "key_points": ["point1", "point2"]}}]
 """
     
     try:
         result = await openai.generate_json(prompt)
+        print(f"AI generated result type: {type(result)}, length: {len(result) if isinstance(result, list) else 'N/A'}")
+        
         if isinstance(result, list):
-            return result
-        return result.get("questions", [])
+            questions = result
+        elif isinstance(result, dict) and "questions" in result:
+            questions = result["questions"]
+        else:
+            print(f"Unexpected AI response format: {type(result)}")
+            questions = []
+        
+        print(f"Extracted {len(questions)} questions from AI response")
+        
+        # Validate that we got the correct number of questions
+        if len(questions) != question_count:
+            print(f"Warning: AI generated {len(questions)} questions instead of {question_count}. Adjusting...")
+            if len(questions) > question_count:
+                # Truncate if we got too many
+                questions = questions[:question_count]
+            elif len(questions) < question_count:
+                # If we got too few, pad with fallback questions
+                print(f"Padding with {question_count - len(questions)} fallback questions")
+                fallback = get_fallback_questions(question_count - len(questions), role)
+                questions = questions + fallback
+        
+        # Final validation - ensure we have exactly the requested count
+        if len(questions) != question_count:
+            print(f"Error: Still have {len(questions)} questions but need {question_count}. Using all fallback.")
+            return get_fallback_questions(question_count, role)
+        
+        print(f"Final question count: {len(questions)}")
+        return questions
     except Exception as e:
         print(f"Failed to generate questions: {e}")
-        # Fallback questions
-        return [
-            {"text": "Tell me about yourself and your experience.", "type": "behavioral", "duration": 120},
-            {"text": "What interests you about this role?", "type": "behavioral", "duration": 90},
-            {"text": "Describe a challenging project you worked on.", "type": "situational", "duration": 150},
-            {"text": "How do you approach problem-solving?", "type": "situational", "duration": 120},
-            {"text": "What are your technical strengths?", "type": "technical", "duration": 120},
-            {"text": "Where do you see yourself in 5 years?", "type": "behavioral", "duration": 90},
-        ]
+        import traceback
+        traceback.print_exc()
+        # Fallback questions that respect the count
+        return get_fallback_questions(question_count, role)
 
 
 async def evaluate_speech_response(openai, question: dict, transcript: str) -> dict:
