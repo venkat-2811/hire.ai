@@ -2839,6 +2839,8 @@ Return JSON:
   // /api/assessments/*
   if (segments[0] === 'assessments') {
     // GET /api/assessments/start/:token (public)
+    // KEY PERF FIX: This endpoint now generates + returns BOTH MCQ questions and coding
+    // challenges in a single response, replacing 3 serial client round-trips with 1.
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
       const token = segments[2];
       const { data: session, error } = await supabase
@@ -2863,14 +2865,130 @@ Return JSON:
         }).eq('id', session.id);
       }
 
+      const assessmentConfig = session.proctoring_data?.assessment_config || {};
+      const mcqCount = session.mcq_question_count ?? 20;
+      const codingCount = session.coding_challenge_count ?? 2;
+      const difficulty = assessmentConfig.difficulty || session.difficulty || 'medium';
+      const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
+      const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
+
+      // Generate MCQ questions (or return cached)
+      const getMcqQuestions = async (): Promise<any[]> => {
+        if (!includeMcq) return [];
+        const storedMcq: any[] = session.mcq_questions || [];
+        if (storedMcq.length > 0) return storedMcq;
+
+        const { data: ownerJob } = await supabase
+          .from('job_descriptions').select('created_by, *').eq('id', session.job_id).single();
+        if (!ownerJob) return [];
+
+        if (ownerJob.created_by) {
+          const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
+          if (!billingGate.allowed) return [];
+        }
+
+        const mapped = mapAssessmentDifficulty(difficulty);
+        const mustHaveSkills = (ownerJob.must_have_skills || []).join(', ') || 'general programming';
+        const goodToHaveSkills = (ownerJob.good_to_have_skills || []).join(', ');
+        const prompt = `Generate exactly ${mcqCount} multiple choice questions for a ${ownerJob.level} ${ownerJob.role} position.
+
+Job Description: ${ownerJob.description || ''}
+Must-Have Skills: ${mustHaveSkills}
+${goodToHaveSkills ? `Good-to-Have Skills: ${goodToHaveSkills}` : ''}
+
+Difficulty: ${mapped.label}. ${mapped.guidance}
+
+Rules:
+- Prefer scenario-based questions over simple definitions.
+- Each option must be structurally unique (no permutation options).
+- 4 options per question: 1 correct + 3 plausible distractors.
+- Vary correct answer position across questions.
+
+Return JSON: { "questions": [{ "id": "q1", "question": "...", "options": ["...","...","...","..."], "correct_index": 0, "difficulty": "${mapped.label}", "topic": "...", "points": 5 }] }
+Only return valid JSON.`;
+
+        try {
+          const generated = await generateJSON<any>(prompt);
+          const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
+          const questions = raw
+            .map((q: any, i: number) => ({
+              id: String(q?.id || `q${i + 1}`),
+              question: String(q?.question || ''),
+              options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
+              correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
+              difficulty: String(q?.difficulty || mapped.label),
+              topic: String(q?.topic || 'General'),
+              points: typeof q?.points === 'number' ? q.points : 5,
+            }))
+            .filter((q: any) => q.question && q.options.length === 4);
+          if (questions.length > 0) {
+            supabase.from('assessment_sessions').update({ mcq_questions: questions, updated_at: new Date().toISOString() })
+              .eq('id', session.id).then(() => {}).catch(() => {});
+          }
+          return questions;
+        } catch (e) { console.error('[start] MCQ gen failed:', e); return []; }
+      };
+
+      // Fetch coding challenges from DSA bank (or return cached)
+      const getCodingChallenges = async (): Promise<any[]> => {
+        if (!includeCoding) return [];
+        const storedCoding: any[] = session.coding_challenges || [];
+        if (storedCoding.length > 0) return storedCoding;
+
+        let dist: string[];
+        if (difficulty === 'easy') dist = Array(codingCount).fill('easy');
+        else if (difficulty === 'hard') dist = codingCount >= 2 ? ['medium', ...Array(codingCount - 1).fill('hard')] : ['hard'];
+        else dist = codingCount >= 2 ? ['easy', ...Array(codingCount - 1).fill('medium')] : ['medium'];
+
+        try {
+          const lookups = await Promise.all(dist.map(d =>
+            supabase.from('dsa_problems').select('*').eq('difficulty', d).eq('is_active', true).limit(20)
+          ));
+          const selected: any[] = [];
+          for (const { data: problems } of lookups) {
+            if (problems?.length) {
+              const avail = problems.filter((p: any) => !selected.some(s => s.id === p.id));
+              if (avail.length) selected.push(avail[Math.floor(Math.random() * avail.length)]);
+            }
+          }
+          if (!selected.length) return [];
+          const challenges = selected.map((p: any) => {
+            const pub = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
+            return {
+              id: p.id, slug: p.slug, title: p.title, description: p.description,
+              constraints: p.constraints || '', examples: p.examples || [],
+              starter_code: p.starter_code || {},
+              test_cases: pub.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
+              points: p.points, time_limit_seconds: p.time_limit_seconds,
+              supported_languages: Object.keys(p.starter_code || {}),
+            };
+          });
+          supabase.from('assessment_sessions').update({
+            coding_problem_ids: selected.map((p: any) => p.id),
+            coding_challenges: challenges, updated_at: new Date().toISOString(),
+          }).eq('id', session.id).then(() => {}).catch(() => {});
+          return challenges;
+        } catch (e) { console.error('[start] Coding fetch failed:', e); return []; }
+      };
+
+      // Run both in parallel — halves the wait time
+      const [mcqQuestions, codingChallenges] = await Promise.all([getMcqQuestions(), getCodingChallenges()]);
+
+      const safeMcq = mcqQuestions.map((q: any) => ({
+        id: q.id, question: q.question, options: q.options,
+        difficulty: q.difficulty, topic: q.topic, points: q.points,
+      }));
+
       return ok(res, {
         session_id: session.id,
         candidate_name: session.candidates?.full_name,
         job_title: session.job_descriptions?.title,
-        mcq_count: session.mcq_question_count ?? 20,
-        coding_count: session.coding_challenge_count ?? 2,
+        mcq_count: safeMcq.length,
+        coding_count: codingChallenges.length,
         total_time_minutes: session.total_time_minutes ?? 90,
         deadline: session.deadline,
+        mcq_questions: safeMcq,       // consumed directly by frontend — skips /mcq call
+        coding_challenges: codingChallenges, // consumed directly by frontend — skips /coding call
       });
     }
 
