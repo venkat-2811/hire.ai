@@ -107,10 +107,10 @@ export default function OnboardingPage() {
   useEffect(() => { setForm(initial); }, [initial]);
 
   useEffect(() => {
-    if (profile?.onboarding_completed) {
+    if (profile?.onboarding_completed && profile?.company_name?.trim()) {
       navigate('/dashboard', { replace: true });
     }
-  }, [profile?.onboarding_completed, navigate]);
+  }, [profile?.onboarding_completed, profile?.company_name, navigate]);
 
   const verifyingRef = useRef(false);
 
@@ -178,7 +178,13 @@ export default function OnboardingPage() {
         contact_phone: form.contact_phone.trim() || null,
       },
       {
-        onSuccess: () => setStep(2),
+        onSuccess: () => {
+          if (profile?.onboarding_completed) {
+            navigate('/dashboard', { replace: true });
+          } else {
+            setStep(2);
+          }
+        },
       },
     );
   };
