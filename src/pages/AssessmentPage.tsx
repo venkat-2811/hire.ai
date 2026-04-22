@@ -107,6 +107,9 @@ interface AssessmentData {
   coding_count: number;
   total_time_minutes: number;
   deadline: string;
+  // Eagerly bundled by the backend — eliminates separate /mcq and /coding fetches
+  mcq_questions?: MCQQuestion[];
+  coding_challenges?: CodingChallenge[];
 }
 
 export default function AssessmentPage() {
@@ -115,6 +118,7 @@ export default function AssessmentPage() {
 
   // Assessment state
   const [loading, setLoading] = useState(true);
+  const [loadingStep, setLoadingStep] = useState<string>('Verifying your assessment link…');
   const [error, setError] = useState<string | null>(null);
   const [assessmentData, setAssessmentData] = useState<AssessmentData | null>(null);
   const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
@@ -427,7 +431,9 @@ export default function AssessmentPage() {
       if (!token) return;
 
       try {
-        // Start assessment
+        setLoadingStep('Verifying your assessment link…');
+
+        // Single request — backend now returns questions bundled in the response
         const startResponse = await fetch(`${API_BASE_URL}/assessments/start/${token}`);
         if (!startResponse.ok) {
           const error = await startResponse.json().catch(() => ({}));
@@ -438,34 +444,49 @@ export default function AssessmentPage() {
         setAssessmentData(data);
         setTimeRemaining(data.total_time_minutes * 60);
 
-        // Load MCQ questions
-        const mcqResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/mcq`);
-        if (!mcqResponse.ok) {
-          const error = await mcqResponse.json().catch(() => ({}));
-          setError(error.error || error.detail || 'Failed to load MCQ questions');
-          return;
-        }
-        const mcqData = await mcqResponse.json();
-        const mcqList = Array.isArray(mcqData)
-          ? mcqData
-          : Array.isArray(mcqData?.questions)
-            ? mcqData.questions
-            : [];
-        setMcqQuestions(mcqList);
+        setLoadingStep('Loading your questions…');
 
-        // Load coding challenges
-        const codingResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/coding`);
-        if (!codingResponse.ok) {
-          const error = await codingResponse.json().catch(() => ({}));
-          setError(error.error || error.detail || 'Failed to load coding challenges');
-          return;
+        // Use questions bundled in the start response if available,
+        // otherwise fall back to the legacy separate endpoints.
+        let mcqList: MCQQuestion[] = [];
+        let codingList: CodingChallenge[] = [];
+
+        if (Array.isArray(data.mcq_questions) && data.mcq_questions.length > 0) {
+          mcqList = data.mcq_questions;
+        } else {
+          // Fallback: questions weren't pre-generated yet, fetch separately
+          const mcqResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/mcq`);
+          if (!mcqResponse.ok) {
+            const err = await mcqResponse.json().catch(() => ({}));
+            setError(err.error || err.detail || 'Failed to load MCQ questions');
+            return;
+          }
+          const mcqData = await mcqResponse.json();
+          mcqList = Array.isArray(mcqData)
+            ? mcqData
+            : Array.isArray(mcqData?.questions)
+              ? mcqData.questions
+              : [];
         }
-        const codingData = await codingResponse.json();
-        const codingList = Array.isArray(codingData)
-          ? codingData
-          : Array.isArray(codingData?.challenges)
-            ? codingData.challenges
-            : [];
+
+        if (Array.isArray(data.coding_challenges) && data.coding_challenges.length > 0) {
+          codingList = data.coding_challenges;
+        } else {
+          const codingResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/coding`);
+          if (!codingResponse.ok) {
+            const err = await codingResponse.json().catch(() => ({}));
+            setError(err.error || err.detail || 'Failed to load coding challenges');
+            return;
+          }
+          const codingData = await codingResponse.json();
+          codingList = Array.isArray(codingData)
+            ? codingData
+            : Array.isArray(codingData?.challenges)
+              ? codingData.challenges
+              : [];
+        }
+
+        setMcqQuestions(mcqList);
         setCodingChallenges(codingList);
 
         const hasMcq = mcqList.length > 0;
@@ -493,6 +514,8 @@ export default function AssessmentPage() {
           setCodingSolutions(initialSolutions);
           setCodingLanguages(initialLanguages);
         }
+
+        setLoadingStep('Preparing your environment…');
       } catch (e) {
         setError('Failed to load assessment. Please try again.');
       } finally {
@@ -772,9 +795,37 @@ export default function AssessmentPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-muted-foreground">Loading assessment...</p>
+        <div className="text-center space-y-6 max-w-sm w-full px-6">
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative">
+              <Shield className="h-12 w-12 text-primary opacity-20" />
+              <Loader2 className="h-12 w-12 animate-spin text-primary absolute inset-0" />
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Proctored Assessment</p>
+              <p className="text-sm text-muted-foreground mt-1">{loadingStep}</p>
+            </div>
+          </div>
+          {/* Step indicators */}
+          <div className="flex items-center gap-2 justify-center">
+            {['Verifying', 'Loading', 'Preparing'].map((step, i) => {
+              const stepMsg = loadingStep.toLowerCase();
+              const done = (i === 0 && !stepMsg.includes('verify')) ||
+                           (i === 1 && stepMsg.includes('prepar')) ||
+                           false;
+              const active = (i === 0 && stepMsg.includes('verify')) ||
+                             (i === 1 && stepMsg.includes('load')) ||
+                             (i === 2 && stepMsg.includes('prepar'));
+              return (
+                <div key={step} className="flex items-center gap-2">
+                  <div className={`h-2 w-2 rounded-full transition-colors ${
+                    done ? 'bg-primary' : active ? 'bg-primary animate-pulse' : 'bg-muted'
+                  }`} />
+                  {i < 2 && <div className="h-px w-6 bg-muted" />}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
