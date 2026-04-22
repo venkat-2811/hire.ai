@@ -23,8 +23,9 @@ import {
   ChevronDown,
   ChevronRight,
   Users,
-  Briefcase,
   Shield,
+  Video,
+  Copy,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
@@ -124,6 +125,10 @@ export default function CandidatesPage() {
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState<{ id: string; jobId: string } | null>(null);
+
+  // Manual Interview states
+  const [manualInterviewDialogOpen, setManualInterviewDialogOpen] = useState(false);
+  const [manualInterviewRoom, setManualInterviewRoom] = useState('');
 
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
@@ -492,7 +497,14 @@ export default function CandidatesPage() {
                   </Button>
                   <Button size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={handleBulkInterview}>
                     <Play className="mr-2 h-4 w-4" />
-                    Send Interview Invite
+                    Send AI Interview
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 sm:flex-none" onClick={() => {
+                    setManualInterviewRoom(crypto.randomUUID());
+                    setManualInterviewDialogOpen(true);
+                  }}>
+                    <Video className="mr-2 h-4 w-4" />
+                    Manual Interview
                   </Button>
                   <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedIds(new Set())}>
                     Clear Selection
@@ -673,7 +685,14 @@ export default function CandidatesPage() {
                                       setInterviewDialogOpen(true);
                                     }}>
                                       <Play className="mr-2 h-4 w-4" />
-                                      Send Interview
+                                      Send AI Interview
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      setManualInterviewRoom(crypto.randomUUID());
+                                      setManualInterviewDialogOpen(true);
+                                    }}>
+                                      <Video className="mr-2 h-4 w-4" />
+                                      Manual Interview
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
@@ -882,6 +901,46 @@ export default function CandidatesPage() {
                   'Start Interview'
                 )}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Manual Interview Options Dialog */}
+        <Dialog open={manualInterviewDialogOpen} onOpenChange={setManualInterviewDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Schedule Manual Interview</DialogTitle>
+              <DialogDescription>
+                Share this unique invite link with the candidate to start a real-time manual video & audio interview.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Interview Link</Label>
+                <div className="flex gap-2">
+                  <Input 
+                    readOnly 
+                    value={`${window.location.origin}/interview/manual/${manualInterviewRoom}`} 
+                  />
+                  <Button variant="outline" size="icon" onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/interview/manual/${manualInterviewRoom}`);
+                    toast.success('Link copied to clipboard!');
+                  }}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="p-3 bg-muted/50 rounded flex flex-col gap-2 mt-4">
+                <span className="text-sm">You can join the room directly by clicking below.</span>
+                <Button className="w-full" onClick={() => window.open(`/interview/manual/${manualInterviewRoom}`, '_blank')}>
+                  Join Meeting Room
+                </Button>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setManualInterviewDialogOpen(false)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

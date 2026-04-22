@@ -53,6 +53,7 @@ import {
   Filter,
   ArrowUpDown,
   Search,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { HireRecommendation } from '@/types/database';
@@ -278,6 +279,14 @@ export default function ResultsDashboardPage() {
       setSelectedCandidates(new Set(processedCandidates.map((c) => c.candidate_id)));
     }
   };
+
+  const hasIncompleteEvaluation = useMemo(() => {
+    return Array.from(selectedCandidates).some(id => {
+      const c = candidates.find(candidate => candidate.candidate_id === id);
+      if (!c) return false;
+      return typeof c.assessment_score !== 'number' || typeof c.interview_score !== 'number';
+    });
+  }, [selectedCandidates, candidates]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -984,6 +993,17 @@ export default function ResultsDashboardPage() {
                       will become available for each accepted candidate.
                     </DialogDescription>
                   </DialogHeader>
+                  <div className="py-4">
+                    {hasIncompleteEvaluation && (
+                      <div className="p-3 bg-warning/10 border border-warning/30 rounded-md mb-2 flex gap-3 text-sm text-warning-foreground items-start">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-warning" />
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold">Incomplete Evaluation Detected</span>
+                          <span>One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setAcceptDialogOpen(false)}>
                       Cancel
@@ -1011,6 +1031,17 @@ export default function ResultsDashboardPage() {
                       also remove them from the active pipeline.
                     </DialogDescription>
                   </DialogHeader>
+                  <div className="py-4">
+                    {hasIncompleteEvaluation && (
+                      <div className="p-3 bg-warning/10 border border-warning/30 rounded-md mb-2 flex gap-3 text-sm text-warning-foreground items-start">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-warning" />
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold">Incomplete Evaluation Detected</span>
+                          <span>One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
                       Cancel

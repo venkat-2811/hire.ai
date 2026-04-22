@@ -23,6 +23,7 @@ import AssessmentPage from "./pages/AssessmentPage";
 import AIInterviewPage from "./pages/AIInterviewPage";
 import ResultsDashboardPage from "./pages/ResultsDashboardPage";
 import BillingPage from "./pages/BillingPage";
+import ManualInterviewPage from "./pages/ManualInterviewPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +57,7 @@ const App = () => (
             <Route path="/ai-interview/:token" element={<AIInterviewPage />} />
             <Route path="/results" element={<ResultsDashboardPage />} />
             <Route path="/billing" element={<BillingPage />} />
+            <Route path="/interview/manual/:roomId" element={<ManualInterviewPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
