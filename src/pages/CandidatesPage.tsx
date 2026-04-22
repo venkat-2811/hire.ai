@@ -26,6 +26,7 @@ import {
   Shield,
   Video,
   Copy,
+  Briefcase,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
