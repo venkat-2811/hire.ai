@@ -54,7 +54,7 @@ async def get_public_job(job_id: str):
     supabase = get_supabase_admin_client()
     
     result = supabase.table("job_descriptions").select(
-        "id, title, role, level, description, must_have_skills, good_to_have_skills, min_experience_years, is_active"
+        "id, title, role, level, description, must_have_skills, good_to_have_skills, min_experience_years, is_active, created_by"
     ).eq("id", job_id).eq("is_active", True).execute()
     
     if not result.data:
