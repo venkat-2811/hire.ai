@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { billingApi, type BillingInvoice } from '@/lib/api';
@@ -14,6 +15,8 @@ import { toast } from 'sonner';
 export default function BillingPage() {
   const [topupAmount, setTopupAmount] = useState<number>(25);
   const [busy, setBusy] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const usageQuery = useQuery({
     queryKey: ['billing-usage'],
@@ -25,6 +28,32 @@ export default function BillingPage() {
     queryKey: ['billing-invoices'],
     queryFn: () => billingApi.invoices(),
   });
+
+  // Handle Stripe redirect-back (?checkout=success|cancelled&action=subscribe|topup|invoice_payment)
+  useEffect(() => {
+    const checkout = searchParams.get('checkout');
+    const action = searchParams.get('action');
+    if (!checkout) return;
+
+    const actionLabel =
+      action === 'subscribe' ? 'Subscription' :
+      action === 'topup' ? 'Top-up' :
+      action === 'invoice_payment' ? 'Invoice payment' :
+      'Payment';
+
+    if (checkout === 'success') {
+      toast.success(`${actionLabel} successful! Your account has been updated.`);
+      // Refetch billing data so the UI reflects the new balance / plan
+      usageQuery.refetch();
+      invoicesQuery.refetch();
+    } else if (checkout === 'cancelled') {
+      toast.info(`${actionLabel} was cancelled. No charges were made.`);
+    }
+
+    // Remove query params from the URL so a page refresh doesn't re-trigger
+    navigate('/billing', { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const usage = usageQuery.data;
   const invoices = (invoicesQuery.data || []) as BillingInvoice[];

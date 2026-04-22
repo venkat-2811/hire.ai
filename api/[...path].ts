@@ -542,6 +542,16 @@ function normalizeBillingPlan(rawPlan: string | null | undefined): BillingPlan {
   return 'free';
 }
 
+/** Clamp any arbitrary profile status string to one of the four allowed values
+ *  so the subscriptions table CHECK constraint is never violated. */
+function normalizeBillingStatus(rawStatus: string | null | undefined): BillingStatus {
+  const s = String(rawStatus || 'active').toLowerCase();
+  if (s === 'paused') return 'paused';
+  if (s === 'overdue') return 'overdue';
+  if (s === 'cancel_at_period_end' || s === 'cancelled' || s === 'canceled') return 'cancel_at_period_end';
+  return 'active'; // default — covers null, '', 'trialing', 'inactive', etc.
+}
+
 async function getOrCreateSubscription(supabase: SupabaseClient, userId: string) {
   const { data: existing } = await supabase
     .from('subscriptions')
@@ -558,12 +568,15 @@ async function getOrCreateSubscription(supabase: SupabaseClient, userId: string)
   const cycleEnd = new Date(now);
   cycleEnd.setMonth(cycleEnd.getMonth() + 1);
 
+  // Normalize status so it always satisfies the DB CHECK constraint
+  const status = normalizeBillingStatus(profile?.subscription_status);
+
   const { data: created, error } = await supabase
     .from('subscriptions')
     .insert({
       user_id: userId,
       plan,
-      status: (profile?.subscription_status || 'active') as BillingStatus,
+      status,
       deposit_amount: cfg.monthly_deposit,
       wallet_balance: cfg.monthly_deposit,
       billing_cycle_start: now.toISOString(),
