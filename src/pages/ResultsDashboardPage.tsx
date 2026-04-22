@@ -995,11 +995,11 @@ export default function ResultsDashboardPage() {
                   </DialogHeader>
                   <div className="py-4">
                     {hasIncompleteEvaluation && (
-                      <div className="p-3 bg-warning/10 border border-warning/30 rounded-md mb-2 flex gap-3 text-sm text-warning-foreground items-start">
-                        <AlertTriangle className="h-5 w-5 shrink-0 text-warning" />
+                      <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md mb-2 flex gap-3 text-sm text-amber-900 items-start shadow-sm">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
                         <div className="flex flex-col gap-1">
-                          <span className="font-semibold">Incomplete Evaluation Detected</span>
-                          <span>One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                          <span className="font-bold text-amber-800">Incomplete Evaluation Detected</span>
+                          <span className="text-amber-800">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
                         </div>
                       </div>
                     )}
@@ -1033,11 +1033,11 @@ export default function ResultsDashboardPage() {
                   </DialogHeader>
                   <div className="py-4">
                     {hasIncompleteEvaluation && (
-                      <div className="p-3 bg-warning/10 border border-warning/30 rounded-md mb-2 flex gap-3 text-sm text-warning-foreground items-start">
-                        <AlertTriangle className="h-5 w-5 shrink-0 text-warning" />
+                      <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md mb-2 flex gap-3 text-sm text-amber-900 items-start shadow-sm">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
                         <div className="flex flex-col gap-1">
-                          <span className="font-semibold">Incomplete Evaluation Detected</span>
-                          <span>One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                          <span className="font-bold text-amber-800">Incomplete Evaluation Detected</span>
+                          <span className="text-amber-800">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
                         </div>
                       </div>
                     )}
