@@ -27,6 +27,7 @@ class PublicJobResponse(BaseModel):
     must_have_skills: list[str]
     good_to_have_skills: list[str]
     min_experience_years: int
+    company_name: str
 
 
 class ApplicationSubmission(BaseModel):
@@ -60,6 +61,14 @@ async def get_public_job(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found or no longer accepting applications")
     
     job = result.data[0]
+    
+    company_name = "Unknown Company"
+    if job.get("created_by"):
+        profile_res = supabase.table("profiles").select("company_name").eq("id", job["created_by"]).execute()
+        if profile_res.data and profile_res.data[0].get("company_name"):
+            company_name = profile_res.data[0]["company_name"]
+            
+    job["company_name"] = company_name
     return PublicJobResponse(**job)
 
 

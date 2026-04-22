@@ -176,6 +176,30 @@ export default function ResultsDashboardPage() {
       result = result.filter((c) => c.candidate_name.toLowerCase().includes(q));
     }
 
+    const selectedJob = jobs?.find(j => j.id === selectedJobId);
+
+    // Filter by calculated status (Accepted, In-progress, Rejected)
+    if (statusFilter !== 'all' && selectedJob) {
+      result = result.filter((c) => {
+        const atsRejected = c.ats_score !== null && c.ats_score < selectedJob.resume_cutoff;
+        const assessRejected = c.assessment_score !== null && c.assessment_score < selectedJob.assessment_cutoff;
+        const interviewRejected = c.interview_score !== null && c.interview_score < selectedJob.interview_cutoff;
+
+        let calculatedStatus = 'in-progress';
+        if (atsRejected || assessRejected || interviewRejected) {
+          calculatedStatus = 'rejected';
+        } else if (
+          c.ats_score !== null && c.ats_score >= selectedJob.resume_cutoff &&
+          c.assessment_score !== null && c.assessment_score >= selectedJob.assessment_cutoff &&
+          c.interview_score !== null && c.interview_score >= selectedJob.interview_cutoff
+        ) {
+          calculatedStatus = 'accepted';
+        }
+
+        return calculatedStatus === statusFilter;
+      });
+    }
+
     // 2. Filter by Score
     if (minScore > 0) {
       result = result.filter((c) => {
@@ -188,16 +212,7 @@ export default function ResultsDashboardPage() {
       });
     }
 
-    // 3. Status Filter
-    if (statusFilter !== 'all') {
-      if (statusFilter === 'recommended') {
-        result = result.filter(
-          (c) => c.recommendation === 'strong_hire' || c.recommendation === 'hire'
-        );
-      } else {
-        result = result.filter((c) => c.interview_status === statusFilter);
-      }
-    }
+    // Note: status filter was moved to the very beginning to prioritize calculations based on cut-offs
 
     // 4. Sort
     result.sort((a, b) => {
@@ -562,9 +577,68 @@ export default function ResultsDashboardPage() {
                 </div>
 
                 <Card>
-                  <CardContent className="py-12 text-center">
-                    <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">Select a job to view job-wise results</p>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead>Job Role</TableHead>
+                          <TableHead>Resume Score</TableHead>
+                          <TableHead>Tech. Assessment</TableHead>
+                          <TableHead>Interview Score</TableHead>
+                          <TableHead>Recommendation</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {globalCandidates.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                              No recent candidate activity found.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          globalCandidates.slice(0, 10).map((candidate) => (
+                            <TableRow key={candidate.candidate_id}>
+                              <TableCell>
+                                <div>
+                                  <p className="font-medium">{candidate.candidate_name}</p>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                                    {candidate.job_title}
+                                  </p>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{candidate.job_title}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                {typeof candidate.ats_score === 'number' ? (
+                                  <ScoreBadge score={candidate.ats_score} />
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {typeof candidate.assessment_score === 'number' ? (
+                                  <ScoreBadge score={candidate.assessment_score} />
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {typeof candidate.interview_score === 'number' ? (
+                                  <ScoreBadge score={candidate.interview_score} />
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {getRecommendationBadge(candidate.recommendation)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
                   </CardContent>
                 </Card>
               </>
@@ -679,6 +753,17 @@ export default function ResultsDashboardPage() {
                           <Filter className="mr-2 h-4 w-4" />
                           Filters
                         </Button>
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                          <SelectTrigger className="w-[140px] h-9">
+                            <SelectValue placeholder="Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="accepted">Accepted</SelectItem>
+                            <SelectItem value="in-progress">In-progress</SelectItem>
+                            <SelectItem value="rejected">Rejected</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Button
                           variant="outline"
                           size="sm"
@@ -719,20 +804,6 @@ export default function ResultsDashboardPage() {
                             value={minScore}
                             onChange={(e) => setMinScore(Number(e.target.value))}
                           />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Recommendation</Label>
-                          <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="w-[150px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All</SelectItem>
-                              <SelectItem value="recommended">Recommended (Hire+)</SelectItem>
-                              <SelectItem value="completed">Interview Completed</SelectItem>
-                              <SelectItem value="pending">Pending</SelectItem>
-                            </SelectContent>
-                          </Select>
                         </div>
                       </div>
                     )}

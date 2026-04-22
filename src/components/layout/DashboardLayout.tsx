@@ -26,7 +26,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   useEffect(() => {
     if (location.pathname === '/onboarding') return;
-    if (profile && profile.onboarding_completed === false) {
+    if (profile && (profile.onboarding_completed === false || !profile.company_name?.trim())) {
       navigate('/onboarding', { replace: true });
     }
   }, [location.pathname, navigate, profile]);

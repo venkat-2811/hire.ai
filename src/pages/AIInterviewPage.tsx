@@ -24,6 +24,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
 import {
   AlertDialog,
@@ -92,6 +93,7 @@ export default function AIInterviewPage() {
   // Proctoring state
   const [showReadyScreen, setShowReadyScreen] = useState(true);
   const [showPermissionDialog, setShowPermissionDialog] = useState(true);
+  const [headsetConfirmed, setHeadsetConfirmed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const [violationThreshold, setViolationThreshold] = useState(3);
@@ -732,12 +734,22 @@ export default function AIInterviewPage() {
             </div>
 
             <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-              <p className="text-sm font-medium text-destructive">
+              <p className="text-sm font-medium text-destructive mb-3">
                 By clicking "Allow & Continue", you agree to grant these permissions for the duration of the interview.
               </p>
+              <div className="flex items-start space-x-2">
+                <Checkbox
+                  id="headset"
+                  checked={headsetConfirmed}
+                  onCheckedChange={(checked) => setHeadsetConfirmed(checked === true)}
+                />
+                <label htmlFor="headset" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-destructive">
+                  I confirm that I am using a headset (built-in microphones are STRICTLY NOT ALLOWED).
+                </label>
+              </div>
             </div>
 
-            <Button className="w-full" size="lg" onClick={async () => {
+            <Button className="w-full" size="lg" disabled={!headsetConfirmed} onClick={async () => {
               const cameraOk = await setupCamera();
               if (cameraOk) {
                 setShowPermissionDialog(false);

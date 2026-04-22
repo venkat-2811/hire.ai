@@ -41,6 +41,7 @@ interface PublicJob {
   must_have_skills: string[];
   good_to_have_skills: string[];
   min_experience_years: number;
+  company_name: string;
 }
 
 export default function ApplyPage() {
@@ -270,7 +271,13 @@ export default function ApplyPage() {
                   </Badge>
                 )}
               </div>
-              <CardTitle className="text-2xl lg:text-3xl">{job.title}</CardTitle>
+              <div className="flex flex-col gap-1">
+                <CardTitle className="text-2xl lg:text-3xl">{job.title}</CardTitle>
+                <div className="flex items-center text-muted-foreground gap-2">
+                  <Briefcase className="h-4 w-4" />
+                  <span className="font-medium text-lg">{job.company_name}</span>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>

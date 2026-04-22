@@ -24,6 +24,9 @@ class JobDescriptionCreate(BaseModel):
     must_have_skills: List[str] = Field(default_factory=list)
     good_to_have_skills: List[str] = Field(default_factory=list)
     min_experience_years: int = 0
+    resume_cutoff: int = 0
+    assessment_cutoff: int = 0
+    interview_cutoff: int = 0
 
 
 class JobDescriptionUpdate(BaseModel):
@@ -34,6 +37,9 @@ class JobDescriptionUpdate(BaseModel):
     must_have_skills: Optional[List[str]] = None
     good_to_have_skills: Optional[List[str]] = None
     min_experience_years: Optional[int] = None
+    resume_cutoff: Optional[int] = None
+    assessment_cutoff: Optional[int] = None
+    interview_cutoff: Optional[int] = None
     is_active: Optional[bool] = None
 
 

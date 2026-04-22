@@ -562,8 +562,7 @@ export default function CandidatesPage() {
                             />
                           </TableHead>
                           <TableHead>Candidate</TableHead>
-                          <TableHead>Resume</TableHead>
-                          <TableHead>ATS Score</TableHead>
+                          <TableHead>Resume ATS Score</TableHead>
                           <TableHead>Assessment</TableHead>
                           <TableHead>Interview</TableHead>
                           <TableHead>Applied</TableHead>
@@ -604,17 +603,6 @@ export default function CandidatesPage() {
                                     <p className="text-sm text-muted-foreground">{candidate.email}</p>
                                   </div>
                                 </div>
-                              </TableCell>
-                              <TableCell>
-                                {candidate.resume_parsed_data ? (
-                                  <span className="text-xs px-2 py-1 rounded-full bg-success/10 text-success">
-                                    Resume Parsed
-                                  </span>
-                                ) : (
-                                  <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
-                                    No Resume
-                                  </span>
-                                )}
                               </TableCell>
                               <TableCell>
                                 {typeof (candidate as any).ats_score === 'number' ? (

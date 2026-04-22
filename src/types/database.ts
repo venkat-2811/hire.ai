@@ -18,6 +18,9 @@ export interface JobDescription {
   must_have_skills: string[];
   good_to_have_skills: string[];
   min_experience_years: number;
+  resume_cutoff: number;
+  assessment_cutoff: number;
+  interview_cutoff: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;

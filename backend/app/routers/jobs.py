@@ -52,6 +52,9 @@ async def list_jobs(
             must_have_skills=row.get("must_have_skills", []),
             good_to_have_skills=row.get("good_to_have_skills", []),
             min_experience_years=row.get("min_experience_years", 0),
+            resume_cutoff=row.get("resume_cutoff", 0),
+            assessment_cutoff=row.get("assessment_cutoff", 0),
+            interview_cutoff=row.get("interview_cutoff", 0),
             is_active=row.get("is_active", True),
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at")
@@ -87,6 +90,9 @@ async def get_job(job_id: str):
         must_have_skills=row.get("must_have_skills", []),
         good_to_have_skills=row.get("good_to_have_skills", []),
         min_experience_years=row.get("min_experience_years", 0),
+        resume_cutoff=row.get("resume_cutoff", 0),
+        assessment_cutoff=row.get("assessment_cutoff", 0),
+        interview_cutoff=row.get("interview_cutoff", 0),
         is_active=row.get("is_active", True),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at")
@@ -106,6 +112,9 @@ async def create_job(job: JobDescriptionCreate):
         "must_have_skills": job.must_have_skills,
         "good_to_have_skills": job.good_to_have_skills,
         "min_experience_years": job.min_experience_years,
+        "resume_cutoff": job.resume_cutoff,
+        "assessment_cutoff": job.assessment_cutoff,
+        "interview_cutoff": job.interview_cutoff,
         "is_active": True
     }
     
@@ -127,6 +136,9 @@ async def create_job(job: JobDescriptionCreate):
         must_have_skills=row.get("must_have_skills", []),
         good_to_have_skills=row.get("good_to_have_skills", []),
         min_experience_years=row.get("min_experience_years", 0),
+        resume_cutoff=row.get("resume_cutoff", 0),
+        assessment_cutoff=row.get("assessment_cutoff", 0),
+        interview_cutoff=row.get("interview_cutoff", 0),
         is_active=row.get("is_active", True),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at")
@@ -165,6 +177,9 @@ async def update_job(job_id: str, job: JobDescriptionUpdate):
         must_have_skills=row.get("must_have_skills", []),
         good_to_have_skills=row.get("good_to_have_skills", []),
         min_experience_years=row.get("min_experience_years", 0),
+        resume_cutoff=row.get("resume_cutoff", 0),
+        assessment_cutoff=row.get("assessment_cutoff", 0),
+        interview_cutoff=row.get("interview_cutoff", 0),
         is_active=row.get("is_active", True),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at")

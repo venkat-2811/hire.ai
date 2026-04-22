@@ -29,6 +29,9 @@ export default function NewJobPage() {
   const [level, setLevel] = useState<RoleLevel | ''>('');
   const [description, setDescription] = useState('');
   const [minExperience, setMinExperience] = useState(0);
+  const [resumeCutOff, setResumeCutOff] = useState(0);
+  const [assessmentCutOff, setAssessmentCutOff] = useState(0);
+  const [interviewCutOff, setInterviewCutOff] = useState(0);
   const [mustHaveSkills, setMustHaveSkills] = useState<string[]>([]);
   const [goodToHaveSkills, setGoodToHaveSkills] = useState<string[]>([]);
   const [newMustHave, setNewMustHave] = useState('');
@@ -79,6 +82,9 @@ export default function NewJobPage() {
       must_have_skills: mustHaveSkills,
       good_to_have_skills: goodToHaveSkills,
       min_experience_years: minExperience,
+      resume_cutoff: resumeCutOff,
+      assessment_cutoff: assessmentCutOff,
+      interview_cutoff: interviewCutOff,
     }, {
       onSuccess: () => {
         navigate('/jobs');
@@ -183,6 +189,45 @@ export default function NewJobPage() {
                     rows={6}
                     required
                   />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="resume_cutoff">Resume Cut-off Score (0-100) *</Label>
+                    <Input
+                      id="resume_cutoff"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={resumeCutOff}
+                      onChange={(e) => setResumeCutOff(parseInt(e.target.value) || 0)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="assessment_cutoff">Assessment Cut-off Score (0-100) *</Label>
+                    <Input
+                      id="assessment_cutoff"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={assessmentCutOff}
+                      onChange={(e) => setAssessmentCutOff(parseInt(e.target.value) || 0)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="interview_cutoff">Interview Cut-off Score (0-100) *</Label>
+                    <Input
+                      id="interview_cutoff"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={interviewCutOff}
+                      onChange={(e) => setInterviewCutOff(parseInt(e.target.value) || 0)}
+                      required
+                    />
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -34,6 +34,9 @@ export default function EditJobPage() {
   const [mustHaveSkills, setMustHaveSkills] = useState('');
   const [goodToHaveSkills, setGoodToHaveSkills] = useState('');
   const [minExperience, setMinExperience] = useState('0');
+  const [resumeCutoff, setResumeCutoff] = useState('0');
+  const [assessmentCutoff, setAssessmentCutoff] = useState('0');
+  const [interviewCutoff, setInterviewCutoff] = useState('0');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -45,6 +48,9 @@ export default function EditJobPage() {
       setMustHaveSkills((job.must_have_skills || []).join(', '));
       setGoodToHaveSkills((job.good_to_have_skills || []).join(', '));
       setMinExperience(String(job.min_experience_years || 0));
+      setResumeCutoff(String(job.resume_cutoff || 0));
+      setAssessmentCutoff(String(job.assessment_cutoff || 0));
+      setInterviewCutoff(String(job.interview_cutoff || 0));
     }
   }, [job]);
 
@@ -72,6 +78,9 @@ export default function EditJobPage() {
           must_have_skills: mustHaveSkills.split(',').map(s => s.trim()).filter(Boolean),
           good_to_have_skills: goodToHaveSkills.split(',').map(s => s.trim()).filter(Boolean),
           min_experience_years: parseInt(minExperience) || 0,
+          resume_cutoff: parseInt(resumeCutoff) || 0,
+          assessment_cutoff: parseInt(assessmentCutoff) || 0,
+          interview_cutoff: parseInt(interviewCutoff) || 0,
         }),
       });
 
@@ -199,6 +208,42 @@ export default function EditJobPage() {
                   value={minExperience}
                   onChange={(e) => setMinExperience(e.target.value)}
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="resume_cutoff">Resume Cut-off Score</Label>
+                  <Input
+                    id="resume_cutoff"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={resumeCutoff}
+                    onChange={(e) => setResumeCutoff(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="assessment_cutoff">Assessment Cut-off Score</Label>
+                  <Input
+                    id="assessment_cutoff"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={assessmentCutoff}
+                    onChange={(e) => setAssessmentCutoff(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="interview_cutoff">Interview Cut-off Score</Label>
+                  <Input
+                    id="interview_cutoff"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={interviewCutoff}
+                    onChange={(e) => setInterviewCutoff(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="flex gap-4">
