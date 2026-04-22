@@ -120,6 +120,7 @@ export default function CandidatesPage() {
   const [includeMcq, setIncludeMcq] = useState(true);
   const [includeCoding, setIncludeCoding] = useState(true);
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
+  const [deadlineHours, setDeadlineHours] = useState<number>(72);
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
 
@@ -258,7 +259,7 @@ export default function CandidatesPage() {
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
           job_id: selectedJobId,
-          deadline_hours: 72,
+          deadline_hours: deadlineHours,
           mcq_question_count: includeMcq ? mcqCount : 0,
           coding_challenge_count: includeCoding ? codingCount : 0,
           difficulty: assessmentDifficulty,
@@ -799,9 +800,22 @@ export default function CandidatesPage() {
                 </div>
               </div>
 
-              <div className="text-sm text-muted-foreground mt-4">
-                Candidates will receive an email with a link to complete the technical assessment.
-                You can configure question counts, difficulty, and time limits for this invite.
+              <div className="space-y-2">
+                <Label>Deadline for Candidates</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={336}
+                    className="w-24"
+                    value={deadlineHours}
+                    onChange={(e) => setDeadlineHours(Math.max(1, Number(e.target.value) || 72))}
+                  />
+                  <span className="text-sm text-muted-foreground">hours to complete</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Candidates who don't submit within this window will have their link expire.
+                </p>
               </div>
             </div>
 

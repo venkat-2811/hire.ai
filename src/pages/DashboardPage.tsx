@@ -32,8 +32,9 @@ import { useState } from 'react';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
-  { name: 'Screen Resume', href: '/candidates', icon: FileText, description: 'View & screen candidates' },
+  { name: 'Screen Candidates', href: '/candidates', icon: FileText, description: 'View & screen candidates' },
   { name: 'View Results', href: '/results', icon: TrendingUp, description: 'Scores & recommendations' },
+  { name: 'View Analytics', href: '/analytics', icon: TrendingUp, description: 'Hiring pipeline insights' },
 ];
 
 export default function DashboardPage() {
@@ -107,7 +108,7 @@ export default function DashboardPage() {
               animate={{ opacity: 1, y: 0 }}
               className="text-2xl lg:text-3xl font-bold text-foreground"
             >
-              Welcome back!! 👋
+              Welcome back{user?.firstName ? `, ${user.firstName}` : ''}! 👋
             </motion.h1>
             <p className="text-muted-foreground mt-1">
               See how your hiring pipeline is performing today.
@@ -146,15 +147,12 @@ export default function DashboardPage() {
                       <p className="text-3xl font-bold mt-1">
                         {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stat.value}
                       </p>
-                      {stat.change && (
-                        <p className="text-sm mt-1 opacity-0 select-none">
-                          &nbsp;
+                      {stat.change ? (
+                        <p className="text-xs mt-1 text-muted-foreground font-medium">
+                          {stat.change} vs last week
                         </p>
-                      )}
-                      {!stat.change && (
-                        <p className="text-sm mt-1 opacity-0 select-none">
-                          &nbsp;
-                        </p>
+                      ) : (
+                        <p className="text-xs mt-1 opacity-0 select-none">&nbsp;</p>
                       )}
                     </div>
                     <div className={`p-3 rounded-xl bg-muted ${stat.color}`}>
