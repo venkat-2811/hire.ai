@@ -1040,9 +1040,10 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         .update(update)
         .eq('user_id', user.id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (upErr) return res.status(500).json({ error: upErr.message });
+      if (!updated) return res.status(404).json({ error: 'Profile not found' });
       return ok(res, updated);
     }
 
@@ -1144,7 +1145,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           })
           .eq('user_id', user.id)
           .select()
-          .single();
+          .maybeSingle();
 
         if (upErr) return res.status(500).json({ error: upErr.message });
 
@@ -1171,7 +1172,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         })
         .eq('user_id', user.id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (upErr) return res.status(500).json({ error: upErr.message });
       return ok(res, { success: true, plan: 'free', profile: updated });
@@ -1671,16 +1672,40 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const user = await requireAuth(req, res);
         if (!user) return;
 
+        // Allow only safe, known fields to be updated (prevents overwriting created_by, id, etc.)
+        const body = req.body || {};
+        const allowedFields: Record<string, any> = {};
+        const safeKeys = [
+          'title', 'role', 'level', 'description',
+          'must_have_skills', 'good_to_have_skills', 'min_experience_years',
+          'is_active', 'resume_cutoff', 'assessment_cutoff', 'interview_cutoff',
+          'interview_question_pool',
+        ];
+        for (const key of safeKeys) {
+          if (key in body) allowedFields[key] = body[key];
+        }
+        allowedFields.updated_at = new Date().toISOString();
+
+        // First verify the job exists and belongs to this user
+        const { data: existingJob } = await supabase
+          .from('job_descriptions')
+          .select('id')
+          .eq('id', jobId)
+          .eq('created_by', user.id)
+          .maybeSingle();
+
+        if (!existingJob) return notFound(res, 'Job not found or access denied');
+
         const { data, error } = await supabase
           .from('job_descriptions')
-          .update(req.body)
+          .update(allowedFields)
           .eq('id', jobId)
           .eq('created_by', user.id)
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) return res.status(500).json({ error: error.message });
-        if (!data) return notFound(res, 'Job not found');
+        if (!data) return notFound(res, 'Job not found or access denied');
         return ok(res, data);
       }
 
@@ -1781,14 +1806,14 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           // Soft delete (archive)
           const { data, error } = await supabase
             .from('job_descriptions')
-            .update({ is_active: false })
+            .update({ is_active: false, updated_at: new Date().toISOString() })
             .eq('id', jobId)
             .eq('created_by', user.id)
             .select()
-            .single();
+            .maybeSingle();
 
           if (error) return res.status(500).json({ error: error.message });
-          if (!data) return notFound(res, 'Job not found');
+          if (!data) return notFound(res, 'Job not found or access denied');
           return ok(res, { success: true, message: 'Job archived successfully' });
         }
       }
@@ -2143,12 +2168,21 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const user = await requireAuth(req, res);
         if (!user) return;
 
+        // Verify the candidate exists before updating
+        const { data: existingCandidate } = await supabase
+          .from('candidates')
+          .select('id')
+          .eq('id', candidateId)
+          .maybeSingle();
+
+        if (!existingCandidate) return notFound(res, 'Candidate not found');
+
         const { data, error } = await supabase
           .from('candidates')
-          .update(req.body)
+          .update({ ...req.body, updated_at: new Date().toISOString() })
           .eq('id', candidateId)
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) return res.status(500).json({ error: error.message });
         if (!data) return notFound(res, 'Candidate not found');
@@ -2453,13 +2487,14 @@ Return JSON:
         .select('id')
         .eq('candidate_id', candidate_id)
         .eq('job_id', job_id)
-        .single();
+        .maybeSingle();
 
       const saved = existing
-        ? await supabase.from('ats_screenings').update(screeningData).eq('id', existing.id).select().single()
-        : await supabase.from('ats_screenings').insert(screeningData).select().single();
+        ? await supabase.from('ats_screenings').update(screeningData).eq('id', existing.id).select().maybeSingle()
+        : await supabase.from('ats_screenings').insert(screeningData).select().maybeSingle();
 
       if (saved.error) return res.status(500).json({ error: saved.error.message });
+      if (!saved.data) return res.status(500).json({ error: 'Failed to save screening result' });
       return ok(res, saved.data);
     }
 
