@@ -29,9 +29,9 @@ export default function NewJobPage() {
   const [level, setLevel] = useState<RoleLevel | ''>('');
   const [description, setDescription] = useState('');
   const [minExperience, setMinExperience] = useState(0);
-  const [resumeCutOff, setResumeCutOff] = useState(70);
-  const [assessmentCutOff, setAssessmentCutOff] = useState(70);
-  const [interviewCutOff, setInterviewCutOff] = useState(70);
+  const [resumeCutOff, setResumeCutOff] = useState(35);
+  const [assessmentCutOff, setAssessmentCutOff] = useState(40);
+  const [interviewCutOff, setInterviewCutOff] = useState(40);
   const [location, setLocation] = useState('');
   const [endCustomer, setEndCustomer] = useState<'your_own_company' | 'end_customer' | ''>('');
   const [mustHaveSkills, setMustHaveSkills] = useState<string[]>([]);
