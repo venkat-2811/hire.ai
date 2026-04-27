@@ -49,6 +49,7 @@ export default function CandidateDetailsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const jobId = searchParams.get('job_id') || undefined;
+  const initialTab = searchParams.get('tab') || undefined;
   const { loading: authLoading } = useRequireAuth();
   const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '');
 
@@ -67,6 +68,13 @@ export default function CandidateDetailsPage() {
   const [manualScore, setManualScore] = useState<string>('');
   const [manualFeedback, setManualFeedback] = useState<string>('');
   const [manualNotes, setManualNotes] = useState<string>('');
+
+  const [evaluationTab, setEvaluationTab] = useState<string>(() => {
+    if (initialTab === 'manual') return 'manual';
+    if (initialTab === 'interview') return 'interview';
+    if (initialTab === 'assessment') return 'assessment';
+    return 'assessment';
+  });
 
   const handleDownloadReport = () => {
     if (candidate) {
@@ -104,6 +112,12 @@ export default function CandidateDetailsPage() {
       }
     }).finally(() => setLoadingDetails(false));
   }, [candidateId, jobId]);
+
+  useEffect(() => {
+    if (initialTab === 'manual' || initialTab === 'interview' || initialTab === 'assessment') {
+      setEvaluationTab(initialTab);
+    }
+  }, [initialTab]);
 
   const saveManualInterview = async () => {
     if (!candidateId || !jobId) {
@@ -303,7 +317,11 @@ export default function CandidateDetailsPage() {
                   <CardDescription>Technical assessment and interview results</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue={assessmentDetails ? 'assessment' : (manualInterviewDetails ? 'manual' : 'interview')}>
+                  <Tabs
+                    value={evaluationTab}
+                    onValueChange={setEvaluationTab}
+                    defaultValue={assessmentDetails ? 'assessment' : (manualInterviewDetails ? 'manual' : 'interview')}
+                  >
                     <TabsList className="mb-4">
                       {assessmentDetails && (
                         <TabsTrigger value="assessment">

@@ -17,6 +17,7 @@ import {
   Loader2,
   Sparkles,
   Mail,
+  MessageSquare,
   Trash2,
   CheckSquare,
   Square,
@@ -291,6 +292,27 @@ export default function CandidatesPage() {
     setInterviewDialogOpen(true);
   };
 
+  const handleBulkManualInterview = () => {
+    if (selectedIds.size === 0) {
+      toast.error('Please select at least one candidate');
+      return;
+    }
+
+    if (selectedIds.size > 1) {
+      toast.error('Please select only one candidate to enter manual interview details');
+      return;
+    }
+
+    const onlyId = Array.from(selectedIds)[0];
+    const [candidateId, jobId] = onlyId.split('_');
+    if (!candidateId || !jobId) {
+      toast.error('Missing candidate or job context');
+      return;
+    }
+
+    navigate(`/candidates/${candidateId}?job_id=${encodeURIComponent(jobId)}&tab=manual`);
+  };
+
   const sendInterviewInvites = async () => {
     if (!selectedJobId) {
       toast.error('Please select a job');
@@ -494,6 +516,10 @@ export default function CandidatesPage() {
                     <Play className="mr-2 h-4 w-4" />
                     Send AI Interview
                   </Button>
+                  <Button size="sm" variant="outline" className="flex-1 sm:flex-none" onClick={handleBulkManualInterview}>
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                    Manual Interview
+                  </Button>
                   <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedIds(new Set())}>
                     Clear Selection
                   </Button>
@@ -676,6 +702,12 @@ export default function CandidatesPage() {
                                     }}>
                                       <Play className="mr-2 h-4 w-4" />
                                       Send AI Interview
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      navigate(`/candidates/${candidate.id}?job_id=${encodeURIComponent(jobId)}&tab=manual`);
+                                    }}>
+                                      <MessageSquare className="mr-2 h-4 w-4" />
+                                      Manual Interview
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
