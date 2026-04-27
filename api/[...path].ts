@@ -2426,6 +2426,77 @@ ${resumeText.slice(0, 8000)}
       });
     }
 
+    // GET/PATCH /api/candidates/:id/manual-interview?job_id=xxx
+    if (segments.length === 3 && segments[2] === 'manual-interview') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const candidateId = segments[1];
+      const jobId = req.query.job_id as string | undefined;
+      if (!jobId) return badRequest(res, 'job_id is required');
+
+      // Ensure job belongs to this user
+      const { data: job } = await supabase
+        .from('job_descriptions')
+        .select('id')
+        .eq('id', jobId)
+        .eq('created_by', user.id)
+        .maybeSingle();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      if (req.method === 'GET') {
+        const { data: app, error } = await supabase
+          .from('job_applications')
+          .select('candidate_id, job_id, interview_mode, manual_interview_score, manual_interview_feedback, manual_interview_notes, manual_interview_at, manual_interview_entered_by, interview_status, interview_completed_at')
+          .eq('candidate_id', candidateId)
+          .eq('job_id', jobId)
+          .maybeSingle();
+        if (error) return res.status(500).json({ error: error.message });
+        if (!app) return ok(res, null);
+        return ok(res, app);
+      }
+
+      if (req.method === 'PATCH') {
+        const body = req.body || {};
+        const allowed: Record<string, any> = {};
+
+        if (typeof body.interview_mode === 'string') allowed.interview_mode = body.interview_mode;
+        if (body.manual_interview_score !== undefined) allowed.manual_interview_score = body.manual_interview_score;
+        if (body.manual_interview_feedback !== undefined) allowed.manual_interview_feedback = body.manual_interview_feedback;
+        if (body.manual_interview_notes !== undefined) allowed.manual_interview_notes = body.manual_interview_notes;
+
+        // If switching to manual, mark timestamps and status unless caller overrides.
+        const mode = String(body.interview_mode || 'manual');
+        if (mode === 'manual') {
+          if (!('manual_interview_at' in body)) {
+            allowed.manual_interview_at = new Date().toISOString();
+          } else {
+            allowed.manual_interview_at = body.manual_interview_at;
+          }
+          allowed.manual_interview_entered_by = user.id;
+          if (body.interview_status !== undefined) allowed.interview_status = body.interview_status;
+          else allowed.interview_status = 'completed';
+          if (body.interview_completed_at !== undefined) allowed.interview_completed_at = body.interview_completed_at;
+          else allowed.interview_completed_at = new Date().toISOString();
+        }
+
+        allowed.updated_at = new Date().toISOString();
+
+        const { data: updated, error } = await supabase
+          .from('job_applications')
+          .update(allowed)
+          .eq('candidate_id', candidateId)
+          .eq('job_id', jobId)
+          .select('candidate_id, job_id, interview_mode, manual_interview_score, manual_interview_feedback, manual_interview_notes, manual_interview_at, manual_interview_entered_by, interview_status, interview_completed_at')
+          .maybeSingle();
+        if (error) return res.status(500).json({ error: error.message });
+        if (!updated) return notFound(res, 'Application not found');
+        return ok(res, updated);
+      }
+
+      return methodNotAllowed(res);
+    }
+
     return notFound(res);
   }
 

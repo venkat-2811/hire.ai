@@ -7,6 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import {
   ArrowLeft,
   Loader2,
@@ -29,10 +32,11 @@ import {
 } from 'lucide-react';
 import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
 import { useProfile } from '@/hooks/useProfile';
-import { candidatesApi, type AssessmentDetails, type InterviewDetails } from '@/lib/api';
+import { candidatesApi, type AssessmentDetails, type InterviewDetails, type ManualInterviewDetails } from '@/lib/api';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { PDFExportService } from '@/lib/pdf-export';
 import { Download } from 'lucide-react';
+import { toast } from 'sonner';
 
 const safeRender = (val: any): string => {
   if (val == null) return '';
@@ -56,7 +60,13 @@ export default function CandidateDetailsPage() {
 
   const [assessmentDetails, setAssessmentDetails] = useState<AssessmentDetails | null>(null);
   const [interviewDetails, setInterviewDetails] = useState<InterviewDetails | null>(null);
+  const [manualInterviewDetails, setManualInterviewDetails] = useState<ManualInterviewDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [savingManual, setSavingManual] = useState(false);
+
+  const [manualScore, setManualScore] = useState<string>('');
+  const [manualFeedback, setManualFeedback] = useState<string>('');
+  const [manualNotes, setManualNotes] = useState<string>('');
 
   const handleDownloadReport = () => {
     if (candidate) {
@@ -64,6 +74,8 @@ export default function CandidateDetailsPage() {
         candidate as any,
         assessmentDetails,
         interviewDetails,
+        screening,
+        manualInterviewDetails,
         profile as any
       );
     }
@@ -75,11 +87,52 @@ export default function CandidateDetailsPage() {
     Promise.all([
       candidatesApi.getAssessmentDetails(candidateId, jobId).catch(() => null),
       candidatesApi.getInterviewDetails(candidateId, jobId).catch(() => null),
-    ]).then(([assessment, interview]) => {
+      jobId ? candidatesApi.getManualInterview(candidateId, jobId).catch(() => null) : Promise.resolve(null),
+    ]).then(([assessment, interview, manualInterview]) => {
       setAssessmentDetails(assessment);
       setInterviewDetails(interview);
+      setManualInterviewDetails(manualInterview);
+
+      if (manualInterview) {
+        setManualScore(manualInterview.manual_interview_score != null ? String(manualInterview.manual_interview_score) : '');
+        setManualFeedback(manualInterview.manual_interview_feedback || '');
+        setManualNotes(manualInterview.manual_interview_notes || '');
+      } else {
+        setManualScore('');
+        setManualFeedback('');
+        setManualNotes('');
+      }
     }).finally(() => setLoadingDetails(false));
   }, [candidateId, jobId]);
+
+  const saveManualInterview = async () => {
+    if (!candidateId || !jobId) {
+      toast.error('job_id is required to save manual interview details');
+      return;
+    }
+
+    const scoreValue = manualScore.trim() === '' ? null : Number(manualScore);
+    if (scoreValue != null && (!Number.isFinite(scoreValue) || scoreValue < 0 || scoreValue > 100)) {
+      toast.error('Score must be a number between 0 and 100');
+      return;
+    }
+
+    setSavingManual(true);
+    try {
+      const updated = await candidatesApi.updateManualInterview(candidateId, jobId, {
+        interview_mode: 'manual',
+        manual_interview_score: scoreValue,
+        manual_interview_feedback: manualFeedback || null,
+        manual_interview_notes: manualNotes || null,
+      });
+      setManualInterviewDetails(updated);
+      toast.success('Manual interview saved');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save manual interview');
+    } finally {
+      setSavingManual(false);
+    }
+  };
 
   if (authLoading || isLoading) {
     return (
@@ -243,14 +296,14 @@ export default function CandidateDetailsPage() {
             )}
 
             {/* Assessment & Interview Details */}
-            {(assessmentDetails || interviewDetails) && (
+            {(assessmentDetails || interviewDetails || manualInterviewDetails) && (
               <Card>
                 <CardHeader>
                   <CardTitle>Evaluation Details</CardTitle>
-                  <CardDescription>Technical assessment and AI interview results</CardDescription>
+                  <CardDescription>Technical assessment and interview results</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue={assessmentDetails ? 'assessment' : 'interview'}>
+                  <Tabs defaultValue={assessmentDetails ? 'assessment' : (manualInterviewDetails ? 'manual' : 'interview')}>
                     <TabsList className="mb-4">
                       {assessmentDetails && (
                         <TabsTrigger value="assessment">
@@ -264,6 +317,10 @@ export default function CandidateDetailsPage() {
                           Interview
                         </TabsTrigger>
                       )}
+                      <TabsTrigger value="manual">
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Manual Interview
+                      </TabsTrigger>
                     </TabsList>
 
                     {/* Assessment Tab */}
@@ -449,6 +506,49 @@ export default function CandidateDetailsPage() {
                         )}
                       </TabsContent>
                     )}
+
+                    {/* Manual Interview Tab */}
+                    <TabsContent value="manual" className="space-y-4">
+                      {!jobId ? (
+                        <div className="text-sm text-muted-foreground">Select a job (job_id) to enter manual interview details.</div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="manualScore">Score (0-100)</Label>
+                            <Input
+                              id="manualScore"
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={manualScore}
+                              onChange={(e) => setManualScore(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="manualFeedback">Feedback</Label>
+                            <Textarea
+                              id="manualFeedback"
+                              value={manualFeedback}
+                              onChange={(e) => setManualFeedback(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="manualNotes">Notes</Label>
+                            <Textarea
+                              id="manualNotes"
+                              value={manualNotes}
+                              onChange={(e) => setManualNotes(e.target.value)}
+                            />
+                          </div>
+
+                          <Button onClick={saveManualInterview} disabled={savingManual}>
+                            {savingManual ? 'Saving...' : 'Save Manual Interview'}
+                          </Button>
+                        </div>
+                      )}
+                    </TabsContent>
                   </Tabs>
                 </CardContent>
               </Card>
@@ -475,7 +575,7 @@ export default function CandidateDetailsPage() {
                   <Calendar className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm text-muted-foreground">Applied</p>
-                    <p className="font-medium">{candidate.created_at ? new Date(candidate.created_at).toLocaleDateString() : 'N/A'}</p>
+                    <p className="font-medium">{(candidate.applied_at || candidate.created_at) ? new Date(candidate.applied_at || candidate.created_at).toLocaleDateString() : 'N/A'}</p>
                   </div>
                 </div>
                 <div>

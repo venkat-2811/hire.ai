@@ -258,6 +258,11 @@ export const candidatesApi = {
 
   getInterviewDetails: (id: string, jobId?: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details${jobId ? `?job_id=${jobId}` : ''}`),
 
+  getManualInterview: (id: string, jobId: string) => request<ManualInterviewDetails | null>(`/candidates/${id}/manual-interview?job_id=${encodeURIComponent(jobId)}`),
+
+  updateManualInterview: (id: string, jobId: string, body: ManualInterviewUpdatePayload) =>
+    request<ManualInterviewDetails>(`/candidates/${id}/manual-interview?job_id=${encodeURIComponent(jobId)}`, { method: 'PATCH', body }),
+
   delete: (id: string, jobId?: string) =>
     request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`, { method: 'DELETE' }),
 };
@@ -362,6 +367,31 @@ export interface InterviewDetails {
   proctoring_data: any;
   started_at: string | null;
   completed_at: string | null;
+}
+
+// ============== Manual Interview Details ==============
+
+export interface ManualInterviewDetails {
+  candidate_id: string;
+  job_id: string;
+  interview_mode: 'ai' | 'manual' | string;
+  manual_interview_score: number | null;
+  manual_interview_feedback: string | null;
+  manual_interview_notes: string | null;
+  manual_interview_at: string | null;
+  manual_interview_entered_by: string | null;
+  interview_status: string | null;
+  interview_completed_at: string | null;
+}
+
+export interface ManualInterviewUpdatePayload {
+  interview_mode?: 'ai' | 'manual' | string;
+  manual_interview_score?: number | null;
+  manual_interview_feedback?: string | null;
+  manual_interview_notes?: string | null;
+  manual_interview_at?: string | null;
+  interview_status?: string | null;
+  interview_completed_at?: string | null;
 }
 
 // ============== Screening API ==============

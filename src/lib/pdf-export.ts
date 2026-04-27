@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { JobDescription, Candidate, Profile, AssessmentDetails, InterviewDetails } from './api';
+import { JobDescription, Candidate, Profile, AssessmentDetails, InterviewDetails, ManualInterviewDetails, ATSScreeningResult } from './api';
 
 export const PDFExportService = {
     generateJobReport: (
@@ -59,6 +59,8 @@ export const PDFExportService = {
         candidate: Candidate,
         assessment: AssessmentDetails | null,
         interview: InterviewDetails | null,
+        screening: ATSScreeningResult | null,
+        manualInterview: ManualInterviewDetails | null,
         profile?: Profile
     ) => {
         const doc = new jsPDF();
@@ -81,11 +83,130 @@ export const PDFExportService = {
         doc.setTextColor(100);
         doc.text(`Email: ${candidate.email}`, 14, 43);
         if (candidate.phone) doc.text(`Phone: ${candidate.phone}`, 14, 49);
-        doc.text(`Applied: ${new Date(candidate.created_at).toLocaleDateString()}`, 14, 55);
+        const appliedDate = (candidate.applied_at || candidate.created_at);
+        doc.text(`Applied: ${appliedDate ? new Date(appliedDate).toLocaleDateString() : 'N/A'}`, 14, 55);
 
         doc.line(14, 59, 196, 59);
 
         let startY = 68;
+
+        // Candidate Profile
+        autoTable(doc, {
+            startY,
+            head: [['Field', 'Value']],
+            body: [
+                ['Full Name', candidate.full_name || ''],
+                ['Email', candidate.email || ''],
+                ['Phone', candidate.phone || ''],
+                ['Location', (candidate as any).location || ''],
+                ['Main Skillset', (candidate as any).mainSkillset || ''],
+                ['Vendor', (candidate as any).vendorName || ''],
+                ['Portfolio', (candidate as any).portfolio_url || ''],
+                ['GitHub', (candidate as any).github_url || ''],
+                ['Consent Given', String(!!candidate.consent_given)],
+            ],
+            theme: 'striped',
+            headStyles: { fillColor: [30, 64, 175] },
+            styles: { fontSize: 9 },
+            columnStyles: {
+                0: { cellWidth: 45 },
+                1: { cellWidth: 135 },
+            },
+        });
+
+        startY = (doc as any).lastAutoTable.finalY + 12;
+
+        // Resume Parsed Data
+        if (candidate.resume_parsed_data) {
+            if (startY > 250) {
+                doc.addPage();
+                startY = 20;
+            }
+
+            doc.setFontSize(14);
+            doc.setTextColor(20);
+            doc.text('Resume (Parsed)', 14, startY);
+            startY += 6;
+
+            const parsed = candidate.resume_parsed_data as any;
+            const skills = Array.isArray(parsed?.skills) ? parsed.skills.join(', ') : '';
+            const summary = typeof parsed?.summary === 'string' ? parsed.summary : '';
+            const expYears = parsed?.total_experience_years ?? '';
+            const certifications = Array.isArray(parsed?.certifications) ? parsed.certifications.join(', ') : '';
+
+            autoTable(doc, {
+                startY,
+                head: [['Section', 'Details']],
+                body: [
+                    ['Skills', skills],
+                    ['Experience (Years)', String(expYears)],
+                    ['Summary', summary],
+                    ['Certifications', certifications],
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [30, 64, 175] },
+                styles: { fontSize: 9 },
+                columnStyles: {
+                    0: { cellWidth: 45 },
+                    1: { cellWidth: 135 },
+                },
+            });
+
+            startY = (doc as any).lastAutoTable.finalY + 12;
+        }
+
+        // Resume Text Snippet
+        if (candidate.resume_text && startY < 270) {
+            if (startY > 250) {
+                doc.addPage();
+                startY = 20;
+            }
+            doc.setFontSize(14);
+            doc.setTextColor(20);
+            doc.text('Resume (Text Snippet)', 14, startY);
+            startY += 6;
+
+            doc.setFontSize(9);
+            doc.setTextColor(60);
+            const raw = typeof candidate.resume_text === 'string'
+                ? candidate.resume_text
+                : JSON.stringify(candidate.resume_text);
+            const snippet = String(raw).slice(0, 1200);
+            const lines = doc.splitTextToSize(snippet, 180);
+            doc.text(lines, 14, startY);
+            startY += (lines.length * 4) + 10;
+        }
+
+        // ATS Screening
+        if (screening) {
+            if (startY > 250) {
+                doc.addPage();
+                startY = 20;
+            }
+
+            doc.setFontSize(14);
+            doc.setTextColor(20);
+            doc.text('ATS Screening', 14, startY);
+
+            autoTable(doc, {
+                startY: startY + 5,
+                head: [['Metric', 'Value']],
+                body: [
+                    ['Overall Score', `${(screening as any).overall_score ?? 'N/A'}%`],
+                    ['Shortlisted', String((screening as any).shortlisted ?? '')],
+                    ['Skills Score', (screening as any).skill_relevance_score != null ? `${(screening as any).skill_relevance_score}%` : 'N/A'],
+                    ['Experience Score', (screening as any).experience_score != null ? `${(screening as any).experience_score}%` : 'N/A'],
+                    ['Education Score', (screening as any).education_score != null ? `${(screening as any).education_score}%` : 'N/A'],
+                    ['Credibility Score', (screening as any).credibility_score != null ? `${(screening as any).credibility_score}%` : 'N/A'],
+                    ['Reason', String((screening as any).shortlist_reason ?? '')],
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [30, 64, 175] },
+                styles: { fontSize: 9 },
+            });
+
+            startY = (doc as any).lastAutoTable.finalY + 15;
+        }
 
         // Assessment Section
         if (assessment) {
@@ -163,6 +284,38 @@ export const PDFExportService = {
                     startY += (lines.length * 5);
                 });
             }
+        }
+
+        // Manual Interview Section
+        if (manualInterview) {
+            if (startY > 250) {
+                doc.addPage();
+                startY = 20;
+            }
+
+            doc.setFontSize(14);
+            doc.setTextColor(20);
+            doc.text('Manual Interview Evaluation', 14, startY);
+
+            autoTable(doc, {
+                startY: startY + 5,
+                head: [['Field', 'Value']],
+                body: [
+                    ['Interview Mode', manualInterview.interview_mode || 'manual'],
+                    ['Score', manualInterview.manual_interview_score != null ? `${manualInterview.manual_interview_score}%` : 'N/A'],
+                    ['Feedback', manualInterview.manual_interview_feedback || ''],
+                    ['Notes', manualInterview.manual_interview_notes || ''],
+                    ['Interview Date', manualInterview.manual_interview_at ? new Date(manualInterview.manual_interview_at).toLocaleDateString() : ''],
+                    ['Status', manualInterview.interview_status || ''],
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [30, 64, 175] },
+                styles: { fontSize: 9 },
+                columnStyles: {
+                    0: { cellWidth: 45 },
+                    1: { cellWidth: 135 },
+                },
+            });
         }
 
         const fileName = `${candidate.full_name.replace(/\s+/g, '_')}_Report.pdf`;
