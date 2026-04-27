@@ -233,7 +233,7 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
   });
   return completion.choices[0]?.message?.content || '';
 }
-async function generateJSON<T>(prompt: string): Promise<T> {
+async function generateJSON<T>(prompt: string, opts?: { maxTokens?: number; temperature?: number }): Promise<T> {
   const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
     model: 'gpt-4o-mini-2024-07-18',
@@ -241,8 +241,8 @@ async function generateJSON<T>(prompt: string): Promise<T> {
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
     ],
-    temperature: 0.3,
-    max_tokens: 8192,
+    temperature: opts?.temperature ?? 0.3,
+    max_tokens: opts?.maxTokens ?? 8192,
     response_format: { type: 'json_object' },
   });
   const text = (completion.choices[0]?.message?.content || '').trim();
@@ -3259,9 +3259,13 @@ Return JSON:
         const mapped = mapAssessmentDifficulty(difficulty);
         const mustHaveSkills = (ownerJob.must_have_skills || []).join(', ') || 'general programming';
         const goodToHaveSkills = (ownerJob.good_to_have_skills || []).join(', ');
+
+        // Adaptive token limit: ~250 tokens per question for rich scenario-based MCQs
+        const maxTokens = Math.min(16384, 1024 + (mcqCount * 250));
+
         const prompt = `Generate exactly ${mcqCount} multiple choice questions for a ${ownerJob.level} ${ownerJob.role} position.
 
-Job Description: ${ownerJob.description || ''}
+Job Description: ${(ownerJob.description || '').slice(0, 800)}
 Must-Have Skills: ${mustHaveSkills}
 ${goodToHaveSkills ? `Good-to-Have Skills: ${goodToHaveSkills}` : ''}
 
@@ -3269,39 +3273,69 @@ Difficulty: ${mapped.label}. ${mapped.guidance}
 
 Rules:
 - Prefer scenario-based questions over simple definitions.
-- Each option must be structurally unique (no permutation options).
+- Each option must be structurally unique — never create permutation-style options.
 - 4 options per question: 1 correct + 3 plausible distractors.
-- Vary correct answer position across questions.
+- Vary the position of the correct answer across questions.
+- Cover the required skills evenly.
 
-Return JSON: { "questions": [{ "id": "q1", "question": "...", "options": ["...","...","...","..."], "correct_index": 0, "difficulty": "${mapped.label}", "topic": "...", "points": 5 }] }
+Return JSON: { "questions": [{ "id": "q1", "question": "...", "options": ["A text","B text","C text","D text"], "correct_index": 0, "difficulty": "${difficulty}", "topic": "...", "points": 5 }] }
 Only return valid JSON.`;
 
-        try {
+        // Attempt generation with a timeout that respects Netlify's 26s function limit
+        // We allow ~22s for AI generation (leaving ~4s for DB queries and response)
+        const attemptGeneration = async (): Promise<any[]> => {
           const generated = await Promise.race<any>([
-            generateJSON<any>(prompt),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
+            generateJSON<any>(prompt, { maxTokens }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
           ]);
           const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
-          const questions = raw
+          return raw
             .map((q: any, i: number) => ({
               id: String(q?.id || `q${i + 1}`),
               question: String(q?.question || ''),
               options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
               correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
-              difficulty: String(q?.difficulty || mapped.label),
+              difficulty: String(q?.difficulty || difficulty),
               topic: String(q?.topic || 'General'),
               points: typeof q?.points === 'number' ? q.points : 5,
             }))
             .filter((q: any) => q.question && q.options.length === 4);
+        };
+
+        // Single attempt — if it fails, immediately fall back to hardcoded questions
+        // (retrying would exceed Netlify's 26s function timeout)
+        try {
+          console.log(`[getMcqQuestions] Generating ${mcqCount} MCQs...`);
+          const questions = await attemptGeneration();
           if (questions.length > 0) {
+            console.log(`[getMcqQuestions] Success: ${questions.length} MCQs generated`);
             supabase.from('assessment_sessions').update({ mcq_questions: questions, updated_at: new Date().toISOString() })
               .eq('id', session.id).then(() => {}).catch(() => {});
+            return questions;
           }
-          return questions;
+          console.warn('[getMcqQuestions] AI returned 0 valid questions');
         } catch (e: any) {
           console.error('[getMcqQuestions] MCQ generation failed:', e?.message || e);
-          return [];
         }
+
+        // All AI attempts failed — return hardcoded fallback questions so the
+        // candidate always has something to answer instead of seeing an empty section.
+        console.warn('[getMcqQuestions] All AI attempts exhausted — using fallback MCQs');
+        const fallbackQuestions = [
+          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty, topic: 'Version Control', points: 5 },
+          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty, topic: 'Data Structures', points: 5 },
+          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty, topic: 'Software Development', points: 5 },
+          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty, topic: 'Web Development', points: 5 },
+          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty, topic: 'Algorithms', points: 5 },
+          { id: 'fb6', question: 'Which principle states that software entities should be open for extension but closed for modification?', options: ['DRY (Don\'t Repeat Yourself)', 'Open/Closed Principle (SOLID)', 'KISS (Keep It Simple)', 'YAGNI (You Aren\'t Gonna Need It)'], correct_index: 1, difficulty, topic: 'Software Design', points: 5 },
+          { id: 'fb7', question: 'In object-oriented programming, what is encapsulation?', options: ['Inheriting from multiple classes', 'Bundling data and methods that operate on that data', 'Converting objects to strings', 'Creating multiple methods with the same name'], correct_index: 1, difficulty, topic: 'OOP', points: 5 },
+          { id: 'fb8', question: 'What is the primary benefit of using Docker containers?', options: ['Automatic code compilation', 'Consistent environments across development and production', 'Built-in version control', 'Enhanced security by default'], correct_index: 1, difficulty, topic: 'DevOps', points: 5 },
+          { id: 'fb9', question: 'In distributed systems, what does the CAP theorem state?', options: ['You can have all three properties simultaneously', 'You can have any two of consistency, availability, and partition tolerance simultaneously', 'You must choose between consistency and availability only', 'Partition tolerance is optional'], correct_index: 1, difficulty, topic: 'Distributed Systems', points: 5 },
+          { id: 'fb10', question: 'What is the difference between SQL and NoSQL databases regarding data consistency?', options: ['NoSQL databases cannot support any consistency', 'NoSQL typically prioritizes availability over strict consistency', 'SQL databases are always faster', 'NoSQL cannot handle transactions at all'], correct_index: 1, difficulty, topic: 'Databases', points: 5 },
+        ].slice(0, mcqCount);
+        supabase.from('assessment_sessions').update({ mcq_questions: fallbackQuestions, updated_at: new Date().toISOString() })
+          .eq('id', session.id).then(() => {}).catch(() => {});
+        return fallbackQuestions;
       };
 
       // Fetch coding challenges from DSA bank (or return cached)
@@ -3495,24 +3529,31 @@ Return JSON with this exact structure:
 }
 
 CRITICAL: The "options" array MUST contain 4 complete, meaningful answer choices - NOT just "A", "B", "C", "D".
-Each option must start with## QUALITY RULES:
+Each option must start with a distinct word or phrase.
+
+## QUALITY RULES:
 - Avoid ambiguous answers.
 - Make distractors plausible.
 - Use role-relevant terminology from the job description.
 
 Return JSON exactly: { "questions": [ ... ] }`;
 
-  let generated: any;
-  try {
-    generated = await Promise.race<any>([
-      generateJSON<any>(prompt),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
-    ]);
-    console.log('MCQ generation result keys:', Object.keys(generated || {}));
-  } catch (genErr: any) {
-    console.error('MCQ generation failed:', genErr.message);
-    return res.status(500).json({ error: `Failed to generate MCQ questions: ${genErr.message}` });
-  }
+      // Adaptive token limit based on question count
+      const mcqMaxTokens = Math.min(16384, 1024 + (count * 250));
+
+      let generated: any;
+      // Single attempt with timeout that respects Netlify's 26s function limit
+      try {
+        console.log(`[/mcq] Generating ${count} MCQs...`);
+        generated = await Promise.race<any>([
+          generateJSON<any>(prompt, { maxTokens: mcqMaxTokens }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
+        ]);
+        console.log('[/mcq] Generation result keys:', Object.keys(generated || {}));
+      } catch (genErr: any) {
+        console.error('[/mcq] MCQ generation failed:', genErr.message);
+        return res.status(500).json({ error: `Failed to generate MCQ questions: ${genErr.message}` });
+      }
       const questionsRaw = Array.isArray(generated?.questions)
         ? generated.questions
         : [];
