@@ -3228,19 +3228,24 @@ Return JSON:
         const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
         const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
 
-      // Generate MCQ questions (or return cached)
-      const getMcqQuestions = async (): Promise<any[]> => {
-        if (!includeMcq) return [];
-        const storedMcq: any[] = session.mcq_questions || [];
-        if (storedMcq.length > 0) return storedMcq;
+        let mcqBillingDenied: { status?: number; error?: string; message?: string; detail?: string } | null = null;
+        let codingBankEmpty = false;
 
+        // Generate MCQ questions (or return cached)
+        const getMcqQuestions = async (): Promise<any[]> => {
+          if (!includeMcq) return [];
+          const storedMcq: any[] = session.mcq_questions || [];
+          if (storedMcq.length > 0) return storedMcq;
         const { data: ownerJob } = await supabase
           .from('job_descriptions').select('created_by, *').eq('id', session.job_id).single();
         if (!ownerJob) return [];
 
         if (ownerJob.created_by) {
           const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
-          if (!billingGate.allowed) return [];
+          if (!billingGate.allowed) {
+            mcqBillingDenied = billingGate;
+            return [];
+          }
         }
 
         const mapped = mapAssessmentDifficulty(difficulty);
@@ -3307,7 +3312,10 @@ Only return valid JSON.`;
               if (avail.length) selected.push(avail[Math.floor(Math.random() * avail.length)]);
             }
           }
-          if (!selected.length) return [];
+          if (!selected.length) {
+            codingBankEmpty = true;
+            return [];
+          }
           const challenges = selected.map((p: any) => {
             const pub = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
             return {
@@ -3329,6 +3337,30 @@ Only return valid JSON.`;
 
         // Run both in parallel — halves the wait time
         const [mcqQuestions, codingChallenges] = await Promise.all([getMcqQuestions(), getCodingChallenges()]);
+
+        const hasMcq = Array.isArray(mcqQuestions) && mcqQuestions.length > 0;
+        const hasCoding = Array.isArray(codingChallenges) && codingChallenges.length > 0;
+
+        if (!hasMcq && !hasCoding) {
+          if (mcqBillingDenied) {
+            return res.status(mcqBillingDenied.status || 402).json({
+              error: mcqBillingDenied.error || 'billing_denied',
+              detail: mcqBillingDenied.message || mcqBillingDenied.detail || 'Assessment is not available due to plan limits. Please contact the hiring team.',
+            });
+          }
+
+          if (codingBankEmpty) {
+            return res.status(503).json({
+              error: 'coding_bank_empty',
+              detail: 'Assessment is temporarily unavailable (no coding problems available). Please contact the hiring team.',
+            });
+          }
+
+          return res.status(503).json({
+            error: 'assessment_generation_failed',
+            detail: 'Assessment is temporarily unavailable. Please refresh or contact the hiring team.',
+          });
+        }
 
         const safeMcq = mcqQuestions.map((q: any) => ({
           id: q.id, question: q.question, options: q.options,
