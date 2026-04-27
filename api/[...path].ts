@@ -3228,24 +3228,19 @@ Return JSON:
         const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
         const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
 
-        let mcqBillingDenied: { status?: number; error?: string; message?: string; detail?: string } | null = null;
-        let codingBankEmpty = false;
+      // Generate MCQ questions (or return cached)
+      const getMcqQuestions = async (): Promise<any[]> => {
+        if (!includeMcq) return [];
+        const storedMcq: any[] = session.mcq_questions || [];
+        if (storedMcq.length > 0) return storedMcq;
 
-        // Generate MCQ questions (or return cached)
-        const getMcqQuestions = async (): Promise<any[]> => {
-          if (!includeMcq) return [];
-          const storedMcq: any[] = session.mcq_questions || [];
-          if (storedMcq.length > 0) return storedMcq;
         const { data: ownerJob } = await supabase
           .from('job_descriptions').select('created_by, *').eq('id', session.job_id).single();
         if (!ownerJob) return [];
 
         if (ownerJob.created_by) {
           const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
-          if (!billingGate.allowed) {
-            mcqBillingDenied = billingGate;
-            return [];
-          }
+          if (!billingGate.allowed) return [];
         }
 
         const mapped = mapAssessmentDifficulty(difficulty);
@@ -3269,7 +3264,10 @@ Return JSON: { "questions": [{ "id": "q1", "question": "...", "options": ["...",
 Only return valid JSON.`;
 
         try {
-          const generated = await generateJSON<any>(prompt);
+          const generated = await Promise.race<any>([
+            generateJSON<any>(prompt),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
+          ]);
           const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
           const questions = raw
             .map((q: any, i: number) => ({
@@ -3312,10 +3310,7 @@ Only return valid JSON.`;
               if (avail.length) selected.push(avail[Math.floor(Math.random() * avail.length)]);
             }
           }
-          if (!selected.length) {
-            codingBankEmpty = true;
-            return [];
-          }
+          if (!selected.length) return [];
           const challenges = selected.map((p: any) => {
             const pub = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
             return {
@@ -3337,30 +3332,6 @@ Only return valid JSON.`;
 
         // Run both in parallel — halves the wait time
         const [mcqQuestions, codingChallenges] = await Promise.all([getMcqQuestions(), getCodingChallenges()]);
-
-        const hasMcq = Array.isArray(mcqQuestions) && mcqQuestions.length > 0;
-        const hasCoding = Array.isArray(codingChallenges) && codingChallenges.length > 0;
-
-        if (!hasMcq && !hasCoding) {
-          if (mcqBillingDenied) {
-            return res.status(mcqBillingDenied.status || 402).json({
-              error: mcqBillingDenied.error || 'billing_denied',
-              detail: mcqBillingDenied.message || mcqBillingDenied.detail || 'Assessment is not available due to plan limits. Please contact the hiring team.',
-            });
-          }
-
-          if (codingBankEmpty) {
-            return res.status(503).json({
-              error: 'coding_bank_empty',
-              detail: 'Assessment is temporarily unavailable (no coding problems available). Please contact the hiring team.',
-            });
-          }
-
-          return res.status(503).json({
-            error: 'assessment_generation_failed',
-            detail: 'Assessment is temporarily unavailable. Please refresh or contact the hiring team.',
-          });
-        }
 
         const safeMcq = mcqQuestions.map((q: any) => ({
           id: q.id, question: q.question, options: q.options,
@@ -3508,23 +3479,27 @@ Return JSON with this exact structure:
 }
 
 CRITICAL: The "options" array MUST contain 4 complete, meaningful answer choices - NOT just "A", "B", "C", "D".
-Each option must start with a different word/phrase and be structurally unique.
-Only return valid JSON, no additional text.`;
+Each option must start with## QUALITY RULES:
+- Avoid ambiguous answers.
+- Make distractors plausible.
+- Use role-relevant terminology from the job description.
 
-      let generated: any;
-      try {
-        generated = await generateJSON<any>(prompt);
-        console.log('MCQ generation result keys:', Object.keys(generated || {}));
-      } catch (genErr: any) {
-        console.error('MCQ generation failed:', genErr.message);
-        return res.status(500).json({ error: 'AI failed to generate questions. Please try again.' });
-      }
+Return JSON exactly: { "questions": [ ... ] }`;
 
-      const questionsRaw = Array.isArray(generated)
-        ? generated
-        : Array.isArray(generated?.questions)
-          ? generated.questions
-          : [];
+  let generated: any;
+  try {
+    generated = await Promise.race<any>([
+      generateJSON<any>(prompt),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
+    ]);
+    console.log('MCQ generation result keys:', Object.keys(generated || {}));
+  } catch (genErr: any) {
+    console.error('MCQ generation failed:', genErr.message);
+    return res.status(500).json({ error: `Failed to generate MCQ questions: ${genErr.message}` });
+  }
+      const questionsRaw = Array.isArray(generated?.questions)
+        ? generated.questions
+        : [];
       const questions = questionsRaw
         .map((q: any, idx: number) => ({
           id: String(q?.id || `q${idx + 1}`),

@@ -430,19 +430,60 @@ export default function AssessmentPage() {
     async function loadAssessment() {
       if (!token) return;
 
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const fetchJsonWithRetry = async (
+        url: string,
+        attempts = 3,
+        timeoutMs = 25000
+      ): Promise<{ ok: true; data: any } | { ok: false; error: string }> => {
+        let lastError = 'Request failed';
+
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+          try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+
+            if (response.ok) {
+              const data = await response.json();
+              return { ok: true, data };
+            }
+
+            const err = await response.json().catch(() => ({}));
+            lastError = err.error || err.detail || `Request failed with ${response.status}`;
+          } catch (e) {
+            clearTimeout(timer);
+            if (e instanceof DOMException && e.name === 'AbortError') {
+              lastError = 'Request timed out';
+            } else {
+              lastError = e instanceof Error ? e.message : 'Network error';
+            }
+          }
+
+          if (attempt < attempts) {
+            await delay(600 * attempt);
+          }
+        }
+
+        return { ok: false, error: lastError };
+      };
+
       try {
         setLoadingStep('Verifying your assessment link…');
 
         // Single request — backend now returns questions bundled in the response
-        const startResponse = await fetch(`${API_BASE_URL}/assessments/start/${token}`);
-        if (!startResponse.ok) {
-          const error = await startResponse.json().catch(() => ({}));
-          setError(error.error || error.detail || 'Failed to load assessment');
+        const startResult = await fetchJsonWithRetry(`${API_BASE_URL}/assessments/start/${token}`, 3, 25000);
+        if (!startResult.ok) {
+          setError(startResult.error || 'Failed to load assessment');
           return;
         }
-        const data = await startResponse.json();
+
+        const data = startResult.data;
         setAssessmentData(data);
-        setTimeRemaining(data.total_time_minutes * 60);
+        setTimeRemaining((Number(data.total_time_minutes) || 90) * 60);
 
         setLoadingStep('Loading your questions…');
 
@@ -455,35 +496,35 @@ export default function AssessmentPage() {
           mcqList = data.mcq_questions;
         } else {
           // Fallback: questions weren't pre-generated yet, fetch separately
-          const mcqResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/mcq`);
-          if (!mcqResponse.ok) {
-            const err = await mcqResponse.json().catch(() => ({}));
-            setError(err.error || err.detail || 'Failed to load MCQ questions');
-            return;
+          const mcqResult = await fetchJsonWithRetry(`${API_BASE_URL}/assessments/${data.session_id}/mcq`, 2, 20000);
+          if (mcqResult.ok) {
+            const mcqData = mcqResult.data;
+            mcqList = Array.isArray(mcqData)
+              ? mcqData
+              : Array.isArray(mcqData?.questions)
+                ? mcqData.questions
+                : [];
+          } else {
+            // Non-fatal: allow candidate to continue with coding section if available
+            console.warn('[assessment] MCQ load failed:', mcqResult.error);
           }
-          const mcqData = await mcqResponse.json();
-          mcqList = Array.isArray(mcqData)
-            ? mcqData
-            : Array.isArray(mcqData?.questions)
-              ? mcqData.questions
-              : [];
         }
 
         if (Array.isArray(data.coding_challenges) && data.coding_challenges.length > 0) {
           codingList = data.coding_challenges;
         } else {
-          const codingResponse = await fetch(`${API_BASE_URL}/assessments/${data.session_id}/coding`);
-          if (!codingResponse.ok) {
-            const err = await codingResponse.json().catch(() => ({}));
-            setError(err.error || err.detail || 'Failed to load coding challenges');
-            return;
+          const codingResult = await fetchJsonWithRetry(`${API_BASE_URL}/assessments/${data.session_id}/coding`, 2, 20000);
+          if (codingResult.ok) {
+            const codingData = codingResult.data;
+            codingList = Array.isArray(codingData)
+              ? codingData
+              : Array.isArray(codingData?.challenges)
+                ? codingData.challenges
+                : [];
+          } else {
+            // Non-fatal: allow candidate to continue with MCQ section if available
+            console.warn('[assessment] Coding load failed:', codingResult.error);
           }
-          const codingData = await codingResponse.json();
-          codingList = Array.isArray(codingData)
-            ? codingData
-            : Array.isArray(codingData?.challenges)
-              ? codingData.challenges
-              : [];
         }
 
         setMcqQuestions(mcqList);
