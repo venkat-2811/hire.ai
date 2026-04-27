@@ -3092,35 +3092,44 @@ Return JSON:
     // KEY PERF FIX: This endpoint now generates + returns BOTH MCQ questions and coding
     // challenges in a single response, replacing 3 serial client round-trips with 1.
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
-      const token = segments[2];
-      const { data: session, error } = await supabase
-        .from('assessment_sessions')
-        .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
-        .eq('token', token)
-        .single();
+      try {
+        const token = segments[2];
+        const { data: session, error } = await supabase
+          .from('assessment_sessions')
+          .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
+          .eq('token', token)
+          .single();
 
-      if (error || !session) return notFound(res, 'Assessment not found or link expired');
-      if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Assessment already completed or terminated');
+        if (error || !session) return notFound(res, 'Assessment not found or link expired');
+        if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Assessment already completed or terminated');
 
-      const deadline = new Date(session.deadline);
-      if (new Date() > deadline) {
-        await supabase.from('assessment_sessions').update({ status: 'expired' }).eq('id', session.id);
-        return badRequest(res, 'Assessment deadline has passed');
-      }
+        if (!session.deadline) {
+          return res.status(500).json({ error: 'Assessment session misconfigured (missing deadline)' });
+        }
 
-      if (session.status === 'pending') {
-        await supabase.from('assessment_sessions').update({
-          status: 'in_progress',
-          started_at: new Date().toISOString(),
-        }).eq('id', session.id);
-      }
+        const deadline = new Date(session.deadline);
+        if (Number.isNaN(deadline.getTime())) {
+          return res.status(500).json({ error: 'Assessment session misconfigured (invalid deadline)' });
+        }
 
-      const assessmentConfig = session.proctoring_data?.assessment_config || {};
-      const mcqCount = session.mcq_question_count ?? 20;
-      const codingCount = session.coding_challenge_count ?? 2;
-      const difficulty = assessmentConfig.difficulty || session.difficulty || 'medium';
-      const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
-      const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
+        if (new Date() > deadline) {
+          await supabase.from('assessment_sessions').update({ status: 'expired' }).eq('id', session.id);
+          return badRequest(res, 'Assessment deadline has passed');
+        }
+
+        if (session.status === 'pending') {
+          await supabase.from('assessment_sessions').update({
+            status: 'in_progress',
+            started_at: new Date().toISOString(),
+          }).eq('id', session.id);
+        }
+
+        const assessmentConfig = session.proctoring_data?.assessment_config || {};
+        const mcqCount = session.mcq_question_count ?? 20;
+        const codingCount = session.coding_challenge_count ?? 2;
+        const difficulty = assessmentConfig.difficulty || session.difficulty || 'medium';
+        const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
+        const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
 
       // Generate MCQ questions (or return cached)
       const getMcqQuestions = async (): Promise<any[]> => {
@@ -3221,25 +3230,29 @@ Only return valid JSON.`;
         } catch (e) { console.error('[start] Coding fetch failed:', e); return []; }
       };
 
-      // Run both in parallel — halves the wait time
-      const [mcqQuestions, codingChallenges] = await Promise.all([getMcqQuestions(), getCodingChallenges()]);
+        // Run both in parallel — halves the wait time
+        const [mcqQuestions, codingChallenges] = await Promise.all([getMcqQuestions(), getCodingChallenges()]);
 
-      const safeMcq = mcqQuestions.map((q: any) => ({
-        id: q.id, question: q.question, options: q.options,
-        difficulty: q.difficulty, topic: q.topic, points: q.points,
-      }));
+        const safeMcq = mcqQuestions.map((q: any) => ({
+          id: q.id, question: q.question, options: q.options,
+          difficulty: q.difficulty, topic: q.topic, points: q.points,
+        }));
 
-      return ok(res, {
-        session_id: session.id,
-        candidate_name: session.candidates?.full_name,
-        job_title: session.job_descriptions?.title,
-        mcq_count: safeMcq.length,
-        coding_count: codingChallenges.length,
-        total_time_minutes: session.total_time_minutes ?? 90,
-        deadline: session.deadline,
-        mcq_questions: safeMcq,       // consumed directly by frontend — skips /mcq call
-        coding_challenges: codingChallenges, // consumed directly by frontend — skips /coding call
-      });
+        return ok(res, {
+          session_id: session.id,
+          candidate_name: session.candidates?.full_name,
+          job_title: session.job_descriptions?.title,
+          mcq_count: safeMcq.length,
+          coding_count: codingChallenges.length,
+          total_time_minutes: session.total_time_minutes ?? 90,
+          deadline: session.deadline,
+          mcq_questions: safeMcq,       // consumed directly by frontend — skips /mcq call
+          coding_challenges: codingChallenges, // consumed directly by frontend — skips /coding call
+        });
+      } catch (e) {
+        console.error('[assessments/start] failed', e);
+        return res.status(500).json({ error: 'Failed to start assessment' });
+      }
     }
 
     // Everything else requires auth (manager)
@@ -4298,6 +4311,8 @@ Evaluate and return JSON:
       if (!user) return;
 
       const { candidate_ids, job_id, scheduled_time } = req.body;
+      const requestedCountRaw = req.body?.question_count;
+      const requestedCount = Math.max(1, Math.min(30, Number(requestedCountRaw ?? 5) || 5));
 
       const billingGate = await checkPlanAccess(supabase, user.id, 'ai_interview_invite', {
         quantity: Math.max(1, (candidate_ids || []).length),
@@ -4352,11 +4367,11 @@ Evaluate and return JSON:
         try {
           const token = crypto.randomBytes(32).toString('base64url');
 
-          // Randomly select 5 questions from pool for each candidate
+          // Select requestedCount questions from pool for each candidate
           let questions: any[];
-          if (questionPool.length >= 5) {
+          if (questionPool.length >= requestedCount) {
             const shuffled = [...questionPool].sort(() => Math.random() - 0.5);
-            questions = shuffled.slice(0, 5);
+            questions = shuffled.slice(0, requestedCount);
           } else if (questionPool.length > 0) {
             questions = [...questionPool].sort(() => Math.random() - 0.5);
           } else {
@@ -4370,6 +4385,7 @@ Evaluate and return JSON:
             job_id,
             token,
             status: 'pending',
+            question_count: requestedCount,
             current_question_index: 0,
             questions,
             responses: [],
