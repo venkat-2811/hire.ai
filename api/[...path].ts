@@ -1593,9 +1593,18 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           const limits = getPlanLimits(plan);
           const currentJobs = profile.jobs_count || 0;
           if (currentJobs >= limits.max_jobs) {
+            // Return plan-specific error messages
+            let errorMessage: string;
+            if (plan === 'free' || plan.startsWith('free')) {
+              errorMessage = "You've reached the free plan limit for creating jobs.";
+            } else if (plan === 'pro' || plan.startsWith('pro')) {
+              errorMessage = "You've reached the pro plan limit for creating jobs.";
+            } else {
+              errorMessage = `You have reached the maximum of ${limits.max_jobs} job roles on the ${limits.label} plan. Please upgrade to create more.`;
+            }
             return res.status(403).json({
               error: 'limit_exceeded',
-              message: `You have reached the maximum of ${limits.max_jobs} job roles on the ${limits.label} plan. Please upgrade to create more.`,
+              message: errorMessage,
               resource: 'jobs',
               current: currentJobs,
               limit: limits.max_jobs,
