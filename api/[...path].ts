@@ -2194,6 +2194,71 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       return res.status(503).json({ error: 'Offer letter functionality is temporarily disabled.' });
     }
 
+    // POST /api/candidates/bulk-update-interview-mode
+    // NOTE: Must be handled before /api/candidates/:id route
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'bulk-update-interview-mode') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const { candidate_ids, job_id, interview_mode } = req.body as { candidate_ids?: string[]; job_id?: string; interview_mode?: string };
+      if (!candidate_ids?.length || !job_id || !interview_mode) return badRequest(res, 'candidate_ids, job_id, and interview_mode are required');
+
+      if (interview_mode !== 'ai' && interview_mode !== 'manual') {
+        return badRequest(res, 'interview_mode must be either "ai" or "manual"');
+      }
+
+      const { data: job } = await supabase.from('job_descriptions').select('id').eq('id', job_id).eq('created_by', user.id).single();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      let updatedCount = 0;
+      const errorMessages: string[] = [];
+
+      for (const candidateId of candidate_ids) {
+        try {
+          // Check if job_application exists
+          const { data: existingApp } = await supabase
+            .from('job_applications')
+            .select('id')
+            .eq('candidate_id', candidateId)
+            .eq('job_id', job_id)
+            .maybeSingle();
+
+          if (existingApp) {
+            // Update existing application
+            const { error } = await supabase
+              .from('job_applications')
+              .update({ 
+                interview_mode,
+                updated_at: new Date().toISOString()
+              })
+              .eq('candidate_id', candidateId)
+              .eq('job_id', job_id);
+            
+            if (!error) updatedCount++;
+            else errorMessages.push(`Candidate ${candidateId}: ${error.message}`);
+          } else {
+            // Create new job_application with interview_mode
+            const { error } = await supabase
+              .from('job_applications')
+              .insert({
+                candidate_id: candidateId,
+                job_id: job_id,
+                interview_mode,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              });
+            
+            if (!error) updatedCount++;
+            else errorMessages.push(`Candidate ${candidateId}: ${error.message}`);
+          }
+        } catch (e: any) {
+          errorMessages.push(`Candidate ${candidateId}: ${e.message}`);
+        }
+      }
+
+      return ok(res, { success: updatedCount > 0, updated_count: updatedCount, error_messages: errorMessages });
+    }
+
     if (segments.length === 2) {
       const candidateId = segments[1];
 
@@ -2830,7 +2895,7 @@ Return JSON:
       // Get applications scoped to user's jobs
       let appQuery = supabase
         .from('job_applications')
-        .select('candidate_id, job_id, status, final_status, applied_at')
+        .select('candidate_id, job_id, status, final_status, applied_at, interview_mode, manual_interview_score, interview_status')
         .in('job_id', jobId ? [jobId] : userJobIds)
         .order('applied_at', { ascending: false })
         .limit(limit);
@@ -2934,6 +2999,37 @@ Return JSON:
         const appliedJobId = application?.job_id || jobId || null;
         const assessmentTerminated = assessment?.status === 'terminated';
         const interviewTerminated = interview?.status === 'terminated';
+        const interviewMode = application?.interview_mode || 'ai';
+        const manualInterviewScore = application?.manual_interview_score;
+        const applicationInterviewStatus = application?.interview_status;
+
+        // Use manual interview score if mode is 'manual', otherwise use AI interview score
+        let interviewScore: number | null = null;
+        let technicalScore: number | null = null;
+        let overallScore: number | null = null;
+        let recommendation: string | null = null;
+        let interviewStatus: string | null = null;
+
+        if (interviewMode === 'manual' && manualInterviewScore != null) {
+          interviewScore = manualInterviewScore;
+          technicalScore = manualInterviewScore; // Use same score for consistency
+          overallScore = manualInterviewScore;
+          // For manual interviews, derive recommendation from score
+          if (manualInterviewScore >= 80) recommendation = 'strong_hire';
+          else if (manualInterviewScore >= 60) recommendation = 'hire';
+          else if (manualInterviewScore >= 40) recommendation = 'borderline';
+          else recommendation = 'no_hire';
+          // Use application interview_status for manual interviews
+          interviewStatus = applicationInterviewStatus || 'completed';
+        } else {
+          // Use AI interview evaluation
+          interviewScore = interviewTerminated ? 0 : (finalEval.overall_score ?? null);
+          technicalScore = interviewTerminated ? 0 : (finalEval.technical_score ?? null);
+          overallScore = interviewTerminated ? 0 : (finalEval.overall_score ?? null);
+          recommendation = interviewTerminated ? 'no_hire' : (finalEval.recommendation ?? null);
+          // Use AI interview session status for AI interviews
+          interviewStatus = interview?.status ?? null;
+        }
 
         return {
           candidate_id: row.id,
@@ -2947,11 +3043,12 @@ Return JSON:
           shortlisted: screening?.shortlisted ?? null,
           assessment_score: assessmentTerminated ? 0 : (assessment?.total_score ?? null),
           assessment_status: assessment?.status ?? null,
-          interview_status: interview?.status ?? null,
-          interview_score: interviewTerminated ? 0 : (finalEval.overall_score ?? null),
-          technical_score: interviewTerminated ? 0 : (finalEval.technical_score ?? null),
-          overall_score: interviewTerminated ? 0 : (finalEval.overall_score ?? null),
-          recommendation: interviewTerminated ? 'no_hire' : (finalEval.recommendation ?? null),
+          interview_status: interviewStatus,
+          interview_mode: interviewMode,
+          interview_score: interviewScore,
+          technical_score: technicalScore,
+          overall_score: overallScore,
+          recommendation: recommendation,
         };
       }).filter(Boolean);
 
