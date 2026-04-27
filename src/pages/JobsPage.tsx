@@ -46,7 +46,7 @@ export default function JobsPage() {
   const { loading: authLoading } = useRequireAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const { data: jobs, isLoading: jobsLoading } = useJobs();
+  const { data: jobs, isLoading: jobsLoading } = useJobs({ is_active: true });
   const deleteJob = useDeleteJob();
   const updateJob = useUpdateJob();
 
@@ -126,14 +126,19 @@ export default function JobsPage() {
         </div>
 
         {/* Search */}
-        <div className="relative w-full sm:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search jobs..."
-            className="pl-10 w-full"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search jobs..."
+              className="pl-10 w-full"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <Button asChild variant="outline" className="w-full sm:w-auto">
+            <Link to="/jobs/archived">Archived Jobs</Link>
+          </Button>
         </div>
 
         {/* Jobs Grid */}

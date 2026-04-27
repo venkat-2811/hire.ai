@@ -1570,7 +1570,8 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         let q = supabase.from('job_descriptions').select('*').eq('created_by', user.id);
         if (role) q = q.ilike('role', `%${role}%`);
         if (level) q = q.eq('level', level);
-        if (is_active !== 'false') q = q.eq('is_active', true);
+        if (is_active === 'false') q = q.eq('is_active', false);
+        else q = q.eq('is_active', true);
         const { data, error } = await q.order('created_at', { ascending: false });
         if (error) return res.status(500).json({ error: error.message });
         return ok(res, data);
@@ -1916,13 +1917,20 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
         if (error) return res.status(500).json({ error: error.message });
 
-        // Build a map of candidate_id -> list of job_ids
+        // Build a map of candidate_id -> list of job_ids + per (candidate, job) applied_at
         const jobMap: Record<string, string[]> = {};
+        const appliedAtMap: Record<string, string | null> = {};
         for (const app of (applications || [])) {
           const cid = app.candidate_id;
+          const jid = app.job_id;
+          if (!cid || !jid) continue;
           if (!jobMap[cid]) jobMap[cid] = [];
-          if (!jobMap[cid].includes(app.job_id)) {
-            jobMap[cid].push(app.job_id);
+          if (!jobMap[cid].includes(jid)) {
+            jobMap[cid].push(jid);
+          }
+          const key = `${cid}:${jid}`;
+          if (!(key in appliedAtMap)) {
+            appliedAtMap[key] = app.applied_at ?? null;
           }
         }
 
@@ -1931,7 +1939,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         for (const c of (data || [])) {
           const appliedJobs = jobMap[c.id] || [];
           for (const jid of appliedJobs) {
-            result.push({ ...c, job_id: jid });
+            result.push({ ...c, job_id: jid, applied_at: appliedAtMap[`${c.id}:${jid}`] ?? null });
           }
         }
 

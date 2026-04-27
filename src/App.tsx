@@ -11,6 +11,7 @@ import CandidatesPage from "./pages/CandidatesPage";
 import NewCandidatePage from "./pages/NewCandidatePage";
 import CandidateDetailsPage from "./pages/CandidateDetailsPage";
 import JobsPage from "./pages/JobsPage";
+import ArchivedJobsPage from "./pages/ArchivedJobsPage";
 import NewJobPage from "./pages/NewJobPage";
 import JobDetailsPage from "./pages/JobDetailsPage";
 import EditJobPage from "./pages/EditJobPage";
@@ -23,7 +24,6 @@ import AssessmentPage from "./pages/AssessmentPage";
 import AIInterviewPage from "./pages/AIInterviewPage";
 import ResultsDashboardPage from "./pages/ResultsDashboardPage";
 import BillingPage from "./pages/BillingPage";
-import ManualInterviewPage from "./pages/ManualInterviewPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,6 +45,7 @@ const App = () => (
             <Route path="/candidates/new" element={<NewCandidatePage />} />
             <Route path="/candidates/:candidateId" element={<CandidateDetailsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/jobs/archived" element={<ArchivedJobsPage />} />
             <Route path="/jobs/new" element={<NewJobPage />} />
             <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
             <Route path="/jobs/:jobId/edit" element={<EditJobPage />} />
@@ -57,7 +58,6 @@ const App = () => (
             <Route path="/ai-interview/:token" element={<AIInterviewPage />} />
             <Route path="/results" element={<ResultsDashboardPage />} />
             <Route path="/billing" element={<BillingPage />} />
-            <Route path="/interview/manual/:roomId" element={<ManualInterviewPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

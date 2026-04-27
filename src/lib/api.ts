@@ -221,6 +221,7 @@ export interface Candidate {
   consent_given: boolean;
   consent_timestamp: string | null;
   job_id?: string | null;
+  applied_at?: string | null;
   location?: string;
   vendorName?: string;
   mainSkillset?: string;
