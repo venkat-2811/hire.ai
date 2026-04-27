@@ -2854,28 +2854,125 @@ Return JSON:
     // GET /api/analytics/trends
     if (segments.length === 2 && segments[1] === 'trends') {
       const days = parseInt((req.query.days as string) || '30', 10);
-      const trends = [];
-      const period_days = days;
-      
-      const { data: userJobs } = await supabase
+      const safeDays = Number.isFinite(days) ? Math.min(365, Math.max(1, days)) : 30;
+      const period_days = safeDays;
+
+      const toDayKey = (value: string | Date) => {
+        const d = typeof value === 'string' ? new Date(value) : value;
+        return d.toISOString().split('T')[0];
+      };
+
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      const start = new Date();
+      start.setDate(start.getDate() - (safeDays - 1));
+      start.setHours(0, 0, 0, 0);
+      const startIso = start.toISOString();
+      const endIso = end.toISOString();
+
+      const { data: userJobs, error: jobsErr } = await supabase
         .from('job_descriptions')
         .select('id')
         .eq('created_by', user.id);
+      if (jobsErr) return res.status(500).json({ error: jobsErr.message });
       const userJobIds = (userJobs || []).map((j: any) => j.id);
 
-      // Fast approximation: use static trends if no jobs
-      for (let i = days - 1; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        trends.push({
-          date: d.toISOString().split('T')[0],
-          screenings: userJobIds.length ? Math.floor(Math.random() * 3) : 0,
-          shortlisted: userJobIds.length ? Math.floor(Math.random() * 2) : 0,
-          interviews_started: userJobIds.length ? Math.floor(Math.random() * 1) : 0,
-          interviews_completed: userJobIds.length ? Math.floor(Math.random() * 1) : 0,
-          average_score: userJobIds.length ? (70 + Math.floor(Math.random() * 20)) : 0
-        });
+      const dayMap: Record<string, {
+        date: string;
+        screenings: number;
+        shortlisted: number;
+        interviews_started: number;
+        interviews_completed: number;
+        score_sum: number;
+        score_count: number;
+      }> = {};
+
+      for (let i = 0; i < safeDays; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        const k = toDayKey(d);
+        dayMap[k] = {
+          date: k,
+          screenings: 0,
+          shortlisted: 0,
+          interviews_started: 0,
+          interviews_completed: 0,
+          score_sum: 0,
+          score_count: 0,
+        };
       }
+
+      if (userJobIds.length === 0) {
+        const trends = Object.values(dayMap).map((d) => ({
+          date: d.date,
+          screenings: 0,
+          shortlisted: 0,
+          interviews_started: 0,
+          interviews_completed: 0,
+          average_score: 0,
+        }));
+        return ok(res, { trends, period_days });
+      }
+
+      // ATS screenings (for screenings volume + average_score + shortlist count)
+      const { data: screenings, error: screeningsErr } = await supabase
+        .from('ats_screenings')
+        .select('job_id, created_at, shortlisted, overall_score')
+        .in('job_id', userJobIds)
+        .gte('created_at', startIso)
+        .lte('created_at', endIso);
+      if (screeningsErr) return res.status(500).json({ error: screeningsErr.message });
+
+      for (const s of screenings || []) {
+        if (!s?.created_at) continue;
+        const k = toDayKey(s.created_at);
+        const bucket = dayMap[k];
+        if (!bucket) continue;
+        bucket.screenings += 1;
+        if (s.shortlisted === true) bucket.shortlisted += 1;
+        if (typeof s.overall_score === 'number') {
+          bucket.score_sum += s.overall_score;
+          bucket.score_count += 1;
+        }
+      }
+
+      // AI interview sessions (started + completed)
+      try {
+        const { data: interviews, error: interviewsErr } = await supabase
+          .from('ai_interview_sessions')
+          .select('job_id, status, created_at, completed_at, updated_at')
+          .in('job_id', userJobIds)
+          .gte('created_at', startIso)
+          .lte('created_at', endIso);
+        if (interviewsErr) return res.status(500).json({ error: interviewsErr.message });
+
+        for (const i of interviews || []) {
+          if (i?.created_at) {
+            const k = toDayKey(i.created_at);
+            const bucket = dayMap[k];
+            if (bucket) bucket.interviews_started += 1;
+          }
+
+          if (String(i?.status || '').toLowerCase() === 'completed') {
+            const completedAt = i?.completed_at || i?.updated_at || null;
+            if (completedAt) {
+              const k = toDayKey(completedAt);
+              const bucket = dayMap[k];
+              if (bucket) bucket.interviews_completed += 1;
+            }
+          }
+        }
+      } catch { /* table may not exist */ }
+
+      const trends = Object.values(dayMap).map((d) => ({
+        date: d.date,
+        screenings: d.screenings,
+        shortlisted: d.shortlisted,
+        interviews_started: d.interviews_started,
+        interviews_completed: d.interviews_completed,
+        average_score: d.score_count > 0 ? Math.round((d.score_sum / d.score_count) * 10) / 10 : 0,
+      }));
+
       return ok(res, { trends, period_days });
     }
 
