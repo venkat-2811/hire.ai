@@ -37,6 +37,8 @@ export default function EditJobPage() {
   const [resumeCutoff, setResumeCutoff] = useState('0');
   const [assessmentCutoff, setAssessmentCutoff] = useState('0');
   const [interviewCutoff, setInterviewCutoff] = useState('0');
+  const [location, setLocation] = useState('');
+  const [endCustomer, setEndCustomer] = useState<'your_own_company' | 'end_customer' | ''>('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -51,6 +53,8 @@ export default function EditJobPage() {
       setResumeCutoff(String(job.resume_cutoff || 0));
       setAssessmentCutoff(String(job.assessment_cutoff || 0));
       setInterviewCutoff(String(job.interview_cutoff || 0));
+      setLocation(job.location || '');
+      setEndCustomer(job.endCustomer || '');
     }
   }, [job]);
 
@@ -81,6 +85,8 @@ export default function EditJobPage() {
           resume_cutoff: parseInt(resumeCutoff) || 0,
           assessment_cutoff: parseInt(assessmentCutoff) || 0,
           interview_cutoff: parseInt(interviewCutoff) || 0,
+          location: location || undefined,
+          endCustomer: endCustomer || undefined,
         }),
       });
 
@@ -199,15 +205,39 @@ export default function EditJobPage() {
                 />
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="experience">Minimum Experience (years)</Label>
+                  <Input
+                    id="experience"
+                    type="number"
+                    min="0"
+                    value={minExperience}
+                    onChange={(e) => setMinExperience(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="location">Location</Label>
+                  <Input
+                    id="location"
+                    placeholder="e.g., Remote, New York"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="experience">Minimum Experience (years)</Label>
-                <Input
-                  id="experience"
-                  type="number"
-                  min="0"
-                  value={minExperience}
-                  onChange={(e) => setMinExperience(e.target.value)}
-                />
+                <Label>Hiring For</Label>
+                <Select value={endCustomer} onValueChange={(v) => setEndCustomer(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="your_own_company">Your Own Company</SelectItem>
+                    <SelectItem value="end_customer">End Customer</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

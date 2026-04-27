@@ -17,6 +17,8 @@ import {
   Briefcase,
   Clock,
   Link as LinkIcon,
+  MapPin,
+  Building,
 } from 'lucide-react';
 import { RoleBadge } from '@/components/ui/role-badge';
 import { LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
@@ -195,6 +197,24 @@ export default function JobDetailsPage() {
                     <p className="font-medium">{new Date(job.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
+                {job.location && (
+                  <div className="flex items-center gap-3">
+                    <MapPin className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Location</p>
+                      <p className="font-medium">{job.location}</p>
+                    </div>
+                  </div>
+                )}
+                {job.endCustomer && (
+                  <div className="flex items-center gap-3">
+                    <Building className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Hiring For</p>
+                      <p className="font-medium">{job.endCustomer === 'end_customer' ? 'End Customer' : 'Your Own Company'}</p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
