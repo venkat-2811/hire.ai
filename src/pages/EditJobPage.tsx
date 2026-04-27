@@ -54,7 +54,7 @@ export default function EditJobPage() {
       setAssessmentCutoff(String(job.assessment_cutoff || 0));
       setInterviewCutoff(String(job.interview_cutoff || 0));
       setLocation(job.location || '');
-      setEndCustomer(job.endCustomer || '');
+      setEndCustomer(job.endCustomer as any || '');
     }
   }, [job]);
 
@@ -220,16 +220,16 @@ export default function EditJobPage() {
                   <Label htmlFor="location">Location</Label>
                   <Input
                     id="location"
-                    placeholder="e.g., Remote, New York"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
+                    placeholder="e.g., Remote, New York"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label>Hiring For</Label>
-                <Select value={endCustomer} onValueChange={(v) => setEndCustomer(v as any)}>
+                <Select value={endCustomer} onValueChange={(v: any) => setEndCustomer(v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>

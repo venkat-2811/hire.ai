@@ -18,7 +18,7 @@ import {
   Clock,
   Link as LinkIcon,
   MapPin,
-  Building,
+  Building2,
 } from 'lucide-react';
 import { RoleBadge } from '@/components/ui/role-badge';
 import { LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
@@ -208,10 +208,10 @@ export default function JobDetailsPage() {
                 )}
                 {job.endCustomer && (
                   <div className="flex items-center gap-3">
-                    <Building className="h-5 w-5 text-muted-foreground" />
+                    <Building2 className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <p className="text-sm text-muted-foreground">Hiring For</p>
-                      <p className="font-medium">{job.endCustomer === 'end_customer' ? 'End Customer' : 'Your Own Company'}</p>
+                      <p className="font-medium">{job.endCustomer === 'your_own_company' ? 'Your Own Company' : 'End Customer'}</p>
                     </div>
                   </div>
                 )}

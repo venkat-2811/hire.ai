@@ -24,6 +24,8 @@ import {
   ExternalLink,
   Shield,
   MapPin,
+  User,
+  Briefcase,
 } from 'lucide-react';
 import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
 import { useProfile } from '@/hooks/useProfile';
@@ -168,16 +170,16 @@ export default function CandidateDetailsPage() {
                     <span>{safeRender(candidate.location)}</span>
                   </div>
                 )}
-                {candidate.vendorName && (
-                  <div className="flex items-center gap-3">
-                    <ClipboardList className="h-5 w-5 text-muted-foreground" />
-                    <span>Source: {safeRender(candidate.vendorName)}</span>
-                  </div>
-                )}
                 {candidate.mainSkillset && (
                   <div className="flex items-center gap-3">
-                    <Code className="h-5 w-5 text-muted-foreground" />
-                    <span>Skillset: {safeRender(candidate.mainSkillset)}</span>
+                    <Briefcase className="h-5 w-5 text-muted-foreground" />
+                    <span>{safeRender(candidate.mainSkillset)}</span>
+                  </div>
+                )}
+                {candidate.vendorName && (
+                  <div className="flex items-center gap-3">
+                    <User className="h-5 w-5 text-muted-foreground" />
+                    <span>Provided by: {safeRender(candidate.vendorName)}</span>
                   </div>
                 )}
                 {candidate.portfolio_url && (
