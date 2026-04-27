@@ -63,6 +63,9 @@ export default function ApplyPage() {
   const [githubUrl, setGithubUrl] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [location, setLocation] = useState('');
+  const [vendorName, setVendorName] = useState('');
+  const [mainSkillset, setMainSkillset] = useState('');
 
   // Fetch job details
   useEffect(() => {
@@ -134,6 +137,9 @@ export default function ApplyPage() {
       if (phone) formData.append('phone', phone);
       if (portfolioUrl) formData.append('portfolio_url', portfolioUrl);
       if (githubUrl) formData.append('github_url', githubUrl);
+      if (location) formData.append('location', location);
+      if (vendorName) formData.append('vendorName', vendorName);
+      if (mainSkillset) formData.append('mainSkillset', mainSkillset);
       formData.append('consent_given', String(consentGiven));
       formData.append('resume', resumeFile);
 
@@ -369,6 +375,27 @@ export default function ApplyPage() {
                   </div>
                 </div>
 
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      placeholder="e.g. Current or Preferred Location"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mainSkillset">Primary Skill/Domain</Label>
+                    <Input
+                      id="mainSkillset"
+                      placeholder="e.g. Frontend, Backend, Design"
+                      value={mainSkillset}
+                      onChange={(e) => setMainSkillset(e.target.value)}
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="portfolio">Portfolio URL</Label>
                   <Input
@@ -377,6 +404,16 @@ export default function ApplyPage() {
                     placeholder="https://yourportfolio.com"
                     value={portfolioUrl}
                     onChange={(e) => setPortfolioUrl(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="vendorName">Resume provided by</Label>
+                  <Input
+                    id="vendorName"
+                    placeholder="e.g. Vendor name, Referral"
+                    value={vendorName}
+                    onChange={(e) => setVendorName(e.target.value)}
                   />
                 </div>
 

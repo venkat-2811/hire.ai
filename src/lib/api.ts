@@ -97,6 +97,11 @@ export interface JobDescription {
   must_have_skills: string[];
   good_to_have_skills: string[];
   min_experience_years: number;
+  resume_cutoff?: number;
+  assessment_cutoff?: number;
+  interview_cutoff?: number;
+  location?: string;
+  endCustomer?: 'your_own_company' | 'end_customer';
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -113,6 +118,9 @@ export interface CandidateCreatePayload {
   resume_text?: string;
   resume_parsed_data?: unknown;
   job_id?: string;
+  location?: string;
+  vendorName?: string;
+  mainSkillset?: string;
 }
 
 export interface Profile {
@@ -150,6 +158,11 @@ export interface JobDescriptionCreate {
   must_have_skills: string[];
   good_to_have_skills: string[];
   min_experience_years: number;
+  resume_cutoff?: number;
+  assessment_cutoff?: number;
+  interview_cutoff?: number;
+  location?: string;
+  endCustomer?: 'your_own_company' | 'end_customer';
 }
 
 export const jobsApi = {
@@ -208,6 +221,9 @@ export interface Candidate {
   consent_given: boolean;
   consent_timestamp: string | null;
   job_id?: string | null;
+  location?: string;
+  vendorName?: string;
+  mainSkillset?: string;
   created_at: string;
   updated_at: string;
 }

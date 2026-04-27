@@ -43,6 +43,9 @@ export default function NewCandidatePage() {
   const [phone, setPhone] = useState('');
   const [portfolioUrl, setPortfolioUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
+  const [location, setLocation] = useState('');
+  const [vendorName, setVendorName] = useState('');
+  const [mainSkillset, setMainSkillset] = useState('');
   const [selectedJob, setSelectedJob] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
 
@@ -121,6 +124,9 @@ export default function NewCandidatePage() {
         phone: phone || undefined,
         portfolio_url: portfolioUrl || undefined,
         github_url: githubUrl || undefined,
+        location: location || undefined,
+        vendorName: vendorName || undefined,
+        mainSkillset: mainSkillset || undefined,
         consent_given: consentGiven,
         job_id: selectedJob,
       }, {
@@ -350,6 +356,37 @@ export default function NewCandidatePage() {
                       onChange={(e) => setPhone(e.target.value)}
                     />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      placeholder="e.g. New York, Remote"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mainSkillset">Primary Skill/Domain</Label>
+                    <Input
+                      id="mainSkillset"
+                      placeholder="e.g. Frontend, Backend"
+                      value={mainSkillset}
+                      onChange={(e) => setMainSkillset(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="vendorName">Resume provided by</Label>
+                  <Input
+                    id="vendorName"
+                    placeholder="e.g. Vendor Name or Referral"
+                    value={vendorName}
+                    onChange={(e) => setVendorName(e.target.value)}
+                  />
                 </div>
 
                 <div className="border-t pt-6 space-y-4">

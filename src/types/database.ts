@@ -21,6 +21,8 @@ export interface JobDescription {
   resume_cutoff: number;
   assessment_cutoff: number;
   interview_cutoff: number;
+  location?: string;
+  endCustomer?: 'your_own_company' | 'end_customer';
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -39,6 +41,9 @@ export interface Candidate {
   github_url: string | null;
   consent_given: boolean;
   consent_timestamp: string | null;
+  location?: string;
+  vendorName?: string;
+  mainSkillset?: string;
   created_at: string;
   updated_at: string;
 }

@@ -29,9 +29,11 @@ export default function NewJobPage() {
   const [level, setLevel] = useState<RoleLevel | ''>('');
   const [description, setDescription] = useState('');
   const [minExperience, setMinExperience] = useState(0);
-  const [resumeCutOff, setResumeCutOff] = useState(0);
-  const [assessmentCutOff, setAssessmentCutOff] = useState(0);
-  const [interviewCutOff, setInterviewCutOff] = useState(0);
+  const [resumeCutOff, setResumeCutOff] = useState(70);
+  const [assessmentCutOff, setAssessmentCutOff] = useState(70);
+  const [interviewCutOff, setInterviewCutOff] = useState(70);
+  const [location, setLocation] = useState('');
+  const [endCustomer, setEndCustomer] = useState<'your_own_company' | 'end_customer' | ''>('');
   const [mustHaveSkills, setMustHaveSkills] = useState<string[]>([]);
   const [goodToHaveSkills, setGoodToHaveSkills] = useState<string[]>([]);
   const [newMustHave, setNewMustHave] = useState('');
@@ -85,6 +87,8 @@ export default function NewJobPage() {
       resume_cutoff: resumeCutOff,
       assessment_cutoff: assessmentCutOff,
       interview_cutoff: interviewCutOff,
+      location: location || undefined,
+      endCustomer: (endCustomer as any) || undefined,
     }, {
       onSuccess: () => {
         navigate('/jobs');
@@ -177,6 +181,29 @@ export default function NewJobPage() {
                       onChange={(e) => setMinExperience(parseInt(e.target.value) || 0)}
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      placeholder="e.g., Remote, New York"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Hiring For</Label>
+                    <Select value={endCustomer} onValueChange={(v) => setEndCustomer(v as any)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="your_own_company">Your Own Company</SelectItem>
+                        <SelectItem value="end_customer">End Customer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -193,7 +220,7 @@ export default function NewJobPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="resume_cutoff">Resume Cut-off Score (0-100) *</Label>
+                    <Label htmlFor="resume_cutoff">Resume Cut-off Score (0-100)</Label>
                     <Input
                       id="resume_cutoff"
                       type="number"
@@ -201,11 +228,10 @@ export default function NewJobPage() {
                       max={100}
                       value={resumeCutOff}
                       onChange={(e) => setResumeCutOff(parseInt(e.target.value) || 0)}
-                      required
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="assessment_cutoff">Assessment Cut-off Score (0-100) *</Label>
+                    <Label htmlFor="assessment_cutoff">Assessment Cut-off Score (0-100)</Label>
                     <Input
                       id="assessment_cutoff"
                       type="number"
@@ -213,11 +239,10 @@ export default function NewJobPage() {
                       max={100}
                       value={assessmentCutOff}
                       onChange={(e) => setAssessmentCutOff(parseInt(e.target.value) || 0)}
-                      required
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="interview_cutoff">Interview Cut-off Score (0-100) *</Label>
+                    <Label htmlFor="interview_cutoff">Interview Cut-off Score (0-100)</Label>
                     <Input
                       id="interview_cutoff"
                       type="number"
@@ -225,7 +250,6 @@ export default function NewJobPage() {
                       max={100}
                       value={interviewCutOff}
                       onChange={(e) => setInterviewCutOff(parseInt(e.target.value) || 0)}
-                      required
                     />
                   </div>
                 </div>

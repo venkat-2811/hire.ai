@@ -1612,6 +1612,11 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           must_have_skills: body.must_have_skills || [],
           good_to_have_skills: body.good_to_have_skills || [],
           min_experience_years: body.min_experience_years || 0,
+          resume_cutoff: body.resume_cutoff ?? 70,
+          assessment_cutoff: body.assessment_cutoff ?? 70,
+          interview_cutoff: body.interview_cutoff ?? 70,
+          location: body.location || null,
+          endCustomer: body.endCustomer || null,
           is_active: true,
           created_by: user.id,
         };
@@ -1679,7 +1684,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           'title', 'role', 'level', 'description',
           'must_have_skills', 'good_to_have_skills', 'min_experience_years',
           'is_active', 'resume_cutoff', 'assessment_cutoff', 'interview_cutoff',
-          'interview_question_pool',
+          'interview_question_pool', 'location', 'endCustomer'
         ];
         for (const key of safeKeys) {
           if (key in body) allowedFields[key] = body[key];
@@ -2004,6 +2009,9 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
             github_url: body.github_url || null,
             consent_given: !!body.consent_given,
             consent_timestamp: body.consent_given ? new Date().toISOString() : null,
+            location: body.location !== undefined ? body.location : existingCandidates[0].location,
+            vendorName: body.vendorName !== undefined ? body.vendorName : existingCandidates[0].vendorName,
+            mainSkillset: body.mainSkillset !== undefined ? body.mainSkillset : existingCandidates[0].mainSkillset,
             updated_at: new Date().toISOString(),
           };
 
@@ -2032,6 +2040,9 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
             resume_url: body.resume_url || null,
             resume_text: body.resume_text || null,
             resume_parsed_data: body.resume_parsed_data || null,
+            location: body.location || null,
+            vendorName: body.vendorName || null,
+            mainSkillset: body.mainSkillset || null,
           };
 
           const { data, error } = await supabase
@@ -4298,6 +4309,9 @@ Evaluate and return JSON:
       const phone = fields.phone || null;
       const portfolioUrl = fields.portfolio_url || null;
       const githubUrl = fields.github_url || null;
+      const location = fields.location || null;
+      const vendorName = fields.vendorName || null;
+      const mainSkillset = fields.mainSkillset || null;
       const consentGiven = fields.consent_given === 'true';
 
       if (!jobId || !fullName || !email) {
@@ -4350,6 +4364,9 @@ Evaluate and return JSON:
             phone,
             portfolio_url: portfolioUrl,
             github_url: githubUrl,
+            location,
+            vendorName,
+            mainSkillset,
             consent_given: consentGiven,
             consent_timestamp: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -4363,6 +4380,9 @@ Evaluate and return JSON:
           phone,
           portfolio_url: portfolioUrl,
           github_url: githubUrl,
+          location,
+          vendorName,
+          mainSkillset,
           consent_given: consentGiven,
           consent_timestamp: new Date().toISOString(),
         };
