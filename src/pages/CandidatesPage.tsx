@@ -121,6 +121,7 @@ export default function CandidatesPage() {
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
+  const [interviewMode, setInterviewMode] = useState<'ai' | 'manual'>('ai');
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -319,7 +320,7 @@ export default function CandidatesPage() {
       return;
     }
 
-    if (interviewQuestionCount < 1 || interviewQuestionCount > 30) {
+    if (interviewMode === 'ai' && (interviewQuestionCount < 1 || interviewQuestionCount > 30)) {
       toast.error('Question count must be between 1 and 30');
       return;
     }
@@ -327,27 +328,54 @@ export default function CandidatesPage() {
     setSendingInvites(true);
     try {
       const token = await getToken();
-      const response = await fetch(`/api/ai-interview/invite`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
-          job_id: selectedJobId,
-          question_count: interviewQuestionCount,
-          difficulty: interviewDifficulty,
-        }),
-      });
+      
+      if (interviewMode === 'manual') {
+        // For manual interviews, set interview_mode to 'manual' in job_applications
+        const response = await fetch(`/api/candidates/bulk-update-interview-mode`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
+            job_id: selectedJobId,
+            interview_mode: 'manual',
+          }),
+        });
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || error.detail || 'Failed to send invites');
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || error.detail || 'Failed to set manual interview mode');
+        }
+
+        const data = await response.json();
+        toast.success(`Manual interview mode set for ${data.updated_count} candidate(s). You can now enter scores in the candidate details page.`);
+      } else {
+        // AI interview flow (existing)
+        const response = await fetch(`/api/ai-interview/invite`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
+            job_id: selectedJobId,
+            question_count: interviewQuestionCount,
+            difficulty: interviewDifficulty,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || error.detail || 'Failed to send invites');
+        }
+
+        const data = await response.json();
+        toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
       }
-
-      const data = await response.json();
-      toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
+      
       setInterviewDialogOpen(false);
       setSelectedIds(new Set());
     } catch (e) {
@@ -838,45 +866,64 @@ export default function CandidatesPage() {
         <Dialog open={interviewDialogOpen} onOpenChange={setInterviewDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Send AI Interview Invites</DialogTitle>
+              <DialogTitle>Send Interview Invites</DialogTitle>
               <DialogDescription>
-                Send AI interview invitations to {selectedIds.size} selected candidate(s).
+                {interviewMode === 'ai' 
+                  ? `Send AI interview invitations to ${selectedIds.size} selected candidate(s).`
+                  : `Set manual interview mode for ${selectedIds.size} selected candidate(s).`}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Number of Questions (Max: 30)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={interviewQuestionCount}
-                  onChange={(e) => setInterviewQuestionCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Candidates will answer {interviewQuestionCount} question{interviewQuestionCount !== 1 ? 's' : ''} in the interview.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Difficulty Level</Label>
-                <Select value={interviewDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setInterviewDifficulty(v)}>
+                <Label>Interview Mode</Label>
+                <Select value={interviewMode} onValueChange={(v: 'ai' | 'manual') => setInterviewMode(v)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="easy">Easy</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="hard">Hard</SelectItem>
+                    <SelectItem value="ai">AI Interview (Automated)</SelectItem>
+                    <SelectItem value="manual">Manual Interview (Outside Platform)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  {interviewMode === 'ai' 
+                    ? 'Candidates will complete an AI-powered interview with speech recognition and camera proctoring.'
+                    : 'You will conduct interviews outside the platform and manually enter scores later.'}
+                </p>
               </div>
 
-              <div className="text-sm text-muted-foreground">
-                Candidates will receive an email with a link to complete an AI-powered interview.
-                The interview uses speech recognition and camera proctoring.
-              </div>
+              {interviewMode === 'ai' && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Number of Questions (Max: 30)</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={interviewQuestionCount}
+                      onChange={(e) => setInterviewQuestionCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Candidates will answer {interviewQuestionCount} question{interviewQuestionCount !== 1 ? 's' : ''} in the interview.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Difficulty Level</Label>
+                    <Select value={interviewDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setInterviewDifficulty(v)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="easy">Easy</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="hard">Hard</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
             </div>
 
             <DialogFooter>
@@ -887,7 +934,9 @@ export default function CandidatesPage() {
                 {sendingInvites ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</>
                 ) : (
-                  <><Play className="mr-2 h-4 w-4" />Send Invites</>
+                  interviewMode === 'ai' 
+                    ? <><Play className="mr-2 h-4 w-4" />Send Invites</>
+                    : <><CheckSquare className="mr-2 h-4 w-4" />Set Manual Mode</>
                 )}
               </Button>
             </DialogFooter>

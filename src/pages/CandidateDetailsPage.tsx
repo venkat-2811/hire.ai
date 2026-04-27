@@ -443,6 +443,14 @@ export default function CandidateDetailsPage() {
                     {/* Interview Tab */}
                     {interviewDetails && (
                       <TabsContent value="interview" className="space-y-6">
+                        {/* Interview Mode */}
+                        <div className="p-4 rounded-lg bg-muted/50">
+                          <p className="text-sm font-medium mb-1">Interview Mode</p>
+                          <Badge variant="outline">
+                            {manualInterviewDetails?.interview_mode === 'manual' ? 'Manual Interview' : 'AI Interview'}
+                          </Badge>
+                        </div>
+
                         {/* Recommendation */}
                         {typeof interviewDetails.final_evaluation?.recommendation === 'string' && (
                           <div className="p-4 rounded-lg bg-muted/50">
