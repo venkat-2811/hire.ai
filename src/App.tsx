@@ -15,6 +15,7 @@ import ArchivedJobsPage from "./pages/ArchivedJobsPage";
 import NewJobPage from "./pages/NewJobPage";
 import JobDetailsPage from "./pages/JobDetailsPage";
 import EditJobPage from "./pages/EditJobPage";
+import InterviewsPage from "./pages/InterviewsPage";
 import InterviewSessionPage from "./pages/InterviewSessionPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -49,6 +50,7 @@ const App = () => (
             <Route path="/jobs/new" element={<NewJobPage />} />
             <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
             <Route path="/jobs/:jobId/edit" element={<EditJobPage />} />
+            <Route path="/interviews" element={<InterviewsPage />} />
             <Route path="/interviews/:sessionId" element={<InterviewSessionPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/profile" element={<ProfilePage />} />

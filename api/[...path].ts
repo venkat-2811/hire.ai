@@ -292,6 +292,25 @@ async function sendInterviewInvite(to: string, name: string, job: string, link: 
     `<h2>Great news, ${name}!</h2><p>You've been invited to an AI interview for <strong>${job}</strong>.</p><p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Start Interview</a></p>${time ? `<p><strong>Scheduled:</strong> ${time}</p>` : ''}`);
 }
 
+function getFrontendBaseUrl(req: any): string {
+  const normalize = (u: string) => String(u || '').replace(/\/+$/, '');
+
+  const explicit = normalize(process.env.FRONTEND_URL || '');
+  if (explicit) return explicit;
+
+  const origin = normalize((req.headers?.origin as string) || '');
+  if (origin) return origin;
+
+  const hostHeader = (req.headers['x-forwarded-host'] || req.headers.host) as string | undefined;
+  const isLocalhost = String(hostHeader || '').includes('localhost');
+  const protocol = req.headers['x-forwarded-proto']
+    ? String(req.headers['x-forwarded-proto']).split(',')[0]
+    : (isLocalhost ? 'http' : 'https');
+
+  const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : '';
+  return normalize(dynamicUrl || 'https://hire-ai-sandy.vercel.app');
+}
+
 async function sendAcceptanceEmail(to: string, name: string, job: string) {
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -3854,15 +3873,7 @@ Only return valid JSON, no additional text.`;
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
       const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
-      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
-      const isLocalhost = String(hostHeader).includes('localhost');
-      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
-      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
-      
-      let frontendUrl = process.env.FRONTEND_URL;
-      if (!frontendUrl || frontendUrl === 'http://localhost:8080' || frontendUrl.includes('hire-ai-sandy')) {
-        frontendUrl = dynamicUrl;
-      }
+      const frontendUrl = getFrontendBaseUrl(req);
 
       // Auto-calculate time based on questions and difficulty if not provided
       let totalTimeMinutes = body.total_time_minutes;
@@ -3911,7 +3922,7 @@ Only return valid JSON, no additional text.`;
             created_at: new Date().toISOString(),
           });
 
-          await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${token}`, deadline.toLocaleString());
+          await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
           invitesSent += 1;
         } catch {
           failed.push(c.id);
@@ -4324,15 +4335,7 @@ Evaluate and return JSON:
 
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
-      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
-      const isLocalhost = String(hostHeader).includes('localhost');
-      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
-      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
-      
-      let frontendUrl = process.env.FRONTEND_URL;
-      if (!frontendUrl || frontendUrl === 'http://localhost:8080' || frontendUrl.includes('hire-ai-sandy')) {
-        frontendUrl = dynamicUrl;
-      }
+      const frontendUrl = getFrontendBaseUrl(req);
       let invitesSent = 0;
       const failed: string[] = [];
 
@@ -4365,7 +4368,7 @@ Evaluate and return JSON:
             created_at: new Date().toISOString(),
           });
 
-          await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${token}`, scheduled_time);
+          await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduled_time);
           invitesSent += 1;
         } catch {
           failed.push(c.id);
