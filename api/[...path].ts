@@ -2895,7 +2895,7 @@ Return JSON:
       // Get applications scoped to user's jobs
       let appQuery = supabase
         .from('job_applications')
-        .select('candidate_id, job_id, status, final_status, applied_at, interview_mode, manual_interview_score')
+        .select('candidate_id, job_id, status, final_status, applied_at, interview_mode, manual_interview_score, interview_status')
         .in('job_id', jobId ? [jobId] : userJobIds)
         .order('applied_at', { ascending: false })
         .limit(limit);
@@ -3001,12 +3001,14 @@ Return JSON:
         const interviewTerminated = interview?.status === 'terminated';
         const interviewMode = application?.interview_mode || 'ai';
         const manualInterviewScore = application?.manual_interview_score;
+        const applicationInterviewStatus = application?.interview_status;
 
         // Use manual interview score if mode is 'manual', otherwise use AI interview score
         let interviewScore: number | null = null;
         let technicalScore: number | null = null;
         let overallScore: number | null = null;
         let recommendation: string | null = null;
+        let interviewStatus: string | null = null;
 
         if (interviewMode === 'manual' && manualInterviewScore != null) {
           interviewScore = manualInterviewScore;
@@ -3017,12 +3019,16 @@ Return JSON:
           else if (manualInterviewScore >= 60) recommendation = 'hire';
           else if (manualInterviewScore >= 40) recommendation = 'borderline';
           else recommendation = 'no_hire';
+          // Use application interview_status for manual interviews
+          interviewStatus = applicationInterviewStatus || 'completed';
         } else {
           // Use AI interview evaluation
           interviewScore = interviewTerminated ? 0 : (finalEval.overall_score ?? null);
           technicalScore = interviewTerminated ? 0 : (finalEval.technical_score ?? null);
           overallScore = interviewTerminated ? 0 : (finalEval.overall_score ?? null);
           recommendation = interviewTerminated ? 'no_hire' : (finalEval.recommendation ?? null);
+          // Use AI interview session status for AI interviews
+          interviewStatus = interview?.status ?? null;
         }
 
         return {
@@ -3037,7 +3043,7 @@ Return JSON:
           shortlisted: screening?.shortlisted ?? null,
           assessment_score: assessmentTerminated ? 0 : (assessment?.total_score ?? null),
           assessment_status: assessment?.status ?? null,
-          interview_status: interview?.status ?? null,
+          interview_status: interviewStatus,
           interview_mode: interviewMode,
           interview_score: interviewScore,
           technical_score: technicalScore,

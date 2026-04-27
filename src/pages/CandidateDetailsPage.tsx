@@ -192,7 +192,7 @@ export default function CandidateDetailsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/candidates')}>
+            <Button variant="ghost" size="icon" onClick={() => navigate(jobId ? `/candidates?job_id=${encodeURIComponent(jobId)}` : '/candidates')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
