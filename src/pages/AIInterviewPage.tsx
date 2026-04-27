@@ -566,12 +566,12 @@ export default function AIInterviewPage() {
 
       const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-      const fetchJsonWithRetry = async (
+      const fetchWithRetry = async (
         url: string,
         attempts = 3,
         timeoutMs = 20000
       ): Promise<{ ok: true; data: any } | { ok: false; error: string }> => {
-        let lastError = 'Failed to load interview';
+        let lastError = 'Request failed';
 
         for (let attempt = 1; attempt <= attempts; attempt++) {
           const controller = new AbortController();
@@ -606,12 +606,19 @@ export default function AIInterviewPage() {
       };
 
       try {
-        const result = await fetchJsonWithRetry(`${API_BASE_URL}/ai-interview/start/${token}`, 3, 20000);
+        const result = await fetchWithRetry(`${API_BASE_URL}/ai-interview/start/${token}`, 3, 20000);
         if (!result.ok) {
-          setError(result.error || 'Failed to load interview');
+          const errResult = result as { ok: false; error: string };
+          setError(errResult.error || 'Failed to load interview');
           return;
         }
-        setInterviewData(result.data);
+        const data = result.data;
+        // Validate that we have questions
+        if (!data.total_questions || data.total_questions === 0) {
+          setError('Interview questions are not available. Please contact the hiring team.');
+          return;
+        }
+        setInterviewData(data);
       } catch (e) {
         setError('Failed to load interview. Please try again.');
       } finally {

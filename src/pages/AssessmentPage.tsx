@@ -508,25 +508,6 @@ export default function AssessmentPage() {
             // Non-fatal: allow candidate to continue with coding section if available
             console.warn('[assessment] MCQ load failed:', mcqResult.error);
           }
-
-          // If MCQs were configured but not yet ready, poll briefly before giving up.
-          if (mcqList.length === 0 && Number(data.mcq_count) > 0) {
-            for (let i = 0; i < 3 && mcqList.length === 0; i++) {
-              await delay(1000 * (i + 1));
-              const retryMcqResult = await fetchJsonWithRetry(`${API_BASE_URL}/assessments/${data.session_id}/mcq`, 1, 25000);
-              if (retryMcqResult.ok) {
-                const retryData = retryMcqResult.data;
-                const retryList = Array.isArray(retryData)
-                  ? retryData
-                  : Array.isArray(retryData?.questions)
-                    ? retryData.questions
-                    : [];
-                if (retryList.length > 0) {
-                  mcqList = retryList;
-                }
-              }
-            }
-          }
         }
 
         if (Array.isArray(data.coding_challenges) && data.coding_challenges.length > 0) {
@@ -553,12 +534,6 @@ export default function AssessmentPage() {
         const hasCoding = codingList.length > 0;
         if (!hasMcq && !hasCoding) {
           setError('No assessment sections were generated. Please refresh or contact the hiring team.');
-          return;
-        }
-
-        // Avoid silently showing only coding when MCQs were explicitly configured.
-        if (!hasMcq && Number(data.mcq_count) > 0) {
-          setError('MCQ questions are still being prepared. Please refresh in a few seconds.');
           return;
         }
 
