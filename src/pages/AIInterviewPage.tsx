@@ -564,15 +564,54 @@ export default function AIInterviewPage() {
     async function loadInterview() {
       if (!token) return;
 
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const fetchJsonWithRetry = async (
+        url: string,
+        attempts = 3,
+        timeoutMs = 20000
+      ): Promise<{ ok: true; data: any } | { ok: false; error: string }> => {
+        let lastError = 'Failed to load interview';
+
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+          try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+
+            if (response.ok) {
+              const data = await response.json();
+              return { ok: true, data };
+            }
+
+            const err = await response.json().catch(() => ({}));
+            lastError = err.error || err.detail || `Request failed with ${response.status}`;
+          } catch (e) {
+            clearTimeout(timer);
+            if (e instanceof DOMException && e.name === 'AbortError') {
+              lastError = 'Request timed out';
+            } else {
+              lastError = e instanceof Error ? e.message : 'Network error';
+            }
+          }
+
+          if (attempt < attempts) {
+            await delay(500 * attempt);
+          }
+        }
+
+        return { ok: false, error: lastError };
+      };
+
       try {
-        const response = await fetch(`${API_BASE_URL}/ai-interview/start/${token}`);
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          setError(error.error || error.detail || 'Failed to load interview');
+        const result = await fetchJsonWithRetry(`${API_BASE_URL}/ai-interview/start/${token}`, 3, 20000);
+        if (!result.ok) {
+          setError(result.error || 'Failed to load interview');
           return;
         }
-        const data = await response.json();
-        setInterviewData(data);
+        setInterviewData(result.data);
       } catch (e) {
         setError('Failed to load interview. Please try again.');
       } finally {

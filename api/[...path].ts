@@ -3190,7 +3190,7 @@ Return JSON:
     // challenges in a single response, replacing 3 serial client round-trips with 1.
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
       try {
-        const token = segments[2];
+        const token = decodeURIComponent(String(segments[2] || '')).trim();
         const { data: session, error } = await supabase
           .from('assessment_sessions')
           .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
@@ -3266,7 +3266,7 @@ Only return valid JSON.`;
         try {
           const generated = await Promise.race<any>([
             generateJSON<any>(prompt),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 45000)),
           ]);
           const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
           const questions = raw
@@ -3342,8 +3342,8 @@ Only return valid JSON.`;
           session_id: session.id,
           candidate_name: session.candidates?.full_name,
           job_title: session.job_descriptions?.title,
-          mcq_count: safeMcq.length,
-          coding_count: codingChallenges.length,
+          mcq_count: includeMcq ? mcqCount : 0,
+          coding_count: includeCoding ? codingCount : 0,
           total_time_minutes: session.total_time_minutes ?? 90,
           deadline: session.deadline,
           mcq_questions: safeMcq,       // consumed directly by frontend — skips /mcq call
@@ -3490,7 +3490,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
   try {
     generated = await Promise.race<any>([
       generateJSON<any>(prompt),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 45000)),
     ]);
     console.log('MCQ generation result keys:', Object.keys(generated || {}));
   } catch (genErr: any) {
@@ -4065,30 +4065,57 @@ Return JSON exactly: { "questions": [ ... ] }`;
   if (segments[0] === 'ai-interview') {
     // GET /api/ai-interview/start/:token
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
-      const token = segments[2];
-      const { data: session, error } = await supabase
-        .from('ai_interview_sessions')
-        .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
-        .eq('token', token)
-        .single();
+      try {
+        const token = decodeURIComponent(String(segments[2] || '')).trim();
+        const { data: session, error } = await supabase
+          .from('ai_interview_sessions')
+          .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
+          .eq('token', token)
+          .single();
 
-      if (error || !session) return notFound(res, 'Interview not found or link expired');
-      if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
+        if (error || !session) return notFound(res, 'Interview not found or link expired');
+        if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
 
-      if (session.status === 'pending') {
-        await supabase.from('ai_interview_sessions').update({
-          status: 'in_progress',
-          started_at: new Date().toISOString(),
-        }).eq('id', session.id);
+        if (session.status === 'pending') {
+          await supabase.from('ai_interview_sessions').update({
+            status: 'in_progress',
+            started_at: new Date().toISOString(),
+          }).eq('id', session.id);
+        }
+
+        let sessionQuestions: any[] = Array.isArray(session.questions) ? session.questions : [];
+        if (!sessionQuestions.length) {
+          const desiredCount = Math.max(1, Math.min(30, Number(session.question_count ?? 5) || 5));
+          const fallbackJob = {
+            title: session.job_descriptions?.title || 'Software Engineer',
+            role: session.job_descriptions?.role || 'Engineer',
+            level: session.job_descriptions?.level || 'mid',
+            must_have_skills: [],
+          };
+
+          const generatedQuestions = await generateInterviewQuestions(fallbackJob);
+          sessionQuestions = generatedQuestions.slice(0, desiredCount);
+
+          if (sessionQuestions.length) {
+            await supabase.from('ai_interview_sessions').update({
+              questions: sessionQuestions,
+              updated_at: new Date().toISOString(),
+            }).eq('id', session.id);
+          }
+        }
+
+        const questionTotal = sessionQuestions.length;
+        return ok(res, {
+          session_id: session.id,
+          candidate_name: session.candidates?.full_name,
+          job_title: session.job_descriptions?.title,
+          total_questions: questionTotal,
+          estimated_duration_minutes: (questionTotal || 5) * 3,
+        });
+      } catch (e) {
+        console.error('[ai-interview/start] failed', e);
+        return res.status(500).json({ error: 'Failed to load interview' });
       }
-
-      return ok(res, {
-        session_id: session.id,
-        candidate_name: session.candidates?.full_name,
-        job_title: session.job_descriptions?.title,
-        total_questions: (session.questions || []).length,
-        estimated_duration_minutes: ((session.questions || []).length || 5) * 3,
-      });
     }
 
     // GET /api/ai-interview/:sessionId/question
