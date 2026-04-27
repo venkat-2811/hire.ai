@@ -164,6 +164,10 @@ function mapAssessmentDifficulty(difficulty: string): { label: string; guidance:
   };
 }
 
+function normalizeBaseUrl(u: string): string {
+  return String(u || '').trim().replace(/\/+$/, '');
+}
+
 // ============== INLINE: AssemblyAI ==============
 async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): Promise<string> {
   const apiKey = process.env.ASSEMBLYAI_API_KEY;
@@ -2877,28 +2881,36 @@ Return JSON:
     // KEY PERF FIX: This endpoint now generates + returns BOTH MCQ questions and coding
     // challenges in a single response, replacing 3 serial client round-trips with 1.
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
-      const token = segments[2];
-      const { data: session, error } = await supabase
-        .from('assessment_sessions')
-        .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
-        .eq('token', token)
-        .single();
+      try {
+        const token = segments[2];
+        const { data: session, error } = await supabase
+          .from('assessment_sessions')
+          .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
+          .eq('token', token)
+          .single();
 
-      if (error || !session) return notFound(res, 'Assessment not found or link expired');
-      if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Assessment already completed or terminated');
+        if (error || !session) return notFound(res, 'Assessment not found or link expired');
+        if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Assessment already completed or terminated');
 
-      const deadline = new Date(session.deadline);
-      if (new Date() > deadline) {
-        await supabase.from('assessment_sessions').update({ status: 'expired' }).eq('id', session.id);
-        return badRequest(res, 'Assessment deadline has passed');
-      }
+        if (!session.deadline) {
+          return res.status(500).json({ error: 'Assessment session misconfigured (missing deadline)' });
+        }
+        const deadline = new Date(session.deadline);
+        if (Number.isNaN(deadline.getTime())) {
+          return res.status(500).json({ error: 'Assessment session misconfigured (invalid deadline)' });
+        }
 
-      if (session.status === 'pending') {
-        await supabase.from('assessment_sessions').update({
-          status: 'in_progress',
-          started_at: new Date().toISOString(),
-        }).eq('id', session.id);
-      }
+        if (new Date() > deadline) {
+          await supabase.from('assessment_sessions').update({ status: 'expired' }).eq('id', session.id);
+          return badRequest(res, 'Assessment deadline has passed');
+        }
+
+        if (session.status === 'pending') {
+          await supabase.from('assessment_sessions').update({
+            status: 'in_progress',
+            started_at: new Date().toISOString(),
+          }).eq('id', session.id);
+        }
 
       const assessmentConfig = session.proctoring_data?.assessment_config || {};
       const mcqCount = session.mcq_question_count ?? 20;
@@ -2943,7 +2955,10 @@ Return JSON: { "questions": [{ "id": "q1", "question": "...", "options": ["...",
 Only return valid JSON.`;
 
         try {
-          const generated = await generateJSON<any>(prompt);
+          const generated = await Promise.race<any>([
+            generateJSON<any>(prompt),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
+          ]);
           const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
           const questions = raw
             .map((q: any, i: number) => ({
@@ -2958,10 +2973,21 @@ Only return valid JSON.`;
             .filter((q: any) => q.question && q.options.length === 4);
           if (questions.length > 0) {
             supabase.from('assessment_sessions').update({ mcq_questions: questions, updated_at: new Date().toISOString() })
-              .eq('id', session.id).then(() => {}).catch(() => {});
+              .eq('id', session.id).then(() => {});
           }
           return questions;
-        } catch (e) { console.error('[start] MCQ gen failed:', e); return []; }
+        } catch (e) {
+          const fallback = [
+            { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+            { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+            { id: 'fb3', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+            { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+            { id: 'fb5', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          ].slice(0, mcqCount);
+          supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() })
+            .eq('id', session.id).then(() => {});
+          return fallback;
+        }
       };
 
       // Fetch coding challenges from DSA bank (or return cached)
@@ -3001,7 +3027,7 @@ Only return valid JSON.`;
           supabase.from('assessment_sessions').update({
             coding_problem_ids: selected.map((p: any) => p.id),
             coding_challenges: challenges, updated_at: new Date().toISOString(),
-          }).eq('id', session.id).then(() => {}).catch(() => {});
+          }).eq('id', session.id).then(() => {});
           return challenges;
         } catch (e) { console.error('[start] Coding fetch failed:', e); return []; }
       };
@@ -3014,17 +3040,21 @@ Only return valid JSON.`;
         difficulty: q.difficulty, topic: q.topic, points: q.points,
       }));
 
-      return ok(res, {
-        session_id: session.id,
-        candidate_name: session.candidates?.full_name,
-        job_title: session.job_descriptions?.title,
-        mcq_count: safeMcq.length,
-        coding_count: codingChallenges.length,
-        total_time_minutes: session.total_time_minutes ?? 90,
-        deadline: session.deadline,
-        mcq_questions: safeMcq,       // consumed directly by frontend — skips /mcq call
-        coding_challenges: codingChallenges, // consumed directly by frontend — skips /coding call
-      });
+        return ok(res, {
+          session_id: session.id,
+          candidate_name: session.candidates?.full_name,
+          job_title: session.job_descriptions?.title,
+          mcq_count: safeMcq.length,
+          coding_count: codingChallenges.length,
+          total_time_minutes: session.total_time_minutes ?? 90,
+          deadline: session.deadline,
+          mcq_questions: safeMcq,
+          coding_challenges: codingChallenges,
+        });
+      } catch (e: any) {
+        console.error('[assessments/start] failed', e?.message || e);
+        return res.status(500).json({ error: 'Failed to start assessment' });
+      }
     }
 
     // Everything else requires auth (manager)
@@ -3676,6 +3706,7 @@ Only return valid JSON, no additional text.`;
       if (!frontendUrl || frontendUrl === 'http://localhost:8080' || frontendUrl.includes('hire-ai-sandy')) {
         frontendUrl = dynamicUrl;
       }
+      frontendUrl = normalizeBaseUrl(frontendUrl);
 
       // Auto-calculate time based on questions and difficulty if not provided
       let totalTimeMinutes = body.total_time_minutes;
@@ -3724,7 +3755,7 @@ Only return valid JSON, no additional text.`;
             created_at: new Date().toISOString(),
           });
 
-          await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${token}`, deadline.toLocaleString());
+          await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
           invitesSent += 1;
         } catch {
           failed.push(c.id);
