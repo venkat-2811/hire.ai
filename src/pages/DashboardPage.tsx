@@ -107,7 +107,7 @@ export default function DashboardPage() {
               animate={{ opacity: 1, y: 0 }}
               className="text-2xl lg:text-3xl font-bold text-foreground"
             >
-              Welcome back!! 👋
+              Welcome back! 👋
             </motion.h1>
             <p className="text-muted-foreground mt-1">
               See how your hiring pipeline is performing today.
