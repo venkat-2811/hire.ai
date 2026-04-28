@@ -252,13 +252,33 @@ export default function AIInterviewPage() {
     setIsRecording(true);
   }, [micEnabled]);
 
-  // Load current question
-  const loadCurrentQuestion = useCallback(async () => {
+  // Load current question (with optional adaptive mode for follow-up questions)
+  const loadCurrentQuestion = useCallback(async (nextIndex?: number) => {
     if (!interviewData) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/question`);
-      const data = await response.json();
+      // For follow-up questions (index > 0), call adapt-question to get context-aware question
+      let data: any;
+      if (typeof nextIndex === 'number' && nextIndex > 0) {
+        try {
+          const adaptResp = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/adapt-question`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ next_index: nextIndex }),
+          });
+          if (adaptResp.ok) {
+            data = await adaptResp.json();
+            if (data?.adaptive) console.log('[AIInterviewPage] Adaptive question generated for index', nextIndex);
+          }
+        } catch {
+          // fall through to standard question endpoint
+        }
+      }
+
+      if (!data) {
+        const response = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/question`);
+        data = await response.json();
+      }
 
       if (data.completed) {
         setIsCompleted(true);
@@ -309,7 +329,9 @@ export default function AIInterviewPage() {
         }
         setIsCompleted(true);
       } else {
-        await loadCurrentQuestion();
+        // Pass the next index so adapt-question can generate a context-aware follow-up
+        const nextIndex = (question.index ?? 0) + 1;
+        await loadCurrentQuestion(nextIndex);
       }
     } catch (e) {
       toast.error('Failed to continue interview automatically. Please refresh and try again.');

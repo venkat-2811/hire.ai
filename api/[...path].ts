@@ -251,7 +251,7 @@ function getOpenAIClient(): OpenAI {
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
   const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'gpt-4o-mini-2024-07-18',
+    model: 'gpt-4.1-mini-2025-04-14',
     messages: [{ role: 'user', content: prompt }],
     temperature: opts.temperature ?? 0.7,
     max_tokens: opts.maxTokens ?? 2048,
@@ -261,7 +261,7 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
 async function generateJSON<T>(prompt: string, opts?: { maxTokens?: number; temperature?: number }): Promise<T> {
   const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'gpt-4o-mini-2024-07-18',
+    model: 'gpt-4.1-mini-2025-04-14',
     messages: [
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
@@ -3228,28 +3228,10 @@ Return JSON:
         if (!session.deadline) {
           return res.status(500).json({ error: 'Assessment session misconfigured (missing deadline)' });
         }
-<<<<<<< HEAD
 
         const deadline = new Date(session.deadline);
         if (Number.isNaN(deadline.getTime())) {
           return res.status(500).json({ error: 'Assessment session misconfigured (invalid deadline)' });
-=======
-        const deadline = new Date(session.deadline);
-        if (Number.isNaN(deadline.getTime())) {
-          return res.status(500).json({ error: 'Assessment session misconfigured (invalid deadline)' });
-        }
-
-        if (new Date() > deadline) {
-          await supabase.from('assessment_sessions').update({ status: 'expired' }).eq('id', session.id);
-          return badRequest(res, 'Assessment deadline has passed');
-        }
-
-        if (session.status === 'pending') {
-          await supabase.from('assessment_sessions').update({
-            status: 'in_progress',
-            started_at: new Date().toISOString(),
-          }).eq('id', session.id);
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         }
 
         if (new Date() > deadline) {
@@ -3291,17 +3273,7 @@ Return JSON:
           return [];
         }
 
-<<<<<<< HEAD
-        if (ownerJob.created_by) {
-          const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
-          if (!billingGate.allowed) {
-            console.log('[getMcqQuestions] Billing gate blocked MCQ generation');
-            return [];
-          }
-        }
-=======
-        // Billing is already enforced at invite time. Do not hard-fail candidate start.
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
+        // Billing enforced at invite time — never block candidate during start.
 
         const mapped = mapAssessmentDifficulty(difficulty);
         const mustHaveSkills = (ownerJob.must_have_skills || []).join(', ') || 'general programming';
@@ -3310,37 +3282,46 @@ Return JSON:
         // Adaptive token limit: ~250 tokens per question for rich scenario-based MCQs
         const maxTokens = Math.min(16384, 1024 + (mcqCount * 250));
 
-        const prompt = `Generate exactly ${mcqCount} multiple choice questions for a ${ownerJob.level} ${ownerJob.role} position.
+        const prompt = `You are an expert technical assessment designer. Generate exactly ${mcqCount} high-quality multiple-choice questions for a ${ownerJob.level} ${ownerJob.role} assessment.
 
-Job Description: ${(ownerJob.description || '').slice(0, 800)}
-Must-Have Skills: ${mustHaveSkills}
-${goodToHaveSkills ? `Good-to-Have Skills: ${goodToHaveSkills}` : ''}
+Job Title: ${ownerJob.title}
+Job Description: ${(ownerJob.description || '').slice(0, 600)}
+Required Skills: ${mustHaveSkills}
+${goodToHaveSkills ? `Nice-to-Have Skills: ${goodToHaveSkills}` : ''}
+Difficulty Level: ${mapped.label} — ${mapped.guidance}
 
-Difficulty: ${mapped.label}. ${mapped.guidance}
+QUESTION RULES:
+- Prefer real-world scenario-based questions over pure definitions.
+- Cover ALL required skills evenly — at least one question per major skill.
+- Mix question types: code output prediction, best-practice selection, error identification, architecture choices.
+- Vary the correct answer position (correct_index) across all questions.
 
-Rules:
-- Prefer scenario-based questions over simple definitions.
-- Each option must be structurally unique — never create permutation-style options.
-- 4 options per question: 1 correct + 3 plausible distractors.
-- Vary the position of the correct answer across questions.
-- Cover the required skills evenly.
+OPTION RULES (CRITICAL):
+- Each of the 4 options MUST start with different words and use different sentence structures.
+- NEVER create permutation-style options (do not swap subject/object of the same sentence).
+- Distractor pattern: 1 plausible misconception, 1 partially correct, 1 technically-sounding but wrong.
 
-Return JSON: { "questions": [{ "id": "q1", "question": "...", "options": ["A text","B text","C text","D text"], "correct_index": 0, "difficulty": "${difficulty}", "topic": "...", "points": 5 }] }
-Only return valid JSON.`;
+Return ONLY this JSON structure:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "<scenario-based question text>",
+      "options": ["<option A>", "<option B>", "<option C>", "<option D>"],
+      "correct_index": 0,
+      "difficulty": "${mapped.label}",
+      "topic": "<skill topic>",
+      "points": 5,
+      "explanation": "<1-2 sentence explanation of why the correct answer is right>"
+    }
+  ]
+}`;
 
-<<<<<<< HEAD
-        // Attempt generation with a timeout that respects Netlify's 26s function limit
-        // We allow ~22s for AI generation (leaving ~4s for DB queries and response)
+        // Allow ~22s for AI generation (Netlify limit is 26s; leaving buffer for DB and response)
         const attemptGeneration = async (): Promise<any[]> => {
           const generated = await Promise.race<any>([
             generateJSON<any>(prompt, { maxTokens }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
-=======
-        try {
-          const generated = await Promise.race<any>([
-            generateJSON<any>(prompt),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 7000)),
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
           ]);
           const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
           return raw
@@ -3352,6 +3333,7 @@ Only return valid JSON.`;
               difficulty: String(q?.difficulty || difficulty),
               topic: String(q?.topic || 'General'),
               points: typeof q?.points === 'number' ? q.points : 5,
+              explanation: String(q?.explanation || ''),
             }))
             .filter((q: any) => q.question && q.options.length === 4);
         };
@@ -3364,7 +3346,6 @@ Only return valid JSON.`;
           if (questions.length > 0) {
             console.log(`[getMcqQuestions] Success: ${questions.length} MCQs generated`);
             supabase.from('assessment_sessions').update({ mcq_questions: questions, updated_at: new Date().toISOString() })
-<<<<<<< HEAD
               .eq('id', session.id).then(() => {}).catch(() => {});
             return questions;
           }
@@ -3373,52 +3354,23 @@ Only return valid JSON.`;
           console.error('[getMcqQuestions] MCQ generation failed:', e?.message || e);
         }
 
-        // All AI attempts failed — return hardcoded fallback questions so the
-        // candidate always has something to answer instead of seeing an empty section.
-        console.warn('[getMcqQuestions] All AI attempts exhausted — using fallback MCQs');
+        // All AI attempts failed — return hardcoded fallback questions
+        console.warn('[getMcqQuestions] Using fallback MCQs');
         const fallbackQuestions = [
-          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty, topic: 'Version Control', points: 5 },
-          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty, topic: 'Data Structures', points: 5 },
-          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty, topic: 'Software Development', points: 5 },
-          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty, topic: 'Web Development', points: 5 },
-          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty, topic: 'Algorithms', points: 5 },
-          { id: 'fb6', question: 'Which principle states that software entities should be open for extension but closed for modification?', options: ['DRY (Don\'t Repeat Yourself)', 'Open/Closed Principle (SOLID)', 'KISS (Keep It Simple)', 'YAGNI (You Aren\'t Gonna Need It)'], correct_index: 1, difficulty, topic: 'Software Design', points: 5 },
-          { id: 'fb7', question: 'In object-oriented programming, what is encapsulation?', options: ['Inheriting from multiple classes', 'Bundling data and methods that operate on that data', 'Converting objects to strings', 'Creating multiple methods with the same name'], correct_index: 1, difficulty, topic: 'OOP', points: 5 },
-          { id: 'fb8', question: 'What is the primary benefit of using Docker containers?', options: ['Automatic code compilation', 'Consistent environments across development and production', 'Built-in version control', 'Enhanced security by default'], correct_index: 1, difficulty, topic: 'DevOps', points: 5 },
-          { id: 'fb9', question: 'In distributed systems, what does the CAP theorem state?', options: ['You can have all three properties simultaneously', 'You can have any two of consistency, availability, and partition tolerance simultaneously', 'You must choose between consistency and availability only', 'Partition tolerance is optional'], correct_index: 1, difficulty, topic: 'Distributed Systems', points: 5 },
-          { id: 'fb10', question: 'What is the difference between SQL and NoSQL databases regarding data consistency?', options: ['NoSQL databases cannot support any consistency', 'NoSQL typically prioritizes availability over strict consistency', 'SQL databases are always faster', 'NoSQL cannot handle transactions at all'], correct_index: 1, difficulty, topic: 'Databases', points: 5 },
+          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty, topic: 'Version Control', points: 5, explanation: 'Git tracks changes to code over time, enabling teams to collaborate and revert to previous states.' },
+          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty, topic: 'Data Structures', points: 5, explanation: 'A Stack follows LIFO — the last element pushed is the first one popped.' },
+          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty, topic: 'Software Development', points: 5, explanation: 'API (Application Programming Interface) is a contract allowing software components to communicate.' },
+          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty, topic: 'Web Development', points: 5, explanation: 'GET is designed to request and retrieve data; it is idempotent and should not change server state.' },
+          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty, topic: 'Algorithms', points: 5, explanation: 'Binary search halves the search space each step, yielding O(log n) time complexity.' },
+          { id: 'fb6', question: 'Which principle states that software entities should be open for extension but closed for modification?', options: ['DRY (Don\'t Repeat Yourself)', 'Open/Closed Principle (SOLID)', 'KISS (Keep It Simple)', 'YAGNI (You Aren\'t Gonna Need It)'], correct_index: 1, difficulty, topic: 'Software Design', points: 5, explanation: 'The Open/Closed Principle (OCP) from SOLID encourages extension via inheritance or composition without modifying existing code.' },
+          { id: 'fb7', question: 'In object-oriented programming, what is encapsulation?', options: ['Inheriting from multiple classes', 'Bundling data and methods that operate on that data', 'Converting objects to strings', 'Creating multiple methods with the same name'], correct_index: 1, difficulty, topic: 'OOP', points: 5, explanation: 'Encapsulation hides internal state and groups related behavior in a class, exposing only necessary interfaces.' },
+          { id: 'fb8', question: 'What is the primary benefit of using Docker containers?', options: ['Automatic code compilation', 'Consistent environments across development and production', 'Built-in version control', 'Enhanced security by default'], correct_index: 1, difficulty, topic: 'DevOps', points: 5, explanation: 'Docker packages code with its dependencies into containers, ensuring identical runtime environments everywhere.' },
+          { id: 'fb9', question: 'In distributed systems, what does the CAP theorem state?', options: ['You can have all three properties simultaneously', 'You can have any two of consistency, availability, and partition tolerance simultaneously', 'You must choose between consistency and availability only', 'Partition tolerance is optional'], correct_index: 1, difficulty, topic: 'Distributed Systems', points: 5, explanation: 'CAP theorem states a distributed system can only guarantee two of the three: Consistency, Availability, Partition Tolerance.' },
+          { id: 'fb10', question: 'What is the difference between SQL and NoSQL databases regarding data consistency?', options: ['NoSQL databases cannot support any consistency', 'NoSQL typically prioritizes availability over strict consistency', 'SQL databases are always faster', 'NoSQL cannot handle transactions at all'], correct_index: 1, difficulty, topic: 'Databases', points: 5, explanation: 'Many NoSQL databases trade strict ACID consistency for higher availability and horizontal scalability (BASE model).' },
         ].slice(0, mcqCount);
         supabase.from('assessment_sessions').update({ mcq_questions: fallbackQuestions, updated_at: new Date().toISOString() })
           .eq('id', session.id).then(() => {}).catch(() => {});
         return fallbackQuestions;
-=======
-              .eq('id', session.id).then(() => {});
-            return questions;
-          }
-
-          const fallback = [
-            { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
-            { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
-            { id: 'fb3', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
-            { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
-            { id: 'fb5', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
-          ].slice(0, mcqCount);
-          supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() })
-            .eq('id', session.id).then(() => {});
-          return fallback;
-        } catch (e) {
-          const fallback = [
-            { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
-            { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
-            { id: 'fb3', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
-            { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
-            { id: 'fb5', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
-          ].slice(0, mcqCount);
-          supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() })
-            .eq('id', session.id).then(() => {});
-          return fallback;
-        }
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
       };
 
       // Fetch coding challenges from DSA bank (or return cached)
@@ -3479,19 +3431,11 @@ Only return valid JSON.`;
           coding_count: codingChallenges.length,
           total_time_minutes: session.total_time_minutes ?? 90,
           deadline: session.deadline,
-<<<<<<< HEAD
-          mcq_questions: safeMcq,       // consumed directly by frontend — skips /mcq call
-          coding_challenges: codingChallenges, // consumed directly by frontend — skips /coding call
-        });
-      } catch (e) {
-        console.error('[assessments/start] failed', e);
-=======
           mcq_questions: safeMcq,
           coding_challenges: codingChallenges,
         });
       } catch (e: any) {
         console.error('[assessments/start] failed', e?.message || e);
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         return res.status(500).json({ error: 'Failed to start assessment' });
       }
     }
@@ -3617,7 +3561,9 @@ Each option must start with a distinct word or phrase.
 - Make distractors plausible.
 - Use role-relevant terminology from the job description.
 
-Return JSON exactly: { "questions": [ ... ] }`;
+For each question also include an "explanation" field: a 1-2 sentence explanation of why the correct answer is correct.
+
+Return JSON exactly: { "questions": [ { "id": "q1", "question": "...", "options": [...], "correct_index": 0, "difficulty": "...", "topic": "...", "points": 5, "explanation": "..." } ] }`;
 
       // Adaptive token limit based on question count
       const mcqMaxTokens = Math.min(16384, 1024 + (count * 250));
@@ -3625,8 +3571,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
       let generated: any;
       // Single attempt with timeout that respects Netlify's 26s function limit
       try {
-<<<<<<< HEAD
-        console.log(`[/mcq] Generating ${count} MCQs...`);
+        console.log(`[/mcq] Generating ${count} MCQs via gpt-4.1-mini...`);
         generated = await Promise.race<any>([
           generateJSON<any>(prompt, { maxTokens: mcqMaxTokens }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
@@ -3634,37 +3579,15 @@ Return JSON exactly: { "questions": [ ... ] }`;
         console.log('[/mcq] Generation result keys:', Object.keys(generated || {}));
       } catch (genErr: any) {
         console.error('[/mcq] MCQ generation failed:', genErr.message);
-        return res.status(500).json({ error: `Failed to generate MCQ questions: ${genErr.message}` });
-=======
-        generated = await Promise.race<any>([
-          generateJSON<any>(prompt),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 7000)),
-        ]);
-        console.log('MCQ generation result keys:', Object.keys(generated || {}));
-      } catch (genErr: any) {
-        console.error('MCQ generation failed:', genErr.message);
         const fallback = [
-          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
-          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
-          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
-          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
-          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5, explanation: 'Git tracks changes to code over time, enabling collaboration and rollback.' },
+          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5, explanation: 'A Stack follows LIFO — the last element pushed is the first one popped.' },
+          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5, explanation: 'API (Application Programming Interface) defines a contract for software components to communicate.' },
+          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5, explanation: 'GET requests retrieve data and are idempotent; they should not change server state.' },
+          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5, explanation: 'Binary search halves the search space each step, giving O(log n) time complexity.' },
         ].slice(0, count);
-
-        await supabase.from('assessment_sessions').update({
-          mcq_questions: fallback,
-          updated_at: new Date().toISOString(),
-        }).eq('id', sessionId);
-
-        return ok(res, fallback.map((q: any) => ({
-          id: q.id,
-          question: q.question,
-          options: q.options,
-          difficulty: q.difficulty,
-          topic: q.topic,
-          points: q.points,
-        })));
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
+        await supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() }).eq('id', sessionId);
+        return ok(res, fallback);
       }
       const questionsRaw = Array.isArray(generated?.questions)
         ? generated.questions
@@ -3678,6 +3601,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
           difficulty: String(q?.difficulty || mapped.label),
           topic: String(q?.topic || 'General'),
           points: typeof q?.points === 'number' ? q.points : 5,
+          explanation: String(q?.explanation || ''),
         }))
         .filter((q: any) => q.question && q.options.length === 4);
 
@@ -3859,6 +3783,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
           options: q.options,
           selected_index: s.selected_index,
           correct_index: q.correct_index,
+          explanation: q.explanation || '',
           is_correct: isCorrect,
           difficulty: q.difficulty,
           topic: q.topic,
@@ -3881,6 +3806,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
         total_count: totalCount,
         weighted_points_earned: scoredWeightedPoints,
         weighted_points_possible: totalWeightedPoints,
+        results: detailedResults,
       });
     }
 
@@ -4188,11 +4114,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
       const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
-<<<<<<< HEAD
-      const frontendUrl = getFrontendBaseUrl(req);
-=======
-      const frontendUrl = resolveFrontendBaseUrl(req);
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
+      const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
 
       // Auto-calculate time based on questions and difficulty if not provided
       let totalTimeMinutes = body.total_time_minutes;
@@ -4260,35 +4182,18 @@ Return JSON exactly: { "questions": [ ... ] }`;
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
       try {
         const token = segments[2];
-<<<<<<< HEAD
-        console.log('[ai-interview/start] Looking up token:', token?.slice(0, 10) + '...');
-        
-=======
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
+        console.log('[ai-interview/start] token:', token?.slice(0, 10) + '...');
         const { data: session, error } = await supabase
           .from('ai_interview_sessions')
           .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
           .eq('token', token)
           .single();
 
-<<<<<<< HEAD
         if (error) {
           console.error('[ai-interview/start] DB error:', error.message);
           return notFound(res, 'Interview not found or link expired');
         }
-        if (!session) {
-          console.log('[ai-interview/start] No session found for token');
-          return notFound(res, 'Interview not found or link expired');
-        }
-        
-        console.log('[ai-interview/start] Session found:', session.id, 'status:', session.status, 'questions:', (session.questions || []).length);
-        
-        if (['completed', 'terminated'].includes(session.status)) {
-          return badRequest(res, 'Interview already completed or terminated');
-        }
-
-=======
-        if (error || !session) return notFound(res, 'Interview not found or link expired');
+        if (!session) return notFound(res, 'Interview not found or link expired');
         if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
 
         const questionCount = Array.isArray(session.questions) ? session.questions.length : 0;
@@ -4296,7 +4201,6 @@ Return JSON exactly: { "questions": [ ... ] }`;
           return badRequest(res, 'Interview questions are not available yet. Please contact the hiring team.');
         }
 
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         if (session.status === 'pending') {
           await supabase.from('ai_interview_sessions').update({
             status: 'in_progress',
@@ -4304,10 +4208,6 @@ Return JSON exactly: { "questions": [ ... ] }`;
           }).eq('id', session.id);
         }
 
-<<<<<<< HEAD
-        const questionCount = (session.questions || []).length;
-=======
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         return ok(res, {
           session_id: session.id,
           candidate_name: session.candidates?.full_name,
@@ -4316,11 +4216,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
           estimated_duration_minutes: (questionCount || 5) * 3,
         });
       } catch (e: any) {
-<<<<<<< HEAD
-        console.error('[ai-interview/start] Unexpected error:', e?.message || e);
-=======
         console.error('[ai-interview/start] failed:', e?.message || e);
->>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         return res.status(500).json({ error: 'Failed to load interview session' });
       }
     }
@@ -4343,6 +4239,101 @@ Return JSON exactly: { "questions": [ ... ] }`;
         question_type: q.type,
         expected_duration_seconds: q.duration ?? 120,
       });
+    }
+
+    // POST /api/ai-interview/:sessionId/adapt-question
+    // Generates a context-aware adaptive follow-up question based on previous responses.
+    // Body: { next_index: number }
+    // Returns the question at next_index (replacing the pre-stored one if AI generates a better one).
+    if (req.method === 'POST' && segments.length === 3 && segments[2] === 'adapt-question') {
+      const sessionId = segments[1];
+      const { next_index } = (req.body || {}) as { next_index?: number };
+
+      const { data: session } = await supabase
+        .from('ai_interview_sessions')
+        .select('*, job_descriptions(title, role, level, must_have_skills, description)')
+        .eq('id', sessionId)
+        .single();
+
+      if (!session) return notFound(res, 'Session not found');
+      if (session.status !== 'in_progress') return badRequest(res, 'Interview not in progress');
+
+      const questions: any[] = Array.isArray(session.questions) ? session.questions : [];
+      const responses: any[] = Array.isArray(session.responses) ? session.responses : [];
+      const idx = typeof next_index === 'number' ? next_index : (session.current_question_index || 0);
+
+      // If index is beyond question list or no prior responses, just return the pre-stored question
+      if (responses.length === 0 || idx >= questions.length) {
+        const q = questions[idx];
+        if (!q) return ok(res, { completed: true });
+        return ok(res, { index: idx, question_text: q.text, question_type: q.type, expected_duration_seconds: q.duration ?? 120, adaptive: false });
+      }
+
+      // Build context from prior Q&A pairs
+      const job = session.job_descriptions || {};
+      const resumeInsights = session.proctoring_data?.resume_insights || {};
+      const priorQA = responses
+        .filter((r: any) => typeof r?.question_index === 'number' && questions[r.question_index])
+        .sort((a: any, b: any) => a.question_index - b.question_index)
+        .slice(-3) // last 3 responses for context
+        .map((r: any) => {
+          const q = questions[r.question_index];
+          return `Q (${q.type}): ${q.text}\nA: ${r.transcript || '[No response provided]'}`;
+        })
+        .join('\n\n');
+
+      const nextPreStored = questions[idx];
+      const skills = (job.must_have_skills || []).join(', ') || 'General';
+      const candidateSkills = Array.isArray(resumeInsights.skills) ? resumeInsights.skills.join(', ') : '';
+
+      const adaptPrompt = `You are an expert technical interviewer conducting a live ${job.level} ${job.role} interview for ${job.title}.
+
+Required Skills: ${skills}
+${candidateSkills ? `Candidate Skills: ${candidateSkills}` : ''}
+${resumeInsights.experience_summary ? `Candidate Experience: ${resumeInsights.experience_summary}` : ''}
+
+## Interview Progress So Far (last ${Math.min(responses.length, 3)} Q&A pairs):
+${priorQA}
+
+## Pre-planned next question (question ${idx + 1} of ${questions.length}):
+"${nextPreStored?.text || ''}" (type: ${nextPreStored?.type || 'technical'})
+
+## Your Task:
+Based on the candidate's answers above, generate a BETTER adaptive follow-up question for question ${idx + 1}.
+- If the candidate gave a strong answer, go deeper on that topic or a related advanced concept.
+- If the candidate struggled, probe with a simpler or more supportive follow-up.
+- If the answer revealed a gap in required skills, ask about it directly.
+- Keep the question type (${nextPreStored?.type || 'technical'}) unless a behavioral/situational follow-up would reveal more.
+- If the pre-planned question is already ideal given context, you may return it as-is.
+
+Return ONLY this JSON:
+{"text": "<the adaptive question>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}`;
+
+      try {
+        const adapted = await Promise.race<any>([
+          generateJSON<any>(adaptPrompt, { temperature: 0.7, maxTokens: 512 }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('adapt timeout')), 8000)),
+        ]);
+        if (adapted?.text && adapted?.type) {
+          // Replace the pre-stored question at this index with the adaptive one
+          const updatedQuestions = [...questions];
+          updatedQuestions[idx] = {
+            text: String(adapted.text),
+            type: String(adapted.type),
+            duration: typeof adapted.duration === 'number' ? adapted.duration : 120,
+          };
+          await supabase.from('ai_interview_sessions')
+            .update({ questions: updatedQuestions, updated_at: new Date().toISOString() })
+            .eq('id', sessionId);
+          return ok(res, { index: idx, question_text: adapted.text, question_type: adapted.type, expected_duration_seconds: adapted.duration ?? 120, adaptive: true });
+        }
+      } catch (e: any) {
+        console.warn('[adapt-question] AI adaptation failed, using pre-stored:', e.message);
+      }
+
+      // Fallback to pre-stored question
+      if (!nextPreStored) return ok(res, { completed: true });
+      return ok(res, { index: idx, question_text: nextPreStored.text, question_type: nextPreStored.type, expected_duration_seconds: nextPreStored.duration ?? 120, adaptive: false });
     }
 
     // POST /api/ai-interview/:sessionId/transcribe
@@ -4661,38 +4652,12 @@ Evaluate and return JSON:
 
       const { data: job } = await supabase
         .from('job_descriptions')
-        .select('id, title, role, level, must_have_skills, interview_question_pool')
+        .select('id, title, role, level, must_have_skills, description')
         .eq('id', job_id)
         .eq('created_by', user.id)
         .single();
 
       if (!job) return notFound(res, 'Job not found');
-
-      // If no question pool exists yet, generate one and store it
-      let questionPool: any[] = job.interview_question_pool || [];
-      console.log('[ai-interview/invite] Existing question pool size:', questionPool.length);
-      if (!questionPool.length) {
-        try {
-          console.log('[ai-interview/invite] Generating new question pool for job:', job_id);
-          questionPool = await generateInterviewQuestionPool({
-            title: job.title,
-            role: job.role,
-            level: job.level,
-            must_have_skills: job.must_have_skills || [],
-            description: '',
-          });
-          console.log('[ai-interview/invite] Generated pool size:', questionPool.length);
-          if (questionPool.length) {
-            await supabase.from('job_descriptions').update({
-              interview_question_pool: questionPool,
-            }).eq('id', job_id);
-          }
-        } catch (e: any) {
-          console.error('[ai-interview/invite] Pool generation failed:', e?.message || e);
-          // Fall back to old method if pool generation fails
-          questionPool = [];
-        }
-      }
 
       const { data: candidates } = await supabase
         .from('candidates')
@@ -4701,7 +4666,7 @@ Evaluate and return JSON:
 
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
-      const frontendUrl = getFrontendBaseUrl(req);
+      const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
       let invitesSent = 0;
       const failed: string[] = [];
 
@@ -4709,20 +4674,27 @@ Evaluate and return JSON:
         try {
           const token = crypto.randomBytes(32).toString('base64url');
 
-          // Select requestedCount questions from pool for each candidate
-          let questions: any[];
-          if (questionPool.length >= requestedCount) {
-            const shuffled = [...questionPool].sort(() => Math.random() - 0.5);
-            questions = shuffled.slice(0, requestedCount);
-          } else if (questionPool.length > 0) {
-            questions = [...questionPool].sort(() => Math.random() - 0.5);
-          } else {
-            // Fallback: generate questions on the fly (legacy behavior)
-            console.log('[ai-interview/invite] Falling back to generateInterviewQuestions for candidate:', c.id);
-            questions = await generateInterviewQuestions(job);
-          }
+          // Generate personalized questions per candidate using their resume data (GPT-4.1-mini)
+          console.log('[ai-interview/invite] Generating personalized questions for candidate:', c.id, 'with resume:', !!c.resume_parsed_data);
+          const questions = await generateCandidateInterviewQuestions(
+            { title: job.title, role: job.role, level: job.level, must_have_skills: job.must_have_skills || [], description: job.description || '' },
+            { full_name: c.full_name, resume_parsed_data: c.resume_parsed_data },
+            requestedCount
+          );
 
-          console.log('[ai-interview/invite] Inserting session with', questions.length, 'questions for candidate:', c.id);
+          console.log('[ai-interview/invite] Generated', questions.length, 'questions for candidate:', c.id);
+
+          // Build a lightweight resume_insights snapshot stored in the session for adaptive use
+          const resume = c.resume_parsed_data || {};
+          const resumeInsights = {
+            skills: Array.isArray(resume.skills) ? resume.skills.slice(0, 15) : [],
+            experience_summary: Array.isArray(resume.experience)
+              ? resume.experience.slice(0, 3).map((e: any) => `${e.title || ''} at ${e.company || ''}`).join('; ')
+              : (typeof resume.experience === 'string' ? resume.experience.slice(0, 300) : ''),
+            education_summary: Array.isArray(resume.education)
+              ? resume.education.slice(0, 2).map((e: any) => `${e.degree || ''} from ${e.institution || ''}`).join('; ')
+              : (typeof resume.education === 'string' ? resume.education.slice(0, 200) : ''),
+          };
 
           await supabase.from('ai_interview_sessions').insert({
             id: uuidv4(),
@@ -4734,13 +4706,14 @@ Evaluate and return JSON:
             current_question_index: 0,
             questions,
             responses: [],
-            proctoring_data: { warnings: [], camera_enabled: false, microphone_enabled: false },
+            proctoring_data: { warnings: [], camera_enabled: false, microphone_enabled: false, resume_insights: resumeInsights },
             created_at: new Date().toISOString(),
           });
 
           await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduled_time);
           invitesSent += 1;
-        } catch {
+        } catch (err: any) {
+          console.error('[ai-interview/invite] Failed for candidate:', c.id, err?.message || err);
           failed.push(c.id);
         }
       }
@@ -5048,17 +5021,104 @@ Evaluate and return JSON:
 
 async function generateInterviewQuestions(job: { title: string; role: string; level: string; must_have_skills?: string[] }) {
   try {
-    const prompt = `Generate 5 interview questions for ${job.level} ${job.role} (${job.title}). Skills: ${(job.must_have_skills || []).join(', ') || 'General'}. Return JSON array: [{"text":"Question","type":"technical|behavioral|situational","duration":120}]`;
-    const questions = await generateJSON<any[]>(prompt);
-    return questions.slice(0, 5);
+    const skills = (job.must_have_skills || []).join(', ') || 'General';
+    const prompt = `You are an expert technical interviewer. Generate exactly 5 high-quality interview questions for a ${job.level} ${job.role} position (${job.title}).
+Required skills: ${skills}.
+
+Create a balanced mix:
+- 2 technical questions testing specific skills and problem-solving
+- 2 behavioral questions about past experiences (use STAR format cues)
+- 1 situational question with a realistic work scenario
+
+For each question, estimate a realistic answer duration.
+
+Return JSON array ONLY:
+[{"text": "<full question text>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
+    const raw = await Promise.race<any>([
+      generateJSON<any>(prompt),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+    ]);
+    const questions = Array.isArray(raw) ? raw : (Array.isArray(raw?.questions) ? raw.questions : []);
+    return questions
+      .filter((q: any) => q?.text && q?.type)
+      .map((q: any) => ({ text: String(q.text), type: String(q.type), duration: Number(q.duration) || 120 }))
+      .slice(0, 5);
   } catch {
     return [
-      { text: `Tell me about your experience relevant to the ${job.role} role.`, type: 'behavioral', duration: 120 },
-      { text: 'Describe a challenging project you worked on and how you overcame obstacles.', type: 'behavioral', duration: 120 },
-      { text: `What technical skills do you bring to this ${job.title} position?`, type: 'technical', duration: 120 },
-      { text: 'How do you approach problem-solving when facing unfamiliar challenges?', type: 'situational', duration: 120 },
-      { text: 'Where do you see yourself in 5 years and how does this role fit into your career goals?', type: 'behavioral', duration: 120 },
+      { text: `Walk me through your most relevant technical experience for the ${job.role} role, including specific technologies and what you built.`, type: 'technical', duration: 150 },
+      { text: `Describe a situation where you had to solve a complex technical problem. What was your approach and what was the outcome?`, type: 'behavioral', duration: 150 },
+      { text: `Tell me about a time you worked under pressure to deliver a project. How did you prioritize and what did you learn?`, type: 'behavioral', duration: 120 },
+      { text: `If you discovered a critical bug in production 2 hours before a major product demo, what would you do?`, type: 'situational', duration: 120 },
+      { text: `What specific technical skills do you bring to ${job.title} and what is an area you are actively working to improve?`, type: 'technical', duration: 120 },
     ];
+  }
+}
+
+async function generateCandidateInterviewQuestions(
+  job: { title: string; role: string; level: string; must_have_skills?: string[]; description?: string },
+  candidate: { full_name?: string; resume_parsed_data?: any },
+  count: number
+): Promise<{ text: string; type: string; duration: number }[]> {
+  const skills = (job.must_have_skills || []).join(', ') || 'General';
+  const resume = candidate.resume_parsed_data || {};
+
+  // Extract useful resume signals for context
+  const candidateSkills = Array.isArray(resume.skills) ? resume.skills.slice(0, 12).join(', ') : '';
+  const candidateExperience = Array.isArray(resume.experience)
+    ? resume.experience.slice(0, 3).map((e: any) => `${e.title || e.role || ''} at ${e.company || ''} (${e.duration || ''})`).join('; ')
+    : typeof resume.experience === 'string' ? resume.experience.slice(0, 400) : '';
+  const candidateEducation = Array.isArray(resume.education)
+    ? resume.education.slice(0, 2).map((e: any) => `${e.degree || ''} in ${e.field || e.major || ''} from ${e.institution || ''}`).join('; ')
+    : typeof resume.education === 'string' ? resume.education.slice(0, 200) : '';
+  const summary = typeof resume.summary === 'string' ? resume.summary.slice(0, 300) : '';
+
+  const hasResume = candidateSkills || candidateExperience;
+  const candidateName = candidate.full_name || 'the candidate';
+
+  const prompt = `You are an expert technical interviewer. Generate exactly ${count} personalized interview questions for ${candidateName} applying for a ${job.level} ${job.role} position (${job.title}).
+
+## JOB REQUIREMENTS
+Required Skills: ${skills}
+Job Context: ${(job.description || '').slice(0, 400)}
+
+## CANDIDATE PROFILE
+${candidateSkills ? `Skills on Resume: ${candidateSkills}` : ''}
+${candidateExperience ? `Work Experience: ${candidateExperience}` : ''}
+${candidateEducation ? `Education: ${candidateEducation}` : ''}
+${summary ? `Profile Summary: ${summary}` : ''}
+
+## PERSONALIZATION RULES:
+1. Cross-reference the candidate's resume with job requirements.
+2. Ask about specific technologies/projects mentioned in their resume if relevant to the role.
+3. Probe gaps: if a required skill is absent from the resume, ask how they would handle it.
+4. Ask about their MOST RECENT experience in context of the job's challenges.
+5. ${hasResume ? 'Tailor questions to their background — do not ask generic questions they cannot answer based on their resume.' : 'Use the job requirements to craft role-specific questions.'}
+
+## QUESTION MIX (for ${count} questions):
+- ${Math.ceil(count * 0.4)} technical questions: probe skills, system design, or code/architecture decisions
+- ${Math.ceil(count * 0.35)} behavioral questions: STAR-format, based on their actual experience
+- ${Math.floor(count * 0.25)} situational questions: hypothetical but role-realistic scenarios
+
+## FORMAT:
+Return ONLY a JSON array:
+[{"text": "<specific, personalized question>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
+
+  try {
+    const raw = await Promise.race<any>([
+      generateJSON<any>(prompt, { maxTokens: Math.min(8192, 1024 + count * 200), temperature: 0.6 }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Interview question generation timed out')), 20000)),
+    ]);
+    const questions = Array.isArray(raw) ? raw : (Array.isArray(raw?.questions) ? raw.questions : []);
+    const valid = questions
+      .filter((q: any) => q?.text && q?.type)
+      .map((q: any) => ({ text: String(q.text), type: String(q.type), duration: Number(q.duration) || 120 }))
+      .slice(0, count);
+    if (valid.length >= Math.max(1, Math.floor(count * 0.6))) return valid;
+    // If AI returned too few, fall back
+    throw new Error(`Too few questions returned: ${valid.length}`);
+  } catch (e: any) {
+    console.error('[generateCandidateInterviewQuestions] failed, using fallback:', e.message);
+    return generateInterviewQuestions(job).then((qs) => qs.slice(0, count));
   }
 }
 
@@ -5375,23 +5435,30 @@ async function runSinglePiston(
 
 async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }) {
   const skills = job.must_have_skills.join(', ') || 'General';
-  const prompt = `Generate exactly 15 diverse interview questions for a ${job.level} ${job.role} position (${job.title}).
-Skills to assess: ${skills}.
-${job.description ? `Job context: ${job.description.slice(0, 500)}` : ''}
+  const prompt = `You are an expert technical interviewer. Generate exactly 20 diverse, high-quality interview questions for a ${job.level} ${job.role} position (${job.title}).
+
+Required Skills: ${skills}
+${job.description ? `Job Context: ${job.description.slice(0, 500)}` : ''}
 
 Create a balanced mix:
-- 7 technical questions testing specific skills and knowledge
-- 4 behavioral questions about past experiences and teamwork
-- 4 situational questions with hypothetical scenarios
+- 9 technical questions: probe specific skill depth, system design decisions, debugging, or code behavior
+- 6 behavioral questions: STAR-format about past experiences, collaboration, and problem-solving
+- 5 situational questions: realistic work scenarios the candidate would face in this role
 
-Each question should be distinct and test a different aspect.
-Vary difficulty from moderate to advanced for ${job.level} level.
+Rules:
+- Each question MUST test a different skill or competency area.
+- Questions should be distinct, non-overlapping, and progress from foundational to advanced.
+- Tailor all questions to the ${job.level} level expectations.
+- Avoid generic questions. Make each one specific to the role and required skills.
 
-Return JSON array: [{"text":"The question text","type":"technical|behavioral|situational","duration":120}]
-Only return the JSON array.`;
+Return ONLY a JSON array:
+[{"text": "<full question text>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
 
   try {
-    const raw = await generateJSON<any>(prompt);
+    const raw = await Promise.race<any>([
+      generateJSON<any>(prompt, { maxTokens: 8192, temperature: 0.6 }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Pool generation timed out')), 20000)),
+    ]);
     const questions = Array.isArray(raw) ? raw : Array.isArray(raw?.questions) ? raw.questions : [];
     return questions
       .filter((q: any) => q?.text && q?.type)
@@ -5400,9 +5467,9 @@ Only return the JSON array.`;
         type: String(q.type),
         duration: typeof q.duration === 'number' ? q.duration : 120,
       }))
-      .slice(0, 15);
+      .slice(0, 20);
   } catch (e: any) {
-    console.error('Failed to generate interview question pool:', e.message);
+    console.error('[generateInterviewQuestionPool] failed:', e.message);
     return [];
   }
 }

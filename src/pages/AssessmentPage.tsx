@@ -63,6 +63,19 @@ interface MCQQuestion {
   difficulty: string;
   topic: string;
   points: number;
+  explanation?: string;
+}
+
+interface MCQReviewItem {
+  question_id: string;
+  question: string;
+  options: string[];
+  selected_index: number;
+  correct_index: number;
+  explanation: string;
+  is_correct: boolean;
+  topic: string;
+  difficulty: string;
 }
 
 interface TestCase {
@@ -140,6 +153,8 @@ export default function AssessmentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
+  const [mcqReview, setMcqReview] = useState<MCQReviewItem[]>([]);
+  const [showMcqReview, setShowMcqReview] = useState(false);
   const [codingLanguages, setCodingLanguages] = useState<Record<string, string>>({});
   const [problemTab, setProblemTab] = useState<'description' | 'submissions'>('description');
   const [activeTestCaseTab, setActiveTestCaseTab] = useState(0);
@@ -770,11 +785,15 @@ export default function AssessmentPage() {
           time_taken_seconds: 0, // TODO: Track per-question time
         }));
 
-        await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
+        const mcqSubmitResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(mcqSubmissions),
         });
+        if (mcqSubmitResp.ok) {
+          const mcqResult = await mcqSubmitResp.json().catch(() => ({}));
+          if (Array.isArray(mcqResult?.results)) setMcqReview(mcqResult.results);
+        }
       }
 
       // Submit coding solutions (if coding section exists)
@@ -912,26 +931,100 @@ export default function AssessmentPage() {
   // Completed state
   if (completed) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="min-h-screen bg-background p-4 flex flex-col items-center gap-6 py-10">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-2xl"
         >
-          <Card className="max-w-md w-full">
+          <Card>
             <CardHeader className="text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
                 <CheckCircle className="h-8 w-8 text-success" />
               </div>
               <CardTitle className="text-2xl">Assessment Completed!</CardTitle>
               <CardDescription className="text-base">
-                Thank you for completing the technical assessment. Your responses have been
-                submitted for evaluation.
+                Thank you for completing the technical assessment. Your responses have been submitted for evaluation.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                The hiring team will review your results and contact you regarding the next steps.
-                You may now close this window.
+            <CardContent className="space-y-4">
+              {finalScores && (
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  {finalScores.mcq_score != null && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground mb-1">MCQ Score</p>
+                      <p className="text-xl font-bold">{Math.round(finalScores.mcq_score)}%</p>
+                    </div>
+                  )}
+                  {finalScores.coding_score != null && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground mb-1">Coding Score</p>
+                      <p className="text-xl font-bold">{Math.round(finalScores.coding_score)}%</p>
+                    </div>
+                  )}
+                  {finalScores.total_score != null && (
+                    <div className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground mb-1">Total Score</p>
+                      <p className="text-xl font-bold text-primary">{Math.round(finalScores.total_score)}%</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {mcqReview.length > 0 && (
+                <div className="space-y-3">
+                  <button
+                    onClick={() => setShowMcqReview((v) => !v)}
+                    className="w-full flex items-center justify-between rounded-lg border px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
+                  >
+                    <span>MCQ Review ({mcqReview.filter((r) => r.is_correct).length}/{mcqReview.length} correct)</span>
+                    <span className="text-muted-foreground">{showMcqReview ? '▲ Hide' : '▼ Show'}</span>
+                  </button>
+                  {showMcqReview && (
+                    <div className="space-y-4">
+                      {mcqReview.map((item, i) => (
+                        <div key={item.question_id} className={`rounded-lg border p-4 space-y-3 ${
+                          item.is_correct ? 'border-green-200 bg-green-50/30 dark:border-green-900 dark:bg-green-950/20' : 'border-red-200 bg-red-50/30 dark:border-red-900 dark:bg-red-950/20'
+                        }`}>
+                          <div className="flex items-start gap-2">
+                            <span className={`mt-0.5 flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center text-xs text-white ${
+                              item.is_correct ? 'bg-green-500' : 'bg-red-500'
+                            }`}>{item.is_correct ? '✓' : '✗'}</span>
+                            <p className="text-sm font-medium">{i + 1}. {item.question}</p>
+                          </div>
+                          <div className="pl-7 space-y-1.5">
+                            {item.options.map((opt, oi) => (
+                              <div key={oi} className={`text-sm px-3 py-1.5 rounded ${
+                                oi === item.correct_index
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 font-medium'
+                                  : oi === item.selected_index && !item.is_correct
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 line-through'
+                                    : 'text-muted-foreground'
+                              }`}>
+                                {oi === item.correct_index && <span className="mr-1">✓</span>}
+                                {oi === item.selected_index && oi !== item.correct_index && <span className="mr-1">✗</span>}
+                                {opt}
+                              </div>
+                            ))}
+                          </div>
+                          {item.explanation && (
+                            <div className="pl-7">
+                              <p className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-2 italic">
+                                💡 {item.explanation}
+                              </p>
+                            </div>
+                          )}
+                          <div className="pl-7 flex gap-2">
+                            <Badge variant="outline" className="text-xs">{item.topic}</Badge>
+                            <Badge variant="outline" className="text-xs capitalize">{item.difficulty}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground text-center pt-2">
+                The hiring team will review your results and contact you regarding next steps.
               </p>
             </CardContent>
           </Card>
