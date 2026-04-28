@@ -168,6 +168,27 @@ function normalizeBaseUrl(u: string): string {
   return String(u || '').trim().replace(/\/+$/, '');
 }
 
+function resolveFrontendBaseUrl(req: VercelRequest): string {
+  const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+  const isLocalhost = String(hostHeader || '').includes('localhost');
+  const protocol = req.headers['x-forwarded-proto']
+    ? String(req.headers['x-forwarded-proto']).split(',')[0]
+    : (isLocalhost ? 'http' : 'https');
+  const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hiretec.netlify.app';
+
+  let frontendUrl = process.env.FRONTEND_URL;
+  if (
+    !frontendUrl ||
+    frontendUrl === 'http://localhost:8080' ||
+    frontendUrl === 'http://localhost:5173' ||
+    frontendUrl.includes('hire-ai-sandy')
+  ) {
+    frontendUrl = dynamicUrl;
+  }
+
+  return normalizeBaseUrl(frontendUrl);
+}
+
 // ============== INLINE: AssemblyAI ==============
 async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): Promise<string> {
   const apiKey = process.env.ASSEMBLYAI_API_KEY;
@@ -2929,10 +2950,7 @@ Return JSON:
           .from('job_descriptions').select('created_by, *').eq('id', session.job_id).single();
         if (!ownerJob) return [];
 
-        if (ownerJob.created_by) {
-          const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
-          if (!billingGate.allowed) return [];
-        }
+        // Billing is already enforced at invite time. Do not hard-fail candidate start.
 
         const mapped = mapAssessmentDifficulty(difficulty);
         const mustHaveSkills = (ownerJob.must_have_skills || []).join(', ') || 'general programming';
@@ -2957,7 +2975,7 @@ Only return valid JSON.`;
         try {
           const generated = await Promise.race<any>([
             generateJSON<any>(prompt),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 20000)),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 7000)),
           ]);
           const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
           const questions = raw
@@ -2974,8 +2992,19 @@ Only return valid JSON.`;
           if (questions.length > 0) {
             supabase.from('assessment_sessions').update({ mcq_questions: questions, updated_at: new Date().toISOString() })
               .eq('id', session.id).then(() => {});
+            return questions;
           }
-          return questions;
+
+          const fallback = [
+            { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+            { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+            { id: 'fb3', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+            { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+            { id: 'fb5', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          ].slice(0, mcqCount);
+          supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() })
+            .eq('id', session.id).then(() => {});
+          return fallback;
         } catch (e) {
           const fallback = [
             { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
@@ -3094,17 +3123,7 @@ Only return valid JSON.`;
       const { data: job } = await supabase.from('job_descriptions').select('*').eq('id', session.job_id).single();
       if (!job) return notFound(res, 'Job not found');
 
-      const { data: ownerJob } = await supabase
-        .from('job_descriptions')
-        .select('created_by')
-        .eq('id', session.job_id)
-        .single();
-      if (ownerJob?.created_by) {
-        const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
-        if (!billingGate.allowed) {
-          return res.status(billingGate.status || 402).json(billingGate);
-        }
-      }
+      // Billing is enforced at invite time; avoid blocking candidates on runtime checks.
 
       const count = session.mcq_question_count || 20;
       const difficulty = assessmentConfig.difficulty || 'medium';
@@ -3186,11 +3205,34 @@ Only return valid JSON, no additional text.`;
 
       let generated: any;
       try {
-        generated = await generateJSON<any>(prompt);
+        generated = await Promise.race<any>([
+          generateJSON<any>(prompt),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 7000)),
+        ]);
         console.log('MCQ generation result keys:', Object.keys(generated || {}));
       } catch (genErr: any) {
         console.error('MCQ generation failed:', genErr.message);
-        return res.status(500).json({ error: 'AI failed to generate questions. Please try again.' });
+        const fallback = [
+          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+        ].slice(0, count);
+
+        await supabase.from('assessment_sessions').update({
+          mcq_questions: fallback,
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+
+        return ok(res, fallback.map((q: any) => ({
+          id: q.id,
+          question: q.question,
+          options: q.options,
+          difficulty: q.difficulty,
+          topic: q.topic,
+          points: q.points,
+        })));
       }
 
       const questionsRaw = Array.isArray(generated)
@@ -3211,7 +3253,27 @@ Only return valid JSON, no additional text.`;
         .filter((q: any) => q.question && q.options.length === 4);
 
       if (!questions.length) {
-        return res.status(500).json({ error: 'AI returned no valid questions. Please try again.' });
+        const fallback = [
+          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+        ].slice(0, count);
+
+        await supabase.from('assessment_sessions').update({
+          mcq_questions: fallback,
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+
+        return ok(res, fallback.map((q: any) => ({
+          id: q.id,
+          question: q.question,
+          options: q.options,
+          difficulty: q.difficulty,
+          topic: q.topic,
+          points: q.points,
+        })));
       }
 
       await supabase.from('assessment_sessions').update({
@@ -3697,16 +3759,7 @@ Only return valid JSON, no additional text.`;
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
       const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
-      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
-      const isLocalhost = String(hostHeader).includes('localhost');
-      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
-      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
-      
-      let frontendUrl = process.env.FRONTEND_URL;
-      if (!frontendUrl || frontendUrl === 'http://localhost:8080' || frontendUrl.includes('hire-ai-sandy')) {
-        frontendUrl = dynamicUrl;
-      }
-      frontendUrl = normalizeBaseUrl(frontendUrl);
+      const frontendUrl = resolveFrontendBaseUrl(req);
 
       // Auto-calculate time based on questions and difficulty if not provided
       let totalTimeMinutes = body.total_time_minutes;
@@ -3772,30 +3825,40 @@ Only return valid JSON, no additional text.`;
   if (segments[0] === 'ai-interview') {
     // GET /api/ai-interview/start/:token
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
-      const token = segments[2];
-      const { data: session, error } = await supabase
-        .from('ai_interview_sessions')
-        .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
-        .eq('token', token)
-        .single();
+      try {
+        const token = segments[2];
+        const { data: session, error } = await supabase
+          .from('ai_interview_sessions')
+          .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
+          .eq('token', token)
+          .single();
 
-      if (error || !session) return notFound(res, 'Interview not found or link expired');
-      if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
+        if (error || !session) return notFound(res, 'Interview not found or link expired');
+        if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
 
-      if (session.status === 'pending') {
-        await supabase.from('ai_interview_sessions').update({
-          status: 'in_progress',
-          started_at: new Date().toISOString(),
-        }).eq('id', session.id);
+        const questionCount = Array.isArray(session.questions) ? session.questions.length : 0;
+        if (questionCount === 0) {
+          return badRequest(res, 'Interview questions are not available yet. Please contact the hiring team.');
+        }
+
+        if (session.status === 'pending') {
+          await supabase.from('ai_interview_sessions').update({
+            status: 'in_progress',
+            started_at: new Date().toISOString(),
+          }).eq('id', session.id);
+        }
+
+        return ok(res, {
+          session_id: session.id,
+          candidate_name: session.candidates?.full_name,
+          job_title: session.job_descriptions?.title,
+          total_questions: questionCount,
+          estimated_duration_minutes: (questionCount || 5) * 3,
+        });
+      } catch (e: any) {
+        console.error('[ai-interview/start] failed:', e?.message || e);
+        return res.status(500).json({ error: 'Failed to load interview session' });
       }
-
-      return ok(res, {
-        session_id: session.id,
-        candidate_name: session.candidates?.full_name,
-        job_title: session.job_descriptions?.title,
-        total_questions: (session.questions || []).length,
-        estimated_duration_minutes: ((session.questions || []).length || 5) * 3,
-      });
     }
 
     // GET /api/ai-interview/:sessionId/question
@@ -4209,7 +4272,7 @@ Evaluate and return JSON:
             created_at: new Date().toISOString(),
           });
 
-          await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${token}`, scheduled_time);
+          await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduled_time);
           invitesSent += 1;
         } catch {
           failed.push(c.id);

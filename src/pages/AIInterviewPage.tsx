@@ -564,10 +564,38 @@ export default function AIInterviewPage() {
     async function loadInterview() {
       if (!token) return;
 
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const fetchWithRetry = async (url: string, retries = 2, timeoutMs = 12000): Promise<Response> => {
+        let lastErr: Error | null = null;
+        for (let i = 0; i <= retries; i++) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            const resp = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (resp.ok) return resp;
+            if (resp.status >= 500 && i < retries) {
+              await delay(400 * (i + 1));
+              continue;
+            }
+            return resp;
+          } catch (e: any) {
+            clearTimeout(timer);
+            lastErr = e;
+            if (i < retries) {
+              await delay(400 * (i + 1));
+              continue;
+            }
+          }
+        }
+        throw lastErr || new Error('Request failed');
+      };
+
       try {
-        const response = await fetch(`${API_BASE_URL}/ai-interview/start/${token}`);
+        const response = await fetchWithRetry(`${API_BASE_URL}/ai-interview/start/${token}`, 2, 12000);
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));
+          console.error('[AIInterviewPage] start failed', { token, status: response.status, error });
           setError(error.error || error.detail || 'Failed to load interview');
           return;
         }

@@ -430,13 +430,41 @@ export default function AssessmentPage() {
     async function loadAssessment() {
       if (!token) return;
 
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const fetchWithRetry = async (url: string, retries = 2, timeoutMs = 12000): Promise<Response> => {
+        let lastErr: Error | null = null;
+        for (let i = 0; i <= retries; i++) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            const resp = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (resp.ok) return resp;
+            if (resp.status >= 500 && i < retries) {
+              await delay(400 * (i + 1));
+              continue;
+            }
+            return resp;
+          } catch (e: any) {
+            clearTimeout(timer);
+            lastErr = e;
+            if (i < retries) {
+              await delay(400 * (i + 1));
+              continue;
+            }
+          }
+        }
+        throw lastErr || new Error('Request failed');
+      };
+
       try {
         setLoadingStep('Verifying your assessment link…');
 
         // Single request — backend now returns questions bundled in the response
-        const startResponse = await fetch(`${API_BASE_URL}/assessments/start/${token}`);
+        const startResponse = await fetchWithRetry(`${API_BASE_URL}/assessments/start/${token}`, 2, 12000);
         if (!startResponse.ok) {
           const error = await startResponse.json().catch(() => ({}));
+          console.error('[AssessmentPage] start failed', { token, status: startResponse.status, error });
           setError(error.error || error.detail || 'Failed to load assessment');
           return;
         }
