@@ -4058,7 +4058,7 @@ Return JSON:
     // GET /api/ai-interview/start/:token
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
       try {
-        const token = segments[2];
+        const token = decodeURIComponent(segments[2] || '').trim();
         console.log('[ai-interview/start] token:', token?.slice(0, 10) + '...');
         const { data: session, error } = await supabase
           .from('ai_interview_sessions')
@@ -4550,6 +4550,7 @@ Evaluate and return JSON:
       for (const c of candidates) {
         try {
           const token = crypto.randomBytes(32).toString('base64url');
+          const sessionId = uuidv4();
 
           // Generate personalized questions per candidate using their resume data (GPT-4.1-mini)
           console.log('[ai-interview/invite] Generating personalized questions for candidate:', c.id, 'with resume:', !!c.resume_parsed_data);
@@ -4573,8 +4574,8 @@ Evaluate and return JSON:
               : (typeof resume.education === 'string' ? resume.education.slice(0, 200) : ''),
           };
 
-          await supabase.from('ai_interview_sessions').insert({
-            id: uuidv4(),
+          const { error: insertErr } = await supabase.from('ai_interview_sessions').insert({
+            id: sessionId,
             candidate_id: c.id,
             job_id,
             token,
@@ -4586,8 +4587,17 @@ Evaluate and return JSON:
             proctoring_data: { warnings: [], camera_enabled: false, microphone_enabled: false, resume_insights: resumeInsights },
             created_at: new Date().toISOString(),
           });
+          if (insertErr) {
+            throw new Error(`Failed to create interview session: ${insertErr.message}`);
+          }
 
-          await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduled_time);
+          try {
+            await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduled_time);
+          } catch (emailErr: any) {
+            await supabase.from('ai_interview_sessions').delete().eq('id', sessionId);
+            throw new Error(`Failed to send interview invite email: ${emailErr?.message || emailErr}`);
+          }
+
           invitesSent += 1;
         } catch (err: any) {
           console.error('[ai-interview/invite] Failed for candidate:', c.id, err?.message || err);
