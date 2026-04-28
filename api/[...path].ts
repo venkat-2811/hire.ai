@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import OpenAI from 'openai';
 import * as jose from 'jose';
 import crypto from 'node:crypto';
 import Busboy from 'busboy';
@@ -237,93 +238,42 @@ async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): 
   throw new Error('AssemblyAI transcription timed out after 120 seconds');
 }
 
-// ============== INLINE: Groq ==============
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.1-8b-instant';
-
-function getGroqApiKey(): string {
-  const key = process.env.GROQ_API_KEY;
-  if (!key) throw new Error('GROQ_API_KEY not configured');
-  return key;
-}
-
-async function callGroqChat(params: {
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
-  temperature: number;
-  maxTokens: number;
-  requireJson?: boolean;
-  timeoutMs?: number;
-  retries?: number;
-}): Promise<string> {
-  const timeoutMs = params.timeoutMs ?? 20_000;
-  const retries = params.retries ?? 2;
-
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-      const resp = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${getGroqApiKey()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: params.messages,
-          temperature: params.temperature,
-          max_tokens: params.maxTokens,
-          ...(params.requireJson ? { response_format: { type: 'json_object' } } : {}),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        throw new Error(`Groq API error (${resp.status}): ${errText}`);
-      }
-
-      const data = await resp.json() as any;
-      const text = String(data?.choices?.[0]?.message?.content || '').trim();
-      if (!text) throw new Error('Empty Groq response');
-      return text;
-    } catch (err: any) {
-      const isLastAttempt = attempt >= retries;
-      if (isLastAttempt) throw err;
-      const delayMs = 300 * (attempt + 1);
-      await new Promise((r) => setTimeout(r, delayMs));
-    } finally {
-      clearTimeout(timer);
-    }
+// ============== INLINE: OpenAI ==============
+let _openai: OpenAI | null = null;
+function getOpenAIClient(): OpenAI {
+  if (!_openai) {
+    const k = process.env.OPENAI_API_KEY;
+    if (!k) throw new Error('OPENAI_API_KEY not configured');
+    _openai = new OpenAI({ apiKey: k });
   }
-
-  throw new Error('Groq call failed');
+  return _openai;
 }
-
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  return await callGroqChat({
+  const client = getOpenAIClient();
+  const completion = await client.chat.completions.create({
+    model: 'gpt-4.1-mini-2025-04-14',
     messages: [{ role: 'user', content: prompt }],
     temperature: opts.temperature ?? 0.7,
-    maxTokens: opts.maxTokens ?? 2048,
-    requireJson: false,
+    max_tokens: opts.maxTokens ?? 2048,
   });
+  return completion.choices[0]?.message?.content || '';
 }
-
 async function generateJSON<T>(prompt: string, opts?: { maxTokens?: number; temperature?: number }): Promise<T> {
-  const text = await callGroqChat({
+  const client = getOpenAIClient();
+  const completion = await client.chat.completions.create({
+    model: 'gpt-4.1-mini-2025-04-14',
     messages: [
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
     ],
     temperature: opts?.temperature ?? 0.3,
-    maxTokens: opts?.maxTokens ?? 8192,
-    requireJson: true,
+    max_tokens: opts?.maxTokens ?? 8192,
+    response_format: { type: 'json_object' },
   });
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
+  const text = (completion.choices[0]?.message?.content || '').trim();
+  if (!text) throw new Error('Empty AI response');
+  try { return JSON.parse(text) as T; }
+  catch (e) {
     let jsonStr = text;
     const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
     if (jsonMatch) jsonStr = jsonMatch[1].trim();
@@ -331,9 +281,8 @@ async function generateJSON<T>(prompt: string, opts?: { maxTokens?: number; temp
     const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
     if (arrayMatch) jsonStr = arrayMatch[0];
     else if (objectMatch && !jsonStr.startsWith('[')) jsonStr = objectMatch[0];
-    try {
-      return JSON.parse(jsonStr) as T;
-    } catch {
+    try { return JSON.parse(jsonStr) as T; }
+    catch (e2) {
       console.error('JSON parse error. Raw text:', text.slice(0, 500));
       throw new Error('Failed to parse AI response as JSON');
     }
@@ -1035,7 +984,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       SUPABASE_SERVICE_KEY: !!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
       CLERK_JWKS_URL: !!process.env.CLERK_JWKS_URL,
       CLERK_ISSUER: !!process.env.CLERK_ISSUER,
-      GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+      OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
       RESEND_API_KEY: !!process.env.RESEND_API_KEY,
       FRONTEND_URL: !!process.env.FRONTEND_URL,
       HACKEREARTH_CLIENT_SECRET: !!process.env.HACKEREARTH_CLIENT_SECRET,
@@ -3622,7 +3571,7 @@ Return JSON exactly: { "questions": [ { "id": "q1", "question": "...", "options"
       let generated: any;
       // Single attempt with timeout that respects Netlify's 26s function limit
       try {
-        console.log(`[/mcq] Generating ${count} MCQs via Groq llama-3.1-8b-instant...`);
+        console.log(`[/mcq] Generating ${count} MCQs via gpt-4.1-mini...`);
         generated = await Promise.race<any>([
           generateJSON<any>(prompt, { maxTokens: mcqMaxTokens }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
@@ -4725,7 +4674,7 @@ Evaluate and return JSON:
         try {
           const token = crypto.randomBytes(32).toString('base64url');
 
-          // Generate personalized questions per candidate using their resume data (Groq llama-3.1-8b-instant)
+          // Generate personalized questions per candidate using their resume data (GPT-4.1-mini)
           console.log('[ai-interview/invite] Generating personalized questions for candidate:', c.id, 'with resume:', !!c.resume_parsed_data);
           const questions = await generateCandidateInterviewQuestions(
             { title: job.title, role: job.role, level: job.level, must_have_skills: job.must_have_skills || [], description: job.description || '' },

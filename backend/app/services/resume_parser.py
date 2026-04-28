@@ -5,14 +5,14 @@ from io import BytesIO
 import pdfplumber
 from docx import Document
 from app.models.schemas import ResumeData, ExperienceItem, EducationItem, ContactInfo
-from app.services.openai_client import get_groq_service
+from app.services.openai_client import get_openai_service
 
 
 class ResumeParserService:
     """Service for parsing resumes using AI-powered semantic extraction."""
     
     def __init__(self):
-        self.groq = get_groq_service()
+        self.openai = get_openai_service()
     
     async def parse_resume(self, file_content: bytes, filename: str) -> Tuple[str, ResumeData]:
         """
@@ -61,7 +61,7 @@ class ResumeParserService:
         """Use AI to semantically parse resume content."""
 
         try:
-            result = await self.groq.analyze_resume(resume_text[:8000])
+            result = await self.openai.analyze_resume(resume_text[:8000])
             
             # Parse experience items
             experience = []

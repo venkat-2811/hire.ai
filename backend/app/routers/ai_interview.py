@@ -11,7 +11,7 @@ import secrets
 
 from app.database.supabase_client import get_supabase_admin_client
 from app.services.email_service import get_email_service
-from app.services.openai_client import get_groq_service
+from app.services.openai_client import get_openai_service
 from app.services.assemblyai_service import get_assemblyai_service
 from app.auth import get_current_user, get_optional_user, ClerkUser
 from app.config import get_settings
@@ -124,7 +124,7 @@ async def send_interview_invites(
     
     invites_sent = 0
     failed = []
-    groq = get_groq_service()
+    openai = get_openai_service()
     
     for candidate in candidates_result.data:
         try:
@@ -139,7 +139,7 @@ async def send_interview_invites(
             
             # Generate interview questions using AI
             questions = await generate_interview_questions(
-                groq, job, candidate.get("resume_parsed_data"), question_count, difficulty
+                openai, job, candidate.get("resume_parsed_data"), question_count, difficulty
             )
             
             print(f"Generated {len(questions)} questions for candidate {candidate['id']}")
@@ -357,7 +357,7 @@ async def submit_speech_response(
 ):
     """Submit a speech response for evaluation."""
     supabase = get_supabase_admin_client()
-    groq = get_groq_service()
+    openai = get_openai_service()
     
     session = supabase.table("ai_interview_sessions").select("*").eq("id", session_id).execute()
     if not session.data:
@@ -376,7 +376,7 @@ async def submit_speech_response(
     question = questions[response.question_index]
     
     # Evaluate response using AI
-    evaluation = await evaluate_speech_response(groq, question, response.transcript)
+    evaluation = await evaluate_speech_response(openai, question, response.transcript)
     
     # Store response with evaluation
     responses = session_data.get("responses", []) or []
@@ -497,7 +497,7 @@ async def report_camera_proctoring_event(
 async def complete_ai_interview(session_id: str):
     """Complete the AI interview and generate final evaluation."""
     supabase = get_supabase_admin_client()
-    groq = get_groq_service()
+    openai = get_openai_service()
     
     session = supabase.table("ai_interview_sessions").select(
         "*, job_descriptions(title, role, level)"
@@ -513,7 +513,7 @@ async def complete_ai_interview(session_id: str):
     
     # Generate comprehensive evaluation
     evaluation = await generate_final_evaluation(
-        groq,
+        openai,
         session_data["questions"],
         session_data["responses"],
         session_data["job_descriptions"],
@@ -573,7 +573,7 @@ def get_fallback_questions(question_count: int, role: str = "developer") -> List
     return base_questions[:question_count]
 
 
-async def generate_interview_questions(groq, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = 'medium') -> List[dict]:
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = 'medium') -> List[dict]:
     """Generate personalized interview questions using AI."""
     role = job.get("role", "developer")
     level = job.get("level", "mid")
@@ -623,7 +623,7 @@ Return as JSON array with EXACTLY {question_count} questions:
 """
     
     try:
-        result = await groq.generate_json(prompt)
+        result = await openai.generate_json(prompt)
         print(f"AI generated result type: {type(result)}, length: {len(result) if isinstance(result, list) else 'N/A'}")
         
         if isinstance(result, list):
@@ -663,7 +663,7 @@ Return as JSON array with EXACTLY {question_count} questions:
         return get_fallback_questions(question_count, role)
 
 
-async def evaluate_speech_response(groq, question: dict, transcript: str) -> dict:
+async def evaluate_speech_response(openai, question: dict, transcript: str) -> dict:
     """Evaluate a single speech response using AI."""
     prompt = f"""Evaluate this interview response:
 
@@ -681,7 +681,7 @@ Return JSON: {{"score": 0-100, "relevance": 0-10, "clarity": 0-10, "technical": 
 """
     
     try:
-        result = await groq.generate_json(prompt)
+        result = await openai.generate_json(prompt)
         return result
     except Exception:
         return {
@@ -696,7 +696,7 @@ Return JSON: {{"score": 0-100, "relevance": 0-10, "clarity": 0-10, "technical": 
 
 
 async def generate_final_evaluation(
-    groq,
+    openai,
     questions: List[dict],
     responses: List[dict],
     job: dict,
@@ -760,7 +760,7 @@ Return JSON: {{"strengths": ["str1", "str2"], "areas_for_improvement": ["area1",
 """
     
     try:
-        ai_feedback = await groq.generate_json(prompt)
+        ai_feedback = await openai.generate_json(prompt)
     except Exception:
         ai_feedback = {
             "strengths": ["Completed the interview", "Provided responses to all questions"],
