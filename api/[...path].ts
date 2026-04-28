@@ -175,9 +175,8 @@ async function generateAssessmentMcqsForJob(opts: {
   };
   mcqCount: number;
   difficulty: string;
-  excludeQuestions?: string[];
 }): Promise<any[]> {
-  const { job, mcqCount, difficulty, excludeQuestions = [] } = opts;
+  const { job, mcqCount, difficulty } = opts;
   if (mcqCount < 1) return [];
 
   const mapped = mapAssessmentDifficulty(difficulty);
@@ -259,7 +258,7 @@ Return ONLY this JSON structure:
       chunks.push(Math.min(chunkSize, left));
     }
 
-    const excluded = [...excludeQuestions, ...questions.map((q: any) => q.question).slice(-20)];
+    const excluded = questions.map((q: any) => q.question).slice(-20);
     const batchResults = await Promise.allSettled(chunks.map((c) => generateBatch(c, excluded)));
 
     for (const result of batchResults) {
@@ -3937,39 +3936,6 @@ Return JSON:
       return ok(res, { success: true, mcq_score: mcqVal, coding_score: codingScore == null ? null : codingVal, total_score: totalScore });
     }
 
-    // POST /api/assessments/generate-mcqs (chunked from frontend)
-    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'generate-mcqs') {
-      const user = await requireAuth(req, res);
-      if (!user) return;
-
-      const body = req.body;
-      const jobId = body.job_id as string;
-      const mcqCount = Number(body.mcq_count ?? 5);
-      const difficulty = (body.difficulty as string) || 'medium';
-      const excludeQuestions = (body.exclude_questions as string[]) || [];
-      
-      const { data: job } = await supabase
-        .from('job_descriptions')
-        .select('id, title, role, level, description, must_have_skills, good_to_have_skills')
-        .eq('id', jobId)
-        .eq('created_by', user.id)
-        .single();
-      if (!job) return notFound(res, 'Job not found');
-
-      try {
-        const questions = await generateAssessmentMcqsForJob({
-          job,
-          mcqCount,
-          difficulty,
-          excludeQuestions,
-        });
-        return ok(res, { success: true, questions });
-      } catch (e: any) {
-        console.error('[assessments/generate-mcqs] MCQ generation failed:', e?.message || e);
-        return res.status(502).json({ error: 'Failed to generate MCQ questions.' });
-      }
-    }
-
     // POST /api/assessments/invite (manager)
     if (req.method === 'POST' && segments.length === 2 && segments[1] === 'invite') {
       const user = await requireAuth(req, res);
@@ -4010,8 +3976,8 @@ Return JSON:
         return badRequest(res, 'MCQ question count must be at least 1 when MCQ is enabled');
       }
 
-      let preGeneratedMcqQuestions: any[] = body.pre_generated_mcqs || [];
-      if (includeMcq && preGeneratedMcqQuestions.length === 0) {
+      let preGeneratedMcqQuestions: any[] = [];
+      if (includeMcq) {
         try {
           preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
             job,
