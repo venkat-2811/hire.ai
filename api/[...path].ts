@@ -238,7 +238,7 @@ Return ONLY this JSON structure:
     const maxTokens = Math.min(12000, 900 + (batchCount * 260));
     const generated = await Promise.race<any>([
       generateJSON<any>(prompt, { maxTokens }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 18000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 60000)),
     ]);
     const raw = Array.isArray(generated)
       ? generated
@@ -248,7 +248,7 @@ Return ONLY this JSON structure:
 
   const questions: any[] = [];
   const seen = new Set<string>();
-  const maxAttempts = 3;
+  const maxAttempts = 2;
 
   for (let attempt = 1; attempt <= maxAttempts && questions.length < mcqCount; attempt += 1) {
     const remaining = mcqCount - questions.length;
