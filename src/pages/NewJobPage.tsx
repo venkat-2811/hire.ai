@@ -12,17 +12,12 @@ import { ArrowLeft, Plus, X, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCreateJob, type JobDescriptionCreate } from '@/hooks/useJobs';
 import { LEVEL_CONFIG, type RoleLevel } from '@/types/database';
-import { useUsage } from '@/hooks/useUsage';
-import { UpgradePrompt } from '@/components/UpgradePrompt';
 import { toast } from 'sonner';
 
 export default function NewJobPage() {
   const { loading: authLoading } = useRequireAuth();
   const navigate = useNavigate();
   const createJob = useCreateJob();
-  const { data: usageData, isLoading: usageLoading } = useUsage();
-  
-  const [showUpgrade, setShowUpgrade] = useState(false);
 
   const [title, setTitle] = useState('');
   const [role, setRole] = useState('');
@@ -68,14 +63,6 @@ export default function NewJobPage() {
       return;
     }
 
-    if (usageData) {
-      const jobsUsage = usageData.usage.jobs;
-      if (jobsUsage.used >= jobsUsage.limit) {
-        setShowUpgrade(true);
-        return;
-      }
-    }
-
     createJob.mutate({
       title,
       role: role,
@@ -96,7 +83,7 @@ export default function NewJobPage() {
     });
   };
 
-  if (authLoading || usageLoading) {
+  if (authLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
@@ -342,16 +329,6 @@ export default function NewJobPage() {
           </div>
         </form>
 
-        {usageData && (
-          <UpgradePrompt
-            open={showUpgrade}
-            onClose={() => setShowUpgrade(false)}
-            resource="job roles"
-            current={usageData.usage.jobs.used}
-            limit={usageData.usage.jobs.limit}
-            plan={usageData.plan_label}
-          />
-        )}
       </div>
     </DashboardLayout>
   );

@@ -41,8 +41,6 @@ import {
 import { LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
 import { useJobs, useDeleteJob, useUpdateJob } from '@/hooks/useJobs';
 import { toast } from 'sonner';
-import { useQuery } from '@tanstack/react-query';
-import { subscriptionApi } from '@/lib/api';
 
 export default function JobsPage() {
   const { loading: authLoading } = useRequireAuth();
@@ -56,10 +54,6 @@ export default function JobsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   // Fetch subscription info for limit checking
-  const { data: subscriptionInfo, isLoading: subscriptionLoading } = useQuery({
-    queryKey: ['subscription'],
-    queryFn: () => subscriptionApi.get(),
-  });
 
   const getApplicationLink = (jobId: string) => {
     return `${window.location.origin}/apply/${jobId}`;
@@ -100,37 +94,6 @@ export default function JobsPage() {
   };
 
   const handleCreateJobClick = () => {
-    if (!subscriptionInfo) {
-      // If subscription info is not loaded yet, allow navigation and let backend handle validation
-      navigate('/jobs/new');
-      return;
-    }
-
-    const plan = String(subscriptionInfo.plan);
-    const currentJobs = subscriptionInfo.usage.jobs_count;
-    const maxJobs = subscriptionInfo.limits.max_jobs;
-
-    // Premium plan has unlimited access
-    if (plan === 'premium' || plan.startsWith('premium')) {
-      navigate('/jobs/new');
-      return;
-    }
-
-    // Check if limit is reached for free and pro plans
-    if (currentJobs >= maxJobs) {
-      let errorMessage: string;
-      if (plan === 'free' || plan.startsWith('free')) {
-        errorMessage = "You've reached the free plan limit for creating jobs.";
-      } else if (plan === 'pro' || plan.startsWith('pro')) {
-        errorMessage = "You've reached the pro plan limit for creating jobs.";
-      } else {
-        errorMessage = `You have reached the maximum of ${maxJobs} job roles on the ${subscriptionInfo.limits.label} plan. Please upgrade to create more.`;
-      }
-      toast.error(errorMessage);
-      return;
-    }
-
-    // Allow navigation if limit not reached
     navigate('/jobs/new');
   };
 

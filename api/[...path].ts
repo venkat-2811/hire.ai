@@ -238,7 +238,7 @@ Return ONLY this JSON structure:
     const maxTokens = Math.min(12000, 900 + (batchCount * 260));
     const generated = await Promise.race<any>([
       generateJSON<any>(prompt, { maxTokens }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 60000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 18000)),
     ]);
     const raw = Array.isArray(generated)
       ? generated
@@ -248,7 +248,7 @@ Return ONLY this JSON structure:
 
   const questions: any[] = [];
   const seen = new Set<string>();
-  const maxAttempts = 2;
+  const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts && questions.length < mcqCount; attempt += 1) {
     const remaining = mcqCount - questions.length;
@@ -632,18 +632,7 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// ============== Plan Limits ==============
-const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
-  free: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 0, label: 'Free' },
-  pro: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 3613, label: 'Pro (Monthly)' },
-  pro_yearly: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 36133, label: 'Pro (Yearly)' },
-  premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 9637, label: 'Premium (Monthly)' },
-  premium_yearly: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 96373, label: 'Premium (Yearly)' },
-};
-
-function getPlanLimits(plan: string) {
-  return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
-}
+// Plan limits removed - system now relies on wallet-based billing only
 
 type BillingPlan = 'free' | 'pro' | 'premium';
 type BillingStatus = 'active' | 'paused' | 'overdue' | 'cancel_at_period_end';
@@ -664,13 +653,13 @@ const BILLING_PLAN_CONFIG: Record<BillingPlan, {
   free: {
     monthly_deposit: 0,
     free_caps: {
-      create_job: 999999,
-      resume_parse: 999999,
-      candidate_scoring: 999999,
-      assessment_invite: 999999,
-      ai_interview_invite: 999999,
-      regenerate_interview_questions: 999999,
-      assessment_mcq_generation: 999999,
+      create_job: 10,
+      resume_parse: 30,
+      candidate_scoring: 60,
+      assessment_invite: 25,
+      ai_interview_invite: 25,
+      regenerate_interview_questions: 20,
+      assessment_mcq_generation: 40,
     },
     overage_cap: 0,
   },
@@ -875,39 +864,7 @@ async function checkPlanAccess(
     };
   }
 
-  if (plan === 'free') {
-    const cap = cfg.free_caps[feature] ?? 0;
-    const cycleStart = subscription.billing_cycle_start || new Date(new Date().setDate(1)).toISOString();
-    const cycleEnd = subscription.billing_cycle_end || new Date().toISOString();
-    const usage = await aggregateUsageByFeature(supabase, userId, cycleStart, cycleEnd);
-    const used = usage.byFeature[feature]?.quantity || 0;
-
-    if (cap > 0 && used + quantity > cap) {
-      return {
-        allowed: false,
-        status: 402,
-        error: 'plan_limit_exceeded',
-        message: `Free plan limit reached for ${feature}. Please upgrade your plan.`,
-        plan,
-        current: used,
-        limit: cap,
-      };
-    }
-
-    const totalCost = 0;
-    await supabase.from('usage_events').insert({
-      user_id: userId,
-      feature_type: feature,
-      unit_cost: 0,
-      quantity,
-      total_cost: totalCost,
-      job_id: options?.jobId || null,
-      candidate_id: options?.candidateId || null,
-      metadata: options?.metadata || {},
-    });
-
-    return { allowed: true, plan, wallet_balance: Number(subscription.wallet_balance || 0), charged: totalCost };
-  }
+  // No plan-based hard limits - rely on wallet model only
 
   const unitCost = FEATURE_COSTS[feature] ?? 0;
   const totalCost = unitCost * quantity;
@@ -1222,14 +1179,12 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
       const plan = profile.subscription_plan || 'free';
-      const limits = getPlanLimits(plan);
 
       return ok(res, {
         plan,
         status: profile.subscription_status || 'active',
         subscription_id: profile.subscription_id,
         plan_selected_at: profile.plan_selected_at,
-        limits,
         usage: {
           jobs_count: profile.jobs_count || 0,
           assessments_count: profile.assessments_count || 0,
@@ -1241,10 +1196,10 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     // POST /api/subscription/create-order
     if (req.method === 'POST' && segments.length === 2 && segments[1] === 'create-order') {
       const { plan } = req.body || {};
-      if (!plan || !PLAN_LIMITS[plan]) return badRequest(res, 'Invalid plan');
+      if (!plan) return badRequest(res, 'Invalid plan');
       if (plan === 'free') return badRequest(res, 'Free plan does not require payment');
 
-      const limits = getPlanLimits(plan);
+      const cfg = BILLING_PLAN_CONFIG[normalizeBillingPlan(plan)];
       
       // Dynamically resolve frontend URL from request headers
       const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
@@ -1262,8 +1217,8 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
       try {
         const session = await createStripeCheckoutSession(
-          limits.price,
-          limits.label,
+          cfg.monthly_deposit,
+          plan.charAt(0).toUpperCase() + plan.slice(1),
           plan,
           successUrl,
           cancelUrl,
@@ -1313,7 +1268,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         return ok(res, {
           success: true,
           plan,
-          message: `${getPlanLimits(plan).label} plan activated successfully!`,
+          message: `${plan.charAt(0).toUpperCase() + plan.slice(1)} plan activated successfully!`,
           profile: updated,
         });
       } catch (err: any) {
@@ -1381,15 +1336,14 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
     const plan = profile.subscription_plan || 'free';
-    const limits = getPlanLimits(plan);
 
     return ok(res, {
       plan,
-      plan_label: limits.label,
+      plan_label: plan.charAt(0).toUpperCase() + plan.slice(1),
       usage: {
-        jobs: { used: profile.jobs_count || 0, limit: limits.max_jobs, label: 'Job Roles' },
-        assessments: { used: profile.assessments_count || 0, limit: limits.max_assessments, label: 'Technical Assessments' },
-        interviews: { used: profile.interviews_count || 0, limit: limits.max_interviews, label: 'Interviews' },
+        jobs: { used: profile.jobs_count || 0, limit: 999999, label: 'Job Roles' },
+        assessments: { used: profile.assessments_count || 0, limit: 999999, label: 'Technical Assessments' },
+        interviews: { used: profile.interviews_count || 0, limit: 999999, label: 'Interviews' },
       },
     });
   }
@@ -1747,15 +1701,6 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           return res.status(billingGate.status || 402).json(billingGate);
         }
 
-        // ---- Usage Limit Check ----
-        const profile = await getUserProfile(supabase, user.id);
-        if (profile) {
-          const plan = profile.subscription_plan || 'free';
-          const limits = getPlanLimits(plan);
-          const currentJobs = profile.jobs_count || 0;
-          // Job limit check removed - unlimited jobs for all plans
-        }
-
         const body = req.body;
         const jobData: Record<string, any> = {
           title: body.title,
@@ -1799,6 +1744,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         if (error) return res.status(500).json({ error: error.message });
 
         // Increment usage counter
+        const profile = await getUserProfile(supabase, user.id);
         if (profile) {
           await supabase.from('profiles').update({
             jobs_count: (profile.jobs_count || 0) + 1,
