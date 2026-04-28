@@ -1,38 +1,37 @@
 # Billing System (Hire.ai)
 
 ## Overview
-This project includes a credit-based billing system with three tiers:
-- **None** (no plan selected)
+This project now includes a wallet-based subscription billing system with three tiers:
+- **Free**
 - **Pro**
 - **Premium**
 
 It introduces:
 1. Persistent subscription state (`subscriptions` table)
 2. Metered usage ledger (`usage_events` table)
-3. Plan enforcement middleware (`checkPlanAccess`) integrated into AI-heavy and invite flows
-4. Billing APIs for subscribe, top-up, and usage monitoring
-5. Frontend billing page (`/billing`) with credits, usage, and plan purchase actions
+3. Invoice lifecycle (`invoices` table)
+4. Plan enforcement middleware (`checkPlanAccess`) integrated into AI-heavy and invite flows
+5. Billing APIs for subscribe, top-up, usage monitoring, invoice payment, and webhook handling
+6. Frontend billing page (`/billing`) with wallet, usage, invoices, and upgrade actions
 
 ---
 
 ## Tier Model
 
-### None
-- No initial credits
-- Users can add top-ups anytime
-- Services stop when credits are exhausted
+### Free
+- No wallet deposit
+- Enforced free feature caps per billing cycle
+- Upgrade required when cap is exceeded
 
 ### Pro
-- One-time credit purchase: **$36.13**
-- Credits added to wallet immediately
-- Services stop when credits are exhausted
-- Users can add additional top-ups
+- Monthly wallet deposit: **$36.13**
+- Metered deductions by feature
+- If wallet hits zero, account is paused and overage invoice is generated
 
 ### Premium
-- One-time credit purchase: **$96.37**
-- Credits added to wallet immediately
-- Services stop when credits are exhausted
-- Users can add additional top-ups
+- Monthly wallet deposit: **$96.37**
+- Metered deductions by feature
+- High-usage friendly with no explicit overage cap in config
 
 ---
 
@@ -47,19 +46,20 @@ Defined in `api/[...path].ts`:
 - `regenerate_interview_questions`: $0.06
 - `assessment_mcq_generation`: $0.24
 
-All plans use the same metered pricing. Credits are deducted from the wallet balance for each feature used.
+Free plan uses feature caps instead of wallet deductions.
 
 ---
 
 ## Database Schema
-Migration file: `supabase/migrations/20260428193000_credit_based_billing.sql`
+Migration file: `supabase/migrations/20260421193000_billing_system.sql`
 
 ### `subscriptions`
 Tracks:
-- current plan (`none`, `pro`, `premium`)
-- status (`active`, `paused`)
-- credit_amount (total credits purchased)
-- wallet_balance (remaining credits)
+- current plan
+- status (`active`, `paused`, `overdue`, `cancel_at_period_end`)
+- deposit/wallet amounts
+- cycle window
+- overage and warnings
 
 ### `usage_events`
 Append-only ledger of feature usage:
@@ -68,6 +68,13 @@ Append-only ledger of feature usage:
 - `unit_cost`
 - `total_cost`
 - optional job/candidate references
+
+### `invoices`
+Stores pending/paid invoices:
+- period
+- line items
+- totals
+- status + payment reference
 
 Includes:
 - indexes for user/time/status access patterns
@@ -82,18 +89,19 @@ Includes:
 - `normalizeBillingPlan`
 - `getOrCreateSubscription`
 - `aggregateUsageByFeature`
+- `createInvoiceForOverage`
 - `checkPlanAccess`
 
 ### `checkPlanAccess` behavior
-1. Blocks immediately for paused accounts
-2. Checks if user has sufficient credits for the requested feature
-3. If sufficient credits:
+1. Blocks immediately for paused/overdue accounts
+2. Free plan:
+   - checks cycle usage vs cap
+   - records zero-cost usage event
+3. Paid plans:
    - deducts wallet by unit cost × quantity
    - records usage event
-   - if wallet reaches zero: pauses account and sends pause email
-4. If insufficient credits:
-   - blocks the request with error message
-   - prompts user to purchase plan or add credits
+   - sends 80% consumption warning once per cycle
+   - when exhausted: pauses account, creates/extends invoice, sends pause + invoice email
 
 ### Integrated endpoints
 Plan checks are now wired into:
@@ -111,20 +119,27 @@ Plan checks are now wired into:
 
 ### New routes (`/api/billing/*`)
 - `POST /api/billing/subscribe`  
-  Creates Stripe checkout for Pro/Premium credit purchase.
+  Creates Stripe checkout for Pro/Premium deposit.
 
 - `GET /api/billing/usage`  
-  Returns wallet state, credit amount, feature costs, and usage breakdown.
+  Returns wallet state, cycle, limits, feature costs, and usage breakdown.
 
 - `POST /api/billing/topup`  
   Creates checkout session for wallet top-up.
 
+- `GET /api/billing/invoices`  
+  Lists user invoices.
+
+- `POST /api/billing/pay-invoice`  
+  Creates checkout session for invoice payment.
+
 - `POST /api/billing/webhook`  
   Handles checkout completion for:
-  - subscribe (adds credits to wallet)
-  - top-up (adds credits to wallet)
+  - subscribe
+  - top-up
+  - invoice payment
 
-  Restores account on successful payment and sends confirmation email.
+  Restores account on successful payment and sends restoration email.
 
 ---
 
@@ -134,11 +149,12 @@ Plan checks are now wired into:
 File: `src/pages/BillingPage.tsx`
 
 Features:
-- credit balance display
-- top-up action (add any amount)
-- plan purchase actions (Pro/Premium - one-time credit purchases)
+- wallet balance + consumption meter
+- top-up action
+- plan upgrade actions (Pro/Premium)
 - usage breakdown by feature
-- paused-state callout with “Add Credits” CTA
+- invoice listing + pay action
+- paused-state callout with “Pay Now” CTA
 
 ### Global pause banner
 File: `src/components/layout/DashboardLayout.tsx`
@@ -158,16 +174,21 @@ Added:
 - `billingApi.subscribe(plan)`
 - `billingApi.usage()`
 - `billingApi.topup(amount)`
+- `billingApi.payInvoice(invoiceId)`
+- `billingApi.invoices()`
 
-Also added strongly typed interface:
+Also added strongly typed interfaces:
 - `BillingUsageResponse`
+- `BillingInvoice`
 
 ---
 
 ## Notifications
 Emails are sent for:
-1. services paused due to credit exhaustion
-2. credits added (top-up or plan purchase)
+1. 80% wallet usage warning
+2. services paused due to wallet exhaustion
+3. invoice generated for overage
+4. payment confirmed / services restored
 
 ---
 
@@ -201,4 +222,3 @@ Ensure these are available for billing and payments:
 - Stripe webhook signature verification is not yet implemented in this iteration.
 - Existing `subscription` routes still exist for backward compatibility.
 - Historical TypeScript IDE lint warning about `openai` module declarations appears environment-specific; build passes successfully.
-- The system is credit-based: there are no monthly billing cycles or recurring charges. Users purchase credits once and can add more as needed.

@@ -238,7 +238,7 @@ Return ONLY this JSON structure:
     const maxTokens = Math.min(12000, 900 + (batchCount * 260));
     const generated = await Promise.race<any>([
       generateJSON<any>(prompt, { maxTokens }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 18000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 10000)),
     ]);
     const raw = Array.isArray(generated)
       ? generated
@@ -248,11 +248,11 @@ Return ONLY this JSON structure:
 
   const questions: any[] = [];
   const seen = new Set<string>();
-  const maxAttempts = 3;
+  const maxAttempts = 2;
 
   for (let attempt = 1; attempt <= maxAttempts && questions.length < mcqCount; attempt += 1) {
     const remaining = mcqCount - questions.length;
-    const chunkSize = remaining > 12 ? 6 : 5;
+    const chunkSize = remaining > 12 ? 4 : 3;
     const chunks: number[] = [];
     for (let left = remaining; left > 0; left -= chunkSize) {
       chunks.push(Math.min(chunkSize, left));
@@ -645,8 +645,8 @@ function getPlanLimits(plan: string) {
   return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 }
 
-type BillingPlan = 'none' | 'pro' | 'premium';
-type BillingStatus = 'active' | 'paused';
+type BillingPlan = 'free' | 'pro' | 'premium';
+type BillingStatus = 'active' | 'paused' | 'overdue' | 'cancel_at_period_end';
 type BillableFeature =
   | 'create_job'
   | 'resume_parse'
@@ -657,16 +657,32 @@ type BillableFeature =
   | 'assessment_mcq_generation';
 
 const BILLING_PLAN_CONFIG: Record<BillingPlan, {
-  credit_amount: number;
+  monthly_deposit: number;
+  free_caps: Partial<Record<BillableFeature, number>>;
+  overage_cap: number | null;
 }> = {
-  none: {
-    credit_amount: 0,
+  free: {
+    monthly_deposit: 0,
+    free_caps: {
+      create_job: 10,
+      resume_parse: 30,
+      candidate_scoring: 60,
+      assessment_invite: 25,
+      ai_interview_invite: 25,
+      regenerate_interview_questions: 20,
+      assessment_mcq_generation: 40,
+    },
+    overage_cap: 0,
   },
   pro: {
-    credit_amount: 36.13,
+    monthly_deposit: 36.13,
+    free_caps: {},
+    overage_cap: 180.72,
   },
   premium: {
-    credit_amount: 96.37,
+    monthly_deposit: 96.37,
+    free_caps: {},
+    overage_cap: null,
   },
 };
 
@@ -681,17 +697,19 @@ const FEATURE_COSTS: Record<BillableFeature, number> = {
 };
 
 function normalizeBillingPlan(rawPlan: string | null | undefined): BillingPlan {
-  const p = String(rawPlan || 'none').toLowerCase();
+  const p = String(rawPlan || 'free').toLowerCase();
   if (p.startsWith('pro')) return 'pro';
   if (p.startsWith('premium')) return 'premium';
-  return 'none';
+  return 'free';
 }
 
-/** Clamp any arbitrary profile status string to one of the two allowed values
+/** Clamp any arbitrary profile status string to one of the four allowed values
  *  so the subscriptions table CHECK constraint is never violated. */
 function normalizeBillingStatus(rawStatus: string | null | undefined): BillingStatus {
   const s = String(rawStatus || 'active').toLowerCase();
   if (s === 'paused') return 'paused';
+  if (s === 'overdue') return 'overdue';
+  if (s === 'cancel_at_period_end' || s === 'cancelled' || s === 'canceled') return 'cancel_at_period_end';
   return 'active'; // default — covers null, '', 'trialing', 'inactive', etc.
 }
 
@@ -707,6 +725,9 @@ async function getOrCreateSubscription(supabase: SupabaseClient, userId: string)
   const profile = await getUserProfile(supabase, userId);
   const plan = normalizeBillingPlan(profile?.subscription_plan);
   const cfg = BILLING_PLAN_CONFIG[plan];
+  const now = new Date();
+  const cycleEnd = new Date(now);
+  cycleEnd.setMonth(cycleEnd.getMonth() + 1);
 
   // Normalize status so it always satisfies the DB CHECK constraint
   const status = normalizeBillingStatus(profile?.subscription_status);
@@ -717,8 +738,12 @@ async function getOrCreateSubscription(supabase: SupabaseClient, userId: string)
       user_id: userId,
       plan,
       status,
-      credit_amount: cfg.credit_amount,
-      wallet_balance: cfg.credit_amount,
+      deposit_amount: cfg.monthly_deposit,
+      wallet_balance: cfg.monthly_deposit,
+      billing_cycle_start: now.toISOString(),
+      billing_cycle_end: cycleEnd.toISOString(),
+      overage_amount: 0,
+      overage_cap: cfg.overage_cap,
       metadata: { source: 'auto-bootstrap' },
     })
     .select('*')
@@ -839,34 +864,55 @@ async function checkPlanAccess(
   const plan = normalizeBillingPlan(subscription.plan || profile?.subscription_plan);
   const cfg = BILLING_PLAN_CONFIG[plan];
 
-  if (subscription.status === 'paused') {
+  if (subscription.status === 'paused' || subscription.status === 'overdue') {
     return {
       allowed: false,
       status: 402,
       error: 'billing_paused',
-      message: 'Your account is paused due to insufficient credits. Please add credits to continue.',
+      message: 'Your account is paused due to insufficient wallet balance. Please pay invoice/top up to continue.',
       plan,
       wallet_balance: Number(subscription.wallet_balance || 0),
     };
+  }
+
+  if (plan === 'free') {
+    const cap = cfg.free_caps[feature] ?? 0;
+    const cycleStart = subscription.billing_cycle_start || new Date(new Date().setDate(1)).toISOString();
+    const cycleEnd = subscription.billing_cycle_end || new Date().toISOString();
+    const usage = await aggregateUsageByFeature(supabase, userId, cycleStart, cycleEnd);
+    const used = usage.byFeature[feature]?.quantity || 0;
+
+    if (cap > 0 && used + quantity > cap) {
+      return {
+        allowed: false,
+        status: 402,
+        error: 'plan_limit_exceeded',
+        message: `Free plan limit reached for ${feature}. Please upgrade your plan.`,
+        plan,
+        current: used,
+        limit: cap,
+      };
+    }
+
+    const totalCost = 0;
+    await supabase.from('usage_events').insert({
+      user_id: userId,
+      feature_type: feature,
+      unit_cost: 0,
+      quantity,
+      total_cost: totalCost,
+      job_id: options?.jobId || null,
+      candidate_id: options?.candidateId || null,
+      metadata: options?.metadata || {},
+    });
+
+    return { allowed: true, plan, wallet_balance: Number(subscription.wallet_balance || 0), charged: totalCost };
   }
 
   const unitCost = FEATURE_COSTS[feature] ?? 0;
   const totalCost = unitCost * quantity;
   const currentWallet = Number(subscription.wallet_balance || 0);
   const newWallet = currentWallet - totalCost;
-
-  // If no credits, block the request
-  if (newWallet < 0) {
-    return {
-      allowed: false,
-      status: 402,
-      error: 'insufficient_credits',
-      message: 'Insufficient credits. Please purchase a plan or add credits to continue.',
-      plan,
-      wallet_balance: currentWallet,
-      required: totalCost,
-    };
-  }
 
   await supabase.from('usage_events').insert({
     user_id: userId,
@@ -880,15 +926,49 @@ async function checkPlanAccess(
   });
 
   const updatePayload: Record<string, any> = {
-    wallet_balance: newWallet,
+    wallet_balance: Math.max(0, newWallet),
     updated_at: new Date().toISOString(),
   };
 
-  // Pause if wallet is exhausted
+  const startBalance = cfg.monthly_deposit || Number(subscription.deposit_amount || 0) || 1;
+  const consumedRatio = 1 - (Math.max(0, newWallet) / startBalance);
+
+  if (consumedRatio >= 0.8 && !subscription.warning_80_sent_at) {
+    updatePayload.warning_80_sent_at = new Date().toISOString();
+    if (profile?.email) {
+      sendBillingWarningEmail(profile.email, plan, Math.max(0, newWallet)).catch(() => null);
+    }
+  }
+
   if (newWallet <= 0) {
+    const overage = Math.abs(newWallet);
     updatePayload.status = 'paused';
+    updatePayload.paused_at = new Date().toISOString();
+    updatePayload.overage_amount = Number(subscription.overage_amount || 0) + overage;
+
+    const invoiceId = await createInvoiceForOverage(
+      supabase,
+      userId,
+      overage,
+      [
+        {
+          feature,
+          quantity,
+          unit_cost: unitCost,
+          total: totalCost,
+          overage_component: overage,
+          at: new Date().toISOString(),
+        },
+      ],
+    );
+
     if (profile?.email) {
       sendBillingPausedEmail(profile.email).catch(() => null);
+      sendEmail(
+        profile.email,
+        'Invoice generated for usage overage',
+        `<h2>Invoice generated</h2><p>Your account exceeded wallet balance and invoice <strong>${invoiceId || ''}</strong> has been generated.</p><p>Please complete payment to resume all services.</p>`,
+      ).catch(() => null);
     }
   }
 
@@ -899,7 +979,7 @@ async function checkPlanAccess(
       allowed: false,
       status: 402,
       error: 'billing_paused',
-      message: 'Credits exhausted. Services are paused. Please add credits to resume.',
+      message: 'Wallet exhausted. Services are paused. Please top up or pay invoice to resume.',
       plan,
       wallet_balance: 0,
       charged: totalCost,
@@ -909,7 +989,7 @@ async function checkPlanAccess(
   return {
     allowed: true,
     plan,
-    wallet_balance: newWallet,
+    wallet_balance: Math.max(0, newWallet),
     charged: totalCost,
   };
 }
@@ -1328,11 +1408,11 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         const amount = Number((obj.amount_total || 0) / 100);
         if (userId && amount > 0) {
           const sub = await getOrCreateSubscription(supabase, userId);
-          if (action === 'topup') {
+          if (action === 'topup' || action === 'invoice_payment') {
             await supabase.from('subscriptions').update({
               wallet_balance: Number(sub.wallet_balance || 0) + amount,
-              credit_amount: Number(sub.credit_amount || 0) + amount,
               status: 'active',
+              resumed_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             }).eq('id', sub.id);
 
@@ -1340,9 +1420,18 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
             if (profile?.email) {
               await sendEmail(
                 profile.email,
-                'Credits added',
-                `<h2>Payment confirmed</h2><p>Your payment of <strong>$${amount.toFixed(2)}</strong> was successful and credits have been added to your wallet.</p>`,
+                'Services restored',
+                `<h2>Payment confirmed</h2><p>Your payment of <strong>$${amount.toFixed(2)}</strong> was successful and services have been restored.</p>`,
               );
+            }
+
+            if (action === 'invoice_payment' && metadata.invoice_id) {
+              await supabase.from('invoices').update({
+                status: 'paid',
+                paid_at: new Date().toISOString(),
+                payment_reference: obj.payment_intent || obj.id,
+                updated_at: new Date().toISOString(),
+              }).eq('id', metadata.invoice_id);
             }
           }
 
@@ -1350,17 +1439,19 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
             const nextPlan = normalizeBillingPlan(metadata.plan as string);
             const cfg = BILLING_PLAN_CONFIG[nextPlan];
             const now = new Date();
-
-            // Add credits to existing wallet
-            const currentBalance = Number(sub.wallet_balance || 0);
-            const newBalance = currentBalance + (amount || cfg.credit_amount);
-            const newCreditAmount = Number(sub.credit_amount || 0) + (amount || cfg.credit_amount);
+            const cycleEnd = new Date(now);
+            cycleEnd.setMonth(cycleEnd.getMonth() + 1);
 
             await supabase.from('subscriptions').update({
               plan: nextPlan,
               status: 'active',
-              credit_amount: newCreditAmount,
-              wallet_balance: newBalance,
+              deposit_amount: amount || cfg.monthly_deposit,
+              wallet_balance: amount || cfg.monthly_deposit,
+              billing_cycle_start: now.toISOString(),
+              billing_cycle_end: cycleEnd.toISOString(),
+              paused_at: null,
+              resumed_at: now.toISOString(),
+              warning_80_sent_at: null,
               updated_at: now.toISOString(),
             }).eq('id', sub.id);
 
@@ -1384,8 +1475,8 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
     // POST /api/billing/subscribe
     if (segments.length === 2 && segments[1] === 'subscribe' && req.method === 'POST') {
       const requestedPlan = normalizeBillingPlan(req.body?.plan);
-      if (requestedPlan === 'none') {
-        return badRequest(res, 'Cannot subscribe to none plan');
+      if (requestedPlan === 'free') {
+        return badRequest(res, 'Use free plan selection endpoint for free tier');
       }
 
       const cfg = BILLING_PLAN_CONFIG[requestedPlan];
@@ -1398,8 +1489,8 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       const cancelUrl = `${frontendUrl}/billing?checkout=cancelled&action=subscribe`;
 
       const session = await createStripeCheckoutSession(
-        Math.round(cfg.credit_amount * 100),
-        `${requestedPlan.toUpperCase()} Credits`,
+        Math.round(cfg.monthly_deposit * 100),
+        `${requestedPlan.toUpperCase()} Deposit`,
         requestedPlan,
         successUrl,
         cancelUrl,
@@ -1415,7 +1506,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
         session_id: session.id,
         checkout_url: session.url,
         plan: requestedPlan,
-        credit_amount: cfg.credit_amount,
+        deposit_amount: cfg.monthly_deposit,
       });
     }
 
@@ -1424,21 +1515,21 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       const subscription = await getOrCreateSubscription(supabase, user.id);
       const plan = normalizeBillingPlan(subscription.plan);
       const cfg = BILLING_PLAN_CONFIG[plan];
-      
-      // Get all usage (no time limit for credit-based system)
-      const aggregated = await aggregateUsageByFeature(
-        supabase, 
-        user.id, 
-        '1970-01-01T00:00:00.000Z', 
-        new Date().toISOString()
-      );
+      const periodStart = subscription.billing_cycle_start || new Date(new Date().setDate(1)).toISOString();
+      const periodEnd = subscription.billing_cycle_end || new Date().toISOString();
+      const aggregated = await aggregateUsageByFeature(supabase, user.id, periodStart, periodEnd);
 
       return ok(res, {
         plan,
         status: subscription.status,
         wallet_balance: Number(subscription.wallet_balance || 0),
-        credit_amount: Number(subscription.credit_amount || 0),
+        deposit_amount: Number(subscription.deposit_amount || 0),
+        overage_amount: Number(subscription.overage_amount || 0),
+        overage_cap: subscription.overage_cap,
+        billing_cycle_start: subscription.billing_cycle_start,
+        billing_cycle_end: subscription.billing_cycle_end,
         limits: {
+          free_caps: cfg.free_caps,
           feature_costs: FEATURE_COSTS,
         },
         usage_breakdown: aggregated.byFeature,
@@ -1479,6 +1570,62 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // POST /api/billing/pay-invoice
+    if (segments.length === 2 && segments[1] === 'pay-invoice' && req.method === 'POST') {
+      const invoiceId = String(req.body?.invoice_id || '');
+      if (!invoiceId) return badRequest(res, 'invoice_id is required');
+
+      const { data: invoice } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('id', invoiceId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (!invoice) return notFound(res, 'Invoice not found');
+      if (invoice.status === 'paid') return ok(res, { success: true, already_paid: true });
+
+      const total = Number(invoice.total || 0);
+      if (total <= 0) {
+        return badRequest(res, 'Invoice total is invalid');
+      }
+
+      const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+      const isLocalhost = String(hostHeader).includes('localhost');
+      const protocol = req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : (isLocalhost ? 'http' : 'https');
+      const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hire-ai-sandy.vercel.app';
+      const frontendUrl = process.env.FRONTEND_URL || dynamicUrl;
+
+      const session = await createStripeCheckoutSession(
+        Math.round(total * 100),
+        `Invoice ${invoiceId}`,
+        'invoice_payment',
+        `${frontendUrl}/billing?checkout=success&action=invoice_payment`,
+        `${frontendUrl}/billing?checkout=cancelled&action=invoice_payment`,
+        {
+          action: 'invoice_payment',
+          user_id: user.id,
+          invoice_id: invoiceId,
+        },
+      );
+
+      return ok(res, {
+        success: true,
+        session_id: session.id,
+        checkout_url: session.url,
+      });
+    }
+
+    // GET /api/billing/invoices
+    if (segments.length === 2 && segments[1] === 'invoices' && req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return ok(res, data || []);
+    }
 
     return methodNotAllowed(res);
   }

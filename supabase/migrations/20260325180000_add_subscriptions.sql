@@ -23,7 +23,7 @@ END $$;
 
 -- 2. ADD SUBSCRIPTION & USAGE COLUMNS TO PROFILES
 ALTER TABLE profiles
-  ADD COLUMN IF NOT EXISTS subscription_plan text NOT NULL DEFAULT 'none',
+  ADD COLUMN IF NOT EXISTS subscription_plan text NOT NULL DEFAULT 'free',
   ADD COLUMN IF NOT EXISTS subscription_id text,
   ADD COLUMN IF NOT EXISTS razorpay_payment_id text,
   ADD COLUMN IF NOT EXISTS subscription_status text NOT NULL DEFAULT 'active',
@@ -36,4 +36,4 @@ ALTER TABLE profiles
 ALTER TABLE profiles
   DROP CONSTRAINT IF EXISTS valid_subscription_plan;
 ALTER TABLE profiles
-  ADD CONSTRAINT valid_subscription_plan CHECK (subscription_plan IN ('none', 'pro', 'premium'));
+  ADD CONSTRAINT valid_subscription_plan CHECK (subscription_plan IN ('free', 'pro', 'premium'));

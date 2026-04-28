@@ -9,18 +9,20 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Wallet, AlertTriangle } from 'lucide-react';
+import { Loader2, Wallet, Receipt, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PLAN_META = {
   pro: {
     label: 'Pro',
-    credits: 36.13,
+    monthly: 36.13,
+    deposit: 36.13,
     tagline: 'Ideal for growing teams with recurring hiring needs.',
   },
   premium: {
     label: 'Premium',
-    credits: 96.37,
+    monthly: 96.37,
+    deposit: 96.37,
     tagline: 'For high-volume hiring with the largest wallet coverage.',
   },
 } as const;
@@ -42,6 +44,10 @@ export default function BillingPage() {
     refetchInterval: 60_000,
   });
 
+  const invoicesQuery = useQuery({
+    queryKey: ['billing-invoices'],
+    queryFn: () => billingApi.invoices(),
+  });
 
   // Handle Stripe redirect-back (?checkout=success|cancelled&action=subscribe|topup|invoice_payment)
   useEffect(() => {
@@ -50,14 +56,16 @@ export default function BillingPage() {
     if (!checkout) return;
 
     const actionLabel =
-      action === 'subscribe' ? 'Plan purchase' :
+      action === 'subscribe' ? 'Subscription' :
       action === 'topup' ? 'Top-up' :
+      action === 'invoice_payment' ? 'Invoice payment' :
       'Payment';
 
     if (checkout === 'success') {
       toast.success(`${actionLabel} successful! Your account has been updated.`);
       // Refetch billing data so the UI reflects the new balance / plan
       usageQuery.refetch();
+      invoicesQuery.refetch();
     } else if (checkout === 'cancelled') {
       toast.info(`${actionLabel} was cancelled. No charges were made.`);
     }
@@ -68,13 +76,13 @@ export default function BillingPage() {
   }, []);
 
   const usage = usageQuery.data;
+  const invoices = (invoicesQuery.data || []) as BillingInvoice[];
 
-  const availablePlans = useMemo(() => {
-    if (!usage?.plan) return ['pro', 'premium'] as Array<'pro' | 'premium'>;
-    if (usage.plan === 'none') return ['pro', 'premium'] as Array<'pro' | 'premium'>;
+  const upgradePlans = useMemo(() => {
+    if (!usage?.plan) return [] as Array<'pro' | 'premium'>;
+    if (usage.plan === 'free') return ['pro', 'premium'] as Array<'pro' | 'premium'>;
     if (usage.plan === 'pro') return ['premium'] as Array<'pro' | 'premium'>;
-    if (usage.plan === 'premium') return [] as Array<'pro' | 'premium'>;
-    return ['pro', 'premium'] as Array<'pro' | 'premium'>;
+    return [] as Array<'pro' | 'premium'>;
   }, [usage?.plan]);
 
   const featurePricingRows = useMemo(() => {
@@ -90,9 +98,9 @@ export default function BillingPage() {
 
   const consumedPercent = useMemo(() => {
     if (!usage) return 0;
-    if (usage.credit_amount <= 0) return 0;
-    const consumed = Math.max(0, usage.credit_amount - usage.wallet_balance);
-    return Math.min(100, Math.round((consumed / usage.credit_amount) * 100));
+    if (usage.deposit_amount <= 0) return 0;
+    const consumed = Math.max(0, usage.deposit_amount - usage.wallet_balance);
+    return Math.min(100, Math.round((consumed / usage.deposit_amount) * 100));
   }, [usage]);
 
   const handleSubscribe = async (plan: 'pro' | 'premium') => {
@@ -119,6 +127,26 @@ export default function BillingPage() {
     }
   };
 
+  const handlePayInvoice = async (invoiceId: string) => {
+    setBusy(`invoice-${invoiceId}`);
+    try {
+      const res = await billingApi.payInvoice(invoiceId);
+      if (res.already_paid) {
+        toast.success('Invoice is already paid');
+        return;
+      }
+      if (res.checkout_url) {
+        window.location.href = res.checkout_url;
+        return;
+      }
+      toast.success('Invoice paid successfully');
+      await Promise.all([usageQuery.refetch(), invoicesQuery.refetch()]);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to pay invoice');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (usageQuery.isLoading) {
     return (
@@ -135,7 +163,7 @@ export default function BillingPage() {
       <div className="p-6 lg:p-8 space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Billing</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage credits and plan.</p>
+          <p className="text-sm text-muted-foreground mt-1">Manage wallet, plan and invoices.</p>
         </div>
 
         {usage?.status === 'paused' && (
@@ -145,7 +173,7 @@ export default function BillingPage() {
                 <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
                 <div>
                   <p className="font-medium">Services are paused</p>
-                  <p className="text-sm text-muted-foreground">Add credits to resume services.</p>
+                  <p className="text-sm text-muted-foreground">Pay pending invoices or add wallet balance to resume services.</p>
                 </div>
               </div>
               <Button onClick={handleTopup} disabled={busy === 'topup'}>
@@ -158,26 +186,22 @@ export default function BillingPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5" /> Credits</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5" /> Wallet</CardTitle>
             <CardDescription>
-              Plan: <span className="uppercase font-medium">{usage?.plan === 'none' ? 'None' : usage?.plan}</span> | Status: <span className="font-medium">{usage?.status}</span>
+              Plan: <span className="uppercase font-medium">{usage?.plan}</span> | Status: <span className="font-medium">{usage?.status}</span>
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="rounded-xl border p-4 sm:p-5 bg-muted/20 space-y-3">
               <div className="flex items-end gap-2">
                 <span className="text-3xl sm:text-4xl font-bold leading-none">${Number(usage?.wallet_balance || 0).toFixed(2)}</span>
-                <span className="text-2xl text-muted-foreground leading-none"> credits available</span>
+                <span className="text-2xl text-muted-foreground leading-none">/ ${Number(usage?.deposit_amount || 0).toFixed(2)}</span>
               </div>
-              {usage?.credit_amount > 0 && (
-                <>
-                  <Progress value={consumedPercent} className="h-3" />
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Available balance</span>
-                    <span>Consumed {consumedPercent}% of initial credits</span>
-                  </div>
-                </>
-              )}
+              <Progress value={consumedPercent} className="h-3" />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Available balance</span>
+                <span>Consumed {consumedPercent}% this cycle</span>
+              </div>
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
@@ -193,15 +217,15 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {availablePlans.length > 0 && (
+            {upgradePlans.length > 0 && (
               <div className="pt-4 border-t space-y-4">
                 <div>
-                  <h3 className="font-semibold">Purchase Credits</h3>
-                  <p className="text-sm text-muted-foreground">Choose a plan to add credits to your wallet. Services will stop when credits are exhausted.</p>
+                  <h3 className="font-semibold">Upgrade</h3>
+                  <p className="text-sm text-muted-foreground">Move to a higher plan for stronger wallet coverage and uninterrupted usage.</p>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  {availablePlans.map((planId) => {
+                  {upgradePlans.map((planId) => {
                     const meta = PLAN_META[planId];
                     const isPremium = planId === 'premium';
 
@@ -219,12 +243,12 @@ export default function BillingPage() {
                         </div>
 
                         <div className="space-y-1">
-                          <p className="text-2xl font-bold">${meta.credits.toFixed(2)}<span className="text-sm font-normal text-muted-foreground"> one-time</span></p>
-                          <p className="text-xs text-muted-foreground">Credits added to wallet</p>
+                          <p className="text-2xl font-bold">${meta.monthly.toFixed(2)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
+                          <p className="text-xs text-muted-foreground">Monthly wallet deposit: ${meta.deposit.toFixed(2)}</p>
                         </div>
 
                         <div className="rounded-lg border bg-muted/20">
-                          <div className="px-3 py-2 border-b text-xs font-medium">Metered Pricing</div>
+                          <div className="px-3 py-2 border-b text-xs font-medium">Metered Pricing (from Usage Breakdown)</div>
                           <div className="px-3 py-2 space-y-2">
                             {featurePricingRows.length > 0 ? (
                               featurePricingRows.map((row) => (
@@ -246,7 +270,7 @@ export default function BillingPage() {
                           disabled={busy === `subscribe-${planId}`}
                         >
                           {busy === `subscribe-${planId}` ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                          Purchase {meta.label}
+                          Upgrade to {meta.label}
                         </Button>
                       </div>
                     );
@@ -273,6 +297,37 @@ export default function BillingPage() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">No metered usage yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" /> Invoice History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {invoices.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No invoices found.</p>
+            ) : (
+              <div className="space-y-2">
+                {invoices.map((invoice) => (
+                  <div key={invoice.id} className="flex items-center justify-between border rounded-md px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">Invoice #{invoice.id.slice(0, 8)}</p>
+                      <p className="text-xs text-muted-foreground">Due {new Date(invoice.due_date).toLocaleDateString()}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={invoice.status === 'paid' ? 'default' : 'secondary'}>{invoice.status}</Badge>
+                      <span className="text-sm font-medium">${Number(invoice.total || 0).toFixed(2)}</span>
+                      {invoice.status !== 'paid' && (
+                        <Button size="sm" onClick={() => handlePayInvoice(invoice.id)} disabled={busy === `invoice-${invoice.id}`}>
+                          {busy === `invoice-${invoice.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pay'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

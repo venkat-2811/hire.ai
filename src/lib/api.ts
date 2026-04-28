@@ -751,20 +751,42 @@ export const usageApi = {
 // ============== Billing API ==============
 
 export interface BillingUsageResponse {
-  plan: 'none' | 'pro' | 'premium';
-  status: 'active' | 'paused';
+  plan: 'free' | 'pro' | 'premium';
+  status: 'active' | 'paused' | 'overdue' | 'cancel_at_period_end';
   wallet_balance: number;
-  credit_amount: number;
+  deposit_amount: number;
+  overage_amount: number;
+  overage_cap: number | null;
+  billing_cycle_start: string;
+  billing_cycle_end: string;
   limits: {
+    free_caps: Record<string, number>;
     feature_costs: Record<string, number>;
   };
   usage_breakdown: Record<string, { quantity: number; total_cost: number }>;
   usage_total_cost: number;
 }
 
+export interface BillingInvoice {
+  id: string;
+  user_id: string;
+  period_start: string;
+  period_end: string;
+  line_items: Array<Record<string, unknown>>;
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  status: 'pending' | 'paid' | 'overdue' | 'void';
+  due_date: string;
+  paid_at?: string | null;
+  payment_reference?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export const billingApi = {
   subscribe: (plan: 'pro' | 'premium') =>
-    request<{ success: boolean; session_id: string; checkout_url: string; plan: string; credit_amount: number }>(
+    request<{ success: boolean; session_id: string; checkout_url: string; plan: string; deposit_amount: number }>(
       '/billing/subscribe',
       { method: 'POST', body: { plan } },
     ),
@@ -776,6 +798,14 @@ export const billingApi = {
       method: 'POST',
       body: { amount },
     }),
+
+  payInvoice: (invoiceId: string) =>
+    request<{ success: boolean; session_id?: string; checkout_url?: string; already_paid?: boolean }>('/billing/pay-invoice', {
+      method: 'POST',
+      body: { invoice_id: invoiceId },
+    }),
+
+  invoices: () => request<BillingInvoice[]>('/billing/invoices'),
 };
 
 export { APIError };
