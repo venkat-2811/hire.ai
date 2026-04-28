@@ -634,9 +634,9 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
 
 // ============== Plan Limits ==============
 const PLAN_LIMITS: Record<string, { max_jobs: number; max_assessments: number; max_interviews: number; price: number; label: string }> = {
-  free: { max_jobs: 10, max_assessments: 25, max_interviews: 25, price: 0, label: 'Free' },
-  pro: { max_jobs: 1000, max_assessments: 999999, max_interviews: 999999, price: 3613, label: 'Pro (Monthly)' },
-  pro_yearly: { max_jobs: 1000, max_assessments: 999999, max_interviews: 999999, price: 36133, label: 'Pro (Yearly)' },
+  free: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 0, label: 'Free' },
+  pro: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 3613, label: 'Pro (Monthly)' },
+  pro_yearly: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 36133, label: 'Pro (Yearly)' },
   premium: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 9637, label: 'Premium (Monthly)' },
   premium_yearly: { max_jobs: 999999, max_assessments: 999999, max_interviews: 999999, price: 96373, label: 'Premium (Yearly)' },
 };
@@ -664,13 +664,13 @@ const BILLING_PLAN_CONFIG: Record<BillingPlan, {
   free: {
     monthly_deposit: 0,
     free_caps: {
-      create_job: 10,
-      resume_parse: 30,
-      candidate_scoring: 60,
-      assessment_invite: 25,
-      ai_interview_invite: 25,
-      regenerate_interview_questions: 20,
-      assessment_mcq_generation: 40,
+      create_job: 999999,
+      resume_parse: 999999,
+      candidate_scoring: 999999,
+      assessment_invite: 999999,
+      ai_interview_invite: 999999,
+      regenerate_interview_questions: 999999,
+      assessment_mcq_generation: 999999,
     },
     overage_cap: 0,
   },
@@ -1753,25 +1753,7 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
           const plan = profile.subscription_plan || 'free';
           const limits = getPlanLimits(plan);
           const currentJobs = profile.jobs_count || 0;
-          if (currentJobs >= limits.max_jobs) {
-            // Return plan-specific error messages
-            let errorMessage: string;
-            if (plan === 'free' || plan.startsWith('free')) {
-              errorMessage = "You've reached the free plan limit for creating jobs.";
-            } else if (plan === 'pro' || plan.startsWith('pro')) {
-              errorMessage = "You've reached the pro plan limit for creating jobs.";
-            } else {
-              errorMessage = `You have reached the maximum of ${limits.max_jobs} job roles on the ${limits.label} plan. Please upgrade to create more.`;
-            }
-            return res.status(403).json({
-              error: 'limit_exceeded',
-              message: errorMessage,
-              resource: 'jobs',
-              current: currentJobs,
-              limit: limits.max_jobs,
-              plan,
-            });
-          }
+          // Job limit check removed - unlimited jobs for all plans
         }
 
         const body = req.body;
