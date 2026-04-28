@@ -8,6 +8,8 @@
   node_bundler = "esbuild"
   # Bundle @vercel/node as a dev dep — its types are erased; the runtime never loads it
   external_node_modules = []
+  # Increase timeout to 60 seconds for long-running operations like MCQ generation
+  timeout = 60
 
 # ── Route /api/* → Netlify Function ───────────────────────────────────────────
 # The function receives event.path = "/api/..." so it can reconstruct the route

@@ -236,9 +236,10 @@ Return ONLY this JSON structure:
   const generateBatch = async (batchCount: number, excludedQuestions: string[]): Promise<any[]> => {
     const prompt = buildPrompt(batchCount, excludedQuestions);
     const maxTokens = Math.min(12000, 900 + (batchCount * 260));
+    // Increased timeout to 40 seconds per batch to accommodate slower LLM responses
     const generated = await Promise.race<any>([
       generateJSON<any>(prompt, { maxTokens }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 18000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 40000)),
     ]);
     const raw = Array.isArray(generated)
       ? generated
@@ -248,11 +249,12 @@ Return ONLY this JSON structure:
 
   const questions: any[] = [];
   const seen = new Set<string>();
-  const maxAttempts = 3;
+  const maxAttempts = 5; // Increased attempts for better reliability
 
   for (let attempt = 1; attempt <= maxAttempts && questions.length < mcqCount; attempt += 1) {
     const remaining = mcqCount - questions.length;
-    const chunkSize = remaining > 12 ? 6 : 5;
+    // Larger chunk size to reduce number of API calls and total time
+    const chunkSize = remaining > 15 ? 8 : 5;
     const chunks: number[] = [];
     for (let left = remaining; left > 0; left -= chunkSize) {
       chunks.push(Math.min(chunkSize, left));
@@ -3907,13 +3909,38 @@ Return JSON:
       let preGeneratedMcqQuestions: any[] = [];
       if (includeMcq) {
         try {
-          preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
-            job,
-            mcqCount,
-            difficulty,
-          });
+          // Retry MCQ generation with exponential backoff for reliability
+          let lastError: any;
+          for (let retry = 0; retry < 5; retry++) {
+            try {
+              preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
+                job,
+                mcqCount,
+                difficulty,
+              });
+              if (preGeneratedMcqQuestions.length === mcqCount) {
+                break; // Success - got all required questions
+              }
+              throw new Error(`Generated ${preGeneratedMcqQuestions.length} questions, expected ${mcqCount}`);
+            } catch (e: any) {
+              lastError = e;
+              console.error(`[assessments/invite] MCQ generation attempt ${retry + 1} failed:`, e?.message || e);
+              if (retry < 4) {
+                // Exponential backoff: 2s, 4s, 8s, 16s
+                const backoffTime = Math.min(2000 * Math.pow(2, retry), 16000);
+                await new Promise(resolve => setTimeout(resolve, backoffTime));
+              }
+            }
+          }
+          if (preGeneratedMcqQuestions.length === 0) {
+            throw lastError || new Error('MCQ generation failed after retries');
+          }
+          // If we got some questions but not all, use what we have and log warning
+          if (preGeneratedMcqQuestions.length < mcqCount) {
+            console.warn(`[assessments/invite] Generated ${preGeneratedMcqQuestions.length}/${mcqCount} questions, proceeding with available questions`);
+          }
         } catch (e: any) {
-          console.error('[assessments/invite] MCQ generation failed:', e?.message || e);
+          console.error('[assessments/invite] MCQ generation failed after all retries:', e?.message || e);
           return res.status(502).json({
             error: 'Failed to generate MCQ questions for this assessment. Please retry Send Assessment.',
           });
