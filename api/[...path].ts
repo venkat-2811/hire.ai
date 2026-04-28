@@ -164,6 +164,31 @@ function mapAssessmentDifficulty(difficulty: string): { label: string; guidance:
   };
 }
 
+function normalizeBaseUrl(u: string): string {
+  return String(u || '').trim().replace(/\/+$/, '');
+}
+
+function resolveFrontendBaseUrl(req: VercelRequest): string {
+  const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
+  const isLocalhost = String(hostHeader || '').includes('localhost');
+  const protocol = req.headers['x-forwarded-proto']
+    ? String(req.headers['x-forwarded-proto']).split(',')[0]
+    : (isLocalhost ? 'http' : 'https');
+  const dynamicUrl = hostHeader ? `${protocol}://${hostHeader}` : 'https://hiretec.netlify.app';
+
+  let frontendUrl = process.env.FRONTEND_URL;
+  if (
+    !frontendUrl ||
+    frontendUrl === 'http://localhost:8080' ||
+    frontendUrl === 'http://localhost:5173' ||
+    frontendUrl.includes('hire-ai-sandy')
+  ) {
+    frontendUrl = dynamicUrl;
+  }
+
+  return normalizeBaseUrl(frontendUrl);
+}
+
 // ============== INLINE: AssemblyAI ==============
 async function transcribeWithAssemblyAI(audioBuffer: Buffer, mimeType: string): Promise<string> {
   const apiKey = process.env.ASSEMBLYAI_API_KEY;
@@ -3203,10 +3228,28 @@ Return JSON:
         if (!session.deadline) {
           return res.status(500).json({ error: 'Assessment session misconfigured (missing deadline)' });
         }
+<<<<<<< HEAD
 
         const deadline = new Date(session.deadline);
         if (Number.isNaN(deadline.getTime())) {
           return res.status(500).json({ error: 'Assessment session misconfigured (invalid deadline)' });
+=======
+        const deadline = new Date(session.deadline);
+        if (Number.isNaN(deadline.getTime())) {
+          return res.status(500).json({ error: 'Assessment session misconfigured (invalid deadline)' });
+        }
+
+        if (new Date() > deadline) {
+          await supabase.from('assessment_sessions').update({ status: 'expired' }).eq('id', session.id);
+          return badRequest(res, 'Assessment deadline has passed');
+        }
+
+        if (session.status === 'pending') {
+          await supabase.from('assessment_sessions').update({
+            status: 'in_progress',
+            started_at: new Date().toISOString(),
+          }).eq('id', session.id);
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         }
 
         if (new Date() > deadline) {
@@ -3248,6 +3291,7 @@ Return JSON:
           return [];
         }
 
+<<<<<<< HEAD
         if (ownerJob.created_by) {
           const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
           if (!billingGate.allowed) {
@@ -3255,6 +3299,9 @@ Return JSON:
             return [];
           }
         }
+=======
+        // Billing is already enforced at invite time. Do not hard-fail candidate start.
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
 
         const mapped = mapAssessmentDifficulty(difficulty);
         const mustHaveSkills = (ownerJob.must_have_skills || []).join(', ') || 'general programming';
@@ -3281,12 +3328,19 @@ Rules:
 Return JSON: { "questions": [{ "id": "q1", "question": "...", "options": ["A text","B text","C text","D text"], "correct_index": 0, "difficulty": "${difficulty}", "topic": "...", "points": 5 }] }
 Only return valid JSON.`;
 
+<<<<<<< HEAD
         // Attempt generation with a timeout that respects Netlify's 26s function limit
         // We allow ~22s for AI generation (leaving ~4s for DB queries and response)
         const attemptGeneration = async (): Promise<any[]> => {
           const generated = await Promise.race<any>([
             generateJSON<any>(prompt, { maxTokens }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
+=======
+        try {
+          const generated = await Promise.race<any>([
+            generateJSON<any>(prompt),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 7000)),
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
           ]);
           const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
           return raw
@@ -3310,6 +3364,7 @@ Only return valid JSON.`;
           if (questions.length > 0) {
             console.log(`[getMcqQuestions] Success: ${questions.length} MCQs generated`);
             supabase.from('assessment_sessions').update({ mcq_questions: questions, updated_at: new Date().toISOString() })
+<<<<<<< HEAD
               .eq('id', session.id).then(() => {}).catch(() => {});
             return questions;
           }
@@ -3336,6 +3391,34 @@ Only return valid JSON.`;
         supabase.from('assessment_sessions').update({ mcq_questions: fallbackQuestions, updated_at: new Date().toISOString() })
           .eq('id', session.id).then(() => {}).catch(() => {});
         return fallbackQuestions;
+=======
+              .eq('id', session.id).then(() => {});
+            return questions;
+          }
+
+          const fallback = [
+            { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+            { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+            { id: 'fb3', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+            { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+            { id: 'fb5', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          ].slice(0, mcqCount);
+          supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() })
+            .eq('id', session.id).then(() => {});
+          return fallback;
+        } catch (e) {
+          const fallback = [
+            { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+            { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+            { id: 'fb3', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+            { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+            { id: 'fb5', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          ].slice(0, mcqCount);
+          supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() })
+            .eq('id', session.id).then(() => {});
+          return fallback;
+        }
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
       };
 
       // Fetch coding challenges from DSA bank (or return cached)
@@ -3375,7 +3458,7 @@ Only return valid JSON.`;
           supabase.from('assessment_sessions').update({
             coding_problem_ids: selected.map((p: any) => p.id),
             coding_challenges: challenges, updated_at: new Date().toISOString(),
-          }).eq('id', session.id).then(() => {}).catch(() => {});
+          }).eq('id', session.id).then(() => {});
           return challenges;
         } catch (e) { console.error('[start] Coding fetch failed:', e); return []; }
       };
@@ -3396,11 +3479,19 @@ Only return valid JSON.`;
           coding_count: codingChallenges.length,
           total_time_minutes: session.total_time_minutes ?? 90,
           deadline: session.deadline,
+<<<<<<< HEAD
           mcq_questions: safeMcq,       // consumed directly by frontend — skips /mcq call
           coding_challenges: codingChallenges, // consumed directly by frontend — skips /coding call
         });
       } catch (e) {
         console.error('[assessments/start] failed', e);
+=======
+          mcq_questions: safeMcq,
+          coding_challenges: codingChallenges,
+        });
+      } catch (e: any) {
+        console.error('[assessments/start] failed', e?.message || e);
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         return res.status(500).json({ error: 'Failed to start assessment' });
       }
     }
@@ -3442,17 +3533,7 @@ Only return valid JSON.`;
       const { data: job } = await supabase.from('job_descriptions').select('*').eq('id', session.job_id).single();
       if (!job) return notFound(res, 'Job not found');
 
-      const { data: ownerJob } = await supabase
-        .from('job_descriptions')
-        .select('created_by')
-        .eq('id', session.job_id)
-        .single();
-      if (ownerJob?.created_by) {
-        const billingGate = await checkPlanAccess(supabase, ownerJob.created_by, 'assessment_mcq_generation');
-        if (!billingGate.allowed) {
-          return res.status(billingGate.status || 402).json(billingGate);
-        }
-      }
+      // Billing is enforced at invite time; avoid blocking candidates on runtime checks.
 
       const count = session.mcq_question_count || 20;
       const difficulty = assessmentConfig.difficulty || 'medium';
@@ -3544,6 +3625,7 @@ Return JSON exactly: { "questions": [ ... ] }`;
       let generated: any;
       // Single attempt with timeout that respects Netlify's 26s function limit
       try {
+<<<<<<< HEAD
         console.log(`[/mcq] Generating ${count} MCQs...`);
         generated = await Promise.race<any>([
           generateJSON<any>(prompt, { maxTokens: mcqMaxTokens }),
@@ -3553,6 +3635,36 @@ Return JSON exactly: { "questions": [ ... ] }`;
       } catch (genErr: any) {
         console.error('[/mcq] MCQ generation failed:', genErr.message);
         return res.status(500).json({ error: `Failed to generate MCQ questions: ${genErr.message}` });
+=======
+        generated = await Promise.race<any>([
+          generateJSON<any>(prompt),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 7000)),
+        ]);
+        console.log('MCQ generation result keys:', Object.keys(generated || {}));
+      } catch (genErr: any) {
+        console.error('MCQ generation failed:', genErr.message);
+        const fallback = [
+          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+        ].slice(0, count);
+
+        await supabase.from('assessment_sessions').update({
+          mcq_questions: fallback,
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+
+        return ok(res, fallback.map((q: any) => ({
+          id: q.id,
+          question: q.question,
+          options: q.options,
+          difficulty: q.difficulty,
+          topic: q.topic,
+          points: q.points,
+        })));
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
       }
       const questionsRaw = Array.isArray(generated?.questions)
         ? generated.questions
@@ -3570,7 +3682,27 @@ Return JSON exactly: { "questions": [ ... ] }`;
         .filter((q: any) => q.question && q.options.length === 4);
 
       if (!questions.length) {
-        return res.status(500).json({ error: 'AI returned no valid questions. Please try again.' });
+        const fallback = [
+          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
+          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
+          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
+          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
+          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
+        ].slice(0, count);
+
+        await supabase.from('assessment_sessions').update({
+          mcq_questions: fallback,
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+
+        return ok(res, fallback.map((q: any) => ({
+          id: q.id,
+          question: q.question,
+          options: q.options,
+          difficulty: q.difficulty,
+          topic: q.topic,
+          points: q.points,
+        })));
       }
 
       await supabase.from('assessment_sessions').update({
@@ -4056,7 +4188,11 @@ Return JSON exactly: { "questions": [ ... ] }`;
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
       const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
+<<<<<<< HEAD
       const frontendUrl = getFrontendBaseUrl(req);
+=======
+      const frontendUrl = resolveFrontendBaseUrl(req);
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
 
       // Auto-calculate time based on questions and difficulty if not provided
       let totalTimeMinutes = body.total_time_minutes;
@@ -4124,14 +4260,18 @@ Return JSON exactly: { "questions": [ ... ] }`;
     if (req.method === 'GET' && segments.length === 3 && segments[1] === 'start') {
       try {
         const token = segments[2];
+<<<<<<< HEAD
         console.log('[ai-interview/start] Looking up token:', token?.slice(0, 10) + '...');
         
+=======
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         const { data: session, error } = await supabase
           .from('ai_interview_sessions')
           .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
           .eq('token', token)
           .single();
 
+<<<<<<< HEAD
         if (error) {
           console.error('[ai-interview/start] DB error:', error.message);
           return notFound(res, 'Interview not found or link expired');
@@ -4147,6 +4287,16 @@ Return JSON exactly: { "questions": [ ... ] }`;
           return badRequest(res, 'Interview already completed or terminated');
         }
 
+=======
+        if (error || !session) return notFound(res, 'Interview not found or link expired');
+        if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
+
+        const questionCount = Array.isArray(session.questions) ? session.questions.length : 0;
+        if (questionCount === 0) {
+          return badRequest(res, 'Interview questions are not available yet. Please contact the hiring team.');
+        }
+
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         if (session.status === 'pending') {
           await supabase.from('ai_interview_sessions').update({
             status: 'in_progress',
@@ -4154,7 +4304,10 @@ Return JSON exactly: { "questions": [ ... ] }`;
           }).eq('id', session.id);
         }
 
+<<<<<<< HEAD
         const questionCount = (session.questions || []).length;
+=======
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         return ok(res, {
           session_id: session.id,
           candidate_name: session.candidates?.full_name,
@@ -4163,7 +4316,11 @@ Return JSON exactly: { "questions": [ ... ] }`;
           estimated_duration_minutes: (questionCount || 5) * 3,
         });
       } catch (e: any) {
+<<<<<<< HEAD
         console.error('[ai-interview/start] Unexpected error:', e?.message || e);
+=======
+        console.error('[ai-interview/start] failed:', e?.message || e);
+>>>>>>> cb84c6bd33f46e9d20d0bc31d4f584e075f04f35
         return res.status(500).json({ error: 'Failed to load interview session' });
       }
     }
@@ -4512,32 +4669,18 @@ Evaluate and return JSON:
       if (!job) return notFound(res, 'Job not found');
 
       // If no question pool exists yet, generate one and store it
-      const { data: candidates } = await supabase
-        .from('candidates')
-        .select('id, email, full_name, resume_parsed_data')
-        .in('id', candidate_ids);
-
-      if (!candidates?.length) return notFound(res, 'No candidates found');
-
       let questionPool: any[] = job.interview_question_pool || [];
       console.log('[ai-interview/invite] Existing question pool size:', questionPool.length);
-      
-      // Generate adaptive questions per candidate if no pool exists
       if (!questionPool.length) {
         try {
-          console.log('[ai-interview/invite] Generating adaptive question pool for job:', job_id);
-          // Use first candidate's resume to generate a base pool (can be refined per candidate)
-          const firstCandidateResume = candidates[0]?.resume_parsed_data;
-          const resumeContext = firstCandidateResume ? 
-            JSON.stringify(firstCandidateResume).slice(0, 800) : '';
-            
+          console.log('[ai-interview/invite] Generating new question pool for job:', job_id);
           questionPool = await generateInterviewQuestionPool({
             title: job.title,
             role: job.role,
             level: job.level,
             must_have_skills: job.must_have_skills || [],
             description: '',
-          }, resumeContext);
+          });
           console.log('[ai-interview/invite] Generated pool size:', questionPool.length);
           if (questionPool.length) {
             await supabase.from('job_descriptions').update({
@@ -4551,6 +4694,13 @@ Evaluate and return JSON:
         }
       }
 
+      const { data: candidates } = await supabase
+        .from('candidates')
+        .select('id, email, full_name, resume_parsed_data')
+        .in('id', candidate_ids);
+
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
       const frontendUrl = getFrontendBaseUrl(req);
       let invitesSent = 0;
       const failed: string[] = [];
@@ -4558,31 +4708,18 @@ Evaluate and return JSON:
       for (const c of candidates) {
         try {
           const token = crypto.randomBytes(32).toString('base64url');
-          
-          // Generate personalized questions for this candidate based on their resume
-          let questions: any[];
-          if (c.resume_parsed_data && questionPool.length > 0) {
-            // Generate adaptive questions for this specific candidate
-            const resumeContext = JSON.stringify(c.resume_parsed_data).slice(0, 800);
-            questions = await generateInterviewQuestionPool({
-              title: job.title,
-              role: job.role,
-              level: job.level,
-              must_have_skills: job.must_have_skills || [],
-              description: '',
-            }, resumeContext);
-            if (!questions.length) {
-              // Fallback to base pool if adaptive generation fails
-              questions = [...questionPool].sort(() => Math.random() - 0.5);
-            }
-          } else {
-            // Use base pool for candidates without resume data
-            questions = [...questionPool].sort(() => Math.random() - 0.5);
-          }
 
           // Select requestedCount questions from pool for each candidate
-          if (questions.length > requestedCount) {
-            questions = questions.slice(0, requestedCount);
+          let questions: any[];
+          if (questionPool.length >= requestedCount) {
+            const shuffled = [...questionPool].sort(() => Math.random() - 0.5);
+            questions = shuffled.slice(0, requestedCount);
+          } else if (questionPool.length > 0) {
+            questions = [...questionPool].sort(() => Math.random() - 0.5);
+          } else {
+            // Fallback: generate questions on the fly (legacy behavior)
+            console.log('[ai-interview/invite] Falling back to generateInterviewQuestions for candidate:', c.id);
+            questions = await generateInterviewQuestions(job);
           }
 
           console.log('[ai-interview/invite] Inserting session with', questions.length, 'questions for candidate:', c.id);
@@ -5236,16 +5373,11 @@ async function runSinglePiston(
 
 // ============== End HackerEarth Engine ==============
 
-async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }, resumeContext?: string) {
+async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }) {
   const skills = job.must_have_skills.join(', ') || 'General';
-  let contextSection = '';
-  if (resumeContext) {
-    contextSection = `\n\nCANDIDATE RESUME INSIGHTS:\n${resumeContext.slice(0, 800)}\n\nAdapt questions to probe deeper into the candidate's mentioned experience and skills. Ask follow-up questions about their specific projects and achievements.`;
-  }
-  
   const prompt = `Generate exactly 15 diverse interview questions for a ${job.level} ${job.role} position (${job.title}).
 Skills to assess: ${skills}.
-${job.description ? `Job context: ${job.description.slice(0, 500)}` : ''}${contextSection}
+${job.description ? `Job context: ${job.description.slice(0, 500)}` : ''}
 
 Create a balanced mix:
 - 7 technical questions testing specific skills and knowledge
@@ -5254,7 +5386,6 @@ Create a balanced mix:
 
 Each question should be distinct and test a different aspect.
 Vary difficulty from moderate to advanced for ${job.level} level.
-${resumeContext ? 'Tailor questions to the candidate\'s background - ask about their specific experience mentioned in the resume.' : ''}
 
 Return JSON array: [{"text":"The question text","type":"technical|behavioral|situational","duration":120}]
 Only return the JSON array.`;
