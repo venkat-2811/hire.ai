@@ -182,9 +182,22 @@ async function generateAssessmentMcqsForJob(opts: {
   const mapped = mapAssessmentDifficulty(difficulty);
   const mustHaveSkills = (job.must_have_skills || []).join(', ') || 'general programming';
   const goodToHaveSkills = (job.good_to_have_skills || []).join(', ');
-  const maxTokens = Math.min(16384, 1024 + (mcqCount * 250));
+  const normalizeQuestions = (raw: any[], defaultDifficulty: string): any[] => {
+    return raw
+      .map((q: any, i: number) => ({
+        id: String(q?.id || `q${i + 1}`),
+        question: String(q?.question || '').trim(),
+        options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o).trim()).slice(0, 4) : [],
+        correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
+        difficulty: String(q?.difficulty || defaultDifficulty),
+        topic: String(q?.topic || 'General'),
+        points: typeof q?.points === 'number' ? q.points : 5,
+        explanation: String(q?.explanation || ''),
+      }))
+      .filter((q: any) => q.question && q.options.length === 4);
+  };
 
-  const prompt = `You are an expert technical assessment designer. Generate exactly ${mcqCount} high-quality multiple-choice questions for a ${job.level} ${job.role} assessment.
+  const buildPrompt = (batchCount: number, excludedQuestions: string[]): string => `You are an expert technical assessment designer. Generate exactly ${batchCount} high-quality multiple-choice questions for a ${job.level} ${job.role} assessment.
 
 Job Title: ${job.title}
 Job Description: ${(job.description || '').slice(0, 600)}
@@ -194,13 +207,14 @@ Difficulty Level: ${mapped.label} - ${mapped.guidance}
 
 QUESTION RULES:
 - Prefer real-world scenario-based questions over pure definitions.
-- Cover ALL required skills evenly - at least one question per major skill.
+- Cover required skills evenly.
 - Mix question types: code output prediction, best-practice selection, error identification, architecture choices.
-- Vary the correct answer position (correct_index) across all questions.
+- Vary the correct answer position (correct_index).
+${excludedQuestions.length ? `- DO NOT repeat or paraphrase these already generated questions:\n${excludedQuestions.map((q, idx) => `${idx + 1}. ${q}`).join('\n')}` : ''}
 
 OPTION RULES (CRITICAL):
 - Each of the 4 options MUST start with different words and use different sentence structures.
-- NEVER create permutation-style options (do not swap subject/object of the same sentence).
+- NEVER create permutation-style options.
 - Distractor pattern: 1 plausible misconception, 1 partially correct, 1 technically-sounding but wrong.
 
 Return ONLY this JSON structure:
@@ -219,24 +233,46 @@ Return ONLY this JSON structure:
   ]
 }`;
 
-  const generated = await Promise.race<any>([
-    generateJSON<any>(prompt, { maxTokens }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
-  ]);
+  const generateBatch = async (batchCount: number, excludedQuestions: string[]): Promise<any[]> => {
+    const prompt = buildPrompt(batchCount, excludedQuestions);
+    const maxTokens = Math.min(12000, 900 + (batchCount * 260));
+    const generated = await Promise.race<any>([
+      generateJSON<any>(prompt, { maxTokens }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 18000)),
+    ]);
+    const raw = Array.isArray(generated)
+      ? generated
+      : (Array.isArray(generated?.questions) ? generated.questions : []);
+    return normalizeQuestions(raw, difficulty);
+  };
 
-  const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
-  const questions = raw
-    .map((q: any, i: number) => ({
-      id: String(q?.id || `q${i + 1}`),
-      question: String(q?.question || ''),
-      options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
-      correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
-      difficulty: String(q?.difficulty || difficulty),
-      topic: String(q?.topic || 'General'),
-      points: typeof q?.points === 'number' ? q.points : 5,
-      explanation: String(q?.explanation || ''),
-    }))
-    .filter((q: any) => q.question && q.options.length === 4);
+  const questions: any[] = [];
+  const seen = new Set<string>();
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts && questions.length < mcqCount; attempt += 1) {
+    const remaining = mcqCount - questions.length;
+    const chunkSize = remaining > 12 ? 6 : 5;
+    const chunks: number[] = [];
+    for (let left = remaining; left > 0; left -= chunkSize) {
+      chunks.push(Math.min(chunkSize, left));
+    }
+
+    const excluded = questions.map((q: any) => q.question).slice(-20);
+    const batchResults = await Promise.allSettled(chunks.map((c) => generateBatch(c, excluded)));
+
+    for (const result of batchResults) {
+      if (result.status !== 'fulfilled') continue;
+      for (const q of result.value) {
+        const key = String(q.question || '').toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        questions.push({ ...q, id: `q${questions.length + 1}` });
+        if (questions.length === mcqCount) break;
+      }
+      if (questions.length === mcqCount) break;
+    }
+  }
 
   if (questions.length !== mcqCount) {
     throw new Error(`MCQ generation returned ${questions.length} questions; expected ${mcqCount}`);
