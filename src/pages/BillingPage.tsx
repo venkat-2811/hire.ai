@@ -12,6 +12,26 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Wallet, Receipt, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
+const PLAN_META = {
+  pro: {
+    label: 'Pro',
+    monthly: 36.13,
+    deposit: 36.13,
+    tagline: 'Ideal for growing teams with recurring hiring needs.',
+  },
+  premium: {
+    label: 'Premium',
+    monthly: 96.37,
+    deposit: 96.37,
+    tagline: 'For high-volume hiring with the largest wallet coverage.',
+  },
+} as const;
+
+const formatFeatureLabel = (feature: string) =>
+  feature
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
 export default function BillingPage() {
   const [topupAmount, setTopupAmount] = useState<number>(25);
   const [busy, setBusy] = useState<string | null>(null);
@@ -57,6 +77,24 @@ export default function BillingPage() {
 
   const usage = usageQuery.data;
   const invoices = (invoicesQuery.data || []) as BillingInvoice[];
+
+  const upgradePlans = useMemo(() => {
+    if (!usage?.plan) return [] as Array<'pro' | 'premium'>;
+    if (usage.plan === 'free') return ['pro', 'premium'] as Array<'pro' | 'premium'>;
+    if (usage.plan === 'pro') return ['premium'] as Array<'pro' | 'premium'>;
+    return [] as Array<'pro' | 'premium'>;
+  }, [usage?.plan]);
+
+  const featurePricingRows = useMemo(() => {
+    const costs = usage?.limits?.feature_costs || {};
+    return Object.entries(costs)
+      .map(([feature, unitCost]) => ({
+        feature,
+        label: formatFeatureLabel(feature),
+        unitCost: Number(unitCost || 0),
+      }))
+      .sort((a, b) => b.unitCost - a.unitCost);
+  }, [usage?.limits?.feature_costs]);
 
   const consumedPercent = useMemo(() => {
     if (!usage) return 0;
@@ -146,56 +184,102 @@ export default function BillingPage() {
           </Card>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5" /> Wallet</CardTitle>
-              <CardDescription>
-                Plan: <span className="uppercase font-medium">{usage?.plan}</span> | Status: <span className="font-medium">{usage?.status}</span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <span>Wallet Balance</span>
-                <span className="font-semibold">${Number(usage?.wallet_balance || 0).toFixed(2)}</span>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5" /> Wallet</CardTitle>
+            <CardDescription>
+              Plan: <span className="uppercase font-medium">{usage?.plan}</span> | Status: <span className="font-medium">{usage?.status}</span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="rounded-xl border p-4 sm:p-5 bg-muted/20 space-y-3">
+              <div className="flex items-end gap-2">
+                <span className="text-3xl sm:text-4xl font-bold leading-none">${Number(usage?.wallet_balance || 0).toFixed(2)}</span>
+                <span className="text-2xl text-muted-foreground leading-none">/ ${Number(usage?.deposit_amount || 0).toFixed(2)}</span>
               </div>
-              <Progress value={consumedPercent} />
-              <div className="text-xs text-muted-foreground">
-                Deposit: ${Number(usage?.deposit_amount || 0).toFixed(2)} | Consumed: {consumedPercent}%
+              <Progress value={consumedPercent} className="h-3" />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Available balance</span>
+                <span>Consumed {consumedPercent}% this cycle</span>
               </div>
+            </div>
 
-              <div className="grid sm:grid-cols-2 gap-3 pt-2">
-                <div className="space-y-2">
-                  <Label htmlFor="topup">Top-up Amount ($)</Label>
-                  <Input id="topup" type="number" min={1} value={topupAmount} onChange={(e) => setTopupAmount(Number(e.target.value) || 0)} />
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="topup">Top-up Amount ($)</Label>
+                <Input id="topup" type="number" min={1} value={topupAmount} onChange={(e) => setTopupAmount(Number(e.target.value) || 0)} />
+              </div>
+              <div className="flex items-end">
+                <Button className="w-full" onClick={handleTopup} disabled={busy === 'topup' || topupAmount <= 0}>
+                  {busy === 'topup' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Add Funds
+                </Button>
+              </div>
+            </div>
+
+            {upgradePlans.length > 0 && (
+              <div className="pt-4 border-t space-y-4">
+                <div>
+                  <h3 className="font-semibold">Upgrade</h3>
+                  <p className="text-sm text-muted-foreground">Move to a higher plan for stronger wallet coverage and uninterrupted usage.</p>
                 </div>
-                <div className="flex items-end">
-                  <Button className="w-full" onClick={handleTopup} disabled={busy === 'topup' || topupAmount <= 0}>
-                    {busy === 'topup' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Add Funds
-                  </Button>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {upgradePlans.map((planId) => {
+                    const meta = PLAN_META[planId];
+                    const isPremium = planId === 'premium';
+
+                    return (
+                      <div
+                        key={planId}
+                        className={`rounded-xl border p-4 space-y-4 ${isPremium ? 'border-primary/50 bg-primary/5' : 'bg-background'}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-lg font-semibold">{meta.label}</p>
+                            <p className="text-sm text-muted-foreground">{meta.tagline}</p>
+                          </div>
+                          {isPremium && <Badge>Recommended</Badge>}
+                        </div>
+
+                        <div className="space-y-1">
+                          <p className="text-2xl font-bold">${meta.monthly.toFixed(2)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
+                          <p className="text-xs text-muted-foreground">Monthly wallet deposit: ${meta.deposit.toFixed(2)}</p>
+                        </div>
+
+                        <div className="rounded-lg border bg-muted/20">
+                          <div className="px-3 py-2 border-b text-xs font-medium">Metered Pricing (from Usage Breakdown)</div>
+                          <div className="px-3 py-2 space-y-2">
+                            {featurePricingRows.length > 0 ? (
+                              featurePricingRows.map((row) => (
+                                <div key={row.feature} className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">{row.label}</span>
+                                  <span className="font-medium">${row.unitCost.toFixed(2)} / unit</span>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-xs text-muted-foreground">Pricing details will appear once usage data is loaded.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <Button
+                          className="w-full"
+                          variant={isPremium ? 'default' : 'outline'}
+                          onClick={() => handleSubscribe(planId)}
+                          disabled={busy === `subscribe-${planId}`}
+                        >
+                          {busy === `subscribe-${planId}` ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                          Upgrade to {meta.label}
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Upgrade</CardTitle>
-              <CardDescription>Choose a plan with higher limits and wallet coverage.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button className="w-full" variant="outline" onClick={() => handleSubscribe('pro')} disabled={busy === 'subscribe-pro'}>
-                {busy === 'subscribe-pro' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Upgrade to Pro ($36.13)
-              </Button>
-              <Button className="w-full" onClick={() => handleSubscribe('premium')} disabled={busy === 'subscribe-premium'}>
-                {busy === 'subscribe-premium' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Upgrade to Premium ($96.37)
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
