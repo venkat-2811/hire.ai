@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import get_settings, ensure_directories
-from app.services.openai_client import get_openai_service
+from app.services.openai_client import get_groq_service
 from app.routers import (
     jobs_router,
     candidates_router,
@@ -71,12 +71,12 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.get("/ai/openai/ping")
-async def openai_ping():
-    openai = get_openai_service()
+@app.get("/ai/groq/ping")
+async def groq_ping():
+    groq = get_groq_service()
     try:
         response_text = await asyncio.wait_for(
-            openai.generate_text(
+            groq.generate_text(
                 prompt="pong",
                 temperature=0.2,
                 max_tokens=64,
@@ -84,10 +84,10 @@ async def openai_ping():
             timeout=20,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OpenAI ping failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Groq ping failed: {e}")
 
     return {
         "ok": True,
-        "model": getattr(openai, "model_name", None),
+        "model": getattr(groq, "model_name", None),
         "response": (response_text or "").strip()[:200],
     }

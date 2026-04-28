@@ -1,7 +1,7 @@
 import json
 import re
 from typing import Optional, Dict, Any, List
-from openai import AsyncOpenAI
+import httpx
 from app.config import get_settings
 from app.prompts import (
     STRICT_JSON_INSTRUCTION,
@@ -14,22 +14,67 @@ from app.prompts import (
 )
 
 
-class OpenAIService:
-    """Centralized OpenAI API client for all AI operations.
-    
-    Internally uses OpenAI with model gpt-4.1-mini-2025-04-14.
-    """
+class GroqService:
+    """Centralized Groq API client for all AI operations."""
     
     def __init__(self):
         settings = get_settings()
-        if not settings.openai_api_key:
-            raise RuntimeError("OPENAI_API_KEY is not set")
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self._model_name = "gpt-4.1-mini-2025-04-14"
+        if not settings.groq_api_key:
+            raise RuntimeError("GROQ_API_KEY is not set")
+        self.api_key = settings.groq_api_key
+        self.base_url = "https://api.groq.com/openai/v1/chat/completions"
+        self._model_name = "llama-3.1-8b-instant"
 
     @property
     def model_name(self) -> str:
         return self._model_name
+
+    async def _chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        require_json: bool = False,
+        retries: int = 2,
+        timeout_seconds: float = 20.0,
+    ) -> str:
+        """Call Groq chat completions API with retries and timeout."""
+        last_error: Optional[Exception] = None
+
+        for attempt in range(retries + 1):
+            try:
+                payload: Dict[str, Any] = {
+                    "model": self._model_name,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                }
+                if require_json:
+                    payload["response_format"] = {"type": "json_object"}
+
+                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                    response = await client.post(
+                        self.base_url,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    response.raise_for_status()
+
+                data = response.json()
+                text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
+                text = (text or "").strip()
+                if not text:
+                    raise RuntimeError("Groq returned empty response")
+                return text
+            except Exception as e:
+                last_error = e
+                if attempt >= retries:
+                    break
+
+        raise RuntimeError(f"Groq API error: {last_error}")
 
     async def generate_text(
         self,
@@ -38,25 +83,21 @@ class OpenAIService:
         temperature: float = 0.7,
         max_tokens: int = 4096
     ) -> str:
-        """Generate text completion using OpenAI."""
+        """Generate text completion using Groq."""
         messages: List[Dict[str, str]] = []
         if system_instruction:
             messages.append({"role": "system", "content": system_instruction})
         messages.append({"role": "user", "content": prompt})
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self._model_name,
+            return await self._chat_completion(
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                require_json=False,
             )
-            text = response.choices[0].message.content
-            if text and text.strip():
-                return text.strip()
-            raise RuntimeError("OpenAI returned empty response")
         except Exception as e:
-            print(f"OpenAI API error: {e}")
+            print(f"Groq API error: {e}")
             raise
     
     async def generate_json(
@@ -67,7 +108,7 @@ class OpenAIService:
         max_tokens: int = 4096,
         raise_on_error: bool = False,
     ) -> Dict[str, Any]:
-        """Generate and parse JSON response from OpenAI."""
+        """Generate and parse JSON response from Groq."""
         json_instruction = STRICT_JSON_INSTRUCTION
         full_system = f"{system_instruction}\n\n{json_instruction}" if system_instruction else json_instruction
 
@@ -77,22 +118,35 @@ class OpenAIService:
         messages.append({"role": "user", "content": prompt})
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self._model_name,
+            text = await self._chat_completion(
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                response_format={"type": "json_object"}
+                require_json=True,
             )
-            text = response.choices[0].message.content
-            
+
             if not text:
                 return {}
-            
-            return json.loads(text.strip())
+
+            try:
+                return json.loads(text.strip())
+            except Exception:
+                # Extract JSON from fenced code / noisy response
+                json_match = re.search(r"```json\s*([\s\S]*?)\s*```", text) or re.search(r"```\s*([\s\S]*?)\s*```", text)
+                if json_match:
+                    text = json_match.group(1).strip()
+
+                array_match = re.search(r"\[\s*\{[\s\S]*\}\s*\]", text)
+                object_match = re.search(r"\{[\s\S]*\}", text)
+                if array_match:
+                    text = array_match.group(0)
+                elif object_match:
+                    text = object_match.group(0)
+
+                return json.loads(text.strip())
         except Exception as e:
             if raise_on_error:
-                raise RuntimeError(f"Failed to parse OpenAI JSON response: {e}")
+                raise RuntimeError(f"Failed to parse Groq JSON response: {e}")
             print(f"JSON api or parse error: {e}")
             return {}
     
@@ -157,12 +211,12 @@ class OpenAIService:
 
 
 # Singleton instance
-_openai_service: Optional[OpenAIService] = None
+_groq_service: Optional[GroqService] = None
 
 
-def get_openai_service() -> OpenAIService:
-    """Get or create OpenAI service instance."""
-    global _openai_service
-    if _openai_service is None:
-        _openai_service = OpenAIService()
-    return _openai_service
+def get_groq_service() -> GroqService:
+    """Get or create Groq service instance."""
+    global _groq_service
+    if _groq_service is None:
+        _groq_service = GroqService()
+    return _groq_service

@@ -6,7 +6,7 @@ from app.models.schemas import (
     ResumeData, JobDescription, InterviewQuestionGenerated, InterviewQuestion
 )
 from app.models.enums import RoleLevel, AssessmentType
-from app.services.openai_client import get_openai_service
+from app.services.openai_client import get_groq_service
 from app.prompts import (
     get_technical_questions_prompt,
     get_behavioral_questions_prompt,
@@ -22,7 +22,7 @@ class QuestionGeneratorService:
     """
     
     def __init__(self):
-        self.openai = get_openai_service()
+        self.groq = get_groq_service()
         
         
         # Difficulty scaling by level
@@ -132,7 +132,7 @@ class QuestionGeneratorService:
         )
 
         try:
-            result = await self.openai.generate_json(
+            result = await self.groq.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.8
@@ -180,7 +180,7 @@ class QuestionGeneratorService:
         )
 
         try:
-            result = await self.openai.generate_json(
+            result = await self.groq.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7
@@ -230,14 +230,14 @@ class QuestionGeneratorService:
             role=job.role,
             level=job.level,
             description=job.description,
-            must_have_skills=must_have_skills,
-            good_to_have_skills=good_to_have_skills,
+            skills=must_have_skills,
+            good_to_have=good_to_have_skills,
             count=count,
             difficulty=difficulty
         )
 
         try:
-            result = await self.openai.generate_json(
+            result = await self.groq.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7,
@@ -353,7 +353,7 @@ class QuestionGeneratorService:
         )
 
         try:
-            result = await self.openai.generate_json(
+            result = await self.groq.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
                 temperature=0.7,
@@ -378,7 +378,7 @@ class QuestionGeneratorService:
                 })
             
             if not challenges:
-                raise RuntimeError("OpenAI returned no coding challenges")
+                raise RuntimeError("Groq returned no coding challenges")
 
             return challenges
             

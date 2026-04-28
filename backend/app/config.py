@@ -7,8 +7,8 @@ load_dotenv(find_dotenv())
 
 class Settings:
     def __init__(self):
-        # OpenAI Configuration
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        # Groq Configuration
+        self.groq_api_key = os.getenv("GROQ_API_KEY", "")
 
         # AssemblyAI (Speech-to-text)
         self.assemblyai_api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
