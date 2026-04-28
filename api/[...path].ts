@@ -252,8 +252,7 @@ Return ONLY this JSON structure:
 
   for (let attempt = 1; attempt <= maxAttempts && questions.length < mcqCount; attempt += 1) {
     const remaining = mcqCount - questions.length;
-    // Increased chunk size to 15 to minimize concurrent requests but maximize generation per prompt, reducing total time
-    const chunkSize = remaining > 15 ? 15 : remaining;
+    const chunkSize = remaining > 12 ? 6 : 5;
     const chunks: number[] = [];
     for (let left = remaining; left > 0; left -= chunkSize) {
       chunks.push(Math.min(chunkSize, left));
@@ -369,7 +368,7 @@ function getOpenAIClient(): OpenAI {
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
   const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1-mini',
     messages: [{ role: 'user', content: prompt }],
     temperature: opts.temperature ?? 0.7,
     max_tokens: opts.maxTokens ?? 2048,
@@ -379,7 +378,7 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
 async function generateJSON<T>(prompt: string, opts?: { maxTokens?: number; temperature?: number }): Promise<T> {
   const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1-mini',
     messages: [
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
@@ -4551,7 +4550,7 @@ Evaluate and return JSON:
       const failed: string[] = [];
       const failed_reasons: Record<string, string> = {};
 
-      await Promise.all(candidates.map(async (c) => {
+      for (const c of candidates) {
         try {
           if (!c.email) {
             throw new Error('Candidate email is missing');
@@ -4560,6 +4559,7 @@ Evaluate and return JSON:
           const token = crypto.randomBytes(32).toString('base64url');
           const sessionId = uuidv4();
 
+          // Generate personalized questions per candidate using their resume data (GPT-4.1-mini)
           console.log('[ai-interview/invite] Generating personalized questions for candidate:', c.id, 'with resume:', !!c.resume_parsed_data);
           const questions = await generateCandidateInterviewQuestions(
             { title: job.title, role: job.role, level: job.level, must_have_skills: job.must_have_skills || [], description: job.description || '' },
@@ -4574,6 +4574,7 @@ Evaluate and return JSON:
 
           console.log('[ai-interview/invite] Generated', normalizedQuestions.length, 'questions for candidate:', c.id);
 
+          // Build a lightweight resume_insights snapshot stored in the session for adaptive use
           const resume = c.resume_parsed_data || {};
           const resumeInsights = {
             skills: Array.isArray(resume.skills) ? resume.skills.slice(0, 15) : [],
@@ -4615,7 +4616,7 @@ Evaluate and return JSON:
           failed.push(c.id);
           failed_reasons[c.id] = reason;
         }
-      }));
+      }
 
       return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed, failed_reasons });
     }
