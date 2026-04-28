@@ -4546,9 +4546,14 @@ Evaluate and return JSON:
       const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
       let invitesSent = 0;
       const failed: string[] = [];
+      const failed_reasons: Record<string, string> = {};
 
       for (const c of candidates) {
         try {
+          if (!c.email) {
+            throw new Error('Candidate email is missing');
+          }
+
           const token = crypto.randomBytes(32).toString('base64url');
           const sessionId = uuidv4();
 
@@ -4580,7 +4585,6 @@ Evaluate and return JSON:
             job_id,
             token,
             status: 'pending',
-            question_count: requestedCount,
             current_question_index: 0,
             questions,
             responses: [],
@@ -4600,12 +4604,14 @@ Evaluate and return JSON:
 
           invitesSent += 1;
         } catch (err: any) {
-          console.error('[ai-interview/invite] Failed for candidate:', c.id, err?.message || err);
+          const reason = String(err?.message || err || 'Unknown error');
+          console.error('[ai-interview/invite] Failed for candidate:', c.id, reason);
           failed.push(c.id);
+          failed_reasons[c.id] = reason;
         }
       }
 
-      return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed });
+      return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed, failed_reasons });
     }
 
     return notFound(res);
