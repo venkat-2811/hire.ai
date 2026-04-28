@@ -819,6 +819,9 @@ export default function AssessmentPage() {
       if (document.fullscreenElement) {
         document.exitFullscreen();
       }
+
+      // Redirect to home page after 3 seconds
+      setTimeout(() => navigate('/'), 3000);
     } catch (e) {
       toast.error('Failed to submit assessment');
     } finally {

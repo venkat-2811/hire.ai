@@ -4512,18 +4512,32 @@ Evaluate and return JSON:
       if (!job) return notFound(res, 'Job not found');
 
       // If no question pool exists yet, generate one and store it
+      const { data: candidates } = await supabase
+        .from('candidates')
+        .select('id, email, full_name, resume_parsed_data')
+        .in('id', candidate_ids);
+
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
       let questionPool: any[] = job.interview_question_pool || [];
       console.log('[ai-interview/invite] Existing question pool size:', questionPool.length);
+      
+      // Generate adaptive questions per candidate if no pool exists
       if (!questionPool.length) {
         try {
-          console.log('[ai-interview/invite] Generating new question pool for job:', job_id);
+          console.log('[ai-interview/invite] Generating adaptive question pool for job:', job_id);
+          // Use first candidate's resume to generate a base pool (can be refined per candidate)
+          const firstCandidateResume = candidates[0]?.resume_parsed_data;
+          const resumeContext = firstCandidateResume ? 
+            JSON.stringify(firstCandidateResume).slice(0, 800) : '';
+            
           questionPool = await generateInterviewQuestionPool({
             title: job.title,
             role: job.role,
             level: job.level,
             must_have_skills: job.must_have_skills || [],
             description: '',
-          });
+          }, resumeContext);
           console.log('[ai-interview/invite] Generated pool size:', questionPool.length);
           if (questionPool.length) {
             await supabase.from('job_descriptions').update({
@@ -4537,13 +4551,6 @@ Evaluate and return JSON:
         }
       }
 
-      const { data: candidates } = await supabase
-        .from('candidates')
-        .select('id, email, full_name, resume_parsed_data')
-        .in('id', candidate_ids);
-
-      if (!candidates?.length) return notFound(res, 'No candidates found');
-
       const frontendUrl = getFrontendBaseUrl(req);
       let invitesSent = 0;
       const failed: string[] = [];
@@ -4551,18 +4558,31 @@ Evaluate and return JSON:
       for (const c of candidates) {
         try {
           const token = crypto.randomBytes(32).toString('base64url');
+          
+          // Generate personalized questions for this candidate based on their resume
+          let questions: any[];
+          if (c.resume_parsed_data && questionPool.length > 0) {
+            // Generate adaptive questions for this specific candidate
+            const resumeContext = JSON.stringify(c.resume_parsed_data).slice(0, 800);
+            questions = await generateInterviewQuestionPool({
+              title: job.title,
+              role: job.role,
+              level: job.level,
+              must_have_skills: job.must_have_skills || [],
+              description: '',
+            }, resumeContext);
+            if (!questions.length) {
+              // Fallback to base pool if adaptive generation fails
+              questions = [...questionPool].sort(() => Math.random() - 0.5);
+            }
+          } else {
+            // Use base pool for candidates without resume data
+            questions = [...questionPool].sort(() => Math.random() - 0.5);
+          }
 
           // Select requestedCount questions from pool for each candidate
-          let questions: any[];
-          if (questionPool.length >= requestedCount) {
-            const shuffled = [...questionPool].sort(() => Math.random() - 0.5);
-            questions = shuffled.slice(0, requestedCount);
-          } else if (questionPool.length > 0) {
-            questions = [...questionPool].sort(() => Math.random() - 0.5);
-          } else {
-            // Fallback: generate questions on the fly (legacy behavior)
-            console.log('[ai-interview/invite] Falling back to generateInterviewQuestions for candidate:', c.id);
-            questions = await generateInterviewQuestions(job);
+          if (questions.length > requestedCount) {
+            questions = questions.slice(0, requestedCount);
           }
 
           console.log('[ai-interview/invite] Inserting session with', questions.length, 'questions for candidate:', c.id);
@@ -5216,11 +5236,16 @@ async function runSinglePiston(
 
 // ============== End HackerEarth Engine ==============
 
-async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }) {
+async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }, resumeContext?: string) {
   const skills = job.must_have_skills.join(', ') || 'General';
+  let contextSection = '';
+  if (resumeContext) {
+    contextSection = `\n\nCANDIDATE RESUME INSIGHTS:\n${resumeContext.slice(0, 800)}\n\nAdapt questions to probe deeper into the candidate's mentioned experience and skills. Ask follow-up questions about their specific projects and achievements.`;
+  }
+  
   const prompt = `Generate exactly 15 diverse interview questions for a ${job.level} ${job.role} position (${job.title}).
 Skills to assess: ${skills}.
-${job.description ? `Job context: ${job.description.slice(0, 500)}` : ''}
+${job.description ? `Job context: ${job.description.slice(0, 500)}` : ''}${contextSection}
 
 Create a balanced mix:
 - 7 technical questions testing specific skills and knowledge
@@ -5229,6 +5254,7 @@ Create a balanced mix:
 
 Each question should be distinct and test a different aspect.
 Vary difficulty from moderate to advanced for ${job.level} level.
+${resumeContext ? 'Tailor questions to the candidate\'s background - ask about their specific experience mentioned in the resume.' : ''}
 
 Return JSON array: [{"text":"The question text","type":"technical|behavioral|situational","duration":120}]
 Only return the JSON array.`;

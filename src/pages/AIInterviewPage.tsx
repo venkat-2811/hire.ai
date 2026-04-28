@@ -262,6 +262,7 @@ export default function AIInterviewPage() {
 
       if (data.completed) {
         setIsCompleted(true);
+        setTimeout(() => navigate('/'), 3000);
         return;
       }
 
@@ -308,6 +309,7 @@ export default function AIInterviewPage() {
           setFinalEvaluation(evalData);
         }
         setIsCompleted(true);
+        setTimeout(() => navigate('/'), 3000);
       } else {
         await loadCurrentQuestion();
       }
