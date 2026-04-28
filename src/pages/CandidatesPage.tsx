@@ -245,6 +245,43 @@ export default function CandidatesPage() {
     setSendingInvites(true);
     try {
       const token = await getToken();
+      
+      let preGeneratedMcqs: any[] = [];
+      if (includeMcq && mcqCount > 0) {
+        toast.info(`Generating ${mcqCount} MCQ questions. This may take a moment...`, { duration: 5000 });
+        
+        // Chunk generation to avoid Netlify 10s timeout
+        const batchSize = 5;
+        let excludeQuestions: string[] = [];
+        
+        for (let i = 0; i < mcqCount; i += batchSize) {
+          const currentBatchCount = Math.min(batchSize, mcqCount - i);
+          const genResponse = await fetch(`/api/assessments/generate-mcqs`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({
+              job_id: selectedJobId,
+              mcq_count: currentBatchCount,
+              difficulty: assessmentDifficulty,
+              exclude_questions: excludeQuestions,
+            }),
+          });
+          
+          if (!genResponse.ok) {
+            const error = await genResponse.json().catch(() => ({}));
+            throw new Error(error.error || error.detail || 'Failed to generate MCQs');
+          }
+          
+          const genData = await genResponse.json();
+          const newQuestions = genData.questions || [];
+          preGeneratedMcqs = [...preGeneratedMcqs, ...newQuestions];
+          excludeQuestions = preGeneratedMcqs.map(q => q.question);
+        }
+      }
+
       const response = await fetch(`/api/assessments/invite`, {
         method: 'POST',
         headers: {
@@ -261,6 +298,7 @@ export default function CandidatesPage() {
           include_mcq: includeMcq,
           include_coding: includeCoding,
           total_time_minutes: totalTimeMinutes || undefined,
+          pre_generated_mcqs: preGeneratedMcqs.length > 0 ? preGeneratedMcqs : undefined,
         }),
       });
 
