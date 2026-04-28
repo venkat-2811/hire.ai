@@ -66,18 +66,6 @@ interface MCQQuestion {
   explanation?: string;
 }
 
-interface MCQReviewItem {
-  question_id: string;
-  question: string;
-  options: string[];
-  selected_index: number;
-  correct_index: number;
-  explanation: string;
-  is_correct: boolean;
-  topic: string;
-  difficulty: string;
-}
-
 interface TestCase {
   id: string;
   input: string;
@@ -152,9 +140,6 @@ export default function AssessmentPage() {
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
-  const [finalScores, setFinalScores] = useState<{ mcq_score?: number; coding_score?: number | null; total_score?: number } | null>(null);
-  const [mcqReview, setMcqReview] = useState<MCQReviewItem[]>([]);
-  const [showMcqReview, setShowMcqReview] = useState(false);
   const [codingLanguages, setCodingLanguages] = useState<Record<string, string>>({});
   const [problemTab, setProblemTab] = useState<'description' | 'submissions'>('description');
   const [activeTestCaseTab, setActiveTestCaseTab] = useState(0);
@@ -790,9 +775,8 @@ export default function AssessmentPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(mcqSubmissions),
         });
-        if (mcqSubmitResp.ok) {
-          const mcqResult = await mcqSubmitResp.json().catch(() => ({}));
-          if (Array.isArray(mcqResult?.results)) setMcqReview(mcqResult.results);
+        if (!mcqSubmitResp.ok) {
+          throw new Error('Failed to submit MCQ answers');
         }
       }
 
@@ -822,13 +806,8 @@ export default function AssessmentPage() {
         method: 'POST',
       });
 
-      const completeData = await completeResp.json().catch(() => ({}));
-      if (completeResp.ok) {
-        setFinalScores({
-          mcq_score: typeof completeData.mcq_score === 'number' ? completeData.mcq_score : undefined,
-          coding_score: typeof completeData.coding_score === 'number' || completeData.coding_score === null ? completeData.coding_score : undefined,
-          total_score: typeof completeData.total_score === 'number' ? completeData.total_score : undefined,
-        });
+      if (!completeResp.ok) {
+        throw new Error('Failed to complete assessment');
       }
 
       setCompleted(true);
@@ -948,81 +927,6 @@ export default function AssessmentPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {finalScores && (
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  {finalScores.mcq_score != null && (
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground mb-1">MCQ Score</p>
-                      <p className="text-xl font-bold">{Math.round(finalScores.mcq_score)}%</p>
-                    </div>
-                  )}
-                  {finalScores.coding_score != null && (
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground mb-1">Coding Score</p>
-                      <p className="text-xl font-bold">{Math.round(finalScores.coding_score)}%</p>
-                    </div>
-                  )}
-                  {finalScores.total_score != null && (
-                    <div className="rounded-lg border p-3">
-                      <p className="text-xs text-muted-foreground mb-1">Total Score</p>
-                      <p className="text-xl font-bold text-primary">{Math.round(finalScores.total_score)}%</p>
-                    </div>
-                  )}
-                </div>
-              )}
-              {mcqReview.length > 0 && (
-                <div className="space-y-3">
-                  <button
-                    onClick={() => setShowMcqReview((v) => !v)}
-                    className="w-full flex items-center justify-between rounded-lg border px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
-                  >
-                    <span>MCQ Review ({mcqReview.filter((r) => r.is_correct).length}/{mcqReview.length} correct)</span>
-                    <span className="text-muted-foreground">{showMcqReview ? '▲ Hide' : '▼ Show'}</span>
-                  </button>
-                  {showMcqReview && (
-                    <div className="space-y-4">
-                      {mcqReview.map((item, i) => (
-                        <div key={item.question_id} className={`rounded-lg border p-4 space-y-3 ${
-                          item.is_correct ? 'border-green-200 bg-green-50/30 dark:border-green-900 dark:bg-green-950/20' : 'border-red-200 bg-red-50/30 dark:border-red-900 dark:bg-red-950/20'
-                        }`}>
-                          <div className="flex items-start gap-2">
-                            <span className={`mt-0.5 flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center text-xs text-white ${
-                              item.is_correct ? 'bg-green-500' : 'bg-red-500'
-                            }`}>{item.is_correct ? '✓' : '✗'}</span>
-                            <p className="text-sm font-medium">{i + 1}. {item.question}</p>
-                          </div>
-                          <div className="pl-7 space-y-1.5">
-                            {item.options.map((opt, oi) => (
-                              <div key={oi} className={`text-sm px-3 py-1.5 rounded ${
-                                oi === item.correct_index
-                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 font-medium'
-                                  : oi === item.selected_index && !item.is_correct
-                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 line-through'
-                                    : 'text-muted-foreground'
-                              }`}>
-                                {oi === item.correct_index && <span className="mr-1">✓</span>}
-                                {oi === item.selected_index && oi !== item.correct_index && <span className="mr-1">✗</span>}
-                                {opt}
-                              </div>
-                            ))}
-                          </div>
-                          {item.explanation && (
-                            <div className="pl-7">
-                              <p className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-2 italic">
-                                💡 {item.explanation}
-                              </p>
-                            </div>
-                          )}
-                          <div className="pl-7 flex gap-2">
-                            <Badge variant="outline" className="text-xs">{item.topic}</Badge>
-                            <Badge variant="outline" className="text-xs capitalize">{item.difficulty}</Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               <p className="text-sm text-muted-foreground text-center pt-2">
                 The hiring team will review your results and contact you regarding next steps.
               </p>
