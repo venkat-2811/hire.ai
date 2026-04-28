@@ -4073,7 +4073,8 @@ Return JSON:
         if (!session) return notFound(res, 'Interview not found or link expired');
         if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
 
-        const questionCount = Array.isArray(session.questions) ? session.questions.length : 0;
+        const sessionQuestions = normalizeInterviewQuestions(session.questions);
+        const questionCount = sessionQuestions.length;
         if (questionCount === 0) {
           return badRequest(res, 'Interview questions are not available yet. Please contact the hiring team.');
         }
@@ -4106,7 +4107,7 @@ Return JSON:
       if (session.status !== 'in_progress') return badRequest(res, 'Interview not in progress');
 
       const idx = session.current_question_index || 0;
-      const questions = session.questions || [];
+      const questions = normalizeInterviewQuestions(session.questions);
       if (idx >= questions.length) return ok(res, { completed: true, message: 'All questions answered' });
       const q = questions[idx];
 
@@ -4135,7 +4136,7 @@ Return JSON:
       if (!session) return notFound(res, 'Session not found');
       if (session.status !== 'in_progress') return badRequest(res, 'Interview not in progress');
 
-      const questions: any[] = Array.isArray(session.questions) ? session.questions : [];
+      const questions = normalizeInterviewQuestions(session.questions);
       const responses: any[] = Array.isArray(session.responses) ? session.responses : [];
       const idx = typeof next_index === 'number' ? next_index : (session.current_question_index || 0);
 
@@ -4369,7 +4370,8 @@ Return ONLY this JSON:
       }
 
       const nextIndex = (session.current_question_index || 0) + 1;
-      const isLast = nextIndex >= (session.questions || []).length;
+      const questionCount = normalizeInterviewQuestions(session.questions).length;
+      const isLast = nextIndex >= questionCount;
 
       await supabase.from('ai_interview_sessions').update({
         responses,
@@ -4459,7 +4461,7 @@ Return ONLY this JSON:
 
       // AI-powered evaluation based on actual responses
       let finalEvaluation: any;
-      const questions = session.questions || [];
+      const questions = normalizeInterviewQuestions(session.questions);
       const responses = session.responses || [];
 
       try {
@@ -4565,7 +4567,12 @@ Evaluate and return JSON:
             requestedCount
           );
 
-          console.log('[ai-interview/invite] Generated', questions.length, 'questions for candidate:', c.id);
+          const normalizedQuestions = normalizeInterviewQuestions(questions);
+          if (normalizedQuestions.length === 0) {
+            throw new Error('No interview questions generated for candidate');
+          }
+
+          console.log('[ai-interview/invite] Generated', normalizedQuestions.length, 'questions for candidate:', c.id);
 
           // Build a lightweight resume_insights snapshot stored in the session for adaptive use
           const resume = c.resume_parsed_data || {};
@@ -4586,7 +4593,7 @@ Evaluate and return JSON:
             token,
             status: 'pending',
             current_question_index: 0,
-            questions,
+            questions: normalizedQuestions,
             responses: [],
             proctoring_data: { warnings: [], camera_enabled: false, microphone_enabled: false, resume_insights: resumeInsights },
             created_at: new Date().toISOString(),
@@ -4912,6 +4919,32 @@ Evaluate and return JSON:
 }
 
 
+function normalizeInterviewQuestions(raw: any): { text: string; type: string; duration: number }[] {
+  let parsed = raw;
+
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(parsed) && parsed && Array.isArray(parsed.questions)) {
+    parsed = parsed.questions;
+  }
+
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter((q: any) => q?.text && q?.type)
+    .map((q: any) => ({
+      text: String(q.text),
+      type: String(q.type),
+      duration: Number(q.duration) || 120,
+    }));
+}
+
 async function generateInterviewQuestions(job: { title: string; role: string; level: string; must_have_skills?: string[] }) {
   try {
     const skills = (job.must_have_skills || []).join(', ') || 'General';
@@ -4931,19 +4964,20 @@ Return JSON array ONLY:
       generateJSON<any>(prompt),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
     ]);
-    const questions = Array.isArray(raw) ? raw : (Array.isArray(raw?.questions) ? raw.questions : []);
-    return questions
-      .filter((q: any) => q?.text && q?.type)
-      .map((q: any) => ({ text: String(q.text), type: String(q.type), duration: Number(q.duration) || 120 }))
-      .slice(0, 5);
+    const valid = normalizeInterviewQuestions(raw).slice(0, 5);
+    if (valid.length < 5) {
+      throw new Error(`Generated only ${valid.length} interview questions`);
+    }
+    return valid;
   } catch {
-    return [
+    const fallback = [
       { text: `Walk me through your most relevant technical experience for the ${job.role} role, including specific technologies and what you built.`, type: 'technical', duration: 150 },
       { text: `Describe a situation where you had to solve a complex technical problem. What was your approach and what was the outcome?`, type: 'behavioral', duration: 150 },
       { text: `Tell me about a time you worked under pressure to deliver a project. How did you prioritize and what did you learn?`, type: 'behavioral', duration: 120 },
       { text: `If you discovered a critical bug in production 2 hours before a major product demo, what would you do?`, type: 'situational', duration: 120 },
       { text: `What specific technical skills do you bring to ${job.title} and what is an area you are actively working to improve?`, type: 'technical', duration: 120 },
     ];
+    return normalizeInterviewQuestions(fallback).slice(0, 5);
   }
 }
 
@@ -5011,7 +5045,17 @@ Return ONLY a JSON array:
     throw new Error(`Too few questions returned: ${valid.length}`);
   } catch (e: any) {
     console.error('[generateCandidateInterviewQuestions] failed, using fallback:', e.message);
-    return generateInterviewQuestions(job).then((qs) => qs.slice(0, count));
+    const fallbackFive = await generateInterviewQuestions(job);
+    const safeFallback = normalizeInterviewQuestions(fallbackFive);
+    if (!safeFallback.length) {
+      return [];
+    }
+
+    const expanded: { text: string; type: string; duration: number }[] = [];
+    while (expanded.length < count) {
+      expanded.push(safeFallback[expanded.length % safeFallback.length]);
+    }
+    return expanded.slice(0, count);
   }
 }
 
