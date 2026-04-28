@@ -235,10 +235,10 @@ Return ONLY this JSON structure:
 
   const generateBatch = async (batchCount: number, excludedQuestions: string[]): Promise<any[]> => {
     const prompt = buildPrompt(batchCount, excludedQuestions);
-    const maxTokens = Math.min(12000, 900 + (batchCount * 260));
+    const maxTokens = Math.min(4000, 500 + (batchCount * 150));
     const generated = await Promise.race<any>([
       generateJSON<any>(prompt, { maxTokens }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 10000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 4000)),
     ]);
     const raw = Array.isArray(generated)
       ? generated
@@ -248,11 +248,11 @@ Return ONLY this JSON structure:
 
   const questions: any[] = [];
   const seen = new Set<string>();
-  const maxAttempts = 2;
+  const maxAttempts = 1;
 
   for (let attempt = 1; attempt <= maxAttempts && questions.length < mcqCount; attempt += 1) {
     const remaining = mcqCount - questions.length;
-    const chunkSize = remaining > 12 ? 4 : 3;
+    const chunkSize = 2;
     const chunks: number[] = [];
     for (let left = remaining; left > 0; left -= chunkSize) {
       chunks.push(Math.min(chunkSize, left));
