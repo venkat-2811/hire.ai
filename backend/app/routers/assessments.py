@@ -341,53 +341,27 @@ async def start_assessment(token: str):
     total_time_minutes = session.get("total_time_minutes") or 90
     difficulty = session.get("difficulty") or "medium"
 
-    # ── Retrieve (or lazily generate) pre-computed questions ──────────────
+    # ── Retrieve pre-computed questions only (generated at invite time) ───
     stored_mcq = session.get("mcq_questions") or []
     stored_coding = session.get("coding_challenges") or []
 
-    if not stored_mcq and not stored_coding:
-        # Questions weren't pre-generated (e.g. legacy session or background task
-        # failed) – generate them now synchronously as a fallback.
-        stored_mcq, stored_coding = await _generate_and_persist_questions(
-            supabase,
-            session["id"],
-            session["job_id"],
-            mcq_count,
-            coding_count,
-            difficulty,
+    if mcq_count > 0 and not stored_mcq:
+        raise HTTPException(
+            status_code=400,
+            detail="MCQ questions are not available for this session. Please ask the recruiter to resend the assessment.",
         )
-    elif not stored_mcq:
-        # Only MCQ missing
-        job_result = supabase.table("job_descriptions").select("*").eq("id", session["job_id"]).single().execute()
-        if job_result.data:
-            jd = job_result.data
-            job = JobDescription(
-                id=jd["id"], title=jd["title"], role=jd["role"], level=jd["level"],
-                description=jd["description"],
-                must_have_skills=jd.get("must_have_skills", []),
-                good_to_have_skills=jd.get("good_to_have_skills", []),
-                min_experience_years=jd.get("min_experience_years", 0),
-                is_active=jd.get("is_active", True),
-            )
-            qg = get_question_generator()
-            stored_mcq = await qg.generate_mcq_questions(job, count=mcq_count, difficulty=difficulty)
-            supabase.table("assessment_sessions").update({"mcq_questions": stored_mcq}).eq("id", session["id"]).execute()
-    elif not stored_coding:
-        # Only coding missing
-        job_result = supabase.table("job_descriptions").select("*").eq("id", session["job_id"]).single().execute()
-        if job_result.data:
-            jd = job_result.data
-            job = JobDescription(
-                id=jd["id"], title=jd["title"], role=jd["role"], level=jd["level"],
-                description=jd["description"],
-                must_have_skills=jd.get("must_have_skills", []),
-                good_to_have_skills=jd.get("good_to_have_skills", []),
-                min_experience_years=jd.get("min_experience_years", 0),
-                is_active=jd.get("is_active", True),
-            )
-            qg = get_question_generator()
-            stored_coding = await qg.generate_coding_challenges(job, count=coding_count, difficulty=difficulty)
-            supabase.table("assessment_sessions").update({"coding_challenges": stored_coding}).eq("id", session["id"]).execute()
+
+    if len(stored_mcq) != mcq_count:
+        raise HTTPException(
+            status_code=400,
+            detail=f"MCQ question count mismatch for this session. Expected {mcq_count}, found {len(stored_mcq)}.",
+        )
+
+    if not stored_coding and coding_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Coding challenges are not available for this session. Please ask the recruiter to resend the assessment.",
+        )
 
     # Strip correct_index from MCQ before sending to client
     safe_mcq = [
@@ -448,45 +422,10 @@ async def get_mcq_questions(session_id: str):
             for q in stored_questions
         ]
 
-    # Fallback: generate now (should rarely happen with pre-generation in place)
-    job_result = supabase.table("job_descriptions").select("*").eq(
-        "id", session_row.data["job_id"]
-    ).single().execute()
-
-    if not job_result.data:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    job_data = job_result.data
-    job = JobDescription(
-        id=job_data["id"],
-        title=job_data["title"],
-        role=job_data["role"],
-        level=job_data["level"],
-        description=job_data["description"],
-        must_have_skills=job_data.get("must_have_skills", []),
-        good_to_have_skills=job_data.get("good_to_have_skills", []),
-        min_experience_years=job_data.get("min_experience_years", 0),
-        is_active=job_data.get("is_active", True),
+    raise HTTPException(
+        status_code=400,
+        detail="MCQ questions are not available for this session. Please ask the recruiter to resend the assessment.",
     )
-
-    mcq_count = (session_row.data or {}).get("mcq_question_count") or 20
-    difficulty = (session_row.data or {}).get("difficulty") or "medium"
-    question_generator = get_question_generator()
-    questions = await question_generator.generate_mcq_questions(job, count=mcq_count, difficulty=difficulty)
-
-    supabase.table("assessment_sessions").update({
-        "mcq_questions": questions,
-        "updated_at": datetime.utcnow().isoformat(),
-    }).eq("id", session_id).execute()
-    
-    return [{
-        "id": q["id"],
-        "question": q["question"],
-        "options": q["options"],
-        "difficulty": q["difficulty"],
-        "topic": q["topic"],
-        "points": q["points"],
-    } for q in questions]
 
 
 @router.get("/{session_id}/coding")

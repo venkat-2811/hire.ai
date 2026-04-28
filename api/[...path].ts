@@ -164,6 +164,87 @@ function mapAssessmentDifficulty(difficulty: string): { label: string; guidance:
   };
 }
 
+async function generateAssessmentMcqsForJob(opts: {
+  job: {
+    title?: string;
+    role?: string;
+    level?: string;
+    description?: string;
+    must_have_skills?: string[];
+    good_to_have_skills?: string[];
+  };
+  mcqCount: number;
+  difficulty: string;
+}): Promise<any[]> {
+  const { job, mcqCount, difficulty } = opts;
+  if (mcqCount < 1) return [];
+
+  const mapped = mapAssessmentDifficulty(difficulty);
+  const mustHaveSkills = (job.must_have_skills || []).join(', ') || 'general programming';
+  const goodToHaveSkills = (job.good_to_have_skills || []).join(', ');
+  const maxTokens = Math.min(16384, 1024 + (mcqCount * 250));
+
+  const prompt = `You are an expert technical assessment designer. Generate exactly ${mcqCount} high-quality multiple-choice questions for a ${job.level} ${job.role} assessment.
+
+Job Title: ${job.title}
+Job Description: ${(job.description || '').slice(0, 600)}
+Required Skills: ${mustHaveSkills}
+${goodToHaveSkills ? `Nice-to-Have Skills: ${goodToHaveSkills}` : ''}
+Difficulty Level: ${mapped.label} - ${mapped.guidance}
+
+QUESTION RULES:
+- Prefer real-world scenario-based questions over pure definitions.
+- Cover ALL required skills evenly - at least one question per major skill.
+- Mix question types: code output prediction, best-practice selection, error identification, architecture choices.
+- Vary the correct answer position (correct_index) across all questions.
+
+OPTION RULES (CRITICAL):
+- Each of the 4 options MUST start with different words and use different sentence structures.
+- NEVER create permutation-style options (do not swap subject/object of the same sentence).
+- Distractor pattern: 1 plausible misconception, 1 partially correct, 1 technically-sounding but wrong.
+
+Return ONLY this JSON structure:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "<scenario-based question text>",
+      "options": ["<option A>", "<option B>", "<option C>", "<option D>"],
+      "correct_index": 0,
+      "difficulty": "${mapped.label}",
+      "topic": "<skill topic>",
+      "points": 5,
+      "explanation": "<1-2 sentence explanation of why the correct answer is right>"
+    }
+  ]
+}`;
+
+  const generated = await Promise.race<any>([
+    generateJSON<any>(prompt, { maxTokens }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
+  ]);
+
+  const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
+  const questions = raw
+    .map((q: any, i: number) => ({
+      id: String(q?.id || `q${i + 1}`),
+      question: String(q?.question || ''),
+      options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
+      correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
+      difficulty: String(q?.difficulty || difficulty),
+      topic: String(q?.topic || 'General'),
+      points: typeof q?.points === 'number' ? q.points : 5,
+      explanation: String(q?.explanation || ''),
+    }))
+    .filter((q: any) => q.question && q.options.length === 4);
+
+  if (questions.length !== mcqCount) {
+    throw new Error(`MCQ generation returned ${questions.length} questions; expected ${mcqCount}`);
+  }
+
+  return questions;
+}
+
 function normalizeBaseUrl(u: string): string {
   return String(u || '').trim().replace(/\/+$/, '');
 }
@@ -251,7 +332,7 @@ function getOpenAIClient(): OpenAI {
 async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
   const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'gpt-4.1-mini-2025-04-14',
+    model: 'gpt-4.1-mini',
     messages: [{ role: 'user', content: prompt }],
     temperature: opts.temperature ?? 0.7,
     max_tokens: opts.maxTokens ?? 2048,
@@ -261,7 +342,7 @@ async function generateText(prompt: string, opts: { temperature?: number; maxTok
 async function generateJSON<T>(prompt: string, opts?: { maxTokens?: number; temperature?: number }): Promise<T> {
   const client = getOpenAIClient();
   const completion = await client.chat.completions.create({
-    model: 'gpt-4.1-mini-2025-04-14',
+    model: 'gpt-4.1-mini',
     messages: [
       { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
       { role: 'user', content: prompt },
@@ -3253,124 +3334,21 @@ Return JSON:
         const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
         const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
 
-      // Generate MCQ questions (or return cached)
+      // Retrieve pre-generated MCQ questions only
       const getMcqQuestions = async (): Promise<any[]> => {
         if (!includeMcq) {
           console.log('[getMcqQuestions] MCQ disabled or count=0');
           return [];
         }
         const storedMcq: any[] = session.mcq_questions || [];
+        if (storedMcq.length !== mcqCount) {
+          throw new Error(`MCQ question count mismatch for this session. Expected ${mcqCount}, found ${storedMcq.length}.`);
+        }
         if (storedMcq.length > 0) {
           console.log('[getMcqQuestions] Returning cached MCQs:', storedMcq.length);
           return storedMcq;
         }
-
-        console.log('[getMcqQuestions] Generating new MCQs for session:', session.id);
-        const { data: ownerJob, error: jobErr } = await supabase
-          .from('job_descriptions').select('created_by, *').eq('id', session.job_id).single();
-        if (jobErr || !ownerJob) {
-          console.error('[getMcqQuestions] Job not found:', session.job_id, jobErr);
-          return [];
-        }
-
-        // Billing enforced at invite time — never block candidate during start.
-
-        const mapped = mapAssessmentDifficulty(difficulty);
-        const mustHaveSkills = (ownerJob.must_have_skills || []).join(', ') || 'general programming';
-        const goodToHaveSkills = (ownerJob.good_to_have_skills || []).join(', ');
-
-        // Adaptive token limit: ~250 tokens per question for rich scenario-based MCQs
-        const maxTokens = Math.min(16384, 1024 + (mcqCount * 250));
-
-        const prompt = `You are an expert technical assessment designer. Generate exactly ${mcqCount} high-quality multiple-choice questions for a ${ownerJob.level} ${ownerJob.role} assessment.
-
-Job Title: ${ownerJob.title}
-Job Description: ${(ownerJob.description || '').slice(0, 600)}
-Required Skills: ${mustHaveSkills}
-${goodToHaveSkills ? `Nice-to-Have Skills: ${goodToHaveSkills}` : ''}
-Difficulty Level: ${mapped.label} — ${mapped.guidance}
-
-QUESTION RULES:
-- Prefer real-world scenario-based questions over pure definitions.
-- Cover ALL required skills evenly — at least one question per major skill.
-- Mix question types: code output prediction, best-practice selection, error identification, architecture choices.
-- Vary the correct answer position (correct_index) across all questions.
-
-OPTION RULES (CRITICAL):
-- Each of the 4 options MUST start with different words and use different sentence structures.
-- NEVER create permutation-style options (do not swap subject/object of the same sentence).
-- Distractor pattern: 1 plausible misconception, 1 partially correct, 1 technically-sounding but wrong.
-
-Return ONLY this JSON structure:
-{
-  "questions": [
-    {
-      "id": "q1",
-      "question": "<scenario-based question text>",
-      "options": ["<option A>", "<option B>", "<option C>", "<option D>"],
-      "correct_index": 0,
-      "difficulty": "${mapped.label}",
-      "topic": "<skill topic>",
-      "points": 5,
-      "explanation": "<1-2 sentence explanation of why the correct answer is right>"
-    }
-  ]
-}`;
-
-        // Allow ~22s for AI generation (Netlify limit is 26s; leaving buffer for DB and response)
-        const attemptGeneration = async (): Promise<any[]> => {
-          const generated = await Promise.race<any>([
-            generateJSON<any>(prompt, { maxTokens }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
-          ]);
-          const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.questions) ? generated.questions : []);
-          return raw
-            .map((q: any, i: number) => ({
-              id: String(q?.id || `q${i + 1}`),
-              question: String(q?.question || ''),
-              options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
-              correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
-              difficulty: String(q?.difficulty || difficulty),
-              topic: String(q?.topic || 'General'),
-              points: typeof q?.points === 'number' ? q.points : 5,
-              explanation: String(q?.explanation || ''),
-            }))
-            .filter((q: any) => q.question && q.options.length === 4);
-        };
-
-        // Single attempt — if it fails, immediately fall back to hardcoded questions
-        // (retrying would exceed Netlify's 26s function timeout)
-        try {
-          console.log(`[getMcqQuestions] Generating ${mcqCount} MCQs...`);
-          const questions = await attemptGeneration();
-          if (questions.length > 0) {
-            console.log(`[getMcqQuestions] Success: ${questions.length} MCQs generated`);
-            supabase.from('assessment_sessions').update({ mcq_questions: questions, updated_at: new Date().toISOString() })
-              .eq('id', session.id).then(() => {}).catch(() => {});
-            return questions;
-          }
-          console.warn('[getMcqQuestions] AI returned 0 valid questions');
-        } catch (e: any) {
-          console.error('[getMcqQuestions] MCQ generation failed:', e?.message || e);
-        }
-
-        // All AI attempts failed — return hardcoded fallback questions
-        console.warn('[getMcqQuestions] Using fallback MCQs');
-        const fallbackQuestions = [
-          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty, topic: 'Version Control', points: 5, explanation: 'Git tracks changes to code over time, enabling teams to collaborate and revert to previous states.' },
-          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty, topic: 'Data Structures', points: 5, explanation: 'A Stack follows LIFO — the last element pushed is the first one popped.' },
-          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty, topic: 'Software Development', points: 5, explanation: 'API (Application Programming Interface) is a contract allowing software components to communicate.' },
-          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty, topic: 'Web Development', points: 5, explanation: 'GET is designed to request and retrieve data; it is idempotent and should not change server state.' },
-          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty, topic: 'Algorithms', points: 5, explanation: 'Binary search halves the search space each step, yielding O(log n) time complexity.' },
-          { id: 'fb6', question: 'Which principle states that software entities should be open for extension but closed for modification?', options: ['DRY (Don\'t Repeat Yourself)', 'Open/Closed Principle (SOLID)', 'KISS (Keep It Simple)', 'YAGNI (You Aren\'t Gonna Need It)'], correct_index: 1, difficulty, topic: 'Software Design', points: 5, explanation: 'The Open/Closed Principle (OCP) from SOLID encourages extension via inheritance or composition without modifying existing code.' },
-          { id: 'fb7', question: 'In object-oriented programming, what is encapsulation?', options: ['Inheriting from multiple classes', 'Bundling data and methods that operate on that data', 'Converting objects to strings', 'Creating multiple methods with the same name'], correct_index: 1, difficulty, topic: 'OOP', points: 5, explanation: 'Encapsulation hides internal state and groups related behavior in a class, exposing only necessary interfaces.' },
-          { id: 'fb8', question: 'What is the primary benefit of using Docker containers?', options: ['Automatic code compilation', 'Consistent environments across development and production', 'Built-in version control', 'Enhanced security by default'], correct_index: 1, difficulty, topic: 'DevOps', points: 5, explanation: 'Docker packages code with its dependencies into containers, ensuring identical runtime environments everywhere.' },
-          { id: 'fb9', question: 'In distributed systems, what does the CAP theorem state?', options: ['You can have all three properties simultaneously', 'You can have any two of consistency, availability, and partition tolerance simultaneously', 'You must choose between consistency and availability only', 'Partition tolerance is optional'], correct_index: 1, difficulty, topic: 'Distributed Systems', points: 5, explanation: 'CAP theorem states a distributed system can only guarantee two of the three: Consistency, Availability, Partition Tolerance.' },
-          { id: 'fb10', question: 'What is the difference between SQL and NoSQL databases regarding data consistency?', options: ['NoSQL databases cannot support any consistency', 'NoSQL typically prioritizes availability over strict consistency', 'SQL databases are always faster', 'NoSQL cannot handle transactions at all'], correct_index: 1, difficulty, topic: 'Databases', points: 5, explanation: 'Many NoSQL databases trade strict ACID consistency for higher availability and horizontal scalability (BASE model).' },
-        ].slice(0, mcqCount);
-        supabase.from('assessment_sessions').update({ mcq_questions: fallbackQuestions, updated_at: new Date().toISOString() })
-          .eq('id', session.id).then(() => {}).catch(() => {});
-        return fallbackQuestions;
+        throw new Error('MCQ questions are not available for this session. Please contact the recruiter.');
       };
 
       // Fetch coding challenges from DSA bank (or return cached)
@@ -3464,6 +3442,10 @@ Return ONLY this JSON structure:
 
       const stored = session.mcq_questions || [];
       if (stored.length) {
+        const expectedCount = session.mcq_question_count || 20;
+        if (stored.length !== expectedCount) {
+          return badRequest(res, `MCQ question count mismatch for this session. Expected ${expectedCount}, found ${stored.length}.`);
+        }
         return ok(res, stored.map((q: any) => ({
           id: q.id,
           question: q.question,
@@ -3474,174 +3456,7 @@ Return ONLY this JSON structure:
         })));
       }
 
-      const { data: job } = await supabase.from('job_descriptions').select('*').eq('id', session.job_id).single();
-      if (!job) return notFound(res, 'Job not found');
-
-      // Billing is enforced at invite time; avoid blocking candidates on runtime checks.
-
-      const count = session.mcq_question_count || 20;
-      const difficulty = assessmentConfig.difficulty || 'medium';
-      const mapped = mapAssessmentDifficulty(difficulty);
-      
-      const mustHaveSkills = (job.must_have_skills || []).join(', ') || 'general programming';
-      const goodToHaveSkills = (job.good_to_have_skills || []).join(', ');
-      const jobDescription = job.description || '';
-      
-      const prompt = `Generate exactly ${count} multiple choice questions for a ${job.level} ${job.role} position.
-
-Job Description: ${jobDescription}
-
-Must-Have Skills to test: ${mustHaveSkills}
-${goodToHaveSkills ? `Good-to-Have Skills to include: ${goodToHaveSkills}` : ''}
-
-Selected difficulty (user): ${difficulty}.
-Effective difficulty (system): ${mapped.label}.
-${mapped.guidance}
-
-IMPORTANT: Generate questions that are directly relevant to the job description and required skills.
-Each question should test practical knowledge of the must-have skills and good-to-have skills.
-
-## QUESTION STYLE RULES:
-- Prefer scenario-based questions ("What happens when...", "Given this code snippet, what is the output?", "Which approach is best for...") over simple definition questions.
-- Include questions that test trade-offs, debugging, best practices, and edge cases.
-- Vary question types: some code output prediction, some "which is correct", some "what is the best approach", some "what is wrong with this code".
-
-## OPTION RULES (CRITICAL - FOLLOW STRICTLY):
-1. NEVER generate options that are permutations or rearrangements of the same sentence. For example, if the question is about the difference between X and Y, do NOT create 4 options that all say "X does ___ while Y does ___" with swapped descriptions. This is the #1 thing to avoid.
-2. Each option MUST be structurally different - they should start with different words and use different sentence structures.
-3. Options should be concise (1-2 lines max). Avoid long paragraph-style options.
-4. The 4 options should follow this pattern:
-   - One clearly correct answer
-   - One plausible distractor that contains a common misconception
-   - One distractor that is partially correct but missing a key detail
-   - One distractor that sounds technical but is incorrect
-5. Vary option lengths - not all options should be the same length.
-6. Randomize the position of the correct answer across questions (don't always put it first).
-
-## EXAMPLE OF GOOD OPTIONS (for a SQL question about indexes):
-Question: "What is the primary benefit of adding an index on a frequently queried column?"
-Good options:
-- "It speeds up SELECT queries by allowing the database to locate rows without a full table scan" (correct)
-- "It reduces the overall storage size of the table" (plausible misconception)
-- "It guarantees that all values in the column are unique" (confuses index with unique constraint)
-- "It automatically caches the column data in application memory" (sounds technical but wrong)
-
-## EXAMPLE OF BAD OPTIONS (DO NOT DO THIS):
-- "A JOIN combines rows from tables based on a related column, while a UNION combines result-sets of SELECT statements"
-- "A JOIN combines result-sets of SELECT statements, while a UNION combines rows from tables based on a related column"
-- "A JOIN is used to combine rows based on a column, while a UNION combines result-sets"
-- "A JOIN combines result-sets, while a UNION combines rows based on a column"
-These are bad because they are all permutations of the same sentence. NEVER do this.
-
-Return JSON with this exact structure:
-{
-  "questions": [
-    {
-      "id": "q1",
-      "question": "What happens when you call Thread.sleep(0) in Java?",
-      "options": [
-        "The current thread yields its remaining time slice to other threads of equal priority",
-        "The JVM throws an IllegalArgumentException for invalid sleep duration",
-        "The thread is permanently suspended until notify() is called",
-        "Nothing happens — the method returns immediately with no effect"
-      ],
-      "correct_index": 0,
-      "difficulty": "${mapped.label}",
-      "topic": "Java Concurrency",
-      "points": 5
-    }
-  ]
-}
-
-CRITICAL: The "options" array MUST contain 4 complete, meaningful answer choices - NOT just "A", "B", "C", "D".
-Each option must start with a distinct word or phrase.
-
-## QUALITY RULES:
-- Avoid ambiguous answers.
-- Make distractors plausible.
-- Use role-relevant terminology from the job description.
-
-For each question also include an "explanation" field: a 1-2 sentence explanation of why the correct answer is correct.
-
-Return JSON exactly: { "questions": [ { "id": "q1", "question": "...", "options": [...], "correct_index": 0, "difficulty": "...", "topic": "...", "points": 5, "explanation": "..." } ] }`;
-
-      // Adaptive token limit based on question count
-      const mcqMaxTokens = Math.min(16384, 1024 + (count * 250));
-
-      let generated: any;
-      // Single attempt with timeout that respects Netlify's 26s function limit
-      try {
-        console.log(`[/mcq] Generating ${count} MCQs via gpt-4.1-mini...`);
-        generated = await Promise.race<any>([
-          generateJSON<any>(prompt, { maxTokens: mcqMaxTokens }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 22000)),
-        ]);
-        console.log('[/mcq] Generation result keys:', Object.keys(generated || {}));
-      } catch (genErr: any) {
-        console.error('[/mcq] MCQ generation failed:', genErr.message);
-        const fallback = [
-          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5, explanation: 'Git tracks changes to code over time, enabling collaboration and rollback.' },
-          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5, explanation: 'A Stack follows LIFO — the last element pushed is the first one popped.' },
-          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5, explanation: 'API (Application Programming Interface) defines a contract for software components to communicate.' },
-          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5, explanation: 'GET requests retrieve data and are idempotent; they should not change server state.' },
-          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5, explanation: 'Binary search halves the search space each step, giving O(log n) time complexity.' },
-        ].slice(0, count);
-        await supabase.from('assessment_sessions').update({ mcq_questions: fallback, updated_at: new Date().toISOString() }).eq('id', sessionId);
-        return ok(res, fallback);
-      }
-      const questionsRaw = Array.isArray(generated?.questions)
-        ? generated.questions
-        : [];
-      const questions = questionsRaw
-        .map((q: any, idx: number) => ({
-          id: String(q?.id || `q${idx + 1}`),
-          question: String(q?.question || ''),
-          options: Array.isArray(q?.options) ? q.options.map((o: any) => String(o)).slice(0, 4) : [],
-          correct_index: typeof q?.correct_index === 'number' ? q.correct_index : 0,
-          difficulty: String(q?.difficulty || mapped.label),
-          topic: String(q?.topic || 'General'),
-          points: typeof q?.points === 'number' ? q.points : 5,
-          explanation: String(q?.explanation || ''),
-        }))
-        .filter((q: any) => q.question && q.options.length === 4);
-
-      if (!questions.length) {
-        const fallback = [
-          { id: 'fb1', question: 'What is the primary purpose of version control systems like Git?', options: ['To compile code faster', 'To track changes and collaborate on code', 'To deploy applications', 'To write documentation'], correct_index: 1, difficulty: mapped.label, topic: 'Version Control', points: 5 },
-          { id: 'fb2', question: 'Which data structure uses LIFO (Last In, First Out) principle?', options: ['Queue', 'Stack', 'Array', 'Linked List'], correct_index: 1, difficulty: mapped.label, topic: 'Data Structures', points: 5 },
-          { id: 'fb3', question: 'What does API stand for in software development?', options: ['Application Programming Interface', 'Advanced Programming Integration', 'Automated Process Implementation', 'Application Process Integration'], correct_index: 0, difficulty: mapped.label, topic: 'Software Development', points: 5 },
-          { id: 'fb4', question: 'Which HTTP method is typically used to retrieve data from a server?', options: ['POST', 'GET', 'DELETE', 'PUT'], correct_index: 1, difficulty: mapped.label, topic: 'Web Development', points: 5 },
-          { id: 'fb5', question: 'What is the time complexity of binary search in a sorted array?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correct_index: 1, difficulty: mapped.label, topic: 'Algorithms', points: 5 },
-        ].slice(0, count);
-
-        await supabase.from('assessment_sessions').update({
-          mcq_questions: fallback,
-          updated_at: new Date().toISOString(),
-        }).eq('id', sessionId);
-
-        return ok(res, fallback.map((q: any) => ({
-          id: q.id,
-          question: q.question,
-          options: q.options,
-          difficulty: q.difficulty,
-          topic: q.topic,
-          points: q.points,
-        })));
-      }
-
-      await supabase.from('assessment_sessions').update({
-        mcq_questions: questions,
-        updated_at: new Date().toISOString(),
-      }).eq('id', sessionId);
-
-      return ok(res, questions.map((q: any) => ({
-        id: q.id,
-        question: q.question,
-        options: q.options,
-        difficulty: q.difficulty,
-        topic: q.topic,
-        points: q.points,
-      })));
+      return badRequest(res, 'MCQ questions are not available for this session. Please ask the recruiter to resend the assessment.');
     }
 
     // GET /api/assessments/:sessionId/coding
@@ -4107,7 +3922,12 @@ Return JSON exactly: { "questions": [ { "id": "q1", "question": "...", "options"
         return res.status(billingGate.status || 402).json(billingGate);
       }
 
-      const { data: job } = await supabase.from('job_descriptions').select('id, title').eq('id', jobId).eq('created_by', user.id).single();
+      const { data: job } = await supabase
+        .from('job_descriptions')
+        .select('id, title, role, level, description, must_have_skills, good_to_have_skills')
+        .eq('id', jobId)
+        .eq('created_by', user.id)
+        .single();
       if (!job) return notFound(res, 'Job not found');
 
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
@@ -4115,6 +3935,26 @@ Return JSON exactly: { "questions": [ { "id": "q1", "question": "...", "options"
 
       const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
       const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
+
+      if (includeMcq && mcqCount < 1) {
+        return badRequest(res, 'MCQ question count must be at least 1 when MCQ is enabled');
+      }
+
+      let preGeneratedMcqQuestions: any[] = [];
+      if (includeMcq) {
+        try {
+          preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
+            job,
+            mcqCount,
+            difficulty,
+          });
+        } catch (e: any) {
+          console.error('[assessments/invite] MCQ generation failed:', e?.message || e);
+          return res.status(502).json({
+            error: 'Failed to generate MCQ questions for this assessment. Please retry Send Assessment.',
+          });
+        }
+      }
 
       // Auto-calculate time based on questions and difficulty if not provided
       let totalTimeMinutes = body.total_time_minutes;
@@ -4148,6 +3988,7 @@ Return JSON exactly: { "questions": [ { "id": "q1", "question": "...", "options"
             mcq_question_count: mcqCount,
             coding_challenge_count: codingCount,
             total_time_minutes: totalTimeMinutes,
+            mcq_questions: preGeneratedMcqQuestions,
             proctoring_data: {
               tab_switches: 0,
               fullscreen_exits: 0,

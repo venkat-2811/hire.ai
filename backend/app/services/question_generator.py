@@ -260,16 +260,17 @@ class QuestionGeneratorService:
                 print(f"Generated {len(questions)} valid questions, need {additional_needed} more")
                 # Could implement recursive call here or use fallback
             
-            if not questions:
-                raise RuntimeError(f"Failed to generate any valid MCQ questions for {count} requested")
+            if len(questions) != count:
+                raise RuntimeError(
+                    f"Failed to generate required MCQ count: generated {len(questions)}, requested {count}"
+                )
 
             print(f"Successfully generated {len(questions)} MCQ questions out of {count} requested")
             return questions
             
         except Exception as e:
             print(f"Error generating MCQ questions: {e}")
-            # Return fallback questions matching requested count
-            return self._get_fallback_mcq_questions(count)
+            raise RuntimeError("MCQ generation failed") from e
     
     def _validate_and_format_question(self, question_data: dict, target_difficulty: str) -> dict:
         """Validate and format a single MCQ question."""
@@ -385,164 +386,6 @@ class QuestionGeneratorService:
         except Exception as e:
             print(f"Error generating coding challenges: {e}")
             return self._get_fallback_coding_challenges(count)
-    
-    def _get_fallback_mcq_questions(self, count: int) -> List[dict]:
-        """Fallback MCQ questions if AI generation fails. Supports 1-100 questions."""
-        
-        # Expanded fallback pool with diverse topics and difficulties
-        fallback_pool = [
-            # Easy questions
-            {
-                "question": "What is the primary purpose of version control systems like Git?",
-                "options": [
-                    "To compile code faster",
-                    "To track changes and collaborate on code",
-                    "To deploy applications", 
-                    "To write documentation"
-                ],
-                "correct_index": 1,
-                "difficulty": "easy",
-                "topic": "Version Control",
-                "points": 3,
-            },
-            {
-                "question": "Which data structure uses LIFO (Last In, First Out) principle?",
-                "options": ["Queue", "Stack", "Array", "Linked List"],
-                "correct_index": 1,
-                "difficulty": "easy", 
-                "topic": "Data Structures",
-                "points": 3,
-            },
-            {
-                "question": "What does API stand for in software development?",
-                "options": [
-                    "Application Programming Interface",
-                    "Advanced Programming Integration",
-                    "Automated Process Implementation",
-                    "Application Process Integration"
-                ],
-                "correct_index": 0,
-                "difficulty": "easy",
-                "topic": "Software Development",
-                "points": 3,
-            },
-            {
-                "question": "Which HTTP method is typically used to retrieve data from a server?",
-                "options": ["POST", "GET", "DELETE", "PUT"],
-                "correct_index": 1,
-                "difficulty": "easy",
-                "topic": "Web Development",
-                "points": 3,
-            },
-            # Medium questions
-            {
-                "question": "What is the time complexity of binary search in a sorted array?",
-                "options": ["O(n)", "O(log n)", "O(n²)", "O(1)"],
-                "correct_index": 1,
-                "difficulty": "medium",
-                "topic": "Algorithms",
-                "points": 5,
-            },
-            {
-                "question": "Which principle states that software entities should be open for extension but closed for modification?",
-                "options": [
-                    "DRY (Don't Repeat Yourself)",
-                    "SOLID (Open/Closed Principle)",
-                    "KISS (Keep It Simple, Stupid)",
-                    "YAGNI (You Aren't Gonna Need It)"
-                ],
-                "correct_index": 1,
-                "difficulty": "medium",
-                "topic": "Software Design",
-                "points": 5,
-            },
-            {
-                "question": "In object-oriented programming, what is encapsulation?",
-                "options": [
-                    "The ability of a class to inherit from multiple classes",
-                    "Bundling data and methods that operate on that data",
-                    "The process of converting objects to strings",
-                    "Creating multiple methods with the same name"
-                ],
-                "correct_index": 1,
-                "difficulty": "medium",
-                "topic": "Object-Oriented Programming",
-                "points": 5,
-            },
-            {
-                "question": "What is the primary benefit of using containerization with Docker?",
-                "options": [
-                    "Automatic code compilation",
-                    "Consistent environments across development and production",
-                    "Built-in version control",
-                    "Enhanced security by default"
-                ],
-                "correct_index": 1,
-                "difficulty": "medium",
-                "topic": "DevOps",
-                "points": 5,
-            },
-            # Hard questions
-            {
-                "question": "In distributed systems, what does the CAP theorem state about consistency, availability, and partition tolerance?",
-                "options": [
-                    "You can only have all three simultaneously",
-                    "You can have any two of the three properties simultaneously",
-                    "You must choose between consistency and availability only",
-                    "Partition tolerance is optional in most systems"
-                ],
-                "correct_index": 1,
-                "difficulty": "hard",
-                "topic": "Distributed Systems",
-                "points": 8,
-            },
-            {
-                "question": "What is the primary difference between NoSQL and SQL databases regarding data consistency?",
-                "options": [
-                    "NoSQL databases don't support any consistency guarantees",
-                    "NoSQL typically prioritizes availability over strict consistency",
-                    "SQL databases are always faster than NoSQL databases",
-                    "NoSQL databases cannot handle transactions"
-                ],
-                "correct_index": 1,
-                "difficulty": "hard",
-                "topic": "Databases",
-                "points": 8,
-            },
-            {
-                "question": "In microservices architecture, what pattern helps manage service discovery and load balancing?",
-                "options": [
-                    "Circuit Breaker Pattern",
-                    "API Gateway Pattern",
-                    "Event Sourcing Pattern",
-                    "CQRS Pattern"
-                ],
-                "correct_index": 1,
-                "difficulty": "hard",
-                "topic": "Software Architecture",
-                "points": 8,
-            }
-        ]
-        
-        # Shuffle and select requested count
-        import random
-        random.shuffle(fallback_pool)
-        
-        result = []
-        for i in range(min(count, len(fallback_pool))):
-            question = fallback_pool[i].copy()
-            question["id"] = str(uuid.uuid4())
-            result.append(question)
-        
-        # If more questions needed than in pool, repeat with variations
-        while len(result) < count:
-            base_question = fallback_pool[len(result) % len(fallback_pool)]
-            question = base_question.copy()
-            question["id"] = str(uuid.uuid4())
-            question["question"] = f"[Variation {len(result)+1}] {question['question']}"
-            result.append(question)
-        
-        return result[:count]
     
     def _get_fallback_coding_challenges(self, count: int) -> List[dict]:
         """Fallback coding challenges if AI generation fails."""
