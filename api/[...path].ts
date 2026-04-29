@@ -4099,27 +4099,10 @@ Return JSON:
         return res.status(500).json({ error: 'Failed to queue assessment invite' });
       }
 
-      // Trigger background processing via Supabase Edge Function
-      const supabaseUrl = process.env.SUPABASE_URL || 'https://your-project.supabase.co';
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      
-      if (supabaseServiceKey) {
-        fetch(`${supabaseUrl}/functions/v1/process-assessment-invite`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ queue_id: queueEntry.id })
-        }).catch(err => {
-          console.error('[assessments/invite] Failed to trigger background processing:', err);
-        });
-      } else {
-        // Fallback: process locally (may timeout on Netlify)
-        processAssessmentInviteQueue(supabase, queueEntry.id).catch(err => {
-          console.error('[assessments/invite] Background processing error:', err);
-        });
-      }
+      // Trigger background processing (fire and forget)
+      processAssessmentInviteQueue(supabase, queueEntry.id).catch(err => {
+        console.error('[assessments/invite] Background processing error:', err);
+      });
 
       return ok(res, {
         queue_id: queueEntry.id,

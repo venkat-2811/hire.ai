@@ -5,11 +5,8 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 serve(async (req) => {
-  let queue_id: string | null = null
-  
   try {
-    const parsed = await req.json()
-    queue_id = parsed.queue_id
+    const { queue_id } = await req.json()
     
     if (!queue_id) {
       return new Response(JSON.stringify({ error: 'queue_id is required' }), {
@@ -162,9 +159,9 @@ serve(async (req) => {
       invites_sent: invitesSent,
       failed_candidates: failed,
       completed_at: new Date().toISOString(),
-    }).eq('id', queue_id)
+    }).eq('id', queueId)
 
-    console.log(`[assessment-invite-worker] Completed queue entry ${queue_id}: ${invitesSent} invites sent, ${failed.length} failed`)
+    console.log(`[assessment-invite-worker] Completed queue entry ${queueId}: ${invitesSent} invites sent, ${failed.length} failed`)
 
     return new Response(JSON.stringify({ success: true, invites_sent: invitesSent, failed }), {
       status: 200,
@@ -175,7 +172,6 @@ serve(async (req) => {
     console.error('[assessment-invite-worker] Error:', error?.message || error)
     
     if (queue_id) {
-      const supabase = createClient(supabaseUrl, supabaseServiceKey)
       await supabase.from('assessment_invite_queue').update({
         status: 'failed',
         error_message: error?.message || 'Unknown error',
