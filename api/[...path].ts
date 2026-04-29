@@ -238,11 +238,18 @@ async function generateAssessmentMcqsForJob(opts: {
   // ── Normalise raw LLM output → structured MCQ objects ──────────────────────
   // NOTE: We do NOT trust correct_index from the LLM (it always returns 0).
   // Instead we ask the LLM to name the correct answer by label, then look it up.
+  // Strip leading "A." / "A)" / "A -" style labels from option text — LLMs often
+  // include them even though we render the options without labels in the UI.
+  const stripOptionLabel = (text: string): string => {
+    // Matches patterns like "A. ", "B) ", "C - ", "D: " at the very start
+    return text.replace(/^[A-Da-d][.\)\-:]\s*/, '').trim();
+  };
+
   const normalizeQuestions = (raw: any[], defaultDifficulty: string): any[] => {
     return raw
       .map((q: any, i: number) => {
         const options: string[] = Array.isArray(q?.options)
-          ? q.options.map((o: any) => String(o).trim()).filter(Boolean).slice(0, 4)
+          ? q.options.map((o: any) => stripOptionLabel(String(o).trim())).filter(Boolean).slice(0, 4)
           : [];
         if (options.length !== 4) return null;
 
@@ -2370,8 +2377,107 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
       const user = await requireAuth(req, res);
       if (!user) return;
 
-      // Offer letter flow is temporarily disabled.
-      return res.status(503).json({ error: 'Offer letter functionality is temporarily disabled.' });
+      const { candidate_ids, job_id, company_name } = req.body as {
+        candidate_ids?: string[];
+        job_id?: string;
+        company_name?: string;
+      };
+      if (!candidate_ids?.length || !job_id) {
+        return badRequest(res, 'candidate_ids and job_id are required');
+      }
+
+      const { data: job } = await supabase
+        .from('job_descriptions')
+        .select('id, title')
+        .eq('id', job_id)
+        .eq('created_by', user.id)
+        .single();
+      if (!job) return notFound(res, 'Job not found or access denied');
+
+      const { data: candidates } = await supabase
+        .from('candidates')
+        .select('id, email, full_name')
+        .in('id', candidate_ids);
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
+      const resolvedCompany = (company_name || '').trim() || 'Our Company';
+      let emailsSent = 0;
+      const errorMessages: string[] = [];
+
+      for (const c of candidates) {
+        try {
+          // Send the offer letter as a rich HTML email (no PDF attachment needed)
+          const offerHtml = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offer Letter</title></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr><td style="background:linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%);padding:40px 48px;text-align:center;">
+          <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">Offer Letter</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">${resolvedCompany}</p>
+        </td></tr>
+        <tr><td style="padding:48px;">
+          <p style="margin:0 0 20px;font-size:16px;color:#374151;">Dear <strong>${c.full_name}</strong>,</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
+            We are delighted to extend a formal offer of employment for the position of:
+          </p>
+          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:20px 24px;margin:0 0 28px;text-align:center;">
+            <p style="margin:0;font-size:20px;font-weight:700;color:#065F46;">${job.title}</p>
+            <p style="margin:6px 0 0;font-size:14px;color:#047857;">${resolvedCompany}</p>
+          </div>
+          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
+            This offer is contingent upon the successful completion of background verification and any other standard onboarding requirements. Our HR team will be in touch shortly with further details regarding your start date, compensation package, and onboarding process.
+          </p>
+          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
+            Please reply to this email confirming your acceptance of this offer at your earliest convenience.
+          </p>
+          <p style="margin:0 0 32px;font-size:15px;color:#4B5563;line-height:1.7;">
+            We look forward to welcoming you to the team and are excited about the contributions you will bring to <strong>${resolvedCompany}</strong>.
+          </p>
+          <div style="border-top:1px solid #E5E7EB;padding-top:28px;">
+            <p style="margin:0;font-size:14px;color:#6B7280;">
+              Warm regards,<br/>
+              <strong>Talent Acquisition Team</strong><br/>
+              ${resolvedCompany}
+            </p>
+          </div>
+        </td></tr>
+        <tr><td style="background:#F9FAFB;padding:24px 48px;text-align:center;border-top:1px solid #E5E7EB;">
+          <p style="margin:0;font-size:13px;color:#9CA3AF;">This email was sent by Hire.AI &mdash; Intelligent Hiring Platform</p>
+          <p style="margin:4px 0 0;font-size:13px;color:#9CA3AF;">&copy; ${new Date().getFullYear()} Hire.AI. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+          await sendEmail(
+            c.email,
+            `Formal Offer Letter – ${job.title} at ${resolvedCompany}`,
+            offerHtml
+          );
+
+          // Update final_status to offer_sent in the analytics view via job_applications
+          await supabase
+            .from('job_applications')
+            .update({ final_status: 'offer_sent', updated_at: new Date().toISOString() })
+            .eq('candidate_id', c.id)
+            .eq('job_id', job_id);
+
+          emailsSent++;
+        } catch (e: any) {
+          errorMessages.push(`${c.full_name}: ${e.message}`);
+        }
+      }
+
+      return ok(res, {
+        success: emailsSent > 0,
+        emails_sent: emailsSent,
+        error_messages: errorMessages,
+      });
     }
 
     // POST /api/candidates/bulk-update-interview-mode
@@ -4017,26 +4123,26 @@ Return JSON:
       let preGeneratedMcqQuestions: any[] = [];
       if (includeMcq) {
         try {
-          // Retry MCQ generation with exponential backoff for reliability
+          // Retry MCQ generation with short backoff to stay within Vercel timeout budget.
+          // 3 attempts with 1s / 2s gaps keeps total overhead under ~10s.
           let lastError: any;
-          for (let retry = 0; retry < 5; retry++) {
+          for (let retry = 0; retry < 3; retry++) {
             try {
               preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
                 job,
                 mcqCount,
                 difficulty,
               });
-              if (preGeneratedMcqQuestions.length === mcqCount) {
-                break; // Success - got all required questions
+              if (preGeneratedMcqQuestions.length >= Math.max(1, Math.floor(mcqCount * 0.8))) {
+                break; // Success — got at least 80% of requested questions
               }
               throw new Error(`Generated ${preGeneratedMcqQuestions.length} questions, expected ${mcqCount}`);
             } catch (e: any) {
               lastError = e;
               console.error(`[assessments/invite] MCQ generation attempt ${retry + 1} failed:`, e?.message || e);
-              if (retry < 4) {
-                // Exponential backoff: 2s, 4s, 8s, 16s
-                const backoffTime = Math.min(2000 * Math.pow(2, retry), 16000);
-                await new Promise(resolve => setTimeout(resolve, backoffTime));
+              if (retry < 2) {
+                // Short linear backoff: 1s, 2s
+                await new Promise(resolve => setTimeout(resolve, 1000 * (retry + 1)));
               }
             }
           }
@@ -4050,7 +4156,7 @@ Return JSON:
         } catch (e: any) {
           console.error('[assessments/invite] MCQ generation failed after all retries:', e?.message || e);
           return res.status(502).json({
-            error: 'Failed to generate MCQ questions for this assessment. Please retry Send Assessment.',
+            error: 'MCQ generation failed. Please try again — if the problem persists, reduce the number of MCQ questions or try a different difficulty.',
           });
         }
       }
@@ -4077,14 +4183,14 @@ Return JSON:
       for (const c of candidates) {
         try {
           const token = crypto.randomBytes(32).toString('base64url');
-          await supabase.from('assessment_sessions').insert({
+          const { error: insertError } = await supabase.from('assessment_sessions').insert({
             id: uuidv4(),
             candidate_id: c.id,
             job_id: jobId,
             token,
             status: 'pending',
             deadline: deadline.toISOString(),
-            mcq_question_count: mcqCount,
+            mcq_question_count: preGeneratedMcqQuestions.length || mcqCount,
             coding_challenge_count: codingCount,
             total_time_minutes: totalTimeMinutes,
             mcq_questions: preGeneratedMcqQuestions,
@@ -4103,11 +4209,27 @@ Return JSON:
             created_at: new Date().toISOString(),
           });
 
-          await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
+          if (insertError) {
+            console.error('[assessments/invite] DB insert failed for candidate', c.id, insertError.message);
+            failed.push(c.id);
+            continue;
+          }
+
+          try {
+            await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
+          } catch (emailErr: any) {
+            // Email failure is non-fatal — the session is created; recruiter can resend later
+            console.error('[assessments/invite] Email send failed for candidate', c.id, emailErr?.message || emailErr);
+          }
           invitesSent += 1;
-        } catch {
+        } catch (err: any) {
+          console.error('[assessments/invite] Unexpected error for candidate', c.id, err?.message || err);
           failed.push(c.id);
         }
+      }
+
+      if (invitesSent === 0 && candidates.length > 0) {
+        return res.status(500).json({ error: 'Failed to create assessment sessions for all selected candidates. Please try again.' });
       }
 
       return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed });

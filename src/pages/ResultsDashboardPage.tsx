@@ -96,7 +96,9 @@ export default function ResultsDashboardPage() {
   // Dialog States
   const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [offerLetterDialogOpen, setOfferLetterDialogOpen] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
+  const [companyName, setCompanyName] = useState('');
 
   useEffect(() => {
     async function loadGlobalResults() {
@@ -386,6 +388,54 @@ export default function ResultsDashboardPage() {
       setSelectedCandidates(new Set());
     } catch (e) {
       toast.error('Failed to send rejection emails');
+    } finally {
+      setSendingEmails(false);
+    }
+  };
+
+  const sendOfferLetterEmails = async () => {
+    if (selectedCandidates.size === 0) return;
+    if (!selectedJobId) {
+      toast.error('Please select a job first');
+      return;
+    }
+
+    setSendingEmails(true);
+    try {
+      const token = await getToken();
+      const candidateIds = Array.from(selectedCandidates);
+      const response = await fetch(`${API_BASE_URL}/candidates/send-offer-letter`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          candidate_ids: candidateIds,
+          job_id: selectedJobId,
+          company_name: companyName.trim() || undefined,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data?.error || 'Failed to send offer letters');
+        return;
+      }
+
+      if (data?.error_messages?.length) {
+        toast.error(`Some emails failed: ${data.error_messages[0]}`);
+      } else {
+        toast.success(`Offer letter${data.emails_sent > 1 ? 's' : ''} sent to ${data.emails_sent} candidate(s)`);
+        // Mark all as offer_sent
+        const newOfferSent = new Set(offerSentIds);
+        candidateIds.forEach((id) => newOfferSent.add(id));
+        setOfferSentIds(newOfferSent);
+      }
+      setOfferLetterDialogOpen(false);
+      setSelectedCandidates(new Set());
+    } catch (e) {
+      toast.error('Failed to send offer letters');
     } finally {
       setSendingEmails(false);
     }
@@ -798,6 +848,19 @@ export default function ResultsDashboardPage() {
                             </Button>
                           </>
                         )}
+                        {/* Show Offer Letter button only when all selected candidates are accepted */}
+                        {selectedCandidates.size > 0 &&
+                          Array.from(selectedCandidates).every(id => acceptedCandidateIds.has(id)) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                              onClick={() => setOfferLetterDialogOpen(true)}
+                            >
+                              <Mail className="mr-2 h-4 w-4" />
+                              Send Offer Letter
+                            </Button>
+                          )}
                       </div>
                     </div>
 
@@ -1062,7 +1125,49 @@ export default function ResultsDashboardPage() {
                 </DialogContent>
               </Dialog>
 
-              {/* Offer letter functionality temporarily disabled. */}
+              {/* ─── Offer Letter Dialog ─────────────────────────────────────── */}
+              <Dialog open={offerLetterDialogOpen} onOpenChange={setOfferLetterDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Send Offer Letter</DialogTitle>
+                    <DialogDescription>
+                      Send a formal offer letter email to{' '}
+                      <strong>{selectedCandidates.size}</strong> selected candidate(s).
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="py-2 space-y-4">
+                    <div className="space-y-1">
+                      <Label htmlFor="company-name">Company Name</Label>
+                      <Input
+                        id="company-name"
+                        placeholder="e.g. Acme Corp"
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Leave blank to use "Our Company" as a placeholder.
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setOfferLetterDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={sendOfferLetterEmails}
+                      disabled={sendingEmails}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                    >
+                      {sendingEmails ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="mr-2 h-4 w-4" />
+                      )}
+                      Send Offer Letter{selectedCandidates.size > 1 ? 's' : ''}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </>
           )}
         </div>
