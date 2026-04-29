@@ -1,6 +1,7 @@
 from typing import Optional, List, Dict, Any
 import hashlib
 import uuid
+import random
 from datetime import datetime
 from app.models.schemas import (
     ResumeData, JobDescription, InterviewQuestionGenerated, InterviewQuestion
@@ -240,26 +241,28 @@ class QuestionGeneratorService:
             result = await self.openai.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
-                temperature=0.7,
+                temperature=0.85,
                 max_tokens=max_tokens,
                 raise_on_error=True
             )
-            
+
             questions = []
+            seen_topics: set = set()  # topic-fingerprint deduplication
             generated_questions = result.get("questions", [])
-            
-            # Enhanced validation and quality control
-            for q in generated_questions[:count]:
+
+            for q in generated_questions:
+                if len(questions) >= count:
+                    break
                 question_data = self._validate_and_format_question(q, difficulty)
-                if question_data:
-                    questions.append(question_data)
-            
-            # If we don't have enough valid questions, try to generate more
-            if len(questions) < count and len(questions) > 0:
-                additional_needed = count - len(questions)
-                print(f"Generated {len(questions)} valid questions, need {additional_needed} more")
-                # Could implement recursive call here or use fallback
-            
+                if not question_data:
+                    continue
+                # Near-duplicate topic check
+                fingerprint = self._topic_fingerprint(question_data['question'])
+                if fingerprint and fingerprint in seen_topics:
+                    continue
+                seen_topics.add(fingerprint)
+                questions.append(question_data)
+
             if len(questions) != count:
                 raise RuntimeError(
                     f"Failed to generate required MCQ count: generated {len(questions)}, requested {count}"
@@ -267,50 +270,81 @@ class QuestionGeneratorService:
 
             print(f"Successfully generated {len(questions)} MCQ questions out of {count} requested")
             return questions
-            
+
         except Exception as e:
             print(f"Error generating MCQ questions: {e}")
             raise RuntimeError("MCQ generation failed") from e
     
+    def _topic_fingerprint(self, text: str) -> str:
+        """Extract a normalised topic key for near-duplicate detection."""
+        stop_words = {
+            'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+            'should', 'may', 'might', 'must', 'can', 'to', 'of', 'in', 'for',
+            'on', 'with', 'at', 'by', 'from', 'as', 'into', 'about', 'your',
+            'this', 'that', 'which', 'what', 'when', 'where', 'how', 'why',
+            'if', 'or', 'and', 'but', 'not', 'no', 'so', 'than', 'then',
+            'its', 'it', 'you',
+        }
+        import re
+        words = re.sub(r'[^a-z0-9\s]', ' ', text.lower()).split()
+        keywords = [w for w in words if len(w) > 2 and w not in stop_words][:8]
+        return ' '.join(keywords)
+
     def _validate_and_format_question(self, question_data: dict, target_difficulty: str) -> dict:
-        """Validate and format a single MCQ question."""
+        """Validate, format, and shuffle options for a single MCQ question.
+
+        The correct answer is identified by label (A/B/C/D) when the LLM provides
+        'correct_answer_label', falling back to 'correct_index' otherwise.
+        Options are then shuffled randomly so the correct answer is not always at
+        index 0 (the LLM's default bias).
+        """
         try:
-            # Validate options
+            # Validate and deduplicate options
             options = question_data.get("options", [])
             if not isinstance(options, list) or len(options) != 4:
                 return None
-                
-            # Convert options to strings and ensure uniqueness
+
             formatted_options = []
-            seen_options = set()
+            seen_options: set = set()
             for opt in options[:4]:
                 opt_str = str(opt).strip()
                 if opt_str and opt_str not in seen_options:
                     formatted_options.append(opt_str)
                     seen_options.add(opt_str)
-                    
+
             if len(formatted_options) != 4:
                 return None
-            
-            # Validate correct index
-            correct_index = question_data.get("correct_index", 0)
-            try:
-                correct_index = int(correct_index)
-                if correct_index < 0 or correct_index > 3:
+
+            # ── Resolve the correct answer ───────────────────────────────
+            label_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+            label = str(question_data.get('correct_answer_label', '')).strip().upper()
+            if label in label_map:
+                correct_index = label_map[label]
+            else:
+                try:
+                    correct_index = int(question_data.get('correct_index', 0))
+                    if correct_index < 0 or correct_index > 3:
+                        correct_index = 0
+                except (ValueError, TypeError):
                     correct_index = 0
-            except (ValueError, TypeError):
-                correct_index = 0
-            
+
+            # ── Programmatic shuffle — the ONLY reliable way to randomise positions ──
+            # LLMs have a strong bias toward placing the correct answer at index 0.
+            correct_answer = formatted_options[correct_index]
+            random.shuffle(formatted_options)
+            correct_index = formatted_options.index(correct_answer)
+
             # Validate question text
             question_text = question_data.get("question", "").strip()
             if not question_text or len(question_text) < 10:
                 return None
-            
+
             # Validate difficulty
             difficulty = question_data.get("difficulty", target_difficulty)
             if difficulty not in ["easy", "medium", "hard"]:
                 difficulty = target_difficulty
-            
+
             # Validate points
             points = question_data.get("points", 5)
             try:
@@ -319,7 +353,7 @@ class QuestionGeneratorService:
                     points = 5
             except (ValueError, TypeError):
                 points = 5
-            
+
             return {
                 "id": str(uuid.uuid4()),
                 "question": question_text,
@@ -329,7 +363,7 @@ class QuestionGeneratorService:
                 "topic": question_data.get("topic", "General"),
                 "points": points,
             }
-            
+
         except Exception as e:
             print(f"Question validation failed: {e}")
             return None
