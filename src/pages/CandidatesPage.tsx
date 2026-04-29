@@ -270,50 +270,9 @@ export default function CandidatesPage() {
       }
 
       const data = await response.json();
-      
-      // Handle async processing
-      if (data.queue_id && data.status === 'processing') {
-        toast.info('Assessment invites are being processed. This may take a moment...');
-        
-        // Poll for status
-        let pollCount = 0;
-        const maxPolls = 60; // 5 minutes with 5-second intervals
-        
-        while (pollCount < maxPolls) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          pollCount++;
-          
-          const statusResponse = await fetch(`/api/assessments/invite/status?queue_id=${data.queue_id}`, {
-            headers: {
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-            },
-          });
-          
-          if (statusResponse.ok) {
-            const statusData = await statusResponse.json();
-            
-            if (statusData.status === 'completed') {
-              toast.success(`Assessment invites sent to ${statusData.invites_sent} candidate(s)`);
-              setAssessmentDialogOpen(false);
-              setSelectedIds(new Set());
-              return;
-            } else if (statusData.status === 'failed') {
-              throw new Error(statusData.error_message || 'Failed to process assessment invites');
-            }
-            // Still processing, continue polling
-          }
-        }
-        
-        // Timeout after max polls
-        toast.warning('Assessment invites are still processing. Check back later for status.');
-        setAssessmentDialogOpen(false);
-        setSelectedIds(new Set());
-      } else {
-        // Legacy sync response (fallback)
-        toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
-        setAssessmentDialogOpen(false);
-        setSelectedIds(new Set());
-      }
+      toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
+      setAssessmentDialogOpen(false);
+      setSelectedIds(new Set());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to send assessment invites');
     } finally {

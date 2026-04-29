@@ -3866,178 +3866,7 @@ Return JSON:
       return ok(res, { success: true, mcq_score: mcqVal, coding_score: codingScore == null ? null : codingVal, total_score: totalScore });
     }
 
-    // GET /api/assessments/invite/status/:queueId - Status polling endpoint
-    if (req.method === 'GET' && segments.length === 3 && segments[1] === 'invite' && segments[2] === 'status') {
-      const queueId = req.query.queue_id as string;
-      if (!queueId) return badRequest(res, 'queue_id is required');
-
-      const user = await requireAuth(req, res);
-      if (!user) return;
-
-      const { data: queueEntry, error } = await supabase
-        .from('assessment_invite_queue')
-        .select('*')
-        .eq('id', queueId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (error || !queueEntry) {
-        return notFound(res, 'Queue entry not found');
-      }
-
-      return ok(res, {
-        id: queueEntry.id,
-        status: queueEntry.status,
-        invites_sent: queueEntry.invites_sent,
-        failed_candidates: queueEntry.failed_candidates,
-        error_message: queueEntry.error_message,
-        created_at: queueEntry.created_at,
-        completed_at: queueEntry.completed_at,
-      });
-    }
-
-    // Background worker function to process assessment invite queue
-    async function processAssessmentInviteQueue(supabase: SupabaseClient, queueId: string) {
-      console.log(`[assessment-invite-worker] Processing queue entry: ${queueId}`);
-      
-      try {
-        // Update status to processing
-        await supabase.from('assessment_invite_queue').update({ status: 'processing' }).eq('id', queueId);
-
-        // Fetch queue entry
-        const { data: queueEntry, error: fetchError } = await supabase
-          .from('assessment_invite_queue')
-          .select('*')
-          .eq('id', queueId)
-          .single();
-
-        if (fetchError || !queueEntry) {
-          throw new Error(`Failed to fetch queue entry: ${fetchError?.message}`);
-        }
-
-        // Fetch job details
-        const { data: job } = await supabase
-          .from('job_descriptions')
-          .select('id, title, role, level, description, must_have_skills, good_to_have_skills')
-          .eq('id', queueEntry.job_id)
-          .single();
-
-        if (!job) throw new Error('Job not found');
-
-        // Fetch candidates
-        const candidateIds = queueEntry.candidate_ids as string[];
-        const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
-        if (!candidates?.length) throw new Error('No candidates found');
-
-        // Generate MCQ questions if needed
-        let preGeneratedMcqQuestions: any[] = [];
-        if (queueEntry.include_mcq && queueEntry.mcq_question_count > 0) {
-          console.log(`[assessment-invite-worker] Generating ${queueEntry.mcq_question_count} MCQ questions`);
-          let lastError: any;
-          for (let retry = 0; retry < 5; retry++) {
-            try {
-              preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
-                job,
-                mcqCount: queueEntry.mcq_question_count,
-                difficulty: queueEntry.difficulty,
-              });
-              if (preGeneratedMcqQuestions.length === queueEntry.mcq_question_count) {
-                break;
-              }
-              throw new Error(`Generated ${preGeneratedMcqQuestions.length} questions, expected ${queueEntry.mcq_question_count}`);
-            } catch (e: any) {
-              lastError = e;
-              console.error(`[assessment-invite-worker] MCQ generation attempt ${retry + 1} failed:`, e?.message || e);
-              if (retry < 4) {
-                const backoffTime = Math.min(2000 * Math.pow(2, retry), 16000);
-                await new Promise(resolve => setTimeout(resolve, backoffTime));
-              }
-            }
-          }
-          if (preGeneratedMcqQuestions.length === 0) {
-            throw lastError || new Error('MCQ generation failed after retries');
-          }
-          if (preGeneratedMcqQuestions.length < queueEntry.mcq_question_count) {
-            console.warn(`[assessment-invite-worker] Generated ${preGeneratedMcqQuestions.length}/${queueEntry.mcq_question_count} questions, proceeding with available questions`);
-          }
-        }
-
-        // Calculate total time if not provided
-        let totalTimeMinutes = queueEntry.total_time_minutes;
-        if (!totalTimeMinutes) {
-          const mcqTimePerQuestion = queueEntry.difficulty === 'easy' ? 1 : queueEntry.difficulty === 'hard' ? 2 : 1.5;
-          const codingTimePerChallenge = queueEntry.difficulty === 'easy' ? 15 : queueEntry.difficulty === 'hard' ? 30 : 20;
-          totalTimeMinutes = Math.ceil(
-            (queueEntry.mcq_question_count * mcqTimePerQuestion) + (queueEntry.coding_challenge_count * codingTimePerChallenge)
-          );
-          totalTimeMinutes = Math.max(15, totalTimeMinutes);
-        }
-
-        const deadline = new Date(Date.now() + Number(queueEntry.deadline_hours) * 60 * 60 * 1000);
-        const frontendUrl = 'https://hiretec.netlify.app'; // Default frontend URL
-
-        let invitesSent = 0;
-        const failed: string[] = [];
-
-        // Create assessment sessions and send invites
-        for (const c of candidates) {
-          try {
-            const token = crypto.randomBytes(32).toString('base64url');
-            await supabase.from('assessment_sessions').insert({
-              id: uuidv4(),
-              candidate_id: c.id,
-              job_id: queueEntry.job_id,
-              token,
-              status: 'pending',
-              deadline: deadline.toISOString(),
-              mcq_question_count: queueEntry.mcq_question_count,
-              coding_challenge_count: queueEntry.coding_challenge_count,
-              total_time_minutes: totalTimeMinutes,
-              mcq_questions: preGeneratedMcqQuestions,
-              proctoring_data: {
-                tab_switches: 0,
-                fullscreen_exits: 0,
-                copy_paste_attempts: 0,
-                warnings: [],
-                terminated: false,
-                assessment_config: {
-                  include_mcq: queueEntry.include_mcq,
-                  include_coding: queueEntry.include_coding,
-                  difficulty: queueEntry.difficulty,
-                },
-              },
-              created_at: new Date().toISOString(),
-            });
-
-            await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
-            invitesSent += 1;
-          } catch (e: any) {
-            console.error(`[assessment-invite-worker] Failed to send invite to ${c.email}:`, e?.message);
-            failed.push(c.id);
-          }
-        }
-
-        // Update queue entry as completed
-        await supabase.from('assessment_invite_queue').update({
-          status: 'completed',
-          invites_sent: invitesSent,
-          failed_candidates: failed,
-          completed_at: new Date().toISOString(),
-        }).eq('id', queueId);
-
-        console.log(`[assessment-invite-worker] Completed queue entry ${queueId}: ${invitesSent} invites sent, ${failed.length} failed`);
-
-      } catch (error: any) {
-        console.error(`[assessment-invite-worker] Failed to process queue entry ${queueId}:`, error?.message || error);
-        await supabase.from('assessment_invite_queue').update({
-          status: 'failed',
-          error_message: error?.message || 'Unknown error',
-          completed_at: new Date().toISOString(),
-        }).eq('id', queueId);
-      }
-    }
-
-    // POST /api/assessments/invite (manager) - Async processing
+    // POST /api/assessments/invite (manager)
     if (req.method === 'POST' && segments.length === 2 && segments[1] === 'invite') {
       const user = await requireAuth(req, res);
       if (!user) return;
@@ -4051,7 +3880,6 @@ Return JSON:
       const difficulty = (body.difficulty as string) || 'medium';
       const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
       const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
-      const totalTimeMinutes = body.total_time_minutes;
 
       const billingGate = await checkPlanAccess(supabase, user.id, 'assessment_invite', {
         quantity: Math.max(1, (candidateIds || []).length),
@@ -4071,44 +3899,110 @@ Return JSON:
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
+      const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
+      const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
+
       if (includeMcq && mcqCount < 1) {
         return badRequest(res, 'MCQ question count must be at least 1 when MCQ is enabled');
       }
 
-      // Create queue entry for async processing
-      const { data: queueEntry, error: queueError } = await supabase
-        .from('assessment_invite_queue')
-        .insert({
-          user_id: user.id,
-          job_id: jobId,
-          candidate_ids: candidateIds,
-          status: 'processing',
-          deadline_hours: deadlineHours,
-          include_mcq: includeMcq,
-          include_coding: includeCoding,
-          mcq_question_count: mcqCount,
-          coding_challenge_count: codingCount,
-          difficulty,
-          total_time_minutes: totalTimeMinutes,
-        })
-        .select()
-        .single();
-
-      if (queueError || !queueEntry) {
-        console.error('[assessments/invite] Failed to create queue entry:', queueError);
-        return res.status(500).json({ error: 'Failed to queue assessment invite' });
+      let preGeneratedMcqQuestions: any[] = [];
+      if (includeMcq) {
+        try {
+          // Retry MCQ generation with exponential backoff for reliability
+          let lastError: any;
+          for (let retry = 0; retry < 5; retry++) {
+            try {
+              preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
+                job,
+                mcqCount,
+                difficulty,
+              });
+              if (preGeneratedMcqQuestions.length === mcqCount) {
+                break; // Success - got all required questions
+              }
+              throw new Error(`Generated ${preGeneratedMcqQuestions.length} questions, expected ${mcqCount}`);
+            } catch (e: any) {
+              lastError = e;
+              console.error(`[assessments/invite] MCQ generation attempt ${retry + 1} failed:`, e?.message || e);
+              if (retry < 4) {
+                // Exponential backoff: 2s, 4s, 8s, 16s
+                const backoffTime = Math.min(2000 * Math.pow(2, retry), 16000);
+                await new Promise(resolve => setTimeout(resolve, backoffTime));
+              }
+            }
+          }
+          if (preGeneratedMcqQuestions.length === 0) {
+            throw lastError || new Error('MCQ generation failed after retries');
+          }
+          // If we got some questions but not all, use what we have and log warning
+          if (preGeneratedMcqQuestions.length < mcqCount) {
+            console.warn(`[assessments/invite] Generated ${preGeneratedMcqQuestions.length}/${mcqCount} questions, proceeding with available questions`);
+          }
+        } catch (e: any) {
+          console.error('[assessments/invite] MCQ generation failed after all retries:', e?.message || e);
+          return res.status(502).json({
+            error: 'Failed to generate MCQ questions for this assessment. Please retry Send Assessment.',
+          });
+        }
       }
 
-      // Trigger background processing (fire and forget)
-      processAssessmentInviteQueue(supabase, queueEntry.id).catch(err => {
-        console.error('[assessments/invite] Background processing error:', err);
-      });
+      // Auto-calculate time based on questions and difficulty if not provided
+      let totalTimeMinutes = body.total_time_minutes;
+      if (!totalTimeMinutes) {
+        // MCQ time per question based on difficulty
+        const mcqTimePerQuestion = difficulty === 'easy' ? 1 : difficulty === 'hard' ? 2 : 1.5;
+        // Coding time per challenge based on difficulty
+        const codingTimePerChallenge = difficulty === 'easy' ? 15 : difficulty === 'hard' ? 30 : 20;
+        
+        totalTimeMinutes = Math.ceil(
+          (mcqCount * mcqTimePerQuestion) + (codingCount * codingTimePerChallenge)
+        );
+        
+        // Ensure minimum time of 15 minutes
+        totalTimeMinutes = Math.max(15, totalTimeMinutes);
+      }
 
-      return ok(res, {
-        queue_id: queueEntry.id,
-        status: 'processing',
-        message: 'Assessment invites are being processed. You will be notified when ready.',
-      });
+      let invitesSent = 0;
+      const failed: string[] = [];
+
+      for (const c of candidates) {
+        try {
+          const token = crypto.randomBytes(32).toString('base64url');
+          await supabase.from('assessment_sessions').insert({
+            id: uuidv4(),
+            candidate_id: c.id,
+            job_id: jobId,
+            token,
+            status: 'pending',
+            deadline: deadline.toISOString(),
+            mcq_question_count: mcqCount,
+            coding_challenge_count: codingCount,
+            total_time_minutes: totalTimeMinutes,
+            mcq_questions: preGeneratedMcqQuestions,
+            proctoring_data: {
+              tab_switches: 0,
+              fullscreen_exits: 0,
+              copy_paste_attempts: 0,
+              warnings: [],
+              terminated: false,
+              assessment_config: {
+                include_mcq: includeMcq,
+                include_coding: includeCoding,
+                difficulty,
+              },
+            },
+            created_at: new Date().toISOString(),
+          });
+
+          await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
+          invitesSent += 1;
+        } catch {
+          failed.push(c.id);
+        }
+      }
+
+      return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed });
     }
 
     return notFound(res);
