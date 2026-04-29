@@ -205,30 +205,52 @@ Required Skills: ${mustHaveSkills}
 ${goodToHaveSkills ? `Nice-to-Have Skills: ${goodToHaveSkills}` : ''}
 Difficulty Level: ${mapped.label} - ${mapped.guidance}
 
-QUESTION RULES:
-- Prefer real-world scenario-based questions over pure definitions.
-- Cover required skills evenly.
-- Mix question types: code output prediction, best-practice selection, error identification, architecture choices.
-- Vary the correct answer position (correct_index).
-${excludedQuestions.length ? `- DO NOT repeat or paraphrase these already generated questions:\n${excludedQuestions.map((q, idx) => `${idx + 1}. ${q}`).join('\n')}` : ''}
+=== STRICT MCQ RULES ===
 
-OPTION RULES (CRITICAL):
-- Each of the 4 options MUST start with different words and use different sentence structures.
-- NEVER create permutation-style options.
-- Distractor pattern: 1 plausible misconception, 1 partially correct, 1 technically-sounding but wrong.
+RULE 1 — SCENARIO-BASED ONLY:
+Every question MUST present a realistic work scenario or problem. NEVER ask "What is X?" or simple definition questions.
+Use formats like: "A developer notices...", "Your team needs to...", "Given this error...", "When configuring..."
+
+RULE 2 — NO REPETITION:
+${excludedQuestions.length ? `DO NOT repeat or paraphrase these already generated questions:\n${excludedQuestions.map((q, idx) => `${idx + 1}. ${q}`).join('\n')}` : 'Each question MUST test a completely different concept, technology, or scenario.'}
+
+RULE 3 — EXACTLY 4 OPTIONS (A/B/C/D):
+Every question must have EXACTLY 4 options in the options array. No more, no less.
+
+RULE 4 — RANDOMIZE CORRECT ANSWER POSITION (CRITICAL):
+The correct_index values across all ${batchCount} questions MUST be distributed across 0, 1, 2, and 3.
+Do NOT put the correct answer always at the same index. Aim for roughly equal distribution:
+- ~25% at correct_index 0, ~25% at index 1, ~25% at index 2, ~25% at index 3.
+For example, if generating 4 questions, use each index exactly once.
+
+RULE 5 — PLAUSIBLE DISTRACTORS:
+All 3 wrong options MUST be technically plausible and represent real misconceptions.
+NEVER use obviously wrong dummy answers like "None of the above" or clearly unrelated options.
+Distractor pattern: 1 common misconception, 1 partially correct but missing a key detail, 1 technically-sounding but fundamentally wrong.
+
+RULE 6 — UNIQUE OPTIONS:
+Each option must start with a different word/phrase and use different sentence structures.
+Options must NOT be reworded versions of each other or simple rearrangements.
+
+RULE 7 — SKILL COVERAGE:
+Distribute questions evenly across ALL listed skills. Do not cluster multiple questions on the same skill.
+Cover: ${mustHaveSkills}${goodToHaveSkills ? ` and ${goodToHaveSkills}` : ''}
+
+RULE 8 — SINGLE CORRECT ANSWER:
+Exactly one unambiguously correct answer per question. The correct option must be definitively right.
 
 Return ONLY this JSON structure:
 {
   "questions": [
     {
       "id": "q1",
-      "question": "<scenario-based question text>",
+      "question": "<scenario-based question with full context>",
       "options": ["<option A>", "<option B>", "<option C>", "<option D>"],
-      "correct_index": 0,
+      "correct_index": 2,
       "difficulty": "${mapped.label}",
-      "topic": "<skill topic>",
+      "topic": "<specific skill/technology>",
       "points": 5,
-      "explanation": "<1-2 sentence explanation of why the correct answer is right>"
+      "explanation": "Why correct_index answer is right and why each distractor is wrong"
     }
   ]
 }`;
@@ -4903,18 +4925,24 @@ function normalizeInterviewQuestions(raw: any): { text: string; type: string; du
 async function generateInterviewQuestions(job: { title: string; role: string; level: string; must_have_skills?: string[] }) {
   try {
     const skills = (job.must_have_skills || []).join(', ') || 'General';
-    const prompt = `You are an expert technical interviewer. Generate exactly 5 high-quality interview questions for a ${job.level} ${job.role} position (${job.title}).
+    const prompt = `You are an expert technical interviewer. Generate exactly 5 high-quality, completely independent interview questions for a ${job.level} ${job.role} position (${job.title}).
 Required skills: ${skills}.
 
+=== ABSOLUTE RULES ===
+1. INDEPENDENCE (MOST IMPORTANT): Every question MUST be completely self-contained and standalone.
+   NEVER reference other questions, prior answers, or use phrases like "Following up...", "Similarly...", "Also...", "What about..."
+   Each question is asked in isolation — the candidate sees only that one question at a time.
+2. NO REPETITION: Each question covers a completely different skill, concept, or competency.
+3. BROAD COVERAGE: Distribute questions across multiple skills from: ${skills}
+4. COMPLETE CONTEXT: Each question provides all necessary context within itself.
+
 Create a balanced mix:
-- 2 technical questions testing specific skills and problem-solving
-- 2 behavioral questions about past experiences (use STAR format cues)
-- 1 situational question with a realistic work scenario
+- 2 technical questions: each testing a DIFFERENT specific skill from: ${skills}
+- 2 behavioral questions: each assessing a DIFFERENT professional competency (leadership, teamwork, communication, adaptability, etc.)
+- 1 situational question: a realistic work scenario specific to the ${job.role} role
 
-For each question, estimate a realistic answer duration.
-
-Return JSON array ONLY:
-[{"text": "<full question text>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
+Return JSON array ONLY — each question must be fully standalone:
+[{"text": "<complete, self-contained question with all necessary context>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
     const raw = await Promise.race<any>([
       generateJSON<any>(prompt),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
@@ -4926,11 +4954,11 @@ Return JSON array ONLY:
     return valid;
   } catch {
     const fallback = [
-      { text: `Walk me through your most relevant technical experience for the ${job.role} role, including specific technologies and what you built.`, type: 'technical', duration: 150 },
-      { text: `Describe a situation where you had to solve a complex technical problem. What was your approach and what was the outcome?`, type: 'behavioral', duration: 150 },
-      { text: `Tell me about a time you worked under pressure to deliver a project. How did you prioritize and what did you learn?`, type: 'behavioral', duration: 120 },
-      { text: `If you discovered a critical bug in production 2 hours before a major product demo, what would you do?`, type: 'situational', duration: 120 },
-      { text: `What specific technical skills do you bring to ${job.title} and what is an area you are actively working to improve?`, type: 'technical', duration: 120 },
+      { text: `Walk me through your most relevant technical experience for the ${job.role} role, including specific technologies and what you built or contributed to.`, type: 'technical', duration: 150 },
+      { text: `Describe a situation in a previous role where you had to solve a complex technical problem under constraints. What was the problem, your approach, and the outcome?`, type: 'behavioral', duration: 150 },
+      { text: `Tell me about a project where you had to collaborate with a cross-functional team to meet a tight deadline. How did you manage your responsibilities and communication?`, type: 'behavioral', duration: 120 },
+      { text: `You discover a critical data inconsistency in your system 2 hours before a major client demo. Walk me through exactly what steps you would take.`, type: 'situational', duration: 120 },
+      { text: `What are the most important technical skills you bring to the ${job.title} position, and describe a concrete example where you applied one of these skills to deliver business value?`, type: 'technical', duration: 120 },
     ];
     return normalizeInterviewQuestions(fallback).slice(0, 5);
   }
@@ -4957,7 +4985,7 @@ async function generateCandidateInterviewQuestions(
   const hasResume = candidateSkills || candidateExperience;
   const candidateName = candidate.full_name || 'the candidate';
 
-  const prompt = `You are an expert technical interviewer. Generate exactly ${count} personalized interview questions for ${candidateName} applying for a ${job.level} ${job.role} position (${job.title}).
+  const prompt = `You are an expert technical interviewer. Generate exactly ${count} personalized, completely independent interview questions for ${candidateName} applying for a ${job.level} ${job.role} position (${job.title}).
 
 ## JOB REQUIREMENTS
 Required Skills: ${skills}
@@ -4969,21 +4997,28 @@ ${candidateExperience ? `Work Experience: ${candidateExperience}` : ''}
 ${candidateEducation ? `Education: ${candidateEducation}` : ''}
 ${summary ? `Profile Summary: ${summary}` : ''}
 
+## ABSOLUTE RULES (CRITICAL):
+1. INDEPENDENCE: Every question MUST be completely self-contained and standalone.
+   NEVER reference prior questions, prior answers, or use linking phrases like:
+   "Following up on that...", "As you mentioned...", "Similarly...", "Also...", "What about..."
+   Each question is asked in isolation — the candidate sees only ONE question at a time.
+2. NO REPETITION: Each of the ${count} questions MUST cover a completely different skill, technology, or competency. Absolutely zero overlap.
+3. COMPLETE CONTEXT: Every question must include all necessary context within itself to be fully understood without any prior discussion.
+4. BROAD COVERAGE: Distribute questions across ALL required skills: ${skills}. Do NOT ask 2+ questions about the same technology.
+
 ## PERSONALIZATION RULES:
-1. Cross-reference the candidate's resume with job requirements.
-2. Ask about specific technologies/projects mentioned in their resume if relevant to the role.
-3. Probe gaps: if a required skill is absent from the resume, ask how they would handle it.
-4. Ask about their MOST RECENT experience in context of the job's challenges.
-5. ${hasResume ? 'Tailor questions to their background — do not ask generic questions they cannot answer based on their resume.' : 'Use the job requirements to craft role-specific questions.'}
+5. Cross-reference the candidate's resume with job requirements — ask about gaps or relevant experience.
+6. ${hasResume ? 'Tailor each question to their background — reference specific skills or experience where appropriate.' : 'Use the job requirements to craft highly role-specific questions.'}
+7. Probe skill gaps: if a required skill is missing from their resume, ask how they would approach learning or handling it.
 
 ## QUESTION MIX (for ${count} questions):
-- ${Math.ceil(count * 0.4)} technical questions: probe skills, system design, or code/architecture decisions
-- ${Math.ceil(count * 0.35)} behavioral questions: STAR-format, based on their actual experience
-- ${Math.floor(count * 0.25)} situational questions: hypothetical but role-realistic scenarios
+- ${Math.ceil(count * 0.4)} technical questions: each probing a DIFFERENT skill from: ${skills}
+- ${Math.ceil(count * 0.35)} behavioral questions: STAR-format, each assessing a DIFFERENT competency (leadership, teamwork, communication, adaptability, conflict resolution, time management)
+- ${Math.floor(count * 0.25)} situational questions: hypothetical but role-realistic scenarios, each presenting a unique challenge
 
 ## FORMAT:
-Return ONLY a JSON array:
-[{"text": "<specific, personalized question>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
+Return ONLY a JSON array — every question must be fully standalone and self-explanatory:
+[{"text": "<complete, self-contained question with all necessary context>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
 
   try {
     const raw = await Promise.race<any>([
@@ -5327,24 +5362,42 @@ async function runSinglePiston(
 
 async function generateInterviewQuestionPool(job: { title: string; role: string; level: string; must_have_skills: string[]; description: string }) {
   const skills = job.must_have_skills.join(', ') || 'General';
-  const prompt = `You are an expert technical interviewer. Generate exactly 20 diverse, high-quality interview questions for a ${job.level} ${job.role} position (${job.title}).
+  const prompt = `You are an expert technical interviewer. Generate exactly 20 diverse, high-quality, completely independent interview questions for a ${job.level} ${job.role} position (${job.title}).
 
 Required Skills: ${skills}
 ${job.description ? `Job Context: ${job.description.slice(0, 500)}` : ''}
 
-Create a balanced mix:
-- 9 technical questions: probe specific skill depth, system design decisions, debugging, or code behavior
-- 6 behavioral questions: STAR-format about past experiences, collaboration, and problem-solving
-- 5 situational questions: realistic work scenarios the candidate would face in this role
+=== ABSOLUTE RULES ===
 
-Rules:
-- Each question MUST test a different skill or competency area.
-- Questions should be distinct, non-overlapping, and progress from foundational to advanced.
-- Tailor all questions to the ${job.level} level expectations.
-- Avoid generic questions. Make each one specific to the role and required skills.
+1. INDEPENDENCE (MOST IMPORTANT):
+   Every question MUST be completely self-contained and standalone.
+   NEVER reference other questions, prior answers, or use phrases like:
+   "Following up...", "As mentioned...", "Similarly...", "Also...", "What about..."
+   Each question is asked in complete isolation. A candidate could answer question 15 without seeing questions 1-14.
 
-Return ONLY a JSON array:
-[{"text": "<full question text>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
+2. NO REPETITION:
+   Each of the 20 questions MUST cover a completely different skill, technology, concept, or competency.
+   Absolutely zero overlap. Never ask two questions about the same topic.
+
+3. BROAD SKILL COVERAGE:
+   Distribute technical questions evenly across ALL required skills: ${skills}
+   Do NOT cluster multiple questions on the same technology.
+
+4. COMPLETE CONTEXT:
+   Every question must provide all necessary context within itself.
+   Never assume the candidate has heard prior context.
+
+5. ${job.level.toUpperCase()} LEVEL APPROPRIATE:
+   Calibrate question complexity to match ${job.level} expectations.
+
+Create this balanced mix:
+- 9 technical questions: each testing a DIFFERENT skill from: ${skills} — cover all skills evenly
+- 6 behavioral questions: STAR-format, each assessing a DIFFERENT competency:
+  (leadership, teamwork, communication, adaptability, conflict resolution, time management)
+- 5 situational questions: unique realistic work scenarios, each presenting a different type of challenge
+
+Return ONLY a JSON array — every question must be fully standalone and self-explanatory:
+[{"text": "<complete, self-contained question with all necessary context>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}]`;
 
   try {
     const raw = await Promise.race<any>([

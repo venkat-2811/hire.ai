@@ -1,9 +1,10 @@
 from typing import Dict, Any, List
 
+
 def get_mcq_generation_prompt(
     role: str, level: str, description: str, must_have_skills: str, good_to_have_skills: str, count: int, difficulty: str = "medium"
 ) -> tuple[str, str]:
-    
+
     difficulty_guidelines = {
         "easy": {
             "complexity": "Foundational concepts and basic practical application",
@@ -21,9 +22,9 @@ def get_mcq_generation_prompt(
             "examples": "Large-scale design, advanced optimization, complex trade-offs, edge cases"
         }
     }
-    
+
     guidelines = difficulty_guidelines.get(difficulty.lower(), difficulty_guidelines["medium"])
-    
+
     system_prompt = f"""You are an expert technical assessment designer creating high-quality multiple-choice questions for a {role} position at the {level} level.
 
 JOB CONTEXT:
@@ -40,54 +41,81 @@ DIFFICULTY GUIDELINES:
 Focus: {guidelines['focus']}
 Examples: {guidelines['examples']}
 
-QUESTION QUALITY STANDARDS:
-1. SCENARIO-BASED: Every question must present a realistic scenario or problem, not simple definitions
-2. UNIQUE CONCEPTS: Each question must test a different concept/skill - no repetition
-3. CHALLENGING DISTRACTORS: Wrong answers must be plausible and represent common misconceptions
-4. CLEAR CORRECTNESS: Only one unambiguously correct answer
-5. SKILL COVERAGE: Distribute questions across all required and preferred skills
-6. ROLE RELEVANCE: Questions should reflect actual tasks and challenges in this role
+=== STRICT MCQ QUALITY RULES ===
 
-STRUCTURE REQUIREMENTS:
-- Generate exactly {count} questions (unless fewer are possible for unique concepts)
-- Each question must have exactly 4 distinct options (A, B, C, D)
-- Options must be unique, not reworded versions of each other
-- Include topic tags for categorization
-- Assign appropriate point values (5-10 based on complexity)
+RULE 1 — SCENARIO-BASED ONLY:
+Every question MUST present a realistic work scenario or problem. NEVER ask "What is X?" or simple definition questions.
+Use formats like: "A developer notices...", "Your team needs to...", "Given this error...", "When configuring..."
 
-Return valid JSON:
+RULE 2 — NO REPETITION:
+Each question MUST test a completely different concept, technology, or scenario. Absolutely no repetition of topic or scenario across the {count} questions.
+
+RULE 3 — EXACTLY 4 OPTIONS (A/B/C/D):
+Every question must have EXACTLY 4 options in the options array. No more, no less.
+
+RULE 4 — RANDOMIZE CORRECT ANSWER POSITION (CRITICAL):
+The correct_index values across all {count} questions MUST be distributed across 0, 1, 2, and 3.
+Do NOT put the correct answer always at the same index. Aim for roughly equal distribution:
+- ~25% of questions: correct_index = 0
+- ~25% of questions: correct_index = 1
+- ~25% of questions: correct_index = 2
+- ~25% of questions: correct_index = 3
+
+RULE 5 — PLAUSIBLE DISTRACTORS:
+All 3 wrong options MUST be technically plausible and represent real misconceptions developers make.
+NEVER use obviously wrong "dummy" answers like "None of the above" or clearly unrelated options.
+Distractor pattern per question:
+- One answer: represents a common misconception about this topic
+- One answer: is partially correct but missing a key detail
+- One answer: sounds technically sophisticated but is fundamentally wrong
+
+RULE 6 — UNIQUE OPTIONS:
+Each option must start with a different word/phrase and use different sentence structures.
+Options must NOT be reworded versions of each other or simple rearrangements.
+
+RULE 7 — SKILL COVERAGE:
+Distribute questions evenly across ALL listed skills. Do not cluster multiple questions on the same skill.
+Required skills to cover: {must_have_skills}
+Preferred skills to cover: {good_to_have_skills}
+
+RULE 8 — SINGLE CORRECT ANSWER:
+There must be exactly one unambiguously correct answer. The correct answer must be definitively right, not just "more correct" than others.
+
+Return valid JSON with EXACTLY {count} questions:
 {{
     "questions": [
         {{
             "question": "Detailed scenario-based question text",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_index": 0,
+            "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
+            "correct_index": 2,
             "difficulty": "easy|medium|hard",
             "topic": "Specific skill/technology area",
             "points": 5,
-            "explanation": "Why correct answer is right and others are wrong"
+            "explanation": "Why the correct answer at correct_index is right and why each distractor is wrong"
         }}
     ]
 }}"""
 
-    user_prompt = f"""Generate {count} high-quality, scenario-based MCQ questions for a {role} position at {level} level.
+    user_prompt = f"""Generate exactly {count} high-quality, scenario-based MCQ questions for a {role} position at {level} level.
 
-Requirements:
-- Follow {difficulty.upper()} difficulty standards
-- Cover skills: {must_have_skills} and {good_to_have_skills}
-- Each question must be unique and scenario-based
-- Provide challenging but fair distractors
-- Ensure only one clearly correct answer
+MUST FOLLOW:
+1. {difficulty.upper()} difficulty: {guidelines['complexity']}
+2. Cover ALL skills evenly: {must_have_skills} | {good_to_have_skills}
+3. Every question = unique concept, unique scenario — zero repetition
+4. RANDOMIZE correct_index across 0, 1, 2, 3 — do NOT always put the correct answer at index 0 or 1
+5. ALL 4 options must be plausible and realistic — no dummy answers
+6. Every question must be scenario-based (real work situation), never a simple definition
+7. The options array must contain EXACTLY 4 strings per question
 
-Focus on real-world situations this professional would encounter."""
-    
+Focus on real-world situations this professional encounters in their daily work."""
+
     return system_prompt, user_prompt
 
 
 def get_coding_challenges_prompt(
     role: str, level: str, description: str, must_have_skills: str, count: int, difficulty: str = "medium"
 ) -> tuple[str, str]:
-    
+
     difficulty_guidelines = {
         "easy": {
             "complexity": "Fundamental coding problems with clear logic",
@@ -105,10 +133,10 @@ def get_coding_challenges_prompt(
             "time": "30-45 minutes per challenge"
         }
     }
-    
+
     guidelines = difficulty_guidelines.get(difficulty.lower(), difficulty_guidelines["medium"])
-    
-    system_prompt = f"""You are an expert technical interviewer creating coding challenges for a {role} position at {level} level.
+
+    system_prompt = f"""You are an expert technical interviewer creating unique coding challenges for a {role} position at {level} level.
 
 JOB CONTEXT:
 - Role: {role}
@@ -124,28 +152,28 @@ Focus: {guidelines['focus']}
 Expected Time: {guidelines['time']}
 
 CHALLENGE QUALITY STANDARDS:
-1. REAL-WORLD RELEVANCE: Problems should reflect actual work scenarios
-2. CLEAR REQUIREMENTS: Unambiguous problem statements with examples
-3. MULTIPLE APPROACHES: Allow different valid solution approaches
-4. COMPREHENSIVE TESTING: Include diverse test cases (normal, edge, boundary)
-5. FAIR DIFFICULTY: Appropriate for the specified level
-6. PROPER STARTER CODE: Helpful but not solution-revealing
+1. REAL-WORLD RELEVANCE: Problems must reflect actual work scenarios a {role} would face
+2. UNIQUE PROBLEMS: Each challenge must test a completely different algorithm or concept — no repetition
+3. CLEAR REQUIREMENTS: Unambiguous problem statements with concrete input/output examples
+4. MULTIPLE SOLUTION APPROACHES: Allow different valid solution strategies (e.g., iterative vs recursive)
+5. COMPREHENSIVE TEST CASES: Include normal cases, edge cases, and boundary cases
+6. FAIR DIFFICULTY: Appropriate complexity for {level} level
+7. CLEAN STARTER CODE: Provide helpful function signature but never reveal the solution approach
 
 STRUCTURE REQUIREMENTS:
 - Generate exactly {count} coding challenges
-- Each challenge must be solvable in {guidelines['time']}
-- Include at least 3 diverse test cases
-- Input must be JSON object with parameter names
-- Expected must be the direct return value
-- Provide language-agnostic starter code
+- Each challenge solvable in {guidelines['time']}
+- At least 3 diverse test cases per challenge (normal + 2 edge cases)
+- Input must be a JSON object with named parameters matching the starter code
+- Expected output must be the direct return value
 
 Return valid JSON:
 {{
     "challenges": [
         {{
             "title": "Challenge Title",
-            "description": "Detailed problem description with examples",
-            "starter_code": "def solution(param1, param2):\n    # Your code here\n    pass",
+            "description": "Detailed problem description with at least one example",
+            "starter_code": "def solution(param1, param2):\\n    # Your code here\\n    pass",
             "test_cases": [
                 {{"input": {{"param1": "value", "param2": "value"}}, "expected": "result"}},
                 {{"input": {{"param1": "edge_case"}}, "expected": "result2"}}
@@ -157,25 +185,26 @@ Return valid JSON:
     ]
 }}"""
 
-    user_prompt = f"""Generate {count} high-quality coding challenges for a {role} position at {level} level.
+    user_prompt = f"""Generate {count} high-quality, unique coding challenges for a {role} position at {level} level.
 
 Requirements:
-- Target {difficulty.upper()} difficulty ({guidelines['complexity']})
-- Focus on: {guidelines['focus']}
-- Each challenge should take approximately {guidelines['time']}
-- Cover skills: {must_have_skills}
-- Include comprehensive test cases
-- Provide helpful starter code
+- Target {difficulty.upper()} difficulty: {guidelines['complexity']}
+- Focus areas: {guidelines['focus']}
+- Time per challenge: approximately {guidelines['time']}
+- Cover different skills from: {must_have_skills}
+- Each challenge must test a DIFFERENT concept — no repeated problem patterns
+- Include at least 3 test cases per challenge (1 normal, 2 edge cases)
+- Provide a clean function signature as starter code
 
-Challenges should be practical and relevant to real-world work."""
-    
+Challenges must be practical and directly relevant to real {role} work."""
+
     return system_prompt, user_prompt
 
 
 def get_generate_practical_assessment_prompt(job_role: str, level: str, skills: List[str]) -> tuple[str, str]:
     system_instruction = """You are an expert at creating practical technical assessments.
 Create realistic, fair, and skill-appropriate challenges."""
-    
+
     user_prompt = f"""Create a practical assessment for:
 - Role: {job_role}
 - Level: {level}

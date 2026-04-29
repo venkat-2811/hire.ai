@@ -1,58 +1,98 @@
 from typing import Dict, Any
 
+
 def get_technical_questions_prompt(
-    role: str, level: str, description: str, must_have: str, good_to_have: str, 
-    min_diff: int, max_diff: int, seed: str, previous_q_text: str, 
+    role: str, level: str, description: str, must_have: str, good_to_have: str,
+    min_diff: int, max_diff: int, seed: str, previous_q_text: str,
     candidate_skills: str, experience_years: float, num_questions: int
 ) -> tuple[str, str]:
-    
-    system_prompt = f"""You are an expert technical interviewer creating advanced interview questions.
-Your role is to generate thoughtful, scenario-based questions that assess deep technical understanding."""
-    
-    user_prompt = f"""Generate {num_questions} unique technical interview questions for a {role} position at {level} level.
+
+    system_prompt = f"""You are an expert technical interviewer creating advanced, independent interview questions.
+Your role is to generate thoughtful, scenario-based questions that assess deep technical understanding.
+
+=== CRITICAL RULES FOR INTERVIEW QUESTIONS ===
+
+RULE 1 — INDEPENDENCE (MOST IMPORTANT):
+Every question MUST stand completely on its own. Questions must NEVER:
+- Reference or build upon a previous question ("Following up on that...", "Similarly to what we discussed...")
+- Assume the candidate has answered a prior question
+- Be a follow-up, clarification, or extension of another question
+- Use phrases like "Also...", "Additionally...", "What about...", "Now tell me about..."
+Each question is asked in isolation. A candidate could answer question 5 without ever seeing questions 1-4.
+
+RULE 2 — NO REPETITION:
+Each question MUST cover a different skill, concept, or scenario. Never ask two questions about the same topic.
+
+RULE 3 — BROAD SKILL COVERAGE:
+Distribute questions across ALL skills mentioned: {must_have} and {good_to_have}
+Do NOT cluster multiple questions on the same technology or concept.
+
+RULE 4 — STANDALONE SCENARIOS:
+Each question must provide its own complete context (role, situation, constraints) within the question text itself.
+Never rely on prior context being established.
+
+RULE 5 — VERBAL-FRIENDLY:
+Questions must be answerable verbally in 2-5 minutes. Focus on reasoning, approaches, and trade-offs — not code syntax."""
+
+    user_prompt = f"""Generate {num_questions} unique, independent technical interview questions for a {role} position at {level} level.
 
 CONTEXT:
 - Role: {role}
 - Level: {level}
-- Experience Required: {description[:800]}
+- Job Description: {description[:800]}
 - Must-Have Skills: {must_have}
 - Preferred Skills: {good_to_have}
-- Candidate Background: {candidate_skills} ( {experience_years} years experience)
+- Candidate Background: {candidate_skills} ({experience_years} years experience)
 - Difficulty Range: {min_diff}-{max_diff} (scale 1-5)
 - Uniqueness Seed: {seed}
 
-QUESTION REQUIREMENTS:
-1. SCENARIO-BASED: Present realistic technical scenarios, not abstract questions
-2. CONCEPTUAL FOCUS: Test understanding, reasoning, and problem-solving approaches
-3. VERBAL-FRIENDLY: Questions answerable in 2-5 minutes verbally
-4. DIFFICULTY PROGRESSION: Mix difficulty levels appropriately
-5. UNIQUE CONTENT: Use seed {seed} to ensure originality
-6. PRACTICAL RELEVANCE: Focus on real-world challenges in this role
-7. NO CODE REQUIREMENTS: Emphasize concepts over syntax
+ABSOLUTE REQUIREMENTS:
+1. INDEPENDENT: Every question is self-contained — no references to "previous questions", "as mentioned", or "following up"
+2. UNIQUE TOPICS: Each question covers a different skill/concept — no repetition across the {num_questions} questions
+3. SCENARIO-BASED: Present realistic technical scenarios, not abstract "explain X" questions
+4. VERBAL-FRIENDLY: Answerable in 2-5 minutes verbally, no code writing required
+5. BROAD COVERAGE: Spread evenly across must-have skills: {must_have} AND preferred skills: {good_to_have}
+6. PRACTICAL: Focus on real-world challenges a {role} would face at {level} level
+7. NO CODE REQUIREMENTS: Emphasize concepts, reasoning, and problem-solving approaches over syntax
+{previous_q_text}
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Scenario-based technical question",
+            "question_text": "Complete standalone scenario-based technical question with full context",
             "difficulty_level": 3,
-            "expected_answer": "Key points for comprehensive answer",
+            "expected_answer": "Key points a strong answer should cover",
             "time_limit_seconds": 180,
-            "focus_area": "Technical domain being assessed"
+            "focus_area": "Specific technical domain being assessed"
         }}
     ]
 }}"""
-    
+
     return system_prompt, user_prompt
 
 
 def get_behavioral_questions_prompt(
     role: str, level: str, experience_context: str, seed: str, num_questions: int
 ) -> tuple[str, str]:
-    
+
     system_prompt = f"""You are an expert behavioral interviewer specializing in professional assessment.
-Your role is to create insightful behavioral questions that evaluate soft skills and cultural fit."""
-    
+Your role is to create insightful, independent behavioral questions that evaluate soft skills and cultural fit.
+
+=== CRITICAL RULES ===
+
+RULE 1 — INDEPENDENCE:
+Every behavioral question MUST be completely self-contained and standalone.
+NEVER reference previous questions, prior answers, or use phrases like "Following up...", "Similarly...", "Also tell me..."
+Each question is asked in isolation — the candidate could see only that one question.
+
+RULE 2 — NO REPETITION:
+Each question MUST assess a different competency. Never ask two questions about the same skill (e.g., two questions about "handling conflict").
+
+RULE 3 — COMPETENCY COVERAGE:
+Cover a broad range of competencies: leadership, teamwork, communication, problem-solving, adaptability, time management, initiative, conflict resolution.
+Do NOT cluster on one competency."""
+
     user_prompt = f"""Generate {num_questions} behavioral interview questions for a {role} position at {level} level.
 
 CONTEXT:
@@ -61,35 +101,42 @@ CONTEXT:
 - Candidate Experience: {experience_context}
 - Uniqueness Seed: {seed}
 
-BEHAVIORAL QUESTION REQUIREMENTS:
-1. SITUATIONAL FOCUS: Present realistic work scenarios
-2. STAR METHOD: Questions should elicit Situation, Task, Action, Result responses
-3. COMPETENCY ASSESSMENT: Evaluate key professional competencies
-4. ROLE RELEVANCE: Tailor scenarios to {role} responsibilities
-5. EXPERIENCE LEVEL: Match questions to {level} seniority
-6. OPEN-ENDED: Encourage detailed, thoughtful responses
-7. CULTURAL FIT: Assess alignment with modern workplace practices
+ABSOLUTE REQUIREMENTS:
+1. INDEPENDENT: Every question stands alone — no references to "as you mentioned", "following up", or prior context
+2. DIFFERENT COMPETENCIES: Each question assesses a different professional competency — no repetition
+3. SITUATIONAL FOCUS: "Tell me about a time when..." or "Describe a situation where..." format (STAR method)
+4. ROLE-RELEVANT: Scenarios must connect to {role} responsibilities
+5. LEVEL-APPROPRIATE: Match question complexity to {level} seniority
+6. OPEN-ENDED: Encourage detailed, specific responses with measurable outcomes
+7. COMPLETE CONTEXT: Each question must include enough context so it's understandable without any prior discussion
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Describe a situation where you had to...",
-            "competency": "Leadership|Teamwork|Problem-solving|Communication",
+            "question_text": "Complete standalone behavioral question with full context",
+            "competency": "Leadership|Teamwork|Problem-solving|Communication|Adaptability|Time Management",
             "difficulty_level": 3,
             "time_limit_seconds": 300,
             "focus_area": "Professional competency being assessed"
         }}
     ]
 }}"""
-    
+
     return system_prompt, user_prompt
 
 
 def get_interview_questions_general_prompt(job_description: Dict[str, Any], resume_data: Dict[str, Any], num_technical: int, num_behavioral: int, difficulty: int) -> tuple[str, str]:
-    system_instruction = """You are an expert interview conductor creating comprehensive assessment questions.
-Your role is to generate balanced, relevant questions for fair candidate evaluation."""
-    
+    import json
+    system_instruction = """You are an expert interview conductor creating comprehensive, independent assessment questions.
+Your role is to generate balanced, relevant questions where each question is fully self-contained.
+
+=== CRITICAL RULES ===
+1. INDEPENDENCE: Every question MUST be standalone — no references to other questions, prior answers, or "following up"
+2. NO REPETITION: Each question tests a different skill, concept, or competency
+3. COMPLETE CONTEXT: Each question provides all necessary context within itself
+4. NEVER use: "As mentioned", "Following up", "Also", "Similarly", "What about" to link questions"""
+
     user_prompt = f"""Generate interview questions for this candidate and role.
 
 JOB DETAILS:
@@ -104,31 +151,31 @@ CANDIDATE PROFILE:
 {json.dumps(resume_data, indent=2)}
 
 INTERVIEW REQUIREMENTS:
-- Technical Questions: {num_technical}
-- Behavioral Questions: {num_behavioral}
+- Technical Questions: {num_technical} — each covering a DIFFERENT skill from the must-have and preferred skills list
+- Behavioral Questions: {num_behavioral} — each assessing a DIFFERENT professional competency
 - Target Difficulty: {difficulty}/5
-- Focus: Conceptual understanding, not code syntax
-- Format: Discussion-based, verbal-friendly
+- Format: Discussion-based, verbal-friendly (no code writing)
 
-QUESTION STANDARDS:
-1. RELEVANCE: Align with job requirements and candidate background
-2. FAIRNESS: Accessible questions appropriate for experience level
-3. COMPREHENSIVE: Cover key technical and behavioral competencies
-4. UNIQUENESS: Original questions not found elsewhere
-5. CLARITY: Clear, unambiguous questions
+ABSOLUTE RULES:
+1. Each question MUST be completely independent and self-contained
+2. No two questions can cover the same skill, concept, or competency
+3. Spread technical questions evenly across all listed must-have and preferred skills
+4. Behavioral questions must each target a different competency (leadership, teamwork, communication, etc.)
+5. NEVER reference previous questions or use connective phrases between questions
+6. Every question must include enough context to be understood in isolation
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Comprehensive interview question",
+            "question_text": "Complete standalone question with all necessary context",
             "question_type": "technical|behavioral",
             "difficulty_level": 3,
-            "expected_answer": "Key assessment criteria",
+            "expected_answer": "Key points a strong answer should cover",
             "time_limit_seconds": 180,
-            "focus_area": "Domain being evaluated"
+            "focus_area": "Specific domain or competency being evaluated"
         }}
     ]
 }}"""
-    
+
     return system_instruction, user_prompt
