@@ -671,7 +671,8 @@ async function sendOfferLetterEmail(
   candidateName: string,
   jobTitle: string,
   companyName: string,
-  pdfBase64: string
+  pdfBase64: string,
+  acceptanceLink: string
 ) {
   const html = `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; border-radius: 8px; overflow: hidden;">
@@ -692,10 +693,18 @@ async function sendOfferLetterEmail(
               <p style="margin: 0; color: #4f46e5; font-weight: 600;">📋 Next Steps</p>
               <ul style="margin: 10px 0 0 0; padding-left: 18px; color: #444; line-height: 1.8;">
                   <li>Review the attached offer letter carefully</li>
-                  <li>If you accept, please reply to this email confirming your acceptance</li>
-                  <li>Our HR team will follow up with onboarding details</li>
+                  <li>Click the <strong>Accept Offer</strong> button below</li>
+                  <li>Enter your full legal name as your digital signature</li>
               </ul>
           </div>
+          <div style="text-align: center; margin: 28px 0;">
+              <a href="${acceptanceLink}" style="background:#10b981;color:white;padding:14px 26px;text-decoration:none;border-radius:8px;font-size:16px;font-weight:700;display:inline-block;">
+                  Accept Offer
+              </a>
+          </div>
+          <p style="color:#6b7280; font-size: 12px; line-height:1.5; margin-top: 8px;">
+              This secure link expires in 7 business days.
+          </p>
           <p style="color: #444; margin-bottom: 0;">
               Warm regards,<br/>
               <strong>Talent Acquisition Team</strong><br/>
@@ -713,6 +722,122 @@ async function sendOfferLetterEmail(
   ];
 
   await sendEmail(to, `Formal Offer Letter – ${jobTitle} at ${companyName}`, html, attachments);
+}
+
+function getOfferTokenSecret(): string {
+  const secret =
+    process.env.OFFER_TOKEN_SECRET ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error('Offer token signing secret is not configured');
+  return secret;
+}
+
+async function signOfferToken(candidateId: string, jobId: string): Promise<string> {
+  const secret = getOfferTokenSecret();
+  const key = new TextEncoder().encode(secret);
+  return await new jose.SignJWT({
+    candidate_id: candidateId,
+    job_id: jobId,
+    jti: crypto.randomUUID(),
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('7d')
+    .sign(key);
+}
+
+async function verifyOfferToken(token: string): Promise<{ candidate_id: string; job_id: string }> {
+  const secret = getOfferTokenSecret();
+  const key = new TextEncoder().encode(secret);
+  const { payload } = await jose.jwtVerify(token, key, { algorithms: ['HS256'] });
+  const candidateId = String(payload.candidate_id || '');
+  const jobId = String(payload.job_id || '');
+  if (!candidateId || !jobId) {
+    throw new Error('Invalid token payload');
+  }
+  return { candidate_id: candidateId, job_id: jobId };
+}
+
+function escapePdfText(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+function buildOfferLetterPdf(params: {
+  candidateName: string;
+  candidateEmail: string;
+  jobTitle: string;
+  companyName: string;
+  ctc: string;
+  startDate?: string | null;
+  reportingManager?: string | null;
+  location?: string | null;
+  contractYears?: number | null;
+  contractMonths?: number | null;
+}): Buffer {
+  const lines: string[] = [
+    params.companyName,
+    'OFFER OF EMPLOYMENT',
+    `Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+    '',
+    `Dear ${params.candidateName},`,
+    `We are delighted to offer you the position of ${params.jobTitle}.`,
+    '',
+    'Employment Details',
+    `- Position: ${params.jobTitle}`,
+    `- Employment Type: Full-Time, Permanent`,
+    `- Annual CTC: ${params.ctc}`,
+    `- Proposed Start Date: ${params.startDate || 'To be communicated'}`,
+    `- Reporting Manager: ${params.reportingManager || 'To be communicated'}`,
+    `- Location: ${params.location || 'As agreed'}`,
+  ];
+
+  if ((params.contractYears || 0) > 0 || (params.contractMonths || 0) > 0) {
+    const duration: string[] = [];
+    if ((params.contractYears || 0) > 0) duration.push(`${params.contractYears} year(s)`);
+    if ((params.contractMonths || 0) > 0) duration.push(`${params.contractMonths} month(s)`);
+    lines.push(`- Contract Duration: ${duration.join(' & ')}`);
+  }
+
+  lines.push(
+    '',
+    'Important Terms',
+    '- This offer is contingent on successful background verification.',
+    '- Please click the Accept Offer button in the email within 7 business days.',
+    '- Your digital signature submission confirms formal acceptance.',
+    '',
+    `Confidential: Intended only for ${params.candidateName} (${params.candidateEmail}).`
+  );
+
+  const contentLines = lines.map((line, idx) => {
+    const y = 800 - idx * 18;
+    return `BT /F1 11 Tf 50 ${y} Td (${escapePdfText(line)}) Tj ET`;
+  });
+
+  const contentStream = contentLines.join('\n');
+  const objects = [
+    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj',
+    '4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+    `5 0 obj << /Length ${Buffer.byteLength(contentStream, 'utf8')} >> stream\n${contentStream}\nendstream endobj`,
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+  for (const obj of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += `${obj}\n`;
+  }
+  const xrefStart = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let i = 1; i <= objects.length; i++) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+
+  return Buffer.from(pdf, 'utf8');
 }
 
 // ============== Helpers ==============
@@ -2483,13 +2608,25 @@ ${resumeText.slice(0, 8000)}`;
       const user = await requireAuth(req, res);
       if (!user) return;
 
-      const { candidate_ids, job_id, company_name } = req.body as {
+      const { candidate_ids, job_id, company_name, ctc, start_date, reporting_manager, location, time_period_years, time_period_months } = req.body as {
         candidate_ids?: string[];
         job_id?: string;
         company_name?: string;
+        ctc?: string;
+        start_date?: string;
+        reporting_manager?: string;
+        location?: string;
+        time_period_years?: number | null;
+        time_period_months?: number | null;
       };
       if (!candidate_ids?.length || !job_id) {
         return badRequest(res, 'candidate_ids and job_id are required');
+      }
+      if (!ctc || !String(ctc).trim()) {
+        return badRequest(res, 'ctc is required');
+      }
+      if (!company_name || !String(company_name).trim()) {
+        return badRequest(res, 'company_name is required');
       }
 
       const { data: job } = await supabase
@@ -2512,64 +2649,48 @@ ${resumeText.slice(0, 8000)}`;
 
       for (const c of candidates) {
         try {
-          // Send the offer letter as a rich HTML email (no PDF attachment needed)
-          const offerHtml = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offer Letter</title></head>
-<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-        <tr><td style="background:linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%);padding:40px 48px;text-align:center;">
-          <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">Offer Letter</h1>
-          <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">${resolvedCompany}</p>
-        </td></tr>
-        <tr><td style="padding:48px;">
-          <p style="margin:0 0 20px;font-size:16px;color:#374151;">Dear <strong>${c.full_name}</strong>,</p>
-          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
-            We are delighted to extend a formal offer of employment for the position of:
-          </p>
-          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:20px 24px;margin:0 0 28px;text-align:center;">
-            <p style="margin:0;font-size:20px;font-weight:700;color:#065F46;">${job.title}</p>
-            <p style="margin:6px 0 0;font-size:14px;color:#047857;">${resolvedCompany}</p>
-          </div>
-          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
-            This offer is contingent upon the successful completion of background verification and any other standard onboarding requirements. Our HR team will be in touch shortly with further details regarding your start date, compensation package, and onboarding process.
-          </p>
-          <p style="margin:0 0 20px;font-size:15px;color:#4B5563;line-height:1.7;">
-            Please reply to this email confirming your acceptance of this offer at your earliest convenience.
-          </p>
-          <p style="margin:0 0 32px;font-size:15px;color:#4B5563;line-height:1.7;">
-            We look forward to welcoming you to the team and are excited about the contributions you will bring to <strong>${resolvedCompany}</strong>.
-          </p>
-          <div style="border-top:1px solid #E5E7EB;padding-top:28px;">
-            <p style="margin:0;font-size:14px;color:#6B7280;">
-              Warm regards,<br/>
-              <strong>Talent Acquisition Team</strong><br/>
-              ${resolvedCompany}
-            </p>
-          </div>
-        </td></tr>
-        <tr><td style="background:#F9FAFB;padding:24px 48px;text-align:center;border-top:1px solid #E5E7EB;">
-          <p style="margin:0;font-size:13px;color:#9CA3AF;">This email was sent by Hire.AI &mdash; Intelligent Hiring Platform</p>
-          <p style="margin:4px 0 0;font-size:13px;color:#9CA3AF;">&copy; ${new Date().getFullYear()} Hire.AI. All rights reserved.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+          const token = await signOfferToken(c.id, job_id);
+          const acceptanceLink = `${getFrontendBaseUrl(req)}/offer-acceptance?token=${encodeURIComponent(token)}`;
+          const pdfBytes = buildOfferLetterPdf({
+            candidateName: c.full_name,
+            candidateEmail: c.email,
+            jobTitle: job.title,
+            companyName: resolvedCompany,
+            ctc: String(ctc).trim(),
+            startDate: start_date || null,
+            reportingManager: reporting_manager || null,
+            location: location || null,
+            contractYears: time_period_years ?? null,
+            contractMonths: time_period_months ?? null,
+          });
 
-          await sendEmail(
+          await sendOfferLetterEmail(
             c.email,
-            `Formal Offer Letter – ${job.title} at ${resolvedCompany}`,
-            offerHtml
+            c.full_name,
+            job.title,
+            resolvedCompany,
+            pdfBytes.toString('base64'),
+            acceptanceLink
           );
 
           // Update final_status to offer_sent in the analytics view via job_applications
           await supabase
             .from('job_applications')
-            .update({ final_status: 'offer_sent', updated_at: new Date().toISOString() })
+            .update({
+              final_status: 'offer_sent',
+              notes: [
+                `[Offer Letter Snapshot]`,
+                `Company Name: ${resolvedCompany}`,
+                `CTC: ${String(ctc).trim()}`,
+                `Contract Years: ${time_period_years ?? ''}`,
+                `Contract Months: ${time_period_months ?? ''}`,
+                `Start Date: ${start_date || ''}`,
+                `Reporting Manager: ${reporting_manager || ''}`,
+                `Location: ${location || ''}`,
+                `Attachment Format: PDF`,
+              ].join('\n'),
+              updated_at: new Date().toISOString(),
+            })
             .eq('candidate_id', c.id)
             .eq('job_id', job_id);
 
@@ -2584,6 +2705,125 @@ ${resumeText.slice(0, 8000)}`;
         emails_sent: emailsSent,
         error_messages: errorMessages,
       });
+    }
+
+    // GET /api/candidates/offer-details?token=...
+    if (req.method === 'GET' && segments.length === 2 && segments[1] === 'offer-details') {
+      const token = String(req.query.token || '');
+      if (!token) return badRequest(res, 'token is required');
+
+      try {
+        const { candidate_id, job_id } = await verifyOfferToken(token);
+        const { data: application } = await supabase
+          .from('job_applications')
+          .select('final_status, notes, offer_signature_name, offer_accepted_at, offer_acceptance_ip')
+          .eq('candidate_id', candidate_id)
+          .eq('job_id', job_id)
+          .maybeSingle();
+        if (!application) return notFound(res, 'Offer details not found');
+
+        const { data: candidate } = await supabase
+          .from('candidates')
+          .select('full_name, email')
+          .eq('id', candidate_id)
+          .maybeSingle();
+        const { data: job } = await supabase
+          .from('job_descriptions')
+          .select('title')
+          .eq('id', job_id)
+          .maybeSingle();
+        if (!candidate || !job) return notFound(res, 'Offer details not found');
+
+        const notes = String(application.notes || '');
+        const extract = (prefix: string): string | null => {
+          const line = notes.split('\n').find((entry) => entry.startsWith(prefix));
+          return line ? line.replace(prefix, '').trim() || null : null;
+        };
+
+        const status = String(application.final_status || '');
+        const alreadyAccepted = status === 'offer_accepted' || status === 'accepted';
+
+        return ok(res, {
+          candidate_id,
+          job_id,
+          candidate_name: candidate.full_name,
+          candidate_email: candidate.email || null,
+          job_title: job.title,
+          company_name: extract('Company Name:') || 'Our Company',
+          ctc: extract('CTC:') || 'As per attached offer letter',
+          time_period_years: extract('Contract Years:') ? Number(extract('Contract Years:')) : null,
+          time_period_months: extract('Contract Months:') ? Number(extract('Contract Months:')) : null,
+          start_date: extract('Start Date:'),
+          reporting_manager: extract('Reporting Manager:'),
+          location: extract('Location:'),
+          accepted_signature_name: application.offer_signature_name || null,
+          accepted_at: application.offer_accepted_at || null,
+          accepted_ip: application.offer_acceptance_ip || null,
+          already_accepted: alreadyAccepted,
+        });
+      } catch {
+        return res.status(400).json({ detail: 'Invalid or expired offer link' });
+      }
+    }
+
+    // POST /api/candidates/submit-offer-acceptance
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'submit-offer-acceptance') {
+      const { token, full_name_signature } = req.body as { token?: string; full_name_signature?: string };
+      if (!token) return badRequest(res, 'token is required');
+      if (!full_name_signature || !String(full_name_signature).trim()) {
+        return badRequest(res, 'Full name signature is required to accept the offer');
+      }
+
+      try {
+        const { candidate_id, job_id } = await verifyOfferToken(String(token));
+        const { data: application } = await supabase
+          .from('job_applications')
+          .select('final_status, notes')
+          .eq('candidate_id', candidate_id)
+          .eq('job_id', job_id)
+          .maybeSingle();
+        if (!application) return notFound(res, 'Job application not found');
+
+        if (application.final_status === 'offer_accepted') {
+          return ok(res, { success: true, message: 'Offer already accepted', already_accepted: true });
+        }
+        if (!['offer_sent', 'accepted'].includes(String(application.final_status || ''))) {
+          return badRequest(res, 'Offer is not currently open for acceptance');
+        }
+
+        const clientIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'Unknown IP').split(',')[0].trim();
+        const signature = String(full_name_signature).trim();
+        const timestampIso = new Date().toISOString();
+        const existingNotes = String(application.notes || '').trim();
+        const acceptanceNote = [
+          '[Digital Offer Acceptance]',
+          `Accepted at: ${new Date(timestampIso).toISOString().replace('T', ' ').replace('.000Z', ' UTC')}`,
+          `IP Address: ${clientIp}`,
+          `Digital Signature: ${signature}`,
+        ].join('\n');
+
+        const notes = [existingNotes, acceptanceNote].filter(Boolean).join('\n');
+        await supabase
+          .from('job_applications')
+          .update({
+            final_status: 'offer_accepted',
+            notes,
+            offer_signature_name: signature,
+            offer_accepted_at: timestampIso,
+            offer_acceptance_ip: clientIp,
+            updated_at: timestampIso,
+          })
+          .eq('candidate_id', candidate_id)
+          .eq('job_id', job_id);
+
+        return ok(res, {
+          success: true,
+          message: 'Offer accepted successfully. Welcome aboard!',
+          already_accepted: false,
+        });
+      } catch {
+        return res.status(400).json({ detail: 'Invalid or expired acceptance link' });
+      }
     }
 
     // POST /api/candidates/bulk-update-interview-mode

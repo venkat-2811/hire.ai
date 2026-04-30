@@ -100,7 +100,6 @@ export default function ResultsDashboardPage() {
   const [sendingEmails, setSendingEmails] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [offerCtc, setOfferCtc] = useState('');
-  const [offerDocumentFormat, setOfferDocumentFormat] = useState<'pdf' | 'doc'>('pdf');
   const [offerTimePeriodYears, setOfferTimePeriodYears] = useState<string>('');
   const [offerTimePeriodMonths, setOfferTimePeriodMonths] = useState<string>('');
 
@@ -433,7 +432,6 @@ export default function ResultsDashboardPage() {
             job_id: selectedJobId,
             ctc: offerCtc.trim(),
             company_name: companyName.trim(),
-            document_format: offerDocumentFormat,
             time_period_years: offerTimePeriodYears ? parseInt(offerTimePeriodYears) : null,
             time_period_months: offerTimePeriodMonths ? parseInt(offerTimePeriodMonths) : null,
           }),
@@ -1164,7 +1162,7 @@ export default function ResultsDashboardPage() {
                     <DialogDescription>
                       Send a formal offer letter to{' '}
                       <strong>{selectedCandidates.size}</strong> selected candidate(s).
-                      The PDF will be attached to the email automatically.
+                      A PDF offer letter will be attached to the email automatically.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="py-2 space-y-4">
@@ -1229,21 +1227,9 @@ export default function ResultsDashboardPage() {
                       </p>
                     </div>
 
-                    <div className="space-y-1">
-                      <Label htmlFor="ol-format">Attachment Format</Label>
-                      <Select
-                        value={offerDocumentFormat}
-                        onValueChange={(value: 'pdf' | 'doc') => setOfferDocumentFormat(value)}
-                      >
-                        <SelectTrigger id="ol-format">
-                          <SelectValue placeholder="Select format" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pdf">PDF (.pdf)</SelectItem>
-                          <SelectItem value="doc">DOC (.doc)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Attachment format is standardized to <strong>PDF (.pdf)</strong> for all offer letters.
+                    </p>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setOfferLetterDialogOpen(false)}>

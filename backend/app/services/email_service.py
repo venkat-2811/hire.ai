@@ -280,7 +280,7 @@ class EmailService:
                 <div style="background: #fef9ec; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px 20px; margin: 20px 0;">
                     <p style="margin: 0; color: #92400e; font-weight: 700; font-size: 14px;">📎 Your Offer Letter is Attached</p>
                     <p style="margin: 6px 0 0 0; color: #78350f; font-size: 13px; line-height: 1.5;">
-                        Please open and review the attached PDF carefully. It contains your compensation details,
+                        Please open and review the attached offer letter carefully. It contains your compensation details,
                         start date, and all employment terms.
                     </p>
                 </div>
@@ -288,14 +288,14 @@ class EmailService:
                     <p style="margin: 0 0 8px 0; color: #4f46e5; font-weight: 700; font-size: 14px;">📋 To Accept Your Offer:</p>
                     <ol style="margin: 0; padding-left: 18px; color: #374151; line-height: 2; font-size: 14px;">
                         <li>Review the attached offer letter</li>
-                        <li>Click the <strong>"Accept Offer Letter"</strong> button below</li>
+                        <li>Click the <strong>"Accept Offer"</strong> button below</li>
                         <li>Enter your full name as a digital signature</li>
                         <li>Click <strong>"Submit Acceptance"</strong> to confirm</li>
                     </ol>
                 </div>
                 <div style="text-align: center; margin: 36px 0 20px 0;">
                     <a href="{acceptance_link}" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 18px 48px; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; display: inline-block; box-shadow: 0 6px 20px rgba(16,185,129,0.4); letter-spacing: 0.3px;">
-                        ✅ Accept Offer Letter
+                        ✅ Accept Offer
                     </a>
                 </div>
                 <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 4px 0 24px 0;">

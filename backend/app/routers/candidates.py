@@ -403,7 +403,7 @@ class SendOfferLetterRequest(BaseModel):
     job_id: str
     ctc: str  # Annual Cost to Company - required
     company_name: Optional[str] = None
-    document_format: Literal["pdf", "doc"] = "pdf"
+    document_format: Literal["pdf"] = "pdf"
     time_period_years: Optional[int] = None
     time_period_months: Optional[int] = None
     start_date: Optional[str] = None
@@ -423,7 +423,7 @@ async def send_offer_letter(request: SendOfferLetterRequest):
     Requires the acceptance email to have been sent first (final_status = 'accepted').
     """
     from app.services.email_service import get_email_service
-    from app.services.offer_letter_service import generate_offer_letter_pdf, generate_offer_letter_doc
+    from app.services.offer_letter_service import generate_offer_letter_pdf
 
     supabase = get_supabase_admin_client()
     email_service = get_email_service()
@@ -477,36 +477,20 @@ async def send_offer_letter(request: SendOfferLetterRequest):
     company_name = request.company_name or "Our Company"
 
     try:
-        if request.document_format == "doc":
-            attachment_bytes = generate_offer_letter_doc(
-                candidate_name=candidate["full_name"],
-                candidate_email=candidate["email"],
-                job_title=job_title,
-                company_name=company_name,
-                ctc=request.ctc,
-                time_period_years=request.time_period_years,
-                time_period_months=request.time_period_months,
-                start_date=request.start_date,
-                reporting_manager=request.reporting_manager,
-                location=request.location,
-            )
-            attachment_filename = f"Offer_Letter_{candidate['full_name'].replace(' ', '_')}.doc"
-            attachment_content_type = "application/msword"
-        else:
-            attachment_bytes = generate_offer_letter_pdf(
-                candidate_name=candidate["full_name"],
-                candidate_email=candidate["email"],
-                job_title=job_title,
-                company_name=company_name,
-                ctc=request.ctc,
-                time_period_years=request.time_period_years,
-                time_period_months=request.time_period_months,
-                start_date=request.start_date,
-                reporting_manager=request.reporting_manager,
-                location=request.location,
-            )
-            attachment_filename = f"Offer_Letter_{candidate['full_name'].replace(' ', '_')}.pdf"
-            attachment_content_type = "application/pdf"
+        attachment_bytes = generate_offer_letter_pdf(
+            candidate_name=candidate["full_name"],
+            candidate_email=candidate["email"],
+            job_title=job_title,
+            company_name=company_name,
+            ctc=request.ctc,
+            time_period_years=request.time_period_years,
+            time_period_months=request.time_period_months,
+            start_date=request.start_date,
+            reporting_manager=request.reporting_manager,
+            location=request.location,
+        )
+        attachment_filename = f"Offer_Letter_{candidate['full_name'].replace(' ', '_')}.pdf"
+        attachment_content_type = "application/pdf"
 
         # Generate secure acceptance token
         from jose import jwt
