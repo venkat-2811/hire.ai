@@ -122,6 +122,8 @@ export default function CandidatesPage() {
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [interviewMode, setInterviewMode] = useState<'ai' | 'manual'>('ai');
+  const [assessmentDeadline, setAssessmentDeadline] = useState('');
+  const [interviewDeadline, setInterviewDeadline] = useState('');
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -851,6 +853,21 @@ export default function CandidatesPage() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label>Deadline (Required)</Label>
+                <Input
+                  type="datetime-local"
+                  required
+                  value={assessmentDeadline}
+                  onChange={(e) => setAssessmentDeadline(e.target.value)}
+                  min={new Date(Date.now() + 3600000).toISOString().slice(0, 16)}
+                />
+                <div className="text-xs text-muted-foreground">
+                  Select the date and time when this assessment will expire.
+                  Candidates will not be able to access the assessment after this deadline.
+                </div>
+              </div>
+
               <div className="text-sm text-muted-foreground mt-4">
                 Candidates will receive an email with a link to complete the technical assessment.
                 You can configure question counts, difficulty, and time limits for this invite.
@@ -1022,22 +1039,5 @@ export default function CandidatesPage() {
         </AlertDialog>
       </div>
     </DashboardLayout>
-  );
-}
-                  if (candidateToDelete) {
-                    deleteCandidate.mutate({ id: candidateToDelete.id, jobId: candidateToDelete.jobId });
-                    setCandidateToDelete(null);
-                  }
-                }}
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    </DashboardLayout>
-  );
-}
   );
 }
