@@ -77,7 +77,7 @@ export async function sendInterviewInvite(
   candidateName: string,
   jobTitle: string,
   interviewLink: string,
-  scheduledTime?: string
+  deadline?: string
 ): Promise<void> {
   await sendEmail({
     to,
@@ -87,7 +87,7 @@ export async function sendInterviewInvite(
       <p>You have been invited to an AI-powered interview for the <strong>${jobTitle}</strong> position.</p>
       <p>Click the link below to start your interview:</p>
       <p><a href="${interviewLink}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Start Interview</a></p>
-      ${scheduledTime ? `<p><strong>Scheduled Time:</strong> ${scheduledTime}</p>` : ''}
+      ${deadline ? `<p><strong>Deadline:</strong> ${deadline}</p>` : ''}
       <br>
       <p>Best regards,<br>Talent Scout AI Team</p>
     `,

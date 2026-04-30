@@ -242,6 +242,11 @@ export default function CandidatesPage() {
       return;
     }
 
+    if (!assessmentDeadline) {
+      toast.error('Please select a deadline for the assessment');
+      return;
+    }
+
     setSendingInvites(true);
     try {
       const token = await getToken();
@@ -254,7 +259,7 @@ export default function CandidatesPage() {
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
           job_id: selectedJobId,
-          deadline_hours: 72,
+          deadline: assessmentDeadline,
           mcq_question_count: includeMcq ? mcqCount : 0,
           coding_challenge_count: includeCoding ? codingCount : 0,
           difficulty: assessmentDifficulty,
@@ -353,6 +358,10 @@ export default function CandidatesPage() {
         toast.success(`Manual interview mode set for ${data.updated_count} candidate(s). You can now enter scores in the candidate details page.`);
       } else {
         // AI interview flow (existing)
+        if (!interviewDeadline) {
+          toast.error('Please select a deadline for the interview');
+          return;
+        }
         const response = await fetch(`/api/ai-interview/invite`, {
           method: 'POST',
           headers: {
@@ -364,6 +373,7 @@ export default function CandidatesPage() {
             job_id: selectedJobId,
             question_count: interviewQuestionCount,
             difficulty: interviewDifficulty,
+            deadline: interviewDeadline,
           }),
         });
 
@@ -922,6 +932,21 @@ export default function CandidatesPage() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label>Deadline (Required)</Label>
+                    <Input
+                      type="datetime-local"
+                      required
+                      value={interviewDeadline}
+                      onChange={(e) => setInterviewDeadline(e.target.value)}
+                      min={new Date(Date.now() + 3600000).toISOString().slice(0, 16)}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      Select the date and time when this interview will expire.
+                      Candidates will not be able to access the interview after this deadline.
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -997,5 +1022,22 @@ export default function CandidatesPage() {
         </AlertDialog>
       </div>
     </DashboardLayout>
+  );
+}
+                  if (candidateToDelete) {
+                    deleteCandidate.mutate({ id: candidateToDelete.id, jobId: candidateToDelete.jobId });
+                    setCandidateToDelete(null);
+                  }
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </DashboardLayout>
+  );
+}
   );
 }
