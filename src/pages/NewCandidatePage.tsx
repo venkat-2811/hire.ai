@@ -646,34 +646,34 @@ export default function NewCandidatePage() {
       <Dialog open={showAutoFillDialog} onOpenChange={(open) => {
         if (!isParsingResume) setShowAutoFillDialog(open);
       }}>
-        <DialogContent className="sm:max-w-md max-w-[90vw] overflow-hidden">
-          <DialogHeader className="text-center px-6">
+        <DialogContent className="sm:max-w-lg max-w-[92vw] overflow-hidden">
+          <DialogHeader>
             <DialogTitle>How would you like to proceed?</DialogTitle>
-            <DialogDescription className="text-center">
+            <DialogDescription>
               A resume has been uploaded. Choose how to fill in the candidate details.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 px-6 pb-6 w-full">
+          <div className="grid gap-3 py-4 w-full">
             <Button
-              className="h-auto py-4 px-4 flex items-start gap-3 text-left w-full"
+              className="h-auto py-4 px-4 sm:px-6 flex items-center gap-3 sm:gap-4 text-left w-full whitespace-normal"
               variant="outline"
               onClick={handleAutoFill}
               disabled={isParsingResume}
             >
               {isParsingResume ? (
-                <div className="p-2 rounded-lg bg-primary/10 shrink-0">
-                  <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                <div className="p-2.5 rounded-lg bg-primary/10 shrink-0">
+                  <Loader2 className="h-5 w-5 text-primary animate-spin" />
                 </div>
               ) : (
-                <div className="p-2 rounded-lg bg-primary/10 shrink-0">
-                  <Sparkles className="h-6 w-6 text-primary" />
+                <div className="p-2.5 rounded-lg bg-primary/10 shrink-0">
+                  <Sparkles className="h-5 w-5 text-primary" />
                 </div>
               )}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <p className="font-semibold text-sm">
                   {isParsingResume ? 'Parsing Resume...' : 'Auto-fill with Resume'}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed break-words">
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed break-words">
                   {isParsingResume
                     ? 'Extracting name, email, phone, location, and skills from the resume...'
                     : 'AI will extract details from the resume and pre-fill the form. You can review and edit before submitting.'}
@@ -681,17 +681,17 @@ export default function NewCandidatePage() {
               </div>
             </Button>
             <Button
-              className="h-auto py-4 px-4 flex items-start gap-3 text-left w-full"
+              className="h-auto py-4 px-4 sm:px-6 flex items-center gap-3 sm:gap-4 text-left w-full whitespace-normal"
               variant="outline"
               onClick={handleManualEntry}
               disabled={isParsingResume}
             >
-              <div className="p-2 rounded-lg bg-muted shrink-0">
-                <PenLine className="h-6 w-6 text-muted-foreground" />
+              <div className="p-2.5 rounded-lg bg-muted shrink-0">
+                <PenLine className="h-5 w-5 text-muted-foreground" />
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <p className="font-semibold text-sm">Manual Entry</p>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed break-words">
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed break-words">
                   Enter candidate details manually. The resume will still be attached for later processing.
                 </p>
               </div>
