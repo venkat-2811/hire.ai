@@ -252,10 +252,10 @@ export default function NewJobPage() {
                 <div className="flex justify-end">
                   <Button
                     type="button"
-                    variant="outline"
                     size="sm"
                     onClick={extractSkillsFromDescription}
                     disabled={extractingSkills || !description || description.trim().length < 20}
+                    className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all duration-200 disabled:opacity-50 disabled:shadow-none"
                   >
                     {extractingSkills ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Extracting Skills...</>
