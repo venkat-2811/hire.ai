@@ -22,6 +22,7 @@ LIGHT_BG = colors.HexColor("#f0f4ff")
 TEXT_DARK = colors.HexColor("#1a1a2e")
 TEXT_MUTED = colors.HexColor("#6b7280")
 DIVIDER = colors.HexColor("#e5e7eb")
+GOLD = colors.HexColor("#f59e0b")
 
 
 def generate_offer_letter_pdf(
@@ -29,7 +30,9 @@ def generate_offer_letter_pdf(
     candidate_email: str,
     job_title: str,
     company_name: str,
-    offered_salary: str,
+    ctc: str,
+    time_period_years: Optional[int] = None,
+    time_period_months: Optional[int] = None,
     start_date: Optional[str] = None,
     reporting_manager: Optional[str] = None,
     location: Optional[str] = None,
@@ -42,7 +45,9 @@ def generate_offer_letter_pdf(
         candidate_email: Email address of the candidate
         job_title: Title of the offered role
         company_name: Name of the hiring company
-        offered_salary: Salary string (e.g. "$120,000 per annum")
+        ctc: Annual Cost to Company (e.g. "₹12,00,000 per annum")
+        time_period_years: Optional contract duration in years
+        time_period_months: Optional contract duration in months
         start_date: Optional proposed start date string
         reporting_manager: Optional name of reporting manager
         location: Optional work location
@@ -64,37 +69,40 @@ def generate_offer_letter_pdf(
     styles = getSampleStyleSheet()
 
     # --- Custom Styles ---
-    company_style = ParagraphStyle(
-        "CompanyHeader",
+    # Company name — the visual centrepiece at the top
+    company_hero_style = ParagraphStyle(
+        "CompanyHero",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
-        fontSize=22,
+        fontSize=36,
         textColor=BRAND_PURPLE,
-        spaceAfter=2,
+        alignment=TA_CENTER,
+        spaceAfter=4,
     )
-    tagline_style = ParagraphStyle(
-        "Tagline",
+    company_tagline_style = ParagraphStyle(
+        "CompanyTagline",
         parent=styles["Normal"],
         fontName="Helvetica",
-        fontSize=10,
+        fontSize=11,
         textColor=TEXT_MUTED,
-        spaceAfter=12,
+        alignment=TA_CENTER,
+        spaceAfter=10,
     )
     doc_title_style = ParagraphStyle(
         "DocTitle",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
-        fontSize=18,
+        fontSize=16,
         textColor=TEXT_DARK,
         alignment=TA_CENTER,
-        spaceBefore=8,
-        spaceAfter=4,
+        spaceBefore=6,
+        spaceAfter=2,
     )
-    doc_subtitle_style = ParagraphStyle(
-        "DocSubtitle",
+    doc_date_style = ParagraphStyle(
+        "DocDate",
         parent=styles["Normal"],
         fontName="Helvetica",
-        fontSize=11,
+        fontSize=10,
         textColor=TEXT_MUTED,
         alignment=TA_CENTER,
         spaceAfter=14,
@@ -157,21 +165,32 @@ def generate_offer_letter_pdf(
     manager_display = reporting_manager or "[To be communicated]"
     location_display = location or "As Agreed"
 
+    # Build time period string only if provided
+    time_period_display = None
+    if time_period_years or time_period_months:
+        parts = []
+        if time_period_years and time_period_years > 0:
+            parts.append(f"{time_period_years} Year{'s' if time_period_years > 1 else ''}")
+        if time_period_months and time_period_months > 0:
+            parts.append(f"{time_period_months} Month{'s' if time_period_months > 1 else ''}")
+        if parts:
+            time_period_display = " & ".join(parts)
+
     # ======================== CONTENT ========================
     story = []
 
-    # --- Company Header ---
-    story.append(Paragraph(company_name, company_style))
-    story.append(Paragraph("Talent Acquisition · People & Culture", tagline_style))
-    story.append(HRFlowable(width="100%", thickness=2, color=BRAND_PURPLE, spaceAfter=8))
+    # ── HEADER: Company name as the hero element ──────────────
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(company_name, company_hero_style))
+    story.append(Paragraph("Talent Acquisition &amp; People Operations", company_tagline_style))
+    story.append(HRFlowable(width="100%", thickness=3, color=BRAND_PURPLE, spaceAfter=10))
 
-    # --- Document Title ---
+    # ── Document Title ────────────────────────────────────────
     story.append(Paragraph("OFFER OF EMPLOYMENT", doc_title_style))
-    story.append(Paragraph(f"Date: {today}", doc_subtitle_style))
+    story.append(Paragraph(f"Date: {today}", doc_date_style))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=10))
 
-    story.append(Spacer(1, 6))
-
-    # --- Greeting / Intro ---
+    # ── Greeting / Intro ──────────────────────────────────────
     story.append(Paragraph(
         f"Dear <b>{candidate_name}</b>,",
         ParagraphStyle("Greeting", parent=body_style, spaceAfter=8)
@@ -186,7 +205,7 @@ def generate_offer_letter_pdf(
 
     story.append(Spacer(1, 4))
 
-    # --- Employment Details Table ---
+    # ── 1. Employment Details ─────────────────────────────────
     story.append(Paragraph("1. Employment Details", section_heading_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=6))
 
@@ -198,12 +217,11 @@ def generate_offer_letter_pdf(
         ["Proposed Start Date", start_display],
         ["Employment Type", "Full-Time, Permanent"],
     ]
+    # Append contract duration only when provided
+    if time_period_display:
+        details_data.append(["Contract Duration", time_period_display])
 
-    details_table = Table(
-        details_data,
-        colWidths=[60 * mm, None],
-        hAlign="LEFT",
-    )
+    details_table = Table(details_data, colWidths=[60 * mm, None], hAlign="LEFT")
     details_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), LIGHT_BG),
         ("TEXTCOLOR", (0, 0), (0, -1), BRAND_DARK),
@@ -220,24 +238,21 @@ def generate_offer_letter_pdf(
     ]))
     story.append(details_table)
 
-    # --- Compensation ---
-    story.append(Paragraph("2. Compensation & Benefits", section_heading_style))
+    # ── 2. Compensation & Benefits ────────────────────────────
+    story.append(Paragraph("2. Compensation &amp; Benefits", section_heading_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=6))
 
     comp_data = [
-        ["Offered Salary (CTC)", offered_salary],
+        ["Annual CTC", ctc],
         ["Pay Frequency", "Monthly"],
     ]
-    comp_table = Table(
-        comp_data,
-        colWidths=[60 * mm, None],
-        hAlign="LEFT",
-    )
+    comp_table = Table(comp_data, colWidths=[60 * mm, None], hAlign="LEFT")
     comp_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), LIGHT_BG),
         ("TEXTCOLOR", (0, 0), (0, -1), BRAND_DARK),
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+        ("FONTNAME", (1, 0), (1, -1), "Helvetica-Bold"),  # CTC value bold for emphasis
+        ("TEXTCOLOR", (1, 0), (1, 0), BRAND_PURPLE),       # CTC value in brand color
         ("FONTSIZE", (0, 0), (-1, -1), 10),
         ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
         ("GRID", (0, 0), (-1, -1), 0.5, DIVIDER),
@@ -255,13 +270,10 @@ def generate_offer_letter_pdf(
         ParagraphStyle("BenefitsNote", parent=body_style, spaceBefore=6, fontSize=9, textColor=TEXT_MUTED)
     ))
 
-    # --- At-Will / Employment Terms ---
+    # ── 3. General Employment Terms ───────────────────────────
     story.append(Paragraph("3. General Employment Terms", section_heading_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=6))
-    story.append(Paragraph(
-        "Your employment will be governed by the following general terms:",
-        body_style
-    ))
+    story.append(Paragraph("Your employment will be governed by the following general terms:", body_style))
     terms = [
         "<b>Probationary Period:</b> Your first 90 days of employment shall constitute a "
         "probationary period during which either party may terminate the agreement with "
@@ -278,7 +290,7 @@ def generate_offer_letter_pdf(
     for term in terms:
         story.append(Paragraph(f"• {term}", bullet_style))
 
-    # --- Confidentiality ---
+    # ── 4. Confidentiality Clause ─────────────────────────────
     story.append(Paragraph("4. Confidentiality Clause", section_heading_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=6))
     story.append(Paragraph(
@@ -299,7 +311,7 @@ def generate_offer_letter_pdf(
         ParagraphStyle("Warning", parent=body_style, fontSize=9, textColor=TEXT_MUTED)
     ))
 
-    # --- Code of Conduct ---
+    # ── 5. Code of Conduct ────────────────────────────────────
     story.append(Paragraph("5. Code of Conduct", section_heading_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=6))
     story.append(Paragraph(
@@ -316,7 +328,7 @@ def generate_offer_letter_pdf(
     for item in conduct_items:
         story.append(Paragraph(f"• {item}", bullet_style))
 
-    # --- Non-Solicitation ---
+    # ── 6. Non-Solicitation ───────────────────────────────────
     story.append(Paragraph("6. Non-Solicitation", section_heading_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=6))
     story.append(Paragraph(
@@ -327,18 +339,19 @@ def generate_offer_letter_pdf(
         body_style
     ))
 
-    # --- Acceptance ---
+    # ── 7. Acceptance of Offer ────────────────────────────────
     story.append(Spacer(1, 10))
     story.append(Paragraph("7. Acceptance of Offer", section_heading_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=6))
     story.append(Paragraph(
-        "Please confirm your acceptance of this offer by replying to the offer email within "
-        "<b>7 business days</b> of receiving this letter. Failure to respond within this period may "
-        "result in the offer being withdrawn.",
+        "Please confirm your acceptance of this offer by clicking the <b>Accept Offer</b> button in "
+        "the email accompanying this letter, within <b>7 business days</b> of receiving it. "
+        "Your digital signature will be recorded as formal acceptance. Failure to respond within "
+        "this period may result in the offer being withdrawn.",
         body_style
     ))
 
-    # --- Signature Block ---
+    # ── Signature Block ───────────────────────────────────────
     story.append(Spacer(1, 16))
     story.append(HRFlowable(width="100%", thickness=1, color=DIVIDER, spaceAfter=12))
 
@@ -364,7 +377,7 @@ def generate_offer_letter_pdf(
     ]))
     story.append(sig_table)
 
-    # --- Footer ---
+    # ── Footer ────────────────────────────────────────────────
     story.append(Spacer(1, 10))
     story.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=4))
     story.append(Paragraph(
