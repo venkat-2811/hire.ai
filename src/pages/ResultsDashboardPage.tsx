@@ -99,6 +99,9 @@ export default function ResultsDashboardPage() {
   const [offerLetterDialogOpen, setOfferLetterDialogOpen] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
   const [companyName, setCompanyName] = useState('');
+  const [offerCtc, setOfferCtc] = useState('');
+  const [offerTimePeriodYears, setOfferTimePeriodYears] = useState<string>('');
+  const [offerTimePeriodMonths, setOfferTimePeriodMonths] = useState<string>('');
 
   useEffect(() => {
     async function loadGlobalResults() {
@@ -399,39 +402,59 @@ export default function ResultsDashboardPage() {
       toast.error('Please select a job first');
       return;
     }
+    if (!offerCtc.trim()) {
+      toast.error('CTC is required. Please enter the annual Cost to Company.');
+      return;
+    }
+    if (!companyName.trim()) {
+      toast.error('Company name is required.');
+      return;
+    }
 
     setSendingEmails(true);
     try {
       const token = await getToken();
       const candidateIds = Array.from(selectedCandidates);
-      const response = await fetch(`${API_BASE_URL}/candidates/send-offer-letter`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          candidate_ids: candidateIds,
-          job_id: selectedJobId,
-          company_name: companyName.trim() || undefined,
-        }),
-      });
 
-      const data = await response.json();
-      if (!response.ok) {
-        toast.error(data?.error || 'Failed to send offer letters');
-        return;
+      let successCount = 0;
+      let failures: string[] = [];
+
+      // Send one by one (backend endpoint is per-candidate)
+      for (const candidateId of candidateIds) {
+        const response = await fetch(`${API_BASE_URL}/candidates/send-offer-letter`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            candidate_id: candidateId,
+            job_id: selectedJobId,
+            ctc: offerCtc.trim(),
+            company_name: companyName.trim(),
+            time_period_years: offerTimePeriodYears ? parseInt(offerTimePeriodYears) : null,
+            time_period_months: offerTimePeriodMonths ? parseInt(offerTimePeriodMonths) : null,
+          }),
+        });
+
+        if (response.ok) {
+          successCount++;
+        } else {
+          const data = await response.json().catch(() => ({}));
+          failures.push(data?.detail || data?.error || candidateId);
+        }
       }
 
-      if (data?.error_messages?.length) {
-        toast.error(`Some emails failed: ${data.error_messages[0]}`);
-      } else {
-        toast.success(`Offer letter${data.emails_sent > 1 ? 's' : ''} sent to ${data.emails_sent} candidate(s)`);
-        // Mark all as offer_sent
+      if (successCount > 0) {
+        toast.success(`Offer letter${successCount > 1 ? 's' : ''} sent to ${successCount} candidate${successCount > 1 ? 's' : ''}`);
         const newOfferSent = new Set(offerSentIds);
         candidateIds.forEach((id) => newOfferSent.add(id));
         setOfferSentIds(newOfferSent);
       }
+      if (failures.length > 0) {
+        toast.error(`${failures.length} offer letter(s) failed to send.`);
+      }
+
       setOfferLetterDialogOpen(false);
       setSelectedCandidates(new Set());
     } catch (e) {
@@ -1127,25 +1150,74 @@ export default function ResultsDashboardPage() {
 
               {/* ─── Offer Letter Dialog ─────────────────────────────────────── */}
               <Dialog open={offerLetterDialogOpen} onOpenChange={setOfferLetterDialogOpen}>
-                <DialogContent>
+                <DialogContent className="max-w-md">
                   <DialogHeader>
                     <DialogTitle>Send Offer Letter</DialogTitle>
                     <DialogDescription>
-                      Send a formal offer letter email to{' '}
+                      Send a formal offer letter to{' '}
                       <strong>{selectedCandidates.size}</strong> selected candidate(s).
+                      The PDF will be attached to the email automatically.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="py-2 space-y-4">
+                    {/* Company Name - required */}
                     <div className="space-y-1">
-                      <Label htmlFor="company-name">Company Name</Label>
+                      <Label htmlFor="ol-company-name">
+                        Company Name <span className="text-destructive">*</span>
+                      </Label>
                       <Input
-                        id="company-name"
+                        id="ol-company-name"
                         placeholder="e.g. Acme Corp"
                         value={companyName}
                         onChange={(e) => setCompanyName(e.target.value)}
                       />
+                    </div>
+
+                    {/* CTC - required */}
+                    <div className="space-y-1">
+                      <Label htmlFor="ol-ctc">
+                        Annual CTC (Cost to Company) <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="ol-ctc"
+                        placeholder="e.g. ₹12,00,000 or $80,000 per annum"
+                        value={offerCtc}
+                        onChange={(e) => setOfferCtc(e.target.value)}
+                      />
                       <p className="text-xs text-muted-foreground">
-                        Leave blank to use "Our Company" as a placeholder.
+                        Enter the yearly salary package. This will appear prominently in the offer letter.
+                      </p>
+                    </div>
+
+                    {/* Time Period - optional */}
+                    <div className="space-y-1">
+                      <Label>Contract Duration <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Input
+                            id="ol-years"
+                            type="number"
+                            min={0}
+                            max={20}
+                            placeholder="Years"
+                            value={offerTimePeriodYears}
+                            onChange={(e) => setOfferTimePeriodYears(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Input
+                            id="ol-months"
+                            type="number"
+                            min={0}
+                            max={11}
+                            placeholder="Months"
+                            value={offerTimePeriodMonths}
+                            onChange={(e) => setOfferTimePeriodMonths(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Leave blank for a permanent / open-ended contract. If filled, this will be shown in the offer letter.
                       </p>
                     </div>
                   </div>
@@ -1155,7 +1227,7 @@ export default function ResultsDashboardPage() {
                     </Button>
                     <Button
                       onClick={sendOfferLetterEmails}
-                      disabled={sendingEmails}
+                      disabled={sendingEmails || !offerCtc.trim() || !companyName.trim()}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white"
                     >
                       {sendingEmails ? (

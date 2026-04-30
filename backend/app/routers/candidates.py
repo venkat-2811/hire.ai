@@ -401,11 +401,13 @@ async def bulk_delete_candidates(candidate_ids: List[str]):
 class SendOfferLetterRequest(BaseModel):
     candidate_id: str
     job_id: str
-    offered_salary: str
+    ctc: str  # Annual Cost to Company - required
+    company_name: Optional[str] = None
+    time_period_years: Optional[int] = None
+    time_period_months: Optional[int] = None
     start_date: Optional[str] = None
     reporting_manager: Optional[str] = None
     location: Optional[str] = None
-    company_name: Optional[str] = None
 
 
 class SendOfferLetterResponse(BaseModel):
@@ -436,10 +438,17 @@ async def send_offer_letter(request: SendOfferLetterRequest):
             detail="No job application found for this candidate and job."
         )
 
+    final_status = app_result.data[0].get("final_status")
     if final_status == "rejected":
         raise HTTPException(
             status_code=400,
             detail="Cannot send an offer letter to a rejected candidate."
+        )
+
+    if not request.ctc or not request.ctc.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="CTC (Cost to Company) is required to send an offer letter."
         )
 
     if not request.company_name:
@@ -473,30 +482,39 @@ async def send_offer_letter(request: SendOfferLetterRequest):
             candidate_email=candidate["email"],
             job_title=job_title,
             company_name=company_name,
-            offered_salary=request.offered_salary,
+            ctc=request.ctc,
+            time_period_years=request.time_period_years,
+            time_period_months=request.time_period_months,
             start_date=request.start_date,
             reporting_manager=request.reporting_manager,
             location=request.location,
         )
 
-        # Generate the Acceptance Link securely
+        # Generate the Acceptance Link securely — points to the FRONTEND acceptance page
         from jose import jwt
         from datetime import timedelta
-        
+        import json
+
         settings = get_settings()
         secret = settings.supabase_service_key or "default_hireai_secret"
         payload = {
             "candidate_id": candidate["id"],
             "job_id": request.job_id,
+            "candidate_name": candidate["full_name"],
+            "job_title": job_title,
+            "company_name": company_name,
+            "ctc": request.ctc,
+            "time_period_years": request.time_period_years,
+            "time_period_months": request.time_period_months,
+            "start_date": request.start_date,
+            "location": request.location,
             "exp": datetime.utcnow() + timedelta(days=7)
         }
         token = jwt.encode(payload, secret, algorithm="HS256")
-        
-        # Use backend URL to process acceptance directly
-        # In production this should use the proper backend base URL, but for simple app frontend_url/api is often proxied
-        # To be safe, we will just use settings.frontend_url /api/candidates/accept-offer as it handles routing
+
+        # Link goes to the frontend SPA acceptance page (not a backend HTML route)
         base_url = str(settings.frontend_url).rstrip("/")
-        acceptance_link = f"{base_url}/api/candidates/accept-offer?token={token}"
+        acceptance_link = f"{base_url}/offer-acceptance?token={token}"
 
         # Send the email with attachment and the acceptance link
         await email_service.send_offer_letter_email(
@@ -526,77 +544,127 @@ async def send_offer_letter(request: SendOfferLetterRequest):
         )
 
 
-@router.get("/accept-offer", response_class=HTMLResponse)
-async def accept_offer(request: Request, token: str):
-    """Endpoint for candidates to accept an offer letter via email link."""
+@router.get("/offer-details")
+async def get_offer_details(token: str):
+    """
+    Return offer letter details as JSON for the frontend acceptance page.
+    The token contains all the offer fields embedded at signing time.
+    """
     from jose import jwt, JWTError
     settings = get_settings()
     secret = settings.supabase_service_key or "default_hireai_secret"
-    
+
     try:
         payload = jwt.decode(token, secret, algorithms=["HS256"])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired offer link")
+
+    candidate_id = payload.get("candidate_id")
+    job_id = payload.get("job_id")
+    if not candidate_id or not job_id:
+        raise HTTPException(status_code=400, detail="Invalid token payload")
+
+    supabase = get_supabase_admin_client()
+    app_result = supabase.table("job_applications").select(
+        "final_status"
+    ).eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
+
+    already_accepted = (
+        app_result.data and
+        app_result.data[0].get("final_status") in ("accepted", "offer_accepted")
+    )
+
+    return {
+        "candidate_id": candidate_id,
+        "job_id": job_id,
+        "candidate_name": payload.get("candidate_name"),
+        "job_title": payload.get("job_title"),
+        "company_name": payload.get("company_name"),
+        "ctc": payload.get("ctc"),
+        "time_period_years": payload.get("time_period_years"),
+        "time_period_months": payload.get("time_period_months"),
+        "start_date": payload.get("start_date"),
+        "location": payload.get("location"),
+        "already_accepted": already_accepted,
+    }
+
+
+@router.get("/accept-offer", response_class=HTMLResponse)
+async def accept_offer_redirect(request: Request, token: str):
+    """
+    Legacy redirect: when candidate clicks the email button, redirect them
+    to the frontend acceptance page which fetches offer details and handles signature.
+    """
+    from app.config import get_settings
+    settings = get_settings()
+    base_url = str(settings.frontend_url).rstrip("/")
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"{base_url}/offer-acceptance?token={token}")
+
+
+class SubmitAcceptanceRequest(BaseModel):
+    token: str
+    full_name_signature: str  # Candidate's typed full name as digital signature
+
+
+@router.post("/submit-offer-acceptance")
+async def submit_offer_acceptance(request: Request, body: SubmitAcceptanceRequest):
+    """
+    Called by the frontend OfferAcceptancePage when the candidate confirms acceptance
+    with their digital signature (typed full name).
+    """
+    from jose import jwt, JWTError
+    settings = get_settings()
+    secret = settings.supabase_service_key or "default_hireai_secret"
+
+    try:
+        payload = jwt.decode(body.token, secret, algorithms=["HS256"])
         candidate_id = payload.get("candidate_id")
         job_id = payload.get("job_id")
         if not candidate_id or not job_id:
-            raise JWTError("Invalid payload data")
+            raise JWTError("Missing fields")
     except JWTError:
-        return """
-        <html>
-            <body style='font-family: sans-serif; text-align: center; padding: 50px;'>
-                <h2 style='color: #e11d48;'>Invalid or Expired Link</h2>
-                <p>This offer acceptance link is no longer valid. Please contact your recruiter.</p>
-            </body>
-        </html>
-        """
-        
+        raise HTTPException(status_code=400, detail="Invalid or expired acceptance link")
+
+    if not body.full_name_signature or not body.full_name_signature.strip():
+        raise HTTPException(status_code=400, detail="Full name signature is required to accept the offer")
+
     supabase = get_supabase_admin_client()
-    
-    # Check current status
-    app_result = supabase.table("job_applications").select("final_status, notes").eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
-    
+
+    app_result = supabase.table("job_applications").select(
+        "final_status, notes"
+    ).eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
+
     if not app_result.data:
-        return "<h2 style='text-align:center;'>Job application not found.</h2>"
-        
+        raise HTTPException(status_code=404, detail="Job application not found")
+
     app_data = app_result.data[0]
-    if app_data.get("final_status") == "accepted":
-        return """
-        <html>
-            <body style='font-family: sans-serif; text-align: center; padding: 50px;'>
-                <h2 style='color: #059669;'>Offer Already Accepted!</h2>
-                <p>You have already accepted this offer letter.</p>
-            </body>
-        </html>
-        """
-        
-    # Prepare audit metadata
+    if app_data.get("final_status") == "offer_accepted":
+        return {"success": True, "message": "Offer already accepted", "already_accepted": True}
+
+    # Audit trail
     client_ip = request.client.host if request.client else "Unknown IP"
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    
     existing_notes = app_data.get("notes") or ""
-    metadata_note = f"\n[Offer Acceptance Audit]\nAccepted at: {timestamp}\nIP Address: {client_ip}\n"
-    new_notes = existing_notes + metadata_note
-    
-    # Update status to accepted and store metadata in notes
+    metadata_note = (
+        f"\n[Digital Offer Acceptance]\n"
+        f"Accepted at: {timestamp}\n"
+        f"IP Address: {client_ip}\n"
+        f"Digital Signature: {body.full_name_signature.strip()}\n"
+    )
+    new_notes = (existing_notes + metadata_note).strip()
+
     supabase.table("job_applications").update({
-        "final_status": "accepted",
-        "notes": new_notes.strip()
+        "final_status": "offer_accepted",
+        "notes": new_notes,
     }).eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
-    
-    return """
-    <html>
-        <body style='font-family: sans-serif; text-align: center; padding: 50px; background-color: #f8fafc;'>
-            <div style='max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);'>
-                <div style='font-size: 48px; margin-bottom: 20px;'>🎉</div>
-                <h2 style='color: #0ea5e9; margin-top: 0;'>Offer Accepted Successfully!</h2>
-                <p style='color: #475569; line-height: 1.6;'>
-                    Thank you for accepting the offer letter. Your acceptance has been digitally recorded. 
-                    Our HR team will be securely notified and will get back to you shortly with the onboarding details.
-                </p>
-                <p style='color: #475569; font-weight: bold;'>Welcome aboard!</p>
-            </div>
-        </body>
-    </html>
-    """
+
+    return {
+        "success": True,
+        "message": "Offer accepted successfully. Welcome aboard!",
+        "already_accepted": False,
+    }
+
 
 
 def _row_to_candidate(row: dict, job_id: str = None) -> Candidate:

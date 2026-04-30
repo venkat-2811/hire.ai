@@ -258,51 +258,62 @@ class EmailService:
         acceptance_link: str,
     ) -> dict:
         """Send formal offer letter email with PDF attachment and acceptance link."""
-        subject = f"Formal Offer Letter – {job_title} at {company_name}"
+        subject = f"🎉 Congratulations! Your Offer Letter – {job_title} at {company_name}"
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; border-radius: 8px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 32px 40px;">
-                <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 700;">{company_name}</h1>
-                <p style="color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 14px;">Talent Acquisition Team</p>
+            <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 40px; text-align: center;">
+                <h1 style="color: white; margin: 0 0 4px 0; font-size: 32px; font-weight: 800; letter-spacing: -0.5px;">{company_name}</h1>
+                <p style="color: rgba(255,255,255,0.8); margin: 0; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Talent Acquisition Team</p>
             </div>
-            <div style="padding: 32px 40px;">
-                <h2 style="color: #1a1a2e; margin-top: 0;">🎉 Congratulations, {candidate_name}!</h2>
-                <p style="color: #444; line-height: 1.6;">
-                    We are delighted to extend a formal offer of employment to you for the position of
-                    <strong>{job_title}</strong> at <strong>{company_name}</strong>.
+            <div style="padding: 36px 40px;">
+                <div style="text-align: center; margin-bottom: 28px;">
+                    <div style="font-size: 52px; margin-bottom: 8px;">🎉</div>
+                    <h2 style="color: #1a1a2e; margin: 0; font-size: 26px;">Congratulations, {candidate_name}!</h2>
+                    <p style="color: #6b7280; margin: 8px 0 0 0; font-size: 15px;">You've been selected for an exciting opportunity.</p>
+                </div>
+                <p style="color: #374151; line-height: 1.7; font-size: 15px;">
+                    We are thrilled to offer you the position of <strong>{job_title}</strong> at <strong>{company_name}</strong>.
+                    Your performance throughout our hiring process has been truly impressive, and we cannot wait to have you on board.
                 </p>
-                <p style="color: #444; line-height: 1.6;">
-                    Please find your <strong>Offer Letter</strong> attached to this email as a PDF document.
-                    It contains all the details of your employment, including your compensation, start date,
-                    reporting structure, and key policies.
-                </p>
+                <div style="background: #fef9ec; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px 20px; margin: 20px 0;">
+                    <p style="margin: 0; color: #92400e; font-weight: 700; font-size: 14px;">📎 Your Offer Letter is Attached</p>
+                    <p style="margin: 6px 0 0 0; color: #78350f; font-size: 13px; line-height: 1.5;">
+                        Please open and review the attached PDF carefully. It contains your compensation details,
+                        start date, and all employment terms.
+                    </p>
+                </div>
                 <div style="background: #f0f4ff; border-left: 4px solid #6366f1; padding: 16px 20px; border-radius: 4px; margin: 24px 0;">
-                    <p style="margin: 0; color: #4f46e5; font-weight: 600;">📋 Next Steps</p>
-                    <ul style="margin: 10px 0 0 0; padding-left: 18px; color: #444; line-height: 1.8;">
-                        <li>Review the attached offer letter carefully</li>
-                        <li>Click the button below to formally accept the offer</li>
-                        <li>Our HR team will follow up with onboarding details</li>
-                    </ul>
+                    <p style="margin: 0 0 8px 0; color: #4f46e5; font-weight: 700; font-size: 14px;">📋 To Accept Your Offer:</p>
+                    <ol style="margin: 0; padding-left: 18px; color: #374151; line-height: 2; font-size: 14px;">
+                        <li>Review the attached PDF offer letter</li>
+                        <li>Click the <strong>"Accept Offer"</strong> button below</li>
+                        <li>Enter your full name as a digital signature</li>
+                        <li>Click <strong>"Submit Acceptance"</strong> to confirm</li>
+                    </ol>
                 </div>
-                <div style="text-align: center; margin: 32px 0;">
-                    <a href="{acceptance_link}" style="background: #4f46e5; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Accept Offer Letter</a>
+                <div style="text-align: center; margin: 36px 0 20px 0;">
+                    <a href="{acceptance_link}" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 18px 48px; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; display: inline-block; box-shadow: 0 6px 20px rgba(16,185,129,0.4); letter-spacing: 0.3px;">
+                        ✅ Accept Offer
+                    </a>
                 </div>
-                <p style="color: #444; line-height: 1.6;">
-                    If you have any questions or need clarification on any aspect of the offer,
-                    please do not hesitate to reach out to us.
+                <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 4px 0 24px 0;">
+                    This acceptance link expires in <strong>7 business days</strong>. Please respond promptly.
                 </p>
-                <p style="color: #444;">
-                    We look forward to welcoming you to the team!
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+                <p style="color: #6b7280; line-height: 1.6; font-size: 14px;">
+                    If you have any questions about the offer, please don't hesitate to reach out to our HR team.
+                    We're here to help make your transition as smooth as possible.
                 </p>
-                <p style="color: #444; margin-bottom: 0;">
+                <p style="color: #374151; margin-bottom: 0;">
                     Warm regards,<br/>
                     <strong>Talent Acquisition Team</strong><br/>
-                    {company_name}
+                    <span style="color: #6b7280;">{company_name}</span>
                 </p>
             </div>
-            <div style="background: #f0f0f0; padding: 16px 40px; text-align: center;">
-                <p style="color: #888; font-size: 12px; margin: 0;">
-                    This is a confidential communication. If you received this in error, please notify us immediately.
+            <div style="background: #f3f4f6; padding: 16px 40px; text-align: center; border-top: 1px solid #e5e7eb;">
+                <p style="color: #9ca3af; font-size: 11px; margin: 0;">
+                    This is a confidential communication intended solely for {candidate_name}.
+                    If you received this in error, please notify us immediately.
                 </p>
             </div>
         </div>
