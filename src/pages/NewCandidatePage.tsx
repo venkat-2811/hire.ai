@@ -646,7 +646,7 @@ export default function NewCandidatePage() {
       <Dialog open={showAutoFillDialog} onOpenChange={(open) => {
         if (!isParsingResume) setShowAutoFillDialog(open);
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>How would you like to proceed?</DialogTitle>
             <DialogDescription>

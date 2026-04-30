@@ -3602,7 +3602,13 @@ Return JSON:
         }
 
         if (new Date() > deadline) {
-          await supabase.from('assessment_sessions').update({ status: 'expired' }).eq('id', session.id);
+          await supabase.from('assessment_sessions').update({ 
+            status: 'expired',
+            mcq_score: 0,
+            coding_score: 0,
+            total_score: 0,
+            completed_at: new Date().toISOString()
+          }).eq('id', session.id);
           return badRequest(res, 'Assessment deadline has passed');
         }
 
@@ -4383,6 +4389,29 @@ Return JSON:
         }
         if (!session) return notFound(res, 'Interview not found or link expired');
         if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
+
+        // Enforce Deadline
+        if (!session.deadline) {
+          return res.status(500).json({ error: 'Interview session misconfigured (missing deadline)' });
+        }
+        const deadlineDate = new Date(session.deadline);
+        if (Number.isNaN(deadlineDate.getTime())) {
+          return res.status(500).json({ error: 'Interview session misconfigured (invalid deadline)' });
+        }
+        if (new Date() > deadlineDate) {
+          await supabase.from('ai_interview_sessions').update({ 
+            status: 'expired',
+            integrity_score: 0,
+            completed_at: new Date().toISOString()
+          }).eq('id', session.id);
+          
+          await supabase.from('job_applications').update({
+            interview_status: 'expired',
+            manual_interview_score: 0
+          }).eq('candidate_id', session.candidate_id).eq('job_id', session.job_id);
+
+          return badRequest(res, 'Interview deadline has passed');
+        }
 
         const sessionQuestions = normalizeInterviewQuestions(session.questions);
         const questionCount = sessionQuestions.length;

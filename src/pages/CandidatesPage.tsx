@@ -123,6 +123,14 @@ export default function CandidatesPage() {
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [interviewMode, setInterviewMode] = useState<'ai' | 'manual'>('ai');
 
+  // Deadline defaults to 24 hours from now
+  const getDefault24hDeadline = () => {
+    const d = new Date(Date.now() + 24 * 3600000);
+    return d.toISOString().slice(0, 16);
+  };
+  const [assessmentDeadline, setAssessmentDeadline] = useState(getDefault24hDeadline);
+  const [interviewDeadline, setInterviewDeadline] = useState(getDefault24hDeadline);
+
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState<{ id: string; jobId: string } | null>(null);
@@ -242,6 +250,17 @@ export default function CandidatesPage() {
       return;
     }
 
+    if (!assessmentDeadline) {
+      toast.error('Please select a deadline for the assessment');
+      return;
+    }
+
+    const deadlineDate = new Date(assessmentDeadline);
+    if (deadlineDate <= new Date()) {
+      toast.error('Deadline must be in the future');
+      return;
+    }
+
     setSendingInvites(true);
     try {
       const token = await getToken();
@@ -254,7 +273,7 @@ export default function CandidatesPage() {
         body: JSON.stringify({
           candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
           job_id: selectedJobId,
-          deadline_hours: 72,
+          deadline: deadlineDate.toISOString(),
           mcq_question_count: includeMcq ? mcqCount : 0,
           coding_challenge_count: includeCoding ? codingCount : 0,
           difficulty: assessmentDifficulty,
@@ -352,7 +371,19 @@ export default function CandidatesPage() {
         const data = await response.json();
         toast.success(`Manual interview mode set for ${data.updated_count} candidate(s). You can now enter scores in the candidate details page.`);
       } else {
-        // AI interview flow (existing)
+        // AI interview flow
+        if (!interviewDeadline) {
+          toast.error('Please select a deadline for the interview');
+          setSendingInvites(false);
+          return;
+        }
+        const deadlineDate = new Date(interviewDeadline);
+        if (deadlineDate <= new Date()) {
+          toast.error('Deadline must be in the future');
+          setSendingInvites(false);
+          return;
+        }
+
         const response = await fetch(`/api/ai-interview/invite`, {
           method: 'POST',
           headers: {
@@ -364,6 +395,7 @@ export default function CandidatesPage() {
             job_id: selectedJobId,
             question_count: interviewQuestionCount,
             difficulty: interviewDifficulty,
+            deadline: deadlineDate.toISOString(),
           }),
         });
 
@@ -841,9 +873,23 @@ export default function CandidatesPage() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label>Deadline (Required)</Label>
+                <Input
+                  type="datetime-local"
+                  required
+                  value={assessmentDeadline}
+                  onChange={(e) => setAssessmentDeadline(e.target.value)}
+                  min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                />
+                <div className="text-xs text-muted-foreground">
+                  Default: 24 hours from now. The assessment link will automatically expire after this deadline.
+                  Candidates who miss the deadline will receive a score of 0.
+                </div>
+              </div>
+
               <div className="text-sm text-muted-foreground mt-4">
-                Candidates will receive an email with a link to complete the technical assessment.
-                You can configure question counts, difficulty, and time limits for this invite.
+                Candidates will receive an email with a link and the deadline clearly displayed.
               </div>
             </div>
 
@@ -921,6 +967,20 @@ export default function CandidatesPage() {
                         <SelectItem value="hard">Hard</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Deadline (Required)</Label>
+                    <Input
+                      type="datetime-local"
+                      required
+                      value={interviewDeadline}
+                      onChange={(e) => setInterviewDeadline(e.target.value)}
+                      min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      Default: 24 hours from now. The interview link will automatically expire after this deadline.
+                      Candidates who miss the deadline will receive a score of 0.
+                    </div>
                   </div>
                 </>
               )}
