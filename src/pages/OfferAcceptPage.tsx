@@ -298,3 +298,5 @@ export default function OfferAcceptPage() {
     </div>
   );
 }
+
+export default OfferAcceptPage;
