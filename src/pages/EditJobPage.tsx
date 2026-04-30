@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, Loader2, Save } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Sparkles } from 'lucide-react';
 import { useJob } from '@/hooks/useJobs';
 import { toast } from 'sonner';
 import { LEVEL_CONFIG } from '@/types/database';
@@ -40,6 +40,7 @@ export default function EditJobPage() {
   const [location, setLocation] = useState('');
   const [endCustomer, setEndCustomer] = useState<'your_own_company' | 'end_customer' | ''>('');
   const [saving, setSaving] = useState(false);
+  const [extractingSkills, setExtractingSkills] = useState(false);
 
   useEffect(() => {
     if (job) {
@@ -101,6 +102,53 @@ export default function EditJobPage() {
       toast.error(e instanceof Error ? e.message : 'Failed to update a job');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const extractSkillsFromDescription = async () => {
+    if (!description || description.trim().length < 20) {
+      toast.error('Please enter a job description (at least 20 characters) before extracting skills');
+      return;
+    }
+    setExtractingSkills(true);
+    try {
+      const token = await getToken();
+      const response = await fetch('/api/jobs/extract-skills', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ description, title, role }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to extract skills');
+      }
+      const data = await response.json();
+      const currentMustHave = mustHaveSkills.split(',').map(s => s.trim()).filter(Boolean);
+      const currentGoodToHave = goodToHaveSkills.split(',').map(s => s.trim()).filter(Boolean);
+      const newMustHave = (data.must_have_skills || []).filter(
+        (s: string) => !currentMustHave.includes(s)
+      );
+      const newGoodToHave = (data.good_to_have_skills || []).filter(
+        (s: string) => !currentGoodToHave.includes(s) && !currentMustHave.includes(s)
+      );
+      if (newMustHave.length > 0 || newGoodToHave.length > 0) {
+        if (newMustHave.length > 0) {
+          setMustHaveSkills([...currentMustHave, ...newMustHave].join(', '));
+        }
+        if (newGoodToHave.length > 0) {
+          setGoodToHaveSkills([...currentGoodToHave, ...newGoodToHave].join(', '));
+        }
+        toast.success(`Added ${newMustHave.length} must-have and ${newGoodToHave.length} good-to-have skills`);
+      } else {
+        toast.info('No new skills found — all extracted skills are already added');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to extract skills');
+    } finally {
+      setExtractingSkills(false);
     }
   };
 
@@ -203,6 +251,22 @@ export default function EditJobPage() {
                   onChange={(e) => setGoodToHaveSkills(e.target.value)}
                   placeholder="e.g., GraphQL, AWS, Docker"
                 />
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={extractSkillsFromDescription}
+                  disabled={extractingSkills || !description || description.trim().length < 20}
+                >
+                  {extractingSkills ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Extracting Skills...</>
+                  ) : (
+                    <><Sparkles className="mr-2 h-4 w-4" />Auto-Extract Skills from Description</>
+                  )}
+                </Button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

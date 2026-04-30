@@ -1793,6 +1793,49 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
   // /api/jobs and /api/jobs/:id
   if (segments[0] === 'jobs') {
+    // POST /api/jobs/extract-skills — AI-powered skill extraction from job description
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'extract-skills') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      const { description, title, role } = req.body || {};
+      if (!description || typeof description !== 'string' || description.trim().length < 20) {
+        return badRequest(res, 'Please provide a job description with at least 20 characters');
+      }
+
+      try {
+        const prompt = `You are an expert technical recruiter. Analyze the following job description and extract two categorized skill lists.
+
+Job Title: ${title || 'Not specified'}
+Role: ${role || 'Not specified'}
+
+Job Description:
+${description.slice(0, 4000)}
+
+Return ONLY valid JSON in this exact format:
+{
+  "must_have_skills": ["skill1", "skill2", ...],
+  "good_to_have_skills": ["skill1", "skill2", ...]
+}
+
+Rules:
+- "must_have_skills": Core technical skills explicitly required or strongly implied (5-10 skills)
+- "good_to_have_skills": Nice-to-have, supplementary, or bonus skills (3-8 skills)
+- Use concise, industry-standard skill names (e.g., "React", "Node.js", "AWS", "Salesforce Apex")
+- Do NOT include soft skills or generic terms like "communication" or "teamwork"
+- Do NOT duplicate skills between the two lists`;
+
+        const result = await generateJSON<{ must_have_skills: string[]; good_to_have_skills: string[] }>(prompt);
+        const mustHave = Array.isArray(result?.must_have_skills) ? result.must_have_skills.filter((s: any) => typeof s === 'string' && s.trim()) : [];
+        const goodToHave = Array.isArray(result?.good_to_have_skills) ? result.good_to_have_skills.filter((s: any) => typeof s === 'string' && s.trim()) : [];
+
+        return ok(res, { must_have_skills: mustHave, good_to_have_skills: goodToHave });
+      } catch (e: any) {
+        console.error('[jobs/extract-skills] AI extraction failed:', e?.message || e);
+        return res.status(502).json({ error: 'Failed to extract skills. Please try again.' });
+      }
+    }
+
     if (segments.length === 1) {
       if (req.method === 'GET') {
         const user = await requireAuth(req, res);
@@ -2090,7 +2133,70 @@ async function routeRequest(req: VercelRequest, res: VercelResponse) {
 
   // /api/candidates and /api/candidates/:id
   if (segments[0] === 'candidates') {
+    // POST /api/candidates/parse-resume-preview — Parse resume and return extracted fields for auto-fill
+    if (req.method === 'POST' && segments.length === 2 && segments[1] === 'parse-resume-preview') {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+
+      try {
+        const fileData = await parseMultipartSingleFile(req, 'resume');
+        if (!fileData) {
+          return badRequest(res, 'No resume file provided');
+        }
+
+        const rawText = await extractResumeText(fileData.buffer, fileData.filename);
+        const resumeText = String(rawText)
+          .replace(/\x00/g, '')
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+          .slice(0, 50000);
+
+        if (!resumeText || resumeText.length < 20) {
+          return badRequest(res, 'Could not extract text from the resume. Please try a different file format.');
+        }
+
+        const prompt = `You are an expert resume parser. Parse the following resume and extract key information for a candidate profile.
+
+Return ONLY valid JSON in this exact format:
+{
+  "full_name": "First Last",
+  "email": "email@example.com",
+  "phone": "+1234567890",
+  "location": "City, Country",
+  "skills": ["skill1", "skill2"],
+  "summary": "Brief professional summary",
+  "total_experience_years": 0
+}
+
+Rules:
+- Extract the candidate's full name as it appears on the resume
+- Extract email and phone if present, otherwise use empty string
+- Location should be their current city/country
+- Skills should be technical skills (max 15)
+- Summary should be 1-2 sentences
+- If a field cannot be determined, use an empty string or 0
+
+RESUME TEXT:
+${resumeText.slice(0, 8000)}`;
+
+        const parsed = await generateJSON<any>(prompt);
+
+        return ok(res, {
+          full_name: typeof parsed?.full_name === 'string' ? parsed.full_name : '',
+          email: typeof parsed?.email === 'string' ? parsed.email : '',
+          phone: typeof parsed?.phone === 'string' ? parsed.phone : '',
+          location: typeof parsed?.location === 'string' ? parsed.location : '',
+          skills: Array.isArray(parsed?.skills) ? parsed.skills.filter((s: any) => typeof s === 'string') : [],
+          summary: typeof parsed?.summary === 'string' ? parsed.summary : '',
+          total_experience_years: typeof parsed?.total_experience_years === 'number' ? parsed.total_experience_years : 0,
+        });
+      } catch (e: any) {
+        console.error('[candidates/parse-resume-preview] failed:', e?.message || e);
+        return res.status(502).json({ error: 'Failed to parse resume. Please try again or enter details manually.' });
+      }
+    }
+
     if (segments.length === 1) {
+
       if (req.method === 'GET') {
         const user = await requireAuth(req, res);
         if (!user) return;
@@ -3479,7 +3585,7 @@ Return JSON:
         const token = segments[2];
         const { data: session, error } = await supabase
           .from('assessment_sessions')
-          .select('*, candidates(full_name, email), job_descriptions(title, role, level)')
+          .select('*, candidates(full_name, email), job_descriptions(title, role, level, must_have_skills, good_to_have_skills)')
           .eq('token', token)
           .single();
 
@@ -3562,7 +3668,14 @@ Return JSON:
               starter_code: p.starter_code || {},
               test_cases: pub.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
               points: p.points, time_limit_seconds: p.time_limit_seconds,
-              supported_languages: Object.keys(p.starter_code || {}),
+              supported_languages: (() => {
+                const langs = Object.keys(p.starter_code || {});
+                // Add Salesforce Apex for Salesforce-related jobs
+                if (session.job_descriptions && isSalesforceRelatedJob(session.job_descriptions) && !langs.includes('apex')) {
+                  langs.push('apex');
+                }
+                return langs;
+              })(),
             };
           });
           supabase.from('assessment_sessions').update({
@@ -4088,12 +4201,26 @@ Return JSON:
       const body = req.body;
       const candidateIds = body.candidate_ids as string[];
       const jobId = body.job_id as string;
-      const deadlineHours = body.deadline_hours ?? 72;
       const includeMcq = body.include_mcq !== false;
       const includeCoding = body.include_coding !== false;
       const difficulty = (body.difficulty as string) || 'medium';
       const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
       const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
+
+      // Deadline: prefer explicit datetime from body.deadline, fallback to deadline_hours
+      let deadline: Date;
+      if (body.deadline) {
+        deadline = new Date(body.deadline);
+        if (Number.isNaN(deadline.getTime())) {
+          return badRequest(res, 'Invalid deadline date/time format');
+        }
+        if (deadline <= new Date()) {
+          return badRequest(res, 'Deadline must be in the future');
+        }
+      } else {
+        const deadlineHours = body.deadline_hours ?? 72;
+        deadline = new Date(Date.now() + Number(deadlineHours) * 3600000);
+      }
 
       const billingGate = await checkPlanAccess(supabase, user.id, 'assessment_invite', {
         quantity: Math.max(1, (candidateIds || []).length),
@@ -4718,6 +4845,20 @@ Evaluate and return JSON:
       const requestedCountRaw = req.body?.question_count;
       const requestedCount = Math.max(1, Math.min(30, Number(requestedCountRaw ?? 5) || 5));
 
+      // Deadline: prefer explicit datetime from body.deadline, fallback to 72h
+      let deadlineDate: Date;
+      if (req.body?.deadline) {
+        deadlineDate = new Date(req.body.deadline);
+        if (Number.isNaN(deadlineDate.getTime())) {
+          return badRequest(res, 'Invalid deadline date/time format');
+        }
+        if (deadlineDate <= new Date()) {
+          return badRequest(res, 'Deadline must be in the future');
+        }
+      } else {
+        deadlineDate = new Date(Date.now() + 72 * 3600000);
+      }
+
       const billingGate = await checkPlanAccess(supabase, user.id, 'ai_interview_invite', {
         quantity: Math.max(1, (candidate_ids || []).length),
       });
@@ -4788,6 +4929,7 @@ Evaluate and return JSON:
             job_id,
             token,
             status: 'pending',
+            deadline: deadlineDate.toISOString(),
             current_question_index: 0,
             questions: normalizedQuestions,
             responses: [],
@@ -5274,19 +5416,33 @@ const HACKEREARTH_LANG_MAP: Record<string, string> = {
   python3: 'PYTHON3', javascript: 'JAVASCRIPT_NODE', java: 'JAVA14', cpp: 'CPP17',
   c: 'C', csharp: 'CSHARP', go: 'GO', ruby: 'RUBY', rust: 'RUST',
   typescript: 'TYPESCRIPT', kotlin: 'KOTLIN', swift: 'SWIFT',
+  apex: 'JAVA14', // Salesforce Apex runs on Java runtime; map to Java for execution
 };
 
 const MONACO_LANG_MAP: Record<string, string> = {
   python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp',
   c: 'c', csharp: 'csharp', go: 'go', ruby: 'ruby', rust: 'rust',
   typescript: 'typescript', kotlin: 'kotlin', swift: 'swift',
+  apex: 'apex',
 };
 
 const LANG_DISPLAY_NAMES: Record<string, string> = {
   python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++',
   c: 'C', csharp: 'C#', go: 'Go', ruby: 'Ruby', rust: 'Rust',
   typescript: 'TypeScript', kotlin: 'Kotlin', swift: 'Swift',
+  apex: 'Salesforce Apex',
 };
+
+// Detect if a job is Salesforce-related based on title, role, and skills
+function isSalesforceRelatedJob(job: { title?: string; role?: string; must_have_skills?: string[]; good_to_have_skills?: string[] }): boolean {
+  const searchFields = [
+    job.title || '',
+    job.role || '',
+    ...(job.must_have_skills || []),
+    ...(job.good_to_have_skills || []),
+  ].join(' ').toLowerCase();
+  return /\b(salesforce|sfdc|apex|lightning|visualforce|force\.com|soql|sosl)\b/.test(searchFields);
+}
 
 function mapLanguageKey(lang: string): string {
   const n = lang.toLowerCase().replace(/[^a-z0-9+#]/g, '');
@@ -5301,6 +5457,7 @@ function mapLanguageKey(lang: string): string {
   if (n === 'rust' || n === 'rs') return 'rust';
   if (n === 'kotlin' || n === 'kt') return 'kotlin';
   if (n === 'swift') return 'swift';
+  if (n === 'apex' || n.includes('salesforce')) return 'apex';
   return n || 'python3';
 }
 

@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useRequireAuth } from '@/hooks/useAuth';
+import { useRequireAuth, useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,9 @@ import {
   Sparkles,
   CheckCircle,
   AlertCircle,
+  Loader2,
+  UserPlus,
+  PenLine,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -26,15 +29,25 @@ import { cn } from '@/lib/utils';
 import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
 import { useCreateCandidate, useRunScreening, useUploadResume } from '@/hooks/useCandidates';
 import { useJobs } from '@/hooks/useJobs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 type Step = 'upload' | 'details' | 'job' | 'consent' | 'processing';
 
 export default function NewCandidatePage() {
   const { user, loading } = useRequireAuth();
+  const { getToken } = useAuth();
   const navigate = useNavigate();
   
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showAutoFillDialog, setShowAutoFillDialog] = useState(false);
+  const [isParsingResume, setIsParsingResume] = useState(false);
   
   // Form state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -66,8 +79,57 @@ export default function NewCandidatePage() {
       }
       setResumeFile(file);
       toast.success('Resume uploaded successfully');
+      // Show auto-fill dialog immediately when resume is uploaded
+      setShowAutoFillDialog(true);
     }
   }, []);
+
+  const handleAutoFill = async () => {
+    if (!resumeFile) return;
+    setIsParsingResume(true);
+    try {
+      const token = await getToken();
+      const formData = new FormData();
+      formData.append('resume', resumeFile);
+
+      const response = await fetch('/api/candidates/parse-resume-preview', {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to parse resume');
+      }
+
+      const data = await response.json();
+
+      // Pre-populate form fields with extracted data
+      if (data.full_name) setFullName(data.full_name);
+      if (data.email) setEmail(data.email);
+      if (data.phone) setPhone(data.phone);
+      if (data.location) setLocation(data.location);
+      if (data.skills?.length > 0) setMainSkillset(data.skills.join(', '));
+
+      setShowAutoFillDialog(false);
+      setCurrentStep('details');
+      toast.success('Resume parsed! Fields have been auto-filled. You can review and edit them.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to parse resume. You can enter details manually.');
+      setShowAutoFillDialog(false);
+      setCurrentStep('details');
+    } finally {
+      setIsParsingResume(false);
+    }
+  };
+
+  const handleManualEntry = () => {
+    setShowAutoFillDialog(false);
+    setCurrentStep('details');
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -579,6 +641,64 @@ export default function NewCandidatePage() {
           </div>
         )}
       </div>
+
+      {/* Resume Auto-fill Dialog */}
+      <Dialog open={showAutoFillDialog} onOpenChange={(open) => {
+        if (!isParsingResume) setShowAutoFillDialog(open);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>How would you like to proceed?</DialogTitle>
+            <DialogDescription>
+              A resume has been uploaded. Choose how to fill in the candidate details.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Button
+              className="h-auto py-4 px-6 flex items-start gap-4 text-left"
+              variant="outline"
+              onClick={handleAutoFill}
+              disabled={isParsingResume}
+            >
+              {isParsingResume ? (
+                <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+                  <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                </div>
+              ) : (
+                <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                </div>
+              )}
+              <div>
+                <p className="font-semibold text-sm">
+                  {isParsingResume ? 'Parsing Resume...' : 'Auto-fill with Resume'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isParsingResume
+                    ? 'Extracting name, email, phone, location, and skills from the resume...'
+                    : 'AI will extract details from the resume and pre-fill the form. You can review and edit before submitting.'}
+                </p>
+              </div>
+            </Button>
+            <Button
+              className="h-auto py-4 px-6 flex items-start gap-4 text-left"
+              variant="outline"
+              onClick={handleManualEntry}
+              disabled={isParsingResume}
+            >
+              <div className="p-2 rounded-lg bg-muted shrink-0">
+                <PenLine className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm">Manual Entry</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enter candidate details manually. The resume will still be attached for later processing.
+                </p>
+              </div>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

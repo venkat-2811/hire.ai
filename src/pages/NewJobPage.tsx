@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useRequireAuth } from '@/hooks/useAuth';
+import { useRequireAuth, useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Plus, X, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, X, Loader2, Sparkles } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCreateJob, type JobDescriptionCreate } from '@/hooks/useJobs';
 import { LEVEL_CONFIG, type RoleLevel } from '@/types/database';
@@ -16,8 +16,11 @@ import { toast } from 'sonner';
 
 export default function NewJobPage() {
   const { loading: authLoading } = useRequireAuth();
+  const { getToken } = useAuth();
   const navigate = useNavigate();
   const createJob = useCreateJob();
+
+  const [extractingSkills, setExtractingSkills] = useState(false);
 
   const [title, setTitle] = useState('');
   const [role, setRole] = useState('');
@@ -54,6 +57,47 @@ export default function NewJobPage() {
 
   const handleRemoveGoodToHave = (skill: string) => {
     setGoodToHaveSkills(goodToHaveSkills.filter(s => s !== skill));
+  };
+
+  const extractSkillsFromDescription = async () => {
+    if (!description || description.trim().length < 20) {
+      toast.error('Please enter a job description (at least 20 characters) before extracting skills');
+      return;
+    }
+    setExtractingSkills(true);
+    try {
+      const token = await getToken();
+      const response = await fetch('/api/jobs/extract-skills', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ description, title, role }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to extract skills');
+      }
+      const data = await response.json();
+      const newMustHave = (data.must_have_skills || []).filter(
+        (s: string) => !mustHaveSkills.includes(s)
+      );
+      const newGoodToHave = (data.good_to_have_skills || []).filter(
+        (s: string) => !goodToHaveSkills.includes(s) && !mustHaveSkills.includes(s)
+      );
+      if (newMustHave.length > 0 || newGoodToHave.length > 0) {
+        setMustHaveSkills([...mustHaveSkills, ...newMustHave]);
+        setGoodToHaveSkills([...goodToHaveSkills, ...newGoodToHave]);
+        toast.success(`Added ${newMustHave.length} must-have and ${newGoodToHave.length} good-to-have skills`);
+      } else {
+        toast.info('No new skills found — all extracted skills are already added');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to extract skills');
+    } finally {
+      setExtractingSkills(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -203,6 +247,22 @@ export default function NewJobPage() {
                     rows={6}
                     required
                   />
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={extractSkillsFromDescription}
+                    disabled={extractingSkills || !description || description.trim().length < 20}
+                  >
+                    {extractingSkills ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Extracting Skills...</>
+                    ) : (
+                      <><Sparkles className="mr-2 h-4 w-4" />Auto-Extract Skills from Description</>
+                    )}
+                  </Button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
