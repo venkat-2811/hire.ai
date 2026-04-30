@@ -5637,22 +5637,3 @@ Return ONLY a JSON array — every question must be fully standalone and self-ex
     return [];
   }
 }
-        type: String(q.type),
-        duration: typeof q.duration === 'number' ? q.duration : 120,
-      }))
-      .slice(0, 20);
-  } catch (e: any) {
-    console.error('[generateInterviewQuestionPool] failed:', e.message);
-    return [];
-  }
-}
-}
-        type: String(q.type),
-        duration: typeof q.duration === 'number' ? q.duration : 120,
-      }))
-      .slice(0, 20);
-  } catch (e: any) {
-    console.error('[generateInterviewQuestionPool] failed:', e.message);
-    return [];
-  }
-}
