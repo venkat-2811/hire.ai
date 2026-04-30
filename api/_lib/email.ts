@@ -23,7 +23,6 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
       to: options.to,
       subject: options.subject,
       html: options.html,
-      attachments: options.attachments,
     }),
   });
 
@@ -126,11 +125,6 @@ export async function sendRejectionEmail(
       <p>Thank you for your interest in the <strong>${jobTitle}</strong> position and for taking the time to apply.</p>
       <p>After careful consideration, we have decided to move forward with other candidates whose qualifications more closely match our current needs.</p>
       <p>We encourage you to apply for future openings that match your skills and experience.</p>
-      <br>
-      <p>Best wishes,<br>Talent Scout AI Team</p>
-    `,
-  });
-}
       <br>
       <p>Best wishes,<br>Talent Scout AI Team</p>
     `,
