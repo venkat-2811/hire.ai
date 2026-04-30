@@ -546,9 +546,9 @@ async function sendAssessmentInvite(to: string, name: string, job: string, link:
   await sendEmail(to, `Assessment Invitation - ${job}`,
     `<h2>Congratulations, ${name}!</h2><p>You've been shortlisted for <strong>${job}</strong>.</p><p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Start Assessment</a></p><p><strong>Deadline:</strong> ${deadline}</p>`);
 }
-async function sendInterviewInvite(to: string, name: string, job: string, link: string, deadline?: string) {
+async function sendInterviewInvite(to: string, name: string, job: string, link: string, time?: string) {
   await sendEmail(to, `AI Interview Invitation - ${job}`,
-    `<h2>Great news, ${name}!</h2><p>You've been invited to an AI interview for <strong>${job}</strong>.</p><p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Start Interview</a></p>${deadline ? `<p><strong>Deadline:</strong> ${deadline}</p>` : ''}`);
+    `<h2>Great news, ${name}!</h2><p>You've been invited to an AI interview for <strong>${job}</strong>.</p><p><a href="${link}" style="background:#4F46E5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Start Interview</a></p>${time ? `<p><strong>Scheduled:</strong> ${time}</p>` : ''}`);
 }
 
 function getFrontendBaseUrl(req: any): string {
@@ -4240,6 +4240,7 @@ Return JSON:
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
+      const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
       const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
 
       if (includeMcq && mcqCount < 1) {
@@ -4383,18 +4384,6 @@ Return JSON:
         }
         if (!session) return notFound(res, 'Interview not found or link expired');
         if (['completed', 'terminated'].includes(session.status)) return badRequest(res, 'Interview already completed or terminated');
-
-        // Check deadline expiration
-        if (session.deadline) {
-          const deadline = new Date(session.deadline);
-          if (Number.isNaN(deadline.getTime())) {
-            return res.status(500).json({ error: 'Interview session misconfigured (invalid deadline)' });
-          }
-          if (new Date() > deadline) {
-            await supabase.from('ai_interview_sessions').update({ status: 'expired' }).eq('id', session.id);
-            return badRequest(res, 'Interview deadline has passed');
-          }
-        }
 
         const sessionQuestions = normalizeInterviewQuestions(session.questions);
         const questionCount = sessionQuestions.length;
@@ -4941,7 +4930,7 @@ Evaluate and return JSON:
           }
 
           try {
-            await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, deadlineDate.toLocaleString());
+            await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduled_time);
           } catch (emailErr: any) {
             await supabase.from('ai_interview_sessions').delete().eq('id', sessionId);
             throw new Error(`Failed to send interview invite email: ${emailErr?.message || emailErr}`);
