@@ -4240,7 +4240,6 @@ Return JSON:
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
       if (!candidates?.length) return notFound(res, 'No candidates found');
 
-      const deadline = new Date(Date.now() + Number(deadlineHours) * 60 * 60 * 1000);
       const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
 
       if (includeMcq && mcqCount < 1) {
