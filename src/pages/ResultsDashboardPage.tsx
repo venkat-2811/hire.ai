@@ -428,7 +428,7 @@ export default function ResultsDashboardPage() {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
-            candidate_id: candidateId,
+            candidate_ids: [candidateId],
             job_id: selectedJobId,
             ctc: offerCtc.trim(),
             company_name: companyName.trim(),
