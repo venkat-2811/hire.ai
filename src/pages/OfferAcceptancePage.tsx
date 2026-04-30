@@ -18,13 +18,17 @@ interface OfferDetails {
   candidate_id: string;
   job_id: string;
   candidate_name: string;
+  candidate_email?: string;
   job_title: string;
   company_name: string;
   ctc: string;
   time_period_years?: number | null;
   time_period_months?: number | null;
   start_date?: string | null;
+  reporting_manager?: string | null;
   location?: string | null;
+  accepted_signature_name?: string | null;
+  accepted_at?: string | null;
   already_accepted: boolean;
 }
 
@@ -268,6 +272,13 @@ export default function OfferAcceptancePage() {
                 icon={<MapPin className="h-4 w-4 text-indigo-500" />}
                 label="Location"
                 value={offer.location}
+              />
+            )}
+            {offer?.reporting_manager && (
+              <OfferRow
+                icon={<Briefcase className="h-4 w-4 text-indigo-500" />}
+                label="Reporting Manager"
+                value={offer.reporting_manager}
               />
             )}
             {timePeriodDisplay && (

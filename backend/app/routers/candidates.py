@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Literal
 import os
 import uuid
 from datetime import datetime
@@ -403,6 +403,7 @@ class SendOfferLetterRequest(BaseModel):
     job_id: str
     ctc: str  # Annual Cost to Company - required
     company_name: Optional[str] = None
+    document_format: Literal["pdf", "doc"] = "pdf"
     time_period_years: Optional[int] = None
     time_period_months: Optional[int] = None
     start_date: Optional[str] = None
@@ -422,7 +423,7 @@ async def send_offer_letter(request: SendOfferLetterRequest):
     Requires the acceptance email to have been sent first (final_status = 'accepted').
     """
     from app.services.email_service import get_email_service
-    from app.services.offer_letter_service import generate_offer_letter_pdf
+    from app.services.offer_letter_service import generate_offer_letter_pdf, generate_offer_letter_doc
 
     supabase = get_supabase_admin_client()
     email_service = get_email_service()
@@ -476,38 +477,49 @@ async def send_offer_letter(request: SendOfferLetterRequest):
     company_name = request.company_name or "Our Company"
 
     try:
-        # Generate the PDF
-        pdf_bytes = generate_offer_letter_pdf(
-            candidate_name=candidate["full_name"],
-            candidate_email=candidate["email"],
-            job_title=job_title,
-            company_name=company_name,
-            ctc=request.ctc,
-            time_period_years=request.time_period_years,
-            time_period_months=request.time_period_months,
-            start_date=request.start_date,
-            reporting_manager=request.reporting_manager,
-            location=request.location,
-        )
+        if request.document_format == "doc":
+            attachment_bytes = generate_offer_letter_doc(
+                candidate_name=candidate["full_name"],
+                candidate_email=candidate["email"],
+                job_title=job_title,
+                company_name=company_name,
+                ctc=request.ctc,
+                time_period_years=request.time_period_years,
+                time_period_months=request.time_period_months,
+                start_date=request.start_date,
+                reporting_manager=request.reporting_manager,
+                location=request.location,
+            )
+            attachment_filename = f"Offer_Letter_{candidate['full_name'].replace(' ', '_')}.doc"
+            attachment_content_type = "application/msword"
+        else:
+            attachment_bytes = generate_offer_letter_pdf(
+                candidate_name=candidate["full_name"],
+                candidate_email=candidate["email"],
+                job_title=job_title,
+                company_name=company_name,
+                ctc=request.ctc,
+                time_period_years=request.time_period_years,
+                time_period_months=request.time_period_months,
+                start_date=request.start_date,
+                reporting_manager=request.reporting_manager,
+                location=request.location,
+            )
+            attachment_filename = f"Offer_Letter_{candidate['full_name'].replace(' ', '_')}.pdf"
+            attachment_content_type = "application/pdf"
 
-        # Generate the Acceptance Link securely — points to the FRONTEND acceptance page
+        # Generate secure acceptance token
         from jose import jwt
         from datetime import timedelta
-        import json
 
         settings = get_settings()
-        secret = settings.supabase_service_key or "default_hireai_secret"
+        secret = settings.supabase_service_key
+        if not secret:
+            raise HTTPException(status_code=500, detail="Offer token signing secret is not configured")
         payload = {
             "candidate_id": candidate["id"],
             "job_id": request.job_id,
-            "candidate_name": candidate["full_name"],
-            "job_title": job_title,
-            "company_name": company_name,
-            "ctc": request.ctc,
-            "time_period_years": request.time_period_years,
-            "time_period_months": request.time_period_months,
-            "start_date": request.start_date,
-            "location": request.location,
+            "jti": str(uuid.uuid4()),
             "exp": datetime.utcnow() + timedelta(days=7)
         }
         token = jwt.encode(payload, secret, algorithm="HS256")
@@ -522,13 +534,31 @@ async def send_offer_letter(request: SendOfferLetterRequest):
             candidate_name=candidate["full_name"],
             job_title=job_title,
             company_name=company_name,
-            pdf_bytes=pdf_bytes,
+            attachment_bytes=attachment_bytes,
+            attachment_filename=attachment_filename,
+            attachment_content_type=attachment_content_type,
             acceptance_link=acceptance_link,
         )
 
         # Update the application status to offer_sent
+        existing_notes_result = supabase.table("job_applications").select(
+            "notes"
+        ).eq("candidate_id", request.candidate_id).eq("job_id", request.job_id).single().execute()
+        existing_notes = (existing_notes_result.data or {}).get("notes") or ""
+        offer_snapshot_note = (
+            f"\n[Offer Letter Snapshot]\n"
+            f"Company Name: {company_name}\n"
+            f"CTC: {request.ctc}\n"
+            f"Contract Years: {request.time_period_years if request.time_period_years is not None else ''}\n"
+            f"Contract Months: {request.time_period_months if request.time_period_months is not None else ''}\n"
+            f"Start Date: {request.start_date or ''}\n"
+            f"Reporting Manager: {request.reporting_manager or ''}\n"
+            f"Location: {request.location or ''}\n"
+            f"Attachment Format: {request.document_format.upper()}\n"
+        )
         supabase.table("job_applications").update({
-            "final_status": "offer_sent"
+            "final_status": "offer_sent",
+            "notes": (existing_notes + offer_snapshot_note).strip(),
         }).eq("candidate_id", request.candidate_id).eq("job_id", request.job_id).execute()
 
         return SendOfferLetterResponse(
@@ -548,11 +578,13 @@ async def send_offer_letter(request: SendOfferLetterRequest):
 async def get_offer_details(token: str):
     """
     Return offer letter details as JSON for the frontend acceptance page.
-    The token contains all the offer fields embedded at signing time.
+    The token identifies candidate and job; details are fetched from persisted snapshot.
     """
     from jose import jwt, JWTError
     settings = get_settings()
-    secret = settings.supabase_service_key or "default_hireai_secret"
+    secret = settings.supabase_service_key
+    if not secret:
+        raise HTTPException(status_code=500, detail="Offer token signing secret is not configured")
 
     try:
         payload = jwt.decode(token, secret, algorithms=["HS256"])
@@ -566,7 +598,7 @@ async def get_offer_details(token: str):
 
     supabase = get_supabase_admin_client()
     app_result = supabase.table("job_applications").select(
-        "final_status"
+        "final_status, offer_signature_name, offer_accepted_at, offer_acceptance_ip"
     ).eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
 
     already_accepted = (
@@ -574,17 +606,38 @@ async def get_offer_details(token: str):
         app_result.data[0].get("final_status") in ("accepted", "offer_accepted")
     )
 
+    candidate_result = supabase.table("candidates").select("full_name, email").eq("id", candidate_id).single().execute()
+    job_result = supabase.table("job_descriptions").select("title").eq("id", job_id).single().execute()
+    if not candidate_result.data or not job_result.data:
+        raise HTTPException(status_code=404, detail="Offer details not found")
+
+    notes = (supabase.table("job_applications").select("notes").eq("candidate_id", candidate_id).eq("job_id", job_id).single().execute().data or {}).get("notes") or ""
+
+    def extract_detail(prefix: str) -> Optional[str]:
+        for line in notes.splitlines():
+            if line.startswith(prefix):
+                return line.replace(prefix, "", 1).strip() or None
+        return None
+
+    contract_years = extract_detail("Contract Years:")
+    contract_months = extract_detail("Contract Months:")
+
     return {
         "candidate_id": candidate_id,
         "job_id": job_id,
-        "candidate_name": payload.get("candidate_name"),
-        "job_title": payload.get("job_title"),
-        "company_name": payload.get("company_name"),
-        "ctc": payload.get("ctc"),
-        "time_period_years": payload.get("time_period_years"),
-        "time_period_months": payload.get("time_period_months"),
-        "start_date": payload.get("start_date"),
-        "location": payload.get("location"),
+        "candidate_name": candidate_result.data.get("full_name"),
+        "candidate_email": candidate_result.data.get("email"),
+        "job_title": job_result.data.get("title"),
+        "company_name": extract_detail("Company Name:") or "Our Company",
+        "ctc": extract_detail("CTC:") or "As per offer letter attachment",
+        "time_period_years": int(contract_years) if contract_years else None,
+        "time_period_months": int(contract_months) if contract_months else None,
+        "start_date": extract_detail("Start Date:"),
+        "reporting_manager": extract_detail("Reporting Manager:"),
+        "location": extract_detail("Location:"),
+        "accepted_signature_name": app_result.data[0].get("offer_signature_name") if app_result.data else None,
+        "accepted_at": app_result.data[0].get("offer_accepted_at") if app_result.data else None,
+        "accepted_ip": app_result.data[0].get("offer_acceptance_ip") if app_result.data else None,
         "already_accepted": already_accepted,
     }
 
@@ -615,7 +668,9 @@ async def submit_offer_acceptance(request: Request, body: SubmitAcceptanceReques
     """
     from jose import jwt, JWTError
     settings = get_settings()
-    secret = settings.supabase_service_key or "default_hireai_secret"
+    secret = settings.supabase_service_key
+    if not secret:
+        raise HTTPException(status_code=500, detail="Offer token signing secret is not configured")
 
     try:
         payload = jwt.decode(body.token, secret, algorithms=["HS256"])
@@ -632,7 +687,7 @@ async def submit_offer_acceptance(request: Request, body: SubmitAcceptanceReques
     supabase = get_supabase_admin_client()
 
     app_result = supabase.table("job_applications").select(
-        "final_status, notes"
+        "final_status, notes, offer_signature_name, offer_accepted_at"
     ).eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
 
     if not app_result.data:
@@ -641,6 +696,8 @@ async def submit_offer_acceptance(request: Request, body: SubmitAcceptanceReques
     app_data = app_result.data[0]
     if app_data.get("final_status") == "offer_accepted":
         return {"success": True, "message": "Offer already accepted", "already_accepted": True}
+    if app_data.get("final_status") not in ("offer_sent", "accepted"):
+        raise HTTPException(status_code=400, detail="Offer is not currently open for acceptance")
 
     # Audit trail
     client_ip = request.client.host if request.client else "Unknown IP"
@@ -657,6 +714,9 @@ async def submit_offer_acceptance(request: Request, body: SubmitAcceptanceReques
     supabase.table("job_applications").update({
         "final_status": "offer_accepted",
         "notes": new_notes,
+        "offer_signature_name": body.full_name_signature.strip(),
+        "offer_accepted_at": datetime.utcnow().isoformat(),
+        "offer_acceptance_ip": client_ip,
     }).eq("candidate_id", candidate_id).eq("job_id", job_id).execute()
 
     return {

@@ -254,10 +254,12 @@ class EmailService:
         candidate_name: str,
         job_title: str,
         company_name: str,
-        pdf_bytes: bytes,
+        attachment_bytes: bytes,
+        attachment_filename: str,
+        attachment_content_type: str,
         acceptance_link: str,
     ) -> dict:
-        """Send formal offer letter email with PDF attachment and acceptance link."""
+        """Send formal offer letter email with attachment and acceptance link."""
         subject = f"🎉 Congratulations! Your Offer Letter – {job_title} at {company_name}"
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; border-radius: 8px; overflow: hidden;">
@@ -285,15 +287,15 @@ class EmailService:
                 <div style="background: #f0f4ff; border-left: 4px solid #6366f1; padding: 16px 20px; border-radius: 4px; margin: 24px 0;">
                     <p style="margin: 0 0 8px 0; color: #4f46e5; font-weight: 700; font-size: 14px;">📋 To Accept Your Offer:</p>
                     <ol style="margin: 0; padding-left: 18px; color: #374151; line-height: 2; font-size: 14px;">
-                        <li>Review the attached PDF offer letter</li>
-                        <li>Click the <strong>"Accept Offer"</strong> button below</li>
+                        <li>Review the attached offer letter</li>
+                        <li>Click the <strong>"Accept Offer Letter"</strong> button below</li>
                         <li>Enter your full name as a digital signature</li>
                         <li>Click <strong>"Submit Acceptance"</strong> to confirm</li>
                     </ol>
                 </div>
                 <div style="text-align: center; margin: 36px 0 20px 0;">
                     <a href="{acceptance_link}" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 18px 48px; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; display: inline-block; box-shadow: 0 6px 20px rgba(16,185,129,0.4); letter-spacing: 0.3px;">
-                        ✅ Accept Offer
+                        ✅ Accept Offer Letter
                     </a>
                 </div>
                 <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 4px 0 24px 0;">
@@ -318,14 +320,13 @@ class EmailService:
             </div>
         </div>
         """
-        filename = f"Offer_Letter_{candidate_name.replace(' ', '_')}.pdf"
         return await self.send_email_with_attachment(
             to=to,
             subject=subject,
             html=html,
-            attachment_content=pdf_bytes,
-            attachment_filename=filename,
-            attachment_content_type="application/pdf",
+            attachment_content=attachment_bytes,
+            attachment_filename=attachment_filename,
+            attachment_content_type=attachment_content_type,
         )
 
 

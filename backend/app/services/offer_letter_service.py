@@ -5,6 +5,7 @@ Generates a formal, branded offer letter document as bytes.
 from io import BytesIO
 from datetime import date
 from typing import Optional
+from html import escape
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -392,3 +393,63 @@ def generate_offer_letter_pdf(
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
+
+
+def generate_offer_letter_doc(
+    candidate_name: str,
+    candidate_email: str,
+    job_title: str,
+    company_name: str,
+    ctc: str,
+    time_period_years: Optional[int] = None,
+    time_period_months: Optional[int] = None,
+    start_date: Optional[str] = None,
+    reporting_manager: Optional[str] = None,
+    location: Optional[str] = None,
+) -> bytes:
+    """Generate a .doc (HTML-backed) offer letter and return as bytes."""
+    today = date.today().strftime("%B %d, %Y")
+    start_display = start_date or "To be communicated"
+    manager_display = reporting_manager or "To be communicated"
+    location_display = location or "As Agreed"
+
+    time_period_display = ""
+    if time_period_years or time_period_months:
+        parts = []
+        if time_period_years and time_period_years > 0:
+            parts.append(f"{time_period_years} Year{'s' if time_period_years > 1 else ''}")
+        if time_period_months and time_period_months > 0:
+            parts.append(f"{time_period_months} Month{'s' if time_period_months > 1 else ''}")
+        if parts:
+            time_period_display = f"<tr><td><b>Contract Duration</b></td><td>{escape(' & '.join(parts))}</td></tr>"
+
+    html_doc = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /><title>Offer Letter</title></head>
+<body style="font-family: Arial, sans-serif; color: #1a1a2e; line-height: 1.5;">
+  <h1 style="color: #6366f1; margin-bottom: 0;">{escape(company_name)}</h1>
+  <p style="margin-top: 0; color: #6b7280;">Talent Acquisition &amp; People Operations</p>
+  <hr />
+  <h2 style="margin-bottom: 0;">OFFER OF EMPLOYMENT</h2>
+  <p style="color: #6b7280;">Date: {escape(today)}</p>
+  <p>Dear <b>{escape(candidate_name)}</b>,</p>
+  <p>We are delighted to offer you the position of <b>{escape(job_title)}</b> at <b>{escape(company_name)}</b>.</p>
+  <h3>1. Employment Details</h3>
+  <table border="1" cellspacing="0" cellpadding="8" style="border-collapse: collapse; width: 100%;">
+    <tr><td><b>Position</b></td><td>{escape(job_title)}</td></tr>
+    <tr><td><b>Department</b></td><td>As Applicable</td></tr>
+    <tr><td><b>Location</b></td><td>{escape(location_display)}</td></tr>
+    <tr><td><b>Reporting To</b></td><td>{escape(manager_display)}</td></tr>
+    <tr><td><b>Proposed Start Date</b></td><td>{escape(start_display)}</td></tr>
+    <tr><td><b>Employment Type</b></td><td>Full-Time, Permanent</td></tr>
+    {time_period_display}
+  </table>
+  <h3>2. Compensation &amp; Benefits</h3>
+  <p><b>Annual CTC:</b> {escape(ctc)}</p>
+  <h3>4. Acceptance of Offer</h3>
+  <p>Please click the <b>Accept Offer Letter</b> button in your email and sign using your full name.</p>
+  <p style="font-size: 12px; color: #6b7280;">Confidential for {escape(candidate_name)} ({escape(candidate_email)}).</p>
+</body>
+</html>"""
+
+    return html_doc.encode("utf-8")

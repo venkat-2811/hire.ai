@@ -100,6 +100,7 @@ export default function ResultsDashboardPage() {
   const [sendingEmails, setSendingEmails] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [offerCtc, setOfferCtc] = useState('');
+  const [offerDocumentFormat, setOfferDocumentFormat] = useState<'pdf' | 'doc'>('pdf');
   const [offerTimePeriodYears, setOfferTimePeriodYears] = useState<string>('');
   const [offerTimePeriodMonths, setOfferTimePeriodMonths] = useState<string>('');
 
@@ -139,10 +140,10 @@ export default function ResultsDashboardPage() {
         const accepted = new Set<string>();
         const offerSent = new Set<string>();
         data.forEach((c) => {
-          if (c.final_status === 'accepted' || c.final_status === 'offer_sent') {
+          if (c.final_status === 'accepted' || c.final_status === 'offer_sent' || c.final_status === 'offer_accepted') {
             accepted.add(c.candidate_id);
           }
-          if (c.final_status === 'offer_sent') {
+          if (c.final_status === 'offer_sent' || c.final_status === 'offer_accepted') {
             offerSent.add(c.candidate_id);
           }
         });
@@ -432,6 +433,7 @@ export default function ResultsDashboardPage() {
             job_id: selectedJobId,
             ctc: offerCtc.trim(),
             company_name: companyName.trim(),
+            document_format: offerDocumentFormat,
             time_period_years: offerTimePeriodYears ? parseInt(offerTimePeriodYears) : null,
             time_period_months: offerTimePeriodMonths ? parseInt(offerTimePeriodMonths) : null,
           }),
@@ -528,7 +530,7 @@ export default function ResultsDashboardPage() {
 
   const globalHiresCount = useMemo(() => {
     return globalCandidates.filter(
-      (c) => c.final_status === 'accepted' || c.final_status === 'offer_sent'
+      (c) => c.final_status === 'accepted' || c.final_status === 'offer_sent' || c.final_status === 'offer_accepted'
     ).length;
   }, [globalCandidates]);
 
@@ -785,7 +787,7 @@ export default function ResultsDashboardPage() {
                         <p className="text-2xl font-bold">
                           {
                             processedCandidates.filter(
-                              (c) => c.final_status === 'accepted' || c.final_status === 'offer_sent'
+                              (c) => c.final_status === 'accepted' || c.final_status === 'offer_sent' || c.final_status === 'offer_accepted'
                             ).length
                           }
                         </p>
@@ -979,6 +981,7 @@ export default function ResultsDashboardPage() {
                         processedCandidates.map((candidate) => {
                           const isAccepted = acceptedCandidateIds.has(candidate.candidate_id);
                           const isOfferSent = offerSentIds.has(candidate.candidate_id);
+                          const isOfferAccepted = candidate.final_status === 'offer_accepted';
 
                           return (
                             <TableRow
@@ -1006,7 +1009,12 @@ export default function ResultsDashboardPage() {
                                         Accepted
                                       </Badge>
                                     )}
-                                    {isOfferSent && (
+                                    {isOfferAccepted && (
+                                      <Badge className="bg-emerald-600 text-white border-emerald-700 text-[10px] py-0 px-1.5">
+                                        Offer Accepted
+                                      </Badge>
+                                    )}
+                                    {isOfferSent && !isOfferAccepted && (
                                       <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px] py-0 px-1.5">
                                         Offer Sent ✓
                                       </Badge>
@@ -1219,6 +1227,22 @@ export default function ResultsDashboardPage() {
                       <p className="text-xs text-muted-foreground">
                         Leave blank for a permanent / open-ended contract. If filled, this will be shown in the offer letter.
                       </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor="ol-format">Attachment Format</Label>
+                      <Select
+                        value={offerDocumentFormat}
+                        onValueChange={(value: 'pdf' | 'doc') => setOfferDocumentFormat(value)}
+                      >
+                        <SelectTrigger id="ol-format">
+                          <SelectValue placeholder="Select format" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pdf">PDF (.pdf)</SelectItem>
+                          <SelectItem value="doc">DOC (.doc)</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <DialogFooter>
