@@ -3674,14 +3674,7 @@ Return JSON:
               starter_code: p.starter_code || {},
               test_cases: pub.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
               points: p.points, time_limit_seconds: p.time_limit_seconds,
-              supported_languages: (() => {
-                const langs = Object.keys(p.starter_code || {});
-                // Add Salesforce Apex for Salesforce-related jobs
-                if (session.job_descriptions && isSalesforceRelatedJob(session.job_descriptions) && !langs.includes('apex')) {
-                  langs.push('apex');
-                }
-                return langs;
-              })(),
+              supported_languages: Object.keys(p.starter_code || {}),
             };
           });
           supabase.from('assessment_sessions').update({
@@ -5432,34 +5425,20 @@ Return ONLY a JSON array — every question must be fully standalone and self-ex
 const HACKEREARTH_LANG_MAP: Record<string, string> = {
   python3: 'PYTHON3', javascript: 'JAVASCRIPT_NODE', java: 'JAVA14', cpp: 'CPP17',
   c: 'C', csharp: 'CSHARP', go: 'GO', ruby: 'RUBY', rust: 'RUST',
-  typescript: 'TYPESCRIPT', kotlin: 'KOTLIN', swift: 'SWIFT',
-  apex: 'JAVA14', // Salesforce Apex runs on Java runtime; map to Java for execution
+  typescript: 'TYPESCRIPT', kotlin: 'KOTLIN', swift: 'SWIFT'
 };
 
 const MONACO_LANG_MAP: Record<string, string> = {
   python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp',
   c: 'c', csharp: 'csharp', go: 'go', ruby: 'ruby', rust: 'rust',
-  typescript: 'typescript', kotlin: 'kotlin', swift: 'swift',
-  apex: 'apex',
+  typescript: 'typescript', kotlin: 'kotlin', swift: 'swift'
 };
 
 const LANG_DISPLAY_NAMES: Record<string, string> = {
   python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++',
   c: 'C', csharp: 'C#', go: 'Go', ruby: 'Ruby', rust: 'Rust',
-  typescript: 'TypeScript', kotlin: 'Kotlin', swift: 'Swift',
-  apex: 'Salesforce Apex',
+  typescript: 'TypeScript', kotlin: 'Kotlin', swift: 'Swift'
 };
-
-// Detect if a job is Salesforce-related based on title, role, and skills
-function isSalesforceRelatedJob(job: { title?: string; role?: string; must_have_skills?: string[]; good_to_have_skills?: string[] }): boolean {
-  const searchFields = [
-    job.title || '',
-    job.role || '',
-    ...(job.must_have_skills || []),
-    ...(job.good_to_have_skills || []),
-  ].join(' ').toLowerCase();
-  return /\b(salesforce|sfdc|apex|lightning|visualforce|force\.com|soql|sosl)\b/.test(searchFields);
-}
 
 function mapLanguageKey(lang: string): string {
   const n = lang.toLowerCase().replace(/[^a-z0-9+#]/g, '');
@@ -5474,7 +5453,6 @@ function mapLanguageKey(lang: string): string {
   if (n === 'rust' || n === 'rs') return 'rust';
   if (n === 'kotlin' || n === 'kt') return 'kotlin';
   if (n === 'swift') return 'swift';
-  if (n === 'apex' || n.includes('salesforce')) return 'apex';
   return n || 'python3';
 }
 

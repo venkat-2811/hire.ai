@@ -1767,12 +1767,7 @@ export default function AssessmentPage() {
                             value={codingLanguages[currentCoding.id] || 'python3'}
                             onValueChange={(lang) => {
                               setCodingLanguages(prev => ({ ...prev, [currentCoding.id]: lang }));
-                              const currentCode = codingSolutions[currentCoding.id] || '';
-                              const oldLang = codingLanguages[currentCoding.id] || 'python3';
-                              const oldStarter = currentCoding.starter_code?.[oldLang] || '';
-                              if (!currentCode || currentCode === oldStarter) {
-                                setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: currentCoding.starter_code?.[lang] || '' }));
-                              }
+                              setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: currentCoding.starter_code?.[lang] || '' }));
                             }}
                           >
                             <SelectTrigger className="w-[140px] h-7 text-xs">
