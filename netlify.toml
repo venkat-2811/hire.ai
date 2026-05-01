@@ -13,6 +13,10 @@
   # Increase timeout to 60 seconds for long-running operations like MCQ generation
   timeout = 60
 
+[functions."inngest"]
+  # Increase timeout to 5 minutes (300 seconds) for long-running AI workers
+  timeout = 300
+
 # ── Route /api/* → Netlify Function ───────────────────────────────────────────
 # The function receives event.path = "/api/..." so it can reconstruct the route
 [[redirects]]

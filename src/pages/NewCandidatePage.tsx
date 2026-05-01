@@ -28,6 +28,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types/database';
 import { useCreateCandidate, useRunScreening, useUploadResume } from '@/hooks/useCandidates';
+import { useJobPolling } from '@/hooks/useJobPolling';
 import { useJobs } from '@/hooks/useJobs';
 import {
   Dialog,
@@ -61,6 +62,10 @@ export default function NewCandidatePage() {
   const [mainSkillset, setMainSkillset] = useState('');
   const [selectedJob, setSelectedJob] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
+  const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
+  
+  const [resumeParseJobId, setResumeParseJobId] = useState<string | null>(null);
+  const [screeningJobId, setScreeningJobId] = useState<string | null>(null);
 
   // API hooks
   const createCandidate = useCreateCandidate();
@@ -69,6 +74,47 @@ export default function NewCandidatePage() {
   const { data: jobsData, isLoading: jobsLoading } = useJobs({ is_active: true });
   
   const jobs = jobsData || [];
+
+  useJobPolling(resumeParseJobId, {
+    onComplete: () => {
+      toast.success('Resume parsed successfully!');
+      if (selectedJob && createdCandidateId) {
+        runScreening.mutate(
+          { candidateId: createdCandidateId, jobId: selectedJob },
+          {
+            onSuccess: (data: any) => {
+              if (data.job_id) {
+                setScreeningJobId(data.job_id);
+              } else {
+                navigate('/candidates');
+              }
+            },
+            onError: () => {
+              toast.error('Failed to trigger screening.');
+              navigate('/candidates');
+            }
+          }
+        );
+      } else {
+        navigate('/candidates');
+      }
+    },
+    onError: (err) => {
+      toast.error('Resume parsing failed: ' + err);
+      navigate('/candidates');
+    }
+  });
+
+  useJobPolling(screeningJobId, {
+    onComplete: (res: any) => {
+      toast.success(`Screening complete! Score: ${res?.overall_score || 0}%`);
+      navigate('/candidates');
+    },
+    onError: (err) => {
+      toast.error('Screening failed: ' + err);
+      navigate('/candidates');
+    }
+  });
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -199,6 +245,8 @@ export default function NewCandidatePage() {
             return;
           }
 
+          setCreatedCandidateId(candidate.id);
+
           const runAtsIfPossible = () => {
             if (!selectedJob) {
               toast.success('Candidate created successfully!');
@@ -209,12 +257,16 @@ export default function NewCandidatePage() {
             runScreening.mutate(
               { candidateId: candidate.id, jobId: selectedJob },
               {
-                onSuccess: () => {
-                  toast.success('Candidate processed and screened successfully!');
-                  navigate('/candidates');
+                onSuccess: (data: any) => {
+                  if (data.job_id) {
+                    setScreeningJobId(data.job_id);
+                  } else {
+                    toast.success('Candidate processed and screened successfully!');
+                    navigate('/candidates');
+                  }
                 },
                 onError: () => {
-                  toast.success('Candidate created. Screening will be done later.');
+                  toast.error('Failed to start screening.');
                   navigate('/candidates');
                 },
               },
@@ -226,9 +278,15 @@ export default function NewCandidatePage() {
             uploadResume.mutate(
               { id: candidate.id, file: resumeFile },
               {
-                onSuccess: () => runAtsIfPossible(),
+                onSuccess: (data: any) => {
+                  if (data.job_id) {
+                    setResumeParseJobId(data.job_id);
+                  } else {
+                    runAtsIfPossible();
+                  }
+                },
                 onError: () => {
-                  toast.error('Resume upload/parsing failed. Candidate created without resume parsing.');
+                  toast.error('Resume upload failed.');
                   runAtsIfPossible();
                 },
               },

@@ -6,40 +6,47 @@
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabaseAdmin } from '../_lib/supabase';
-import { ok, methodNotAllowed, requireAuth } from '../_lib/helpers';
+import { ok, methodNotAllowed, notFound, requireAuth } from '../_lib/helpers';
 
 export default async function handleInterviews(req: VercelRequest, res: VercelResponse, segments: string[]) {
   const supabase = getSupabaseAdmin();
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  if (req.method === 'GET' && segments.length === 1) {
-    const { data, error } = await supabase
-      .from('interview_sessions')
-      .select('*, candidates(full_name, email), jobs(title, role)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+  if (segments.length === 1) {
+    if (req.method === 'GET') {
+      const { status, candidate_id, job_id } = req.query;
+      const limit = parseInt((req.query.limit as string) || '50');
 
-    if (error) return res.status(500).json({ error: error.message });
-    return ok(res, data || []);
-  }
+      let q = supabase.from('interview_sessions').select('*');
+      if (status) q = q.eq('status', status);
+      if (candidate_id) q = q.eq('candidate_id', candidate_id);
+      if (job_id) q = q.eq('job_id', job_id);
 
-  if (req.method === 'POST' && segments.length === 1) {
-    const body = req.body || {};
-    const { data, error } = await supabase
-      .from('interview_sessions')
-      .insert({
-        user_id: user.id,
+      const { data, error } = await q.order('created_at', { ascending: false }).limit(limit);
+      if (error) return res.status(500).json({ error: error.message });
+      return ok(res, data);
+    }
+
+    if (req.method === 'POST') {
+      const body = req.body;
+      const sessionData = {
         candidate_id: body.candidate_id,
         job_id: body.job_id,
+        screening_id: body.screening_id || null,
+        scheduled_at: body.scheduled_at || null,
         status: 'pending',
-      })
-      .select()
-      .single();
+        question_seed: `${body.candidate_id}-${body.job_id}-${Date.now()}`,
+        proctoring_data: { tab_switches: 0, copy_paste_count: 0, fullscreen_exits: 0, warnings: [] },
+      };
 
-    if (error) return res.status(500).json({ error: error.message });
-    return ok(res, data, 201);
+      const { data, error } = await supabase.from('interview_sessions').insert(sessionData).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return ok(res, data, 201);
+    }
+
+    return methodNotAllowed(res);
   }
 
-  return methodNotAllowed(res);
+  return notFound(res);
 }
