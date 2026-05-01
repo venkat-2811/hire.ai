@@ -149,7 +149,7 @@ export default async function handleAiInterview(req: VercelRequest, res: VercelR
       .slice(-3) // last 3 responses for context
       .map((r: any) => {
         const q = questions[r.question_index];
-        return \`Q (\${q.type}): \${q.text}\\nA: \${r.transcript || '[No response provided]'}\`;
+        return `Q (${q.type}): ${q.text}\nA: ${r.transcript || '[No response provided]'}`;
       })
       .join('\n\n');
 
@@ -157,28 +157,28 @@ export default async function handleAiInterview(req: VercelRequest, res: VercelR
     const skills = (job.must_have_skills || []).join(', ') || 'General';
     const candidateSkills = Array.isArray(resumeInsights.skills) ? resumeInsights.skills.join(', ') : '';
 
-    const adaptPrompt = \`You are an expert technical interviewer conducting a live \${job.level} \${job.role} interview for \${job.title}.
+    const adaptPrompt = `You are an expert technical interviewer conducting a live ${job.level} ${job.role} interview for ${job.title}.
 
-Required Skills: \${skills}
-\${candidateSkills ? \`Candidate Skills: \${candidateSkills}\` : ''}
-\${resumeInsights.experience_summary ? \`Candidate Experience: \${resumeInsights.experience_summary}\` : ''}
+Required Skills: ${skills}
+${candidateSkills ? `Candidate Skills: ${candidateSkills}` : ''}
+${resumeInsights.experience_summary ? `Candidate Experience: ${resumeInsights.experience_summary}` : ''}
 
-## Interview Progress So Far (last \${Math.min(responses.length, 3)} Q&A pairs):
-\${priorQA}
+## Interview Progress So Far (last ${Math.min(responses.length, 3)} Q&A pairs):
+${priorQA}
 
-## Pre-planned next question (question \${idx + 1} of \${questions.length}):
-"\${nextPreStored?.text || ''}" (type: \${nextPreStored?.type || 'technical'})
+## Pre-planned next question (question ${idx + 1} of ${questions.length}):
+"${nextPreStored?.text || ''}" (type: ${nextPreStored?.type || 'technical'})
 
 ## Your Task:
-Based on the candidate's answers above, generate a BETTER adaptive follow-up question for question \${idx + 1}.
+Based on the candidate's answers above, generate a BETTER adaptive follow-up question for question ${idx + 1}.
 - If the candidate gave a strong answer, go deeper on that topic or a related advanced concept.
 - If the candidate struggled, probe with a simpler or more supportive follow-up.
 - If the answer revealed a gap in required skills, ask about it directly.
-- Keep the question type (\${nextPreStored?.type || 'technical'}) unless a behavioral/situational follow-up would reveal more.
+- Keep the question type (${nextPreStored?.type || 'technical'}) unless a behavioral/situational follow-up would reveal more.
 - If the pre-planned question is already ideal given context, you may return it as-is.
 
 Return ONLY this JSON:
-{"text": "<the adaptive question>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}\`;
+{"text": "<the adaptive question>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}`;
 
     try {
       const adapted = await Promise.race<any>([

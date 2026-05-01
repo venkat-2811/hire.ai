@@ -182,7 +182,7 @@ export default async function handleApply(req: VercelRequest, res: VercelRespons
 
         // Parse with AI
         try {
-          const prompt = \`You are an expert resume parser.\n\nParse the following resume and return ONLY valid JSON in this exact format:\n{\n  "skills": ["skill1"],\n  "experience": [{"title":"","company":"","duration":"","description":""}],\n  "education": [{"degree":"","institution":"","year":""}],\n  "summary": "",\n  "total_experience_years": 0,\n  "certifications": ["cert1"]\n}\n\nRESUME TEXT:\n\${resumeText.slice(0, 8000)}\`;
+          const prompt = `You are an expert resume parser.\n\nParse the following resume and return ONLY valid JSON in this exact format:\n{\n  "skills": ["skill1"],\n  "experience": [{"title":"","company":"","duration":"","description":""}],\n  "education": [{"degree":"","institution":"","year":""}],\n  "summary": "",\n  "total_experience_years": 0,\n  "certifications": ["cert1"]\n}\n\nRESUME TEXT:\n${resumeText.slice(0, 8000)}`;
           resumeParsedData = await generateJSON<any>(prompt);
         } catch (err: any) {
           console.error('Resume AI parsing failed during application (will save raw text anyway):', err?.message);
@@ -222,7 +222,7 @@ export default async function handleApply(req: VercelRequest, res: VercelRespons
     // Run ATS screening if resume was parsed
     if (resumeParsedData) {
       try {
-        const prompt = \`Analyze this candidate's resume against the job requirements and provide ATS screening scores.\n\nJob: \${job.title} (\${job.role}, \${job.level})\nRequired Skills: \${(job.must_have_skills || []).join(', ')}\nNice-to-have Skills: \${(job.good_to_have_skills || []).join(', ')}\nMin Experience: \${job.min_experience_years} years\n\nCandidate Resume JSON:\n\${JSON.stringify(resumeParsedData)}\n\nReturn JSON:\n{\n  "overall_score": 0-100,\n  "skill_relevance_score": 0-100,\n  "experience_score": 0-100,\n  "education_score": 0-100,\n  "credibility_score": 0-100,\n  "shortlisted": true/false,\n  "shortlist_reason": "...",\n  "reason_codes": [{"code":"SKILL_MATCH","type":"positive","description":"...","impact":10}]\n}\`;
+        const prompt = `Analyze this candidate's resume against the job requirements and provide ATS screening scores.\n\nJob: ${job.title} (${job.role}, ${job.level})\nRequired Skills: ${(job.must_have_skills || []).join(', ')}\nNice-to-have Skills: ${(job.good_to_have_skills || []).join(', ')}\nMin Experience: ${job.min_experience_years} years\n\nCandidate Resume JSON:\n${JSON.stringify(resumeParsedData)}\n\nReturn JSON:\n{\n  "overall_score": 0-100,\n  "skill_relevance_score": 0-100,\n  "experience_score": 0-100,\n  "education_score": 0-100,\n  "credibility_score": 0-100,\n  "shortlisted": true/false,\n  "shortlist_reason": "...",\n  "reason_codes": [{"code":"SKILL_MATCH","type":"positive","description":"...","impact":10}]\n}`;
         const screeningResult = await generateJSON<any>(prompt);
 
         await supabase.from('ats_screenings').insert({
@@ -255,7 +255,7 @@ export default async function handleApply(req: VercelRequest, res: VercelRespons
       job_id: jobId,
       candidate_id: candidateId,
       status: 'applied',
-      message: \`Application submitted successfully for \${job.title}. Check your email for confirmation.\`,
+      message: `Application submitted successfully for ${job.title}. Check your email for confirmation.`,
     }, 201);
   }
 

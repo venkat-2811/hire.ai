@@ -54,10 +54,10 @@ export const interviewQuestionGenWorker = inngest.createFunction(
         const resumeInsights = {
           skills: Array.isArray(resume.skills) ? resume.skills.slice(0, 15) : [],
           experience_summary: Array.isArray(resume.experience)
-            ? resume.experience.slice(0, 3).map((e: any) => \`\${e.title || ''} at \${e.company || ''}\`).join('; ')
+            ? resume.experience.slice(0, 3).map((e: any) => `${e.title || ''} at ${e.company || ''}`).join('; ')
             : (typeof resume.experience === 'string' ? resume.experience.slice(0, 300) : ''),
           education_summary: Array.isArray(resume.education)
-            ? resume.education.slice(0, 2).map((e: any) => \`\${e.degree || ''} from \${e.institution || ''}\`).join('; ')
+            ? resume.education.slice(0, 2).map((e: any) => `${e.degree || ''} from ${e.institution || ''}`).join('; ')
             : (typeof resume.education === 'string' ? resume.education.slice(0, 200) : ''),
         };
 
@@ -75,13 +75,13 @@ export const interviewQuestionGenWorker = inngest.createFunction(
           created_at: new Date().toISOString(),
         });
 
-        if (insertErr) throw new Error(\`Failed to create session: \${insertErr.message}\`);
+        if (insertErr) throw new Error(`Failed to create session: ${insertErr.message}`);
 
         try {
-          await sendInterviewInvite(candidate.email, candidate.full_name, job.title, \`\${frontendUrl}/ai-interview/\${encodeURIComponent(token)}\`, scheduledTime);
+          await sendInterviewInvite(candidate.email, candidate.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduledTime);
         } catch (emailErr: any) {
           await supabase.from('ai_interview_sessions').delete().eq('id', sessionId);
-          throw new Error(\`Failed to send invite email: \${emailErr?.message || emailErr}\`);
+          throw new Error(`Failed to send invite email: ${emailErr?.message || emailErr}`);
         }
 
         return sessionId;

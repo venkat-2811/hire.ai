@@ -32,14 +32,14 @@ export const interviewEvaluateWorker = inngest.createFunction(
 
         const qaPairs = questions.map((q: any, i: number) => {
           const resp = responses.find((r: any) => r.question_index === i);
-          return \`Q\${i + 1} (\${q.type}): \${q.text}\\nA\${i + 1}: \${resp?.transcript || '[No response]'}\`;
+          return `Q${i + 1} (${q.type}): ${q.text}\nA${i + 1}: ${resp?.transcript || '[No response]'}`;
         }).join('\n\n');
 
-        const evalPrompt = \`Evaluate this AI interview for a \${session.job_descriptions?.level} \${session.job_descriptions?.role} position (\${session.job_descriptions?.title}).
-Required skills: \${(session.job_descriptions?.must_have_skills || []).join(', ')}
+        const evalPrompt = `Evaluate this AI interview for a ${session.job_descriptions?.level} ${session.job_descriptions?.role} position (${session.job_descriptions?.title}).
+Required skills: ${(session.job_descriptions?.must_have_skills || []).join(', ')}
 
 Interview Q&A:
-\${qaPairs}
+${qaPairs}
 
 Evaluate and return JSON:
 {
@@ -51,7 +51,7 @@ Evaluate and return JSON:
   "strengths": ["strength1", "strength2"],
   "areas_for_improvement": ["area1", "area2"],
   "detailed_feedback": "2-3 sentence summary of candidate performance"
-}\`;
+}`;
         
         try {
           return await generateJSON<any>(evalPrompt);
@@ -66,7 +66,7 @@ Evaluate and return JSON:
             recommendation: completionRate >= 70 ? 'maybe' : 'no_hire',
             strengths: answeredCount > 0 ? ['Completed interview responses'] : [],
             areas_for_improvement: ['Could not perform AI evaluation - scores are approximate'],
-            detailed_feedback: \`Candidate answered \${answeredCount} of \${questions.length} questions.\`,
+            detailed_feedback: `Candidate answered ${answeredCount} of ${questions.length} questions.`,
           };
         }
       });
