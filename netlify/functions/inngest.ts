@@ -1,4 +1,4 @@
-import { serve } from 'inngest/lambda';
+import { serve } from 'inngest/netlify';
 import { inngest } from '../../api/_lib/inngest';
 
 import { screeningRunWorker } from '../../api/inngest/screening-run';
