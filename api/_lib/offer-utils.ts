@@ -298,3 +298,38 @@ export async function sendOfferLetterEmail(
 
   await sendEmailRaw(to, `Formal Offer Letter – ${jobTitle} at ${companyName}`, html, attachments);
 }
+
+export async function sendAssessmentInvite(to: string, name: string, job: string, link: string, deadline: string) {
+  const html = `<!DOCTYPE html><html><body>
+    <h2>Technical Assessment Invitation</h2>
+    <p>Dear ${name},</p>
+    <p>You have been invited to take a technical assessment for the position of <strong>${job}</strong>.</p>
+    <p>Please complete the assessment before: <strong>${deadline}</strong></p>
+    <p><a href="${link}" style="padding:10px 20px;background:#4F46E5;color:white;text-decoration:none;border-radius:5px;">Start Assessment</a></p>
+    <p>Good luck!</p>
+  </body></html>`;
+  await sendEmailRaw(to, `Technical Assessment Invitation — ${job}`, html);
+}
+
+export async function sendInterviewInvite(to: string, name: string, job: string, link: string, time: string) {
+  const html = `<!DOCTYPE html><html><body>
+    <h2>AI Interview Invitation</h2>
+    <p>Dear ${name},</p>
+    <p>You have been invited to an AI-guided interview for the position of <strong>${job}</strong>.</p>
+    ${time ? `<p>Scheduled for: <strong>${time}</strong></p>` : ''}
+    <p><a href="${link}" style="padding:10px 20px;background:#4F46E5;color:white;text-decoration:none;border-radius:5px;">Join Interview</a></p>
+    <p>Best regards,</p>
+  </body></html>`;
+  await sendEmailRaw(to, `AI Interview Invitation — ${job}`, html);
+}
+
+export async function sendApplicationReceived(to: string, name: string, job: string) {
+  const html = `<!DOCTYPE html><html><body>
+    <h2>Application Received</h2>
+    <p>Dear ${name},</p>
+    <p>We have successfully received your application for the position of <strong>${job}</strong>.</p>
+    <p>Our team will review your profile and get back to you soon.</p>
+    <p>Thank you for your interest!</p>
+  </body></html>`;
+  await sendEmailRaw(to, `Application Received — ${job}`, html);
+}
