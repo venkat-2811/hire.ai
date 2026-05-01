@@ -8,7 +8,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabaseAdmin } from '../_lib/supabase';
 import { ok, badRequest, notFound, methodNotAllowed } from '../_lib/helpers';
 import { generateJSON } from '../_lib/openai';
-import { extractResumeText } from '../_lib/resume-parser';
+import { extractResumeText } from '../_lib/resume';
 import { sendApplicationReceived } from '../_lib/offer-utils';
 import { v4 as uuidv4 } from 'uuid';
 import Busboy from 'busboy';

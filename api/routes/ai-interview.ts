@@ -247,7 +247,7 @@ Return ONLY this JSON:
       if (e.message.includes('ASSEMBLYAI_API_KEY')) {
         return res.status(503).json({ error: e.message });
       }
-      return res.status(500).json({ error: \`Transcription failed: \${e.message}\` });
+      return res.status(500).json({ error: `Transcription failed: ${e.message}` });
     }
   }
 
