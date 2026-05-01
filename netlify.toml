@@ -17,6 +17,14 @@
   # Increase timeout to 5 minutes (300 seconds) for long-running AI workers
   timeout = 300
 
+# ── Route /api/inngest → Inngest Netlify Function ─────────────────────────────
+# Must come BEFORE the /api/* catch-all so Inngest serve endpoint is reachable
+[[redirects]]
+  from   = "/api/inngest"
+  to     = "/.netlify/functions/inngest"
+  status = 200
+  force  = true
+
 # ── Route /api/* → Netlify Function ───────────────────────────────────────────
 # The function receives event.path = "/api/..." so it can reconstruct the route
 [[redirects]]
