@@ -4,8 +4,7 @@ import { generateJSON } from '../_lib/openai';
 import { updateJobStatus } from '../_lib/jobTracker';
 
 export const resumeParseWorker = inngest.createFunction(
-  { id: 'resume-parse', name: 'Resume AI Parsing' },
-  { event: 'candidate/parse-resume' },
+  { id: 'resume-parse', name: 'Resume AI Parsing', event: 'candidate/parse-resume' },
   async ({ event, step }) => {
     const { job_id: trackerJobId, candidate_id: candidateId, resumeText } = event.data;
 
