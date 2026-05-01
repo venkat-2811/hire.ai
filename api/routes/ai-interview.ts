@@ -331,7 +331,7 @@ Return ONLY this JSON:
       if (e.message.includes('ASSEMBLYAI_API_KEY')) {
         return res.status(503).json({ error: e.message });
       }
-      return res.status(500).json({ error: \`Transcription failed: \${e.message}\` });
+      return res.status(500).json({ error: `Transcription failed: ${e.message}` });
     }
   }
 
@@ -404,7 +404,7 @@ Return ONLY this JSON:
 
     if (isCritical) {
       shouldTerminate = true;
-      terminationReason = \`Interview terminated: \${event.event_type.replace(/_/g, ' ')} detected. This is a strict proctoring violation.\`;
+      terminationReason = `Interview terminated: ${event.event_type.replace(/_/g, ' ')} detected. This is a strict proctoring violation.`;
     } else if ((proctoring.face_detection_failures || 0) >= 3) {
       shouldTerminate = true;
       terminationReason = 'Interview terminated: Face not visible 3 times.';
@@ -460,14 +460,14 @@ Return ONLY this JSON:
     try {
       const qaPairs = questions.map((q: any, i: number) => {
         const resp = responses.find((r: any) => r.question_index === i);
-        return \`Q\${i + 1} (\${q.type}): \${q.text}\\nA\${i + 1}: \${resp?.transcript || '[No response]'}\`;
+        return `Q${i + 1} (${q.type}): ${q.text}\nA${i + 1}: ${resp?.transcript || '[No response]'}`;
       }).join('\n\n');
 
-      const evalPrompt = \`Evaluate this AI interview for a \${session.job_descriptions?.level} \${session.job_descriptions?.role} position (\${session.job_descriptions?.title}).
-Required skills: \${(session.job_descriptions?.must_have_skills || []).join(', ')}
+      const evalPrompt = `Evaluate this AI interview for a ${session.job_descriptions?.level} ${session.job_descriptions?.role} position (${session.job_descriptions?.title}).
+Required skills: ${(session.job_descriptions?.must_have_skills || []).join(', ')}
 
 Interview Q&A:
-\${qaPairs}
+${qaPairs}
 
 Evaluate and return JSON:
 {
@@ -479,7 +479,7 @@ Evaluate and return JSON:
   "strengths": ["strength1", "strength2"],
   "areas_for_improvement": ["area1", "area2"],
   "detailed_feedback": "2-3 sentence summary of candidate performance"
-}\`;
+}`;
       finalEvaluation = await generateJSON<any>(evalPrompt);
     } catch {
       // Fallback if AI evaluation fails
@@ -493,7 +493,7 @@ Evaluate and return JSON:
         recommendation: completionRate >= 70 ? 'maybe' : 'no_hire',
         strengths: answeredCount > 0 ? ['Completed interview responses'] : [],
         areas_for_improvement: ['Could not perform AI evaluation - scores are approximate'],
-        detailed_feedback: \`Candidate answered \${answeredCount} of \${questions.length} questions.\`,
+        detailed_feedback: `Candidate answered ${answeredCount} of ${questions.length} questions.`,
       };
     }
 
@@ -586,10 +586,10 @@ Evaluate and return JSON:
         const resumeInsights = {
           skills: Array.isArray(resume.skills) ? resume.skills.slice(0, 15) : [],
           experience_summary: Array.isArray(resume.experience)
-            ? resume.experience.slice(0, 3).map((e: any) => \`\${e.title || ''} at \${e.company || ''}\`).join('; ')
+            ? resume.experience.slice(0, 3).map((e: any) => `${e.title || ''} at ${e.company || ''}`).join('; ')
             : (typeof resume.experience === 'string' ? resume.experience.slice(0, 300) : ''),
           education_summary: Array.isArray(resume.education)
-            ? resume.education.slice(0, 2).map((e: any) => \`\${e.degree || ''} from \${e.institution || ''}\`).join('; ')
+            ? resume.education.slice(0, 2).map((e: any) => `${e.degree || ''} from ${e.institution || ''}`).join('; ')
             : (typeof resume.education === 'string' ? resume.education.slice(0, 200) : ''),
         };
 
@@ -607,14 +607,14 @@ Evaluate and return JSON:
           created_at: new Date().toISOString(),
         });
         if (insertErr) {
-          throw new Error(\`Failed to create interview session: \${insertErr.message}\`);
+          throw new Error(`Failed to create interview session: ${insertErr.message}`);
         }
 
         try {
-          await sendInterviewInvite(c.email, c.full_name, job.title, \`\${frontendUrl}/ai-interview/\${encodeURIComponent(token)}\`, scheduled_time);
+          await sendInterviewInvite(c.email, c.full_name, job.title, `${frontendUrl}/ai-interview/${encodeURIComponent(token)}`, scheduled_time);
         } catch (emailErr: any) {
           await supabase.from('ai_interview_sessions').delete().eq('id', sessionId);
-          throw new Error(\`Failed to send interview invite email: \${emailErr?.message || emailErr}\`);
+          throw new Error(`Failed to send interview invite email: ${emailErr?.message || emailErr}`);
         }
 
         invitesSent += 1;
