@@ -104,6 +104,7 @@ interface AssessmentData {
   session_id: string;
   candidate_name: string;
   job_title: string;
+  job_role?: string;
   mcq_count: number;
   coding_count: number;
   total_time_minutes: number;
@@ -135,7 +136,7 @@ export default function AssessmentPage() {
   }, [currentCodingIndex]);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
-  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; compilation_error?: string; runtime_error?: string; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
+  const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; compilation_error?: string; runtime_error?: string; apex_compiled?: boolean; apex_success?: boolean; apex_logs?: string; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
   const [runningCode, setRunningCode] = useState<string | null>(null);
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -145,6 +146,7 @@ export default function AssessmentPage() {
   const [activeTestCaseTab, setActiveTestCaseTab] = useState(0);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const isSalesforceRole = /salesforce|apex|crm developer/i.test(`${assessmentData?.job_title || ''} ${assessmentData?.job_role || ''}`);
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -584,6 +586,15 @@ export default function AssessmentPage() {
     setCodingSolutions((prev) => ({ ...prev, [challengeId]: code }));
   };
 
+  const runApex = async (code: string) => {
+    const response = await fetch('/.netlify/functions/execute-apex', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    return response.json();
+  };
+
   const runCode = async (challengeId: string) => {
     if (!assessmentData || runningCode) return;
 
@@ -597,13 +608,39 @@ export default function AssessmentPage() {
     setActiveTestCaseTab(0);
 
     try {
+      const selectedLanguage = codingLanguages[challengeId] || 'python3';
+      if (selectedLanguage === 'apex') {
+        const data = await runApex(code);
+        setCodingResults((prev) => ({
+          ...prev,
+          [challengeId]: {
+            results: [],
+            passed: data.success ? 1 : 0,
+            total: 1,
+            score: data.success ? 100 : 0,
+            compilation_error: data.compiled === false ? (data.exceptionMessage || data.logs || 'Compilation failed') : undefined,
+            runtime_error: data.compiled && !data.success ? (data.exceptionMessage || data.logs || 'Execution failed') : undefined,
+            apex_compiled: data.compiled,
+            apex_success: data.success,
+            apex_logs: data.logs,
+          },
+        }));
+        setProblemTab('submissions');
+        if (data.success) {
+          toast.success('Apex executed successfully');
+        } else {
+          toast.error('Apex execution failed');
+        }
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           challenge_id: challengeId,
           code,
-          language: codingLanguages[challengeId] || 'python3',
+          language: selectedLanguage,
         }),
       });
 
@@ -673,13 +710,39 @@ export default function AssessmentPage() {
     setActiveTestCaseTab(0);
 
     try {
+      const selectedLanguage = codingLanguages[challengeId] || 'python3';
+      if (selectedLanguage === 'apex') {
+        const data = await runApex(code);
+        setCodingResults((prev) => ({
+          ...prev,
+          [challengeId]: {
+            results: [],
+            passed: data.success ? 1 : 0,
+            total: 1,
+            score: data.success ? 100 : 0,
+            compilation_error: data.compiled === false ? (data.exceptionMessage || data.logs || 'Compilation failed') : undefined,
+            runtime_error: data.compiled && !data.success ? (data.exceptionMessage || data.logs || 'Execution failed') : undefined,
+            apex_compiled: data.compiled,
+            apex_success: data.success,
+            apex_logs: data.logs,
+          },
+        }));
+        setProblemTab('submissions');
+        if (data.success) {
+          toast.success('Apex executed successfully');
+        } else {
+          toast.error('Apex execution failed');
+        }
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           challenge_id: challengeId,
           code,
-          language: codingLanguages[challengeId] || 'python3',
+          language: selectedLanguage,
         }),
       });
 
@@ -1774,9 +1837,11 @@ export default function AssessmentPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {(currentCoding.supported_languages || []).map((lang) => (
+                              {(currentCoding.supported_languages || [])
+                                .filter((lang) => lang !== 'apex' || isSalesforceRole)
+                                .map((lang) => (
                                 <SelectItem key={lang} value={lang}>
-                                  {{ python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++', typescript: 'TypeScript', csharp: 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby' }[lang] || lang}
+                                  {{ python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++', typescript: 'TypeScript', csharp: 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex' }[lang] || lang}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1820,7 +1885,7 @@ export default function AssessmentPage() {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={{ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby' }[codingLanguages[currentCoding.id] || 'python3'] || 'python'}
+                          language={{ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'apex' }[codingLanguages[currentCoding.id] || 'python3'] || 'python'}
                           theme="vs-dark"
                           value={codingSolutions[currentCoding.id] || ''}
                           onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
@@ -1889,6 +1954,15 @@ export default function AssessmentPage() {
                                   </p>
                                   <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-orange-950/30 border border-orange-500/20 rounded px-2.5 py-2">
                                     {compilationError}
+                                  </pre>
+                                </div>
+                              )}
+
+                              {!compilationError && result.apex_logs && (
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1">Apex Execution Logs</p>
+                                  <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap bg-zinc-900 border border-zinc-800 rounded px-2.5 py-2 max-h-48 overflow-auto">
+                                    {result.apex_logs}
                                   </pre>
                                 </div>
                               )}

@@ -29,3 +29,6 @@ backend/.env
 *.sln
 *.sw?
 .vercel
+
+# Local Netlify folder
+.netlify

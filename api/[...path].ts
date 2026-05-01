@@ -164,6 +164,27 @@ function mapAssessmentDifficulty(difficulty: string): { label: string; guidance:
   };
 }
 
+function isSalesforceRoleText(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /(salesforce|apex|crm developer)/i.test(value);
+}
+
+function isSalesforceRole(job: {
+  role?: string | null;
+  title?: string | null;
+  description?: string | null;
+  must_have_skills?: string[] | null;
+  good_to_have_skills?: string[] | null;
+}): boolean {
+  return [
+    job.role,
+    job.title,
+    job.description,
+    ...(job.must_have_skills || []),
+    ...(job.good_to_have_skills || []),
+  ].some((value) => isSalesforceRoleText(value || ''));
+}
+
 // ── MCQ helpers ──────────────────────────────────────────────────────────────
 
 /**
@@ -230,6 +251,7 @@ async function generateAssessmentMcqsForJob(opts: {
 }): Promise<any[]> {
   const { job, mcqCount, difficulty } = opts;
   if (mcqCount < 1) return [];
+  const salesforceRole = isSalesforceRole(job);
 
   const mapped = mapAssessmentDifficulty(difficulty);
   const mustHaveSkills = (job.must_have_skills || []).join(', ') || 'general programming';
@@ -321,6 +343,12 @@ Distractor pattern:
 Distribute questions evenly across ALL required skills: ${mustHaveSkills}.
 Do NOT cluster multiple questions on the same technology or concept.
 
+${salesforceRole ? `[7] SALESFORCE-ONLY SCOPE (CRITICAL)
+The candidate is for a Salesforce role.
+Only generate Salesforce platform questions covering Apex, Triggers, SOQL/SOSL, Flow vs Apex, Batch/Queueable/Future, Bulkification, sharing/security model, and governor limits.
+Strictly exclude generic DSA/LeetCode-style algorithm puzzles (e.g., arrays, trees, graph traversals, dynamic programming) unless directly tied to Salesforce platform behavior.
+` : ''}
+
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY valid JSON — no markdown, no explanations:
 {
@@ -396,6 +424,73 @@ Return ONLY valid JSON — no markdown, no explanations:
   }
 
   return questions;
+}
+
+async function generateSalesforceApexChallenges(opts: {
+  job: {
+    title?: string;
+    role?: string;
+    level?: string;
+    description?: string;
+    must_have_skills?: string[];
+    good_to_have_skills?: string[];
+  };
+  codingCount: number;
+  difficulty: string;
+}): Promise<any[]> {
+  const { job, codingCount, difficulty } = opts;
+  if (codingCount < 1) return [];
+
+  const prompt = `You are an expert Salesforce technical interviewer.
+Generate exactly ${codingCount} practical Salesforce coding challenges for a ${job.level} ${job.role} role (${job.title}).
+
+Job Description: ${(job.description || '').slice(0, 600)}
+Must-have Skills: ${(job.must_have_skills || []).join(', ')}
+Good-to-have Skills: ${(job.good_to_have_skills || []).join(', ')}
+Difficulty: ${difficulty}
+
+Rules:
+1. Questions must be Salesforce-specific only.
+2. Use Apex/Trigger/SOQL/Bulkification/Governor-limit scenarios.
+3. Strictly exclude generic DSA/LeetCode algorithm puzzles.
+4. Each challenge should be executable as anonymous Apex.
+5. Include at least 2 public test scenarios as sample input/output guidance.
+
+Return only JSON:
+{
+  "challenges": [
+    {
+      "title": "string",
+      "description": "string",
+      "constraints": "string",
+      "examples": [{"input":"string","output":"string","explanation":"string"}],
+      "starter_code": "Apex code template",
+      "test_cases": [{"id":"tc1","input":"string","expected_output":"string"}],
+      "points": 100,
+      "time_limit_seconds": 1200
+    }
+  ]
+}`;
+
+  const generated = await generateJSON<any>(prompt, { maxTokens: 7000, temperature: 0.7 });
+  const raw = Array.isArray(generated) ? generated : (Array.isArray(generated?.challenges) ? generated.challenges : []);
+
+  return raw.slice(0, codingCount).map((challenge: any, idx: number) => ({
+    id: String(challenge?.id || `apex-${idx + 1}-${crypto.randomUUID()}`),
+    slug: String(challenge?.slug || `salesforce-apex-${idx + 1}`),
+    title: String(challenge?.title || `Salesforce Apex Challenge ${idx + 1}`),
+    description: String(challenge?.description || 'Implement the required Salesforce logic using Apex.'),
+    constraints: String(challenge?.constraints || 'Follow Salesforce governor limits and bulkification best practices.'),
+    examples: Array.isArray(challenge?.examples) ? challenge.examples : [],
+    starter_code: {
+      apex: String(challenge?.starter_code || '// Write Apex code here\nSystem.debug(\'Hello from Apex\');'),
+    },
+    test_cases: Array.isArray(challenge?.test_cases) ? challenge.test_cases : [],
+    points: Number(challenge?.points || 100),
+    time_limit_seconds: Number(challenge?.time_limit_seconds || 1200),
+    supported_languages: ['apex'],
+    execution_mode: 'apex',
+  }));
 }
 
 function normalizeBaseUrl(u: string): string {
@@ -3865,6 +3960,12 @@ Return JSON:
         const difficulty = assessmentConfig.difficulty || session.difficulty || 'medium';
         const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
         const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
+        const salesforceRole = isSalesforceRole({
+          role: session.job_descriptions?.role,
+          title: session.job_descriptions?.title,
+          must_have_skills: session.job_descriptions?.must_have_skills || [],
+          good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
+        });
 
       // Retrieve pre-generated MCQ questions only
       const getMcqQuestions = async (): Promise<any[]> => {
@@ -3883,11 +3984,32 @@ Return JSON:
         throw new Error('MCQ questions are not available for this session. Please contact the recruiter.');
       };
 
-      // Fetch coding challenges from DSA bank (or return cached)
+      // Fetch coding challenges from DSA bank (or Salesforce-Apex generator for Salesforce roles)
       const getCodingChallenges = async (): Promise<any[]> => {
         if (!includeCoding) return [];
         const storedCoding: any[] = session.coding_challenges || [];
         if (storedCoding.length > 0) return storedCoding;
+
+        if (salesforceRole) {
+          const challenges = await generateSalesforceApexChallenges({
+            job: {
+              title: session.job_descriptions?.title,
+              role: session.job_descriptions?.role,
+              level: session.job_descriptions?.level,
+              description: '',
+              must_have_skills: session.job_descriptions?.must_have_skills || [],
+              good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
+            },
+            codingCount,
+            difficulty,
+          });
+          if (!challenges.length) return [];
+          supabase.from('assessment_sessions').update({
+            coding_challenges: challenges,
+            updated_at: new Date().toISOString(),
+          }).eq('id', session.id).then(() => {});
+          return challenges;
+        }
 
         let dist: string[];
         if (difficulty === 'easy') dist = Array(codingCount).fill('easy');
@@ -3937,6 +4059,7 @@ Return JSON:
           session_id: session.id,
           candidate_name: session.candidates?.full_name,
           job_title: session.job_descriptions?.title,
+          job_role: session.job_descriptions?.role,
           mcq_count: safeMcq.length,
           coding_count: codingChallenges.length,
           total_time_minutes: session.total_time_minutes ?? 90,
@@ -3992,12 +4115,12 @@ Return JSON:
     }
 
     // GET /api/assessments/:sessionId/coding
-    // Serves DSA problems from the problem bank (not AI-generated)
+    // Serves DSA problems from the problem bank, except Salesforce/Apex roles
     if (req.method === 'GET' && segments.length === 3 && segments[2] === 'coding') {
       const sessionId = segments[1];
       const { data: session, error } = await supabase
         .from('assessment_sessions')
-        .select('id, status, coding_challenges, coding_challenge_count, coding_problem_ids, proctoring_data')
+        .select('id, status, coding_challenges, coding_challenge_count, coding_problem_ids, proctoring_data, job_id')
         .eq('id', sessionId)
         .single();
 
@@ -4012,6 +4135,25 @@ Return JSON:
       // Return cached challenges if already assigned
       const storedChallenges = session.coding_challenges || [];
       if (storedChallenges.length) return ok(res, storedChallenges);
+
+      const { data: jobMeta } = await supabase
+        .from('job_descriptions')
+        .select('title, role, level, description, must_have_skills, good_to_have_skills')
+        .eq('id', session.job_id)
+        .single();
+
+      if (jobMeta && isSalesforceRole(jobMeta)) {
+        const apexChallenges = await generateSalesforceApexChallenges({
+          job: jobMeta,
+          codingCount: session.coding_challenge_count || 2,
+          difficulty: assessmentConfig.difficulty || 'medium',
+        });
+        await supabase.from('assessment_sessions').update({
+          coding_challenges: apexChallenges,
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+        return ok(res, apexChallenges);
+      }
 
       // Select problems from DSA bank based on difficulty
       const count = session.coding_challenge_count || 2;
@@ -4169,6 +4311,19 @@ Return JSON:
       const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
       if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
+      // Apex challenges are executed client-side via the Netlify execute-apex function.
+      // They are NOT in the dsa_problems table, so skip the DSA pipeline entirely.
+      if (language === 'apex') {
+        return ok(res, {
+          success: true,
+          message: 'Apex code execution is handled client-side via Salesforce Tooling API.',
+          results: [],
+          passed: 0,
+          total: 0,
+          score_percentage: 0,
+        });
+      }
+
       // Fetch the full problem from DSA bank (with all test cases + solution wrappers)
       const { data: problem } = await supabase.from('dsa_problems').select('*').eq('id', challenge_id).single();
       if (!problem) return badRequest(res, 'Problem not found');
@@ -4224,6 +4379,51 @@ Return JSON:
 
       const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
       if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
+
+      // Apex challenges: store the submission without running through the DSA pipeline.
+      // Apex execution happens client-side via the Netlify execute-apex function.
+      if (language === 'apex') {
+        const apexChallenge = (session.coding_challenges || []).find((c: any) => c.id === challenge_id);
+        const maxPoints = apexChallenge?.points || 100;
+
+        // Store the Apex submission with the code (scoring based on last client-side run)
+        const apexSubmission = {
+          challenge_id,
+          problem_slug: apexChallenge?.slug || 'apex-challenge',
+          code,
+          language: 'apex',
+          execution_mode: 'apex',
+          test_results: [],
+          summary: { public_passed: 0, public_total: 0, private_passed: 0, private_total: 0, edge_passed: 0, edge_total: 0 },
+          performance: {},
+          passed_count: 0,
+          total_tests: 0,
+          score_percentage: 0,
+          points_earned: 0,
+          max_points: maxPoints,
+          submitted_at: new Date().toISOString(),
+        };
+
+        const existing = session.coding_submissions || [];
+        const existingIdx = existing.findIndex((s: any) => s.challenge_id === challenge_id);
+        if (existingIdx >= 0) { existing[existingIdx] = apexSubmission; } else { existing.push(apexSubmission); }
+
+        await supabase.from('assessment_sessions').update({
+          coding_submissions: existing,
+        }).eq('id', sessionId);
+
+        return ok(res, {
+          success: true,
+          challenge_id,
+          passed_count: 0,
+          total_tests: 0,
+          score_percentage: 0,
+          points_earned: 0,
+          test_results: [],
+          hidden_tests_passed: 0,
+          hidden_tests_total: 0,
+        });
+      }
 
       // Fetch the full problem from DSA bank
       const { data: problem } = await supabase.from('dsa_problems').select('*').eq('id', challenge_id).single();
@@ -4475,6 +4675,7 @@ Return JSON:
         .eq('created_by', user.id)
         .single();
       if (!job) return notFound(res, 'Job not found');
+      const salesforceRole = isSalesforceRole(job);
 
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
       if (!candidates?.length) return notFound(res, 'No candidates found');
@@ -4526,6 +4727,22 @@ Return JSON:
         }
       }
 
+      let preGeneratedCodingChallenges: any[] = [];
+      if (includeCoding && salesforceRole) {
+        try {
+          preGeneratedCodingChallenges = await generateSalesforceApexChallenges({
+            job,
+            codingCount,
+            difficulty,
+          });
+        } catch (e: any) {
+          console.error('[assessments/invite] Salesforce coding generation failed:', e?.message || e);
+          return res.status(502).json({
+            error: 'Salesforce coding challenge generation failed. Please try again.',
+          });
+        }
+      }
+
       // Auto-calculate time based on questions and difficulty if not provided
       let totalTimeMinutes = body.total_time_minutes;
       if (!totalTimeMinutes) {
@@ -4559,6 +4776,7 @@ Return JSON:
             coding_challenge_count: codingCount,
             total_time_minutes: totalTimeMinutes,
             mcq_questions: preGeneratedMcqQuestions,
+            coding_challenges: preGeneratedCodingChallenges,
             proctoring_data: {
               tab_switches: 0,
               fullscreen_exits: 0,
