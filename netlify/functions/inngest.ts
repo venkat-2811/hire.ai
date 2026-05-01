@@ -1,4 +1,4 @@
-import { serve } from 'inngest/lambda';
+import { serve } from 'inngest/edge';
 import { inngest } from '../../api/_lib/inngest';
 
 import { screeningRunWorker } from '../../api/inngest/screening-run';
@@ -7,7 +7,7 @@ import { resumeParseWorker } from '../../api/inngest/resume-parse';
 import { interviewEvaluateWorker } from '../../api/inngest/interview-evaluate';
 import { interviewQuestionGenWorker } from '../../api/inngest/interview-question-gen';
 
-export const handler = serve({
+export default serve({
   client: inngest,
   functions: [
     screeningRunWorker,
