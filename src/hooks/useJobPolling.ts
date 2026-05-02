@@ -29,6 +29,8 @@ export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPol
   const maxRetries = options?.maxRetries || 100; // ~5 mins at 3s interval
   const retryCount = useRef(0);
   const timerRef = useRef<number | null>(null);
+  const queuedSinceRef = useRef<number | null>(null);
+  const lastStatusRef = useRef<JobStatus | null>(null);
 
   const fetchJobStatus = async () => {
     if (!jobId) return;
@@ -47,6 +49,15 @@ export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPol
       setJob(data);
       console.log(`[useJobPolling] Job ${jobId} status: ${data.status}`);
 
+      if (lastStatusRef.current !== data.status) {
+        lastStatusRef.current = data.status;
+        if (data.status !== 'queued') queuedSinceRef.current = null;
+      }
+
+      if (data.status === 'queued' && queuedSinceRef.current === null) {
+        queuedSinceRef.current = Date.now();
+      }
+
       if (data.status === 'completed') {
         setIsPolling(false);
         options?.onComplete?.(data.result as T);
@@ -58,7 +69,8 @@ export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPol
         retryCount.current += 1;
         
         // Timeout early if it's stuck in "queued" state and never picked up by worker
-        const isQueuedAndStuck = data.status === 'queued' && retryCount.current >= 10;
+        const queuedForMs = queuedSinceRef.current ? Date.now() - queuedSinceRef.current : 0;
+        const isQueuedAndStuck = data.status === 'queued' && queuedForMs >= 120000;
         
         if (isQueuedAndStuck) {
           console.error(`[useJobPolling] Job ${jobId} timed out while queued. Worker failed to start.`);
@@ -88,6 +100,8 @@ export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPol
     if (jobId) {
       setIsPolling(true);
       retryCount.current = 0;
+      queuedSinceRef.current = null;
+      lastStatusRef.current = null;
       fetchJobStatus();
     } else {
       setIsPolling(false);

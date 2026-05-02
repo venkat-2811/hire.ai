@@ -15,29 +15,49 @@ export function getOpenAIClient(): OpenAI {
   return _openai;
 }
 
-export async function generateText(prompt: string, opts: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+export async function generateText(
+  prompt: string,
+  opts: { temperature?: number; maxTokens?: number; timeoutMs?: number } = {}
+): Promise<string> {
   const client = getOpenAIClient();
-  const completion = await client.chat.completions.create({
-    model: 'gpt-4.1-mini',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: opts.temperature ?? 0.7,
-    max_tokens: opts.maxTokens ?? 2048,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 20000);
+  const completion = await client.chat.completions
+    .create(
+      {
+        model: 'gpt-4.1-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: opts.temperature ?? 0.7,
+        max_tokens: opts.maxTokens ?? 2048,
+      },
+      { signal: controller.signal }
+    )
+    .finally(() => clearTimeout(timeout));
   return completion.choices[0]?.message?.content || '';
 }
 
-export async function generateJSON<T>(prompt: string, opts?: { maxTokens?: number; temperature?: number }): Promise<T> {
+export async function generateJSON<T>(
+  prompt: string,
+  opts?: { maxTokens?: number; temperature?: number; timeoutMs?: number }
+): Promise<T> {
   const client = getOpenAIClient();
-  const completion = await client.chat.completions.create({
-    model: 'gpt-4.1-mini',
-    messages: [
-      { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
-      { role: 'user', content: prompt },
-    ],
-    temperature: opts?.temperature ?? 0.3,
-    max_tokens: opts?.maxTokens ?? 8192,
-    response_format: { type: 'json_object' },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 25000);
+  const completion = await client.chat.completions
+    .create(
+      {
+        model: 'gpt-4.1-mini',
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: opts?.temperature ?? 0.3,
+        max_tokens: opts?.maxTokens ?? 8192,
+        response_format: { type: 'json_object' },
+      },
+      { signal: controller.signal }
+    )
+    .finally(() => clearTimeout(timeout));
   const text = (completion.choices[0]?.message?.content || '').trim();
   if (!text) throw new Error('Empty AI response');
   try { return JSON.parse(text) as T; }

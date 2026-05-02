@@ -4,7 +4,16 @@ import { generateJSON } from '../_lib/openai';
 import { updateJobStatus } from '../_lib/jobTracker';
 
 export const screeningRunWorker = inngest.createFunction(
-  { id: 'screening-run', name: 'ATS Resume Screening', retries: 3, triggers: [{ event: 'screening/run' }] },
+  {
+    id: 'screening-run',
+    name: 'ATS Resume Screening',
+    retries: 3,
+    triggers: [{ event: 'screening/run' }],
+    concurrency: {
+      limit: 5,
+      key: 'event.data.candidate_id',
+    },
+  },
   async ({ event, step }) => {
     const rawData: any = (event as any)?.data;
 
@@ -49,6 +58,24 @@ export const screeningRunWorker = inngest.createFunction(
         await updateJobStatus(jobId, 'processing');
       }
 
+      const existingScreening = await step.run('check-existing', async () => {
+        const supabase = getSupabaseAdmin();
+        const { data } = await supabase
+          .from('ats_screenings')
+          .select('*')
+          .eq('candidate_id', candidateId)
+          .eq('job_id', internalJobId)
+          .maybeSingle();
+        return data ?? null;
+      });
+
+      if (existingScreening) {
+        if (jobId) {
+          await updateJobStatus(jobId, 'completed', existingScreening);
+        }
+        return { success: true, screeningData: existingScreening, cached: true };
+      }
+
       // 1. Fetch data
       const { candidate, jobDesc } = await step.run('fetch-data', async () => {
         const supabase = getSupabaseAdmin();
@@ -70,6 +97,7 @@ export const screeningRunWorker = inngest.createFunction(
 
       // 2. Generate score
       const result = await step.run('generate-score', async () => {
+        const resumeJson = JSON.stringify(candidate.resume_parsed_data).slice(0, 6000);
         const prompt = `
 Analyze this candidate's resume against the job requirements and provide ATS screening scores.
 
@@ -79,7 +107,7 @@ Nice-to-have Skills: ${(jobDesc.good_to_have_skills || []).join(', ')}
 Min Experience: ${jobDesc.min_experience_years} years
 
 Candidate Resume JSON:
-${JSON.stringify(candidate.resume_parsed_data)}
+${resumeJson}
 
 Return JSON:
 {
@@ -93,7 +121,7 @@ Return JSON:
   "reason_codes": [{"code":"SKILL_MATCH","type":"positive","description":"...","impact":10}]
 }`;
 
-        return generateJSON<any>(prompt);
+        return generateJSON<any>(prompt, { timeoutMs: 20000, maxTokens: 1200, temperature: 0.1 });
       });
 
       // 3. Save to DB

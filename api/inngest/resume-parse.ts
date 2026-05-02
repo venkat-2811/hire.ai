@@ -4,7 +4,16 @@ import { generateJSON } from '../_lib/openai';
 import { updateJobStatus } from '../_lib/jobTracker';
 
 export const resumeParseWorker = inngest.createFunction(
-  { id: 'resume-parse', name: 'Resume AI Parsing', retries: 3, triggers: [{ event: 'candidate/parse-resume' }] },
+  {
+    id: 'resume-parse',
+    name: 'Resume AI Parsing',
+    retries: 3,
+    triggers: [{ event: 'candidate/parse-resume' }],
+    concurrency: {
+      limit: 5,
+      key: 'event.data.candidate_id',
+    },
+  },
   async ({ event, step }) => {
     const rawData: any = (event as any)?.data;
 
@@ -49,6 +58,29 @@ export const resumeParseWorker = inngest.createFunction(
         await updateJobStatus(trackerJobId, 'processing');
       }
 
+      // Fast-path: if already parsed, return immediately (avoids rework + reduces latency)
+      const existingParsed = await step.run('check-existing', async () => {
+        const supabase = getSupabaseAdmin();
+        const { data: candidate, error } = await supabase
+          .from('candidates')
+          .select('resume_parsed_data')
+          .eq('id', candidateId)
+          .single();
+        if (error) throw new Error(error.message);
+        const parsed = (candidate as any)?.resume_parsed_data;
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          return parsed;
+        }
+        return null;
+      });
+
+      if (existingParsed) {
+        if (trackerJobId) {
+          await updateJobStatus(trackerJobId, 'completed', existingParsed);
+        }
+        return { success: true, parsedData: existingParsed, cached: true };
+      }
+
       // 1. Generate parsed JSON
       const parsedData = await step.run('parse-resume', async () => {
         const prompt = `You are an expert resume parser.
@@ -66,7 +98,7 @@ Parse the following resume and return ONLY valid JSON in this exact format:
 RESUME TEXT:
 ${resumeText.slice(0, 8000)}`;
 
-        return generateJSON<any>(prompt);
+        return generateJSON<any>(prompt, { timeoutMs: 20000, maxTokens: 1200, temperature: 0.1 });
       });
 
       // 2. Save to DB
