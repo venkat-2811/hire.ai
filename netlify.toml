@@ -2,6 +2,9 @@
   command   = "npm run build"
   publish   = "dist"
 
+[[plugins]]
+package = "netlify-plugin-inngest"
+
 # ── Netlify Functions config ───────────────────────────────────────────────────
 [functions]
   # Use esbuild so TypeScript is compiled + all imports (including api/[...path].ts) are bundled
