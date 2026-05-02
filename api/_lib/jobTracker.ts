@@ -11,7 +11,6 @@ export interface BackgroundJob {
   id: string;
   type: string;
   status: JobStatus;
-  input: any;
   result: any;
   error: string | null;
   user_id: string | null;
@@ -31,7 +30,6 @@ export async function createJob(type: string, input: any, userId?: string): Prom
     .insert({
       type,
       status: 'queued' as JobStatus,
-      input: input || {},
       user_id: userId || null,
     })
     .select('id')
