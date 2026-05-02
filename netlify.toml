@@ -25,6 +25,12 @@
   status = 200
   force  = true
 
+[[redirects]]
+  from   = "/api/inngest/*"
+  to     = "/.netlify/functions/inngest"
+  status = 200
+  force  = true
+
 # ── Route /api/* → Netlify Function ───────────────────────────────────────────
 # The function receives event.path = "/api/..." so it can reconstruct the route
 [[redirects]]

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './useAuth';
 
-export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
 export interface JobState<T = any> {
   id: string;
@@ -54,11 +54,11 @@ export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPol
         setIsPolling(false);
         options?.onError?.(data.error || 'Job failed during execution');
       } else {
-        // still pending/processing
+        // still queued/processing
         retryCount.current += 1;
         
         // Timeout early if it's stuck in "queued" state and never picked up by worker
-        const isQueuedAndStuck = (data.status === 'pending' || data.status === 'queued' as any) && retryCount.current >= 10;
+        const isQueuedAndStuck = data.status === 'queued' && retryCount.current >= 10;
         
         if (isQueuedAndStuck) {
           console.error(`[useJobPolling] Job ${jobId} timed out while queued. Worker failed to start.`);

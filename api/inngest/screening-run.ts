@@ -6,18 +6,48 @@ import { updateJobStatus } from '../_lib/jobTracker';
 export const screeningRunWorker = inngest.createFunction(
   { id: 'screening-run', name: 'ATS Resume Screening', retries: 3, triggers: [{ event: 'screening/run' }] },
   async ({ event, step }) => {
-    const { job_id: jobId, candidate_id: candidateId, internal_job_id: internalJobId } = event.data;
+    const rawData: any = (event as any)?.data;
+
+    // Inngest UI/manual runs can wrap the input in different ways depending on transport.
+    // Try a few known shapes:
+    // - event.data
+    // - event.data.data
+    // - event.data.payload
+    // - event.data.body (stringified JSON)
+    let data: any = {};
+    if (rawData && typeof rawData === 'object') {
+      data = rawData;
+      if (rawData.data && typeof rawData.data === 'object') data = rawData.data;
+      if (rawData.payload && typeof rawData.payload === 'object') data = rawData.payload;
+
+      if (typeof rawData.body === 'string') {
+        try {
+          const parsed = JSON.parse(rawData.body);
+          if (parsed && typeof parsed === 'object') data = parsed;
+        } catch {
+          // ignore
+        }
+      } else if (rawData.body && typeof rawData.body === 'object') {
+        data = rawData.body;
+      }
+    }
+
+    const jobId = data.job_id;
+    const candidateId = data.candidate_id;
+    const internalJobId = data.internal_job_id;
 
     // Validate required fields
     if (!candidateId) {
-      throw new Error('candidate_id is required in event data');
+      throw new Error('candidate_id is required in event data (expected: { candidate_id, internal_job_id, job_id? })');
     }
     if (!internalJobId) {
-      throw new Error('internal_job_id is required in event data');
+      throw new Error('internal_job_id is required in event data (expected: { candidate_id, internal_job_id, job_id? })');
     }
 
     try {
-      await updateJobStatus(jobId, 'processing');
+      if (jobId) {
+        await updateJobStatus(jobId, 'processing');
+      }
 
       // 1. Fetch data
       const { candidate, jobDesc } = await step.run('fetch-data', async () => {
@@ -98,11 +128,15 @@ Return JSON:
         return saved.data;
       });
 
-      await updateJobStatus(jobId, 'completed', screeningData);
+      if (jobId) {
+        await updateJobStatus(jobId, 'completed', screeningData);
+      }
       return { success: true, screeningData };
     } catch (err: any) {
       console.error('[Inngest] screening-run failed:', err);
-      await updateJobStatus(jobId, 'failed', null, err.message);
+      if (jobId) {
+        await updateJobStatus(jobId, 'failed', null, err.message);
+      }
       throw err;
     }
   }
