@@ -9,6 +9,14 @@ export const resumeParseWorker = inngest.createFunction(
   async ({ event, step }) => {
     const { job_id: trackerJobId, candidate_id: candidateId, resumeText } = event.data;
 
+    // Validate required fields
+    if (!candidateId) {
+      throw new Error('candidate_id is required in event data');
+    }
+    if (!resumeText || typeof resumeText !== 'string') {
+      throw new Error('resumeText is required and must be a string in event data');
+    }
+
     try {
       await updateJobStatus(trackerJobId, 'processing');
 

@@ -9,6 +9,14 @@ export const screeningRunWorker = inngest.createFunction(
   async ({ event, step }) => {
     const { job_id: jobId, candidate_id: candidateId, internal_job_id: internalJobId } = event.data;
 
+    // Validate required fields
+    if (!candidateId) {
+      throw new Error('candidate_id is required in event data');
+    }
+    if (!internalJobId) {
+      throw new Error('internal_job_id is required in event data');
+    }
+
     try {
       await updateJobStatus(jobId, 'processing');
 
@@ -16,8 +24,11 @@ export const screeningRunWorker = inngest.createFunction(
       const { candidate, jobDesc } = await step.run('fetch-data', async () => {
         const supabase = getSupabaseAdmin();
         const { data: candidate } = await supabase.from('candidates').select('*').eq('id', candidateId).single();
-        if (!candidate || !candidate.resume_parsed_data) {
-          throw new Error(`Candidate ${candidateId} not found or missing parsed resume`);
+        if (!candidate) {
+          throw new Error(`Candidate ${candidateId} not found`);
+        }
+        if (!candidate.resume_parsed_data) {
+          throw new Error(`Candidate ${candidateId} missing parsed resume data. Please ensure resume parsing completed before screening.`);
         }
         
         const { data: jobDesc } = await supabase.from('job_descriptions').select('*').eq('id', internalJobId).single();
