@@ -7,7 +7,7 @@ import { resumeParseWorker } from '../../api/inngest/resume-parse';
 import { interviewEvaluateWorker } from '../../api/inngest/interview-evaluate';
 import { interviewQuestionGenWorker } from '../../api/inngest/interview-question-gen';
 
-export default serve({
+const inngestHandler = serve({
   client: inngest,
   functions: [
     screeningRunWorker,
@@ -17,3 +17,6 @@ export default serve({
     interviewQuestionGenWorker,
   ],
 });
+
+export { inngestHandler as handler };
+export default inngestHandler;

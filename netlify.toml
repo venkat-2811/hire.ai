@@ -27,7 +27,7 @@
 
 [[redirects]]
   from   = "/api/inngest/*"
-  to     = "/.netlify/functions/inngest"
+  to     = "/.netlify/functions/inngest/:splat"
   status = 200
   force  = true
 
