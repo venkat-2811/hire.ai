@@ -4,7 +4,8 @@ import { generateJSON } from '../_lib/openai';
 import { updateJobStatus } from '../_lib/jobTracker';
 
 export const screeningRunWorker = inngest.createFunction(
-  { id: 'screening-run', name: 'ATS Resume Screening', event: 'screening/run' },
+  { id: 'screening-run', name: 'ATS Resume Screening', retries: 3 },
+  { event: 'screening/run' },
   async ({ event, step }) => {
     const { job_id: jobId, candidate_id: candidateId, internal_job_id: internalJobId } = event.data;
 

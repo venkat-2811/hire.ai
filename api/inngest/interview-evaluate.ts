@@ -5,7 +5,8 @@ import { updateJobStatus } from '../_lib/jobTracker';
 import { normalizeInterviewQuestions } from '../_lib/interview-gen';
 
 export const interviewEvaluateWorker = inngest.createFunction(
-  { id: 'interview-evaluate', name: 'AI Interview Evaluation', event: 'interview/evaluate' },
+  { id: 'interview-evaluate', name: 'AI Interview Evaluation', retries: 3 },
+  { event: 'interview/evaluate' },
   async ({ event, step }) => {
     const { job_id: trackerJobId, session_id: sessionId } = event.data;
 

@@ -7,7 +7,8 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 export const interviewQuestionGenWorker = inngest.createFunction(
-  { id: 'interview-question-gen', name: 'Interview Question Generation', event: 'interview/generate-questions' },
+  { id: 'interview-question-gen', name: 'Interview Question Generation', retries: 3 },
+  { event: 'interview/generate-questions' },
   async ({ event, step }) => {
     const { 
       job_id: trackerJobId, 

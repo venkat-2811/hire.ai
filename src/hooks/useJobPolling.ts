@@ -45,29 +45,39 @@ export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPol
       
       const data: JobState<T> = await res.json();
       setJob(data);
+      console.log(`[useJobPolling] Job ${jobId} status: ${data.status}`);
 
       if (data.status === 'completed') {
         setIsPolling(false);
         options?.onComplete?.(data.result as T);
       } else if (data.status === 'failed') {
         setIsPolling(false);
-        options?.onError?.(data.error || 'Job failed');
+        options?.onError?.(data.error || 'Job failed during execution');
       } else {
         // still pending/processing
         retryCount.current += 1;
-        if (retryCount.current >= maxRetries) {
+        
+        // Timeout early if it's stuck in "queued" state and never picked up by worker
+        const isQueuedAndStuck = (data.status === 'pending' || data.status === 'queued' as any) && retryCount.current >= 10;
+        
+        if (isQueuedAndStuck) {
+          console.error(`[useJobPolling] Job ${jobId} timed out while queued. Worker failed to start.`);
           setIsPolling(false);
-          options?.onError?.('Polling timeout exceeded');
+          options?.onError?.('Background worker failed to start processing (Timeout)');
+        } else if (retryCount.current >= maxRetries) {
+          console.error(`[useJobPolling] Job ${jobId} exceeded max retries while processing.`);
+          setIsPolling(false);
+          options?.onError?.('Job processing timeout exceeded');
         } else {
           timerRef.current = window.setTimeout(fetchJobStatus, pollingInterval);
         }
       }
     } catch (err: any) {
-      console.error('Job polling error:', err);
+      console.error('[useJobPolling] Fetch error:', err);
       retryCount.current += 1;
       if (retryCount.current >= maxRetries) {
         setIsPolling(false);
-        options?.onError?.('Polling timeout exceeded');
+        options?.onError?.('Network error: Polling timeout exceeded');
       } else {
         timerRef.current = window.setTimeout(fetchJobStatus, pollingInterval);
       }

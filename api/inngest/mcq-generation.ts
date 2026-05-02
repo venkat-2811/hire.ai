@@ -4,7 +4,8 @@ import { generateAssessmentMcqsForJob } from '../_lib/mcq';
 import { updateJobStatus } from '../_lib/jobTracker';
 
 export const mcqGenerationWorker = inngest.createFunction(
-  { id: 'mcq-generation', name: 'MCQ Generation', event: 'assessment/generate-mcqs' },
+  { id: 'mcq-generation', name: 'MCQ Generation', retries: 3 },
+  { event: 'assessment/generate-mcqs' },
   async ({ event, step }) => {
     const { job_id: trackerJobId, internal_job_id: internalJobId, mcqCount, difficulty } = event.data;
 
