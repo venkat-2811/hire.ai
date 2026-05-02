@@ -15,6 +15,20 @@ export const screeningRunWorker = inngest.createFunction(
     },
   },
   async ({ event, step }) => {
+    const withTimeout = async <T,>(ms: number, fn: () => Promise<T>): Promise<T> => {
+      let t: ReturnType<typeof setTimeout> | null = null;
+      try {
+        return await Promise.race([
+          fn(),
+          new Promise<T>((_, reject) => {
+            t = setTimeout(() => reject(new Error(`ATS screening timed out after ${Math.round(ms / 1000)}s`)), ms);
+          }),
+        ]);
+      } finally {
+        if (t) clearTimeout(t);
+      }
+    };
+
     const rawData: any = (event as any)?.data;
 
     // Inngest UI/manual runs can wrap the input in different ways depending on transport.
@@ -54,9 +68,10 @@ export const screeningRunWorker = inngest.createFunction(
     }
 
     try {
-      if (jobId) {
-        await updateJobStatus(jobId, 'processing');
-      }
+      return await withTimeout(120000, async () => {
+        if (jobId) {
+          await updateJobStatus(jobId, 'processing');
+        }
 
       const existingScreening = await step.run('check-existing', async () => {
         const supabase = getSupabaseAdmin();
@@ -79,7 +94,11 @@ export const screeningRunWorker = inngest.createFunction(
       // 1. Fetch data
       const { candidate, jobDesc } = await step.run('fetch-data', async () => {
         const supabase = getSupabaseAdmin();
-        const { data: candidate } = await supabase.from('candidates').select('*').eq('id', candidateId).single();
+        const { data: candidate } = await supabase
+          .from('candidates')
+          .select('id,resume_parsed_data')
+          .eq('id', candidateId)
+          .single();
         if (!candidate) {
           throw new Error(`Candidate ${candidateId} not found`);
         }
@@ -87,7 +106,11 @@ export const screeningRunWorker = inngest.createFunction(
           throw new Error(`Candidate ${candidateId} missing parsed resume data. Please ensure resume parsing completed before screening.`);
         }
         
-        const { data: jobDesc } = await supabase.from('job_descriptions').select('*').eq('id', internalJobId).single();
+        const { data: jobDesc } = await supabase
+          .from('job_descriptions')
+          .select('id,title,role,level,must_have_skills,good_to_have_skills,min_experience_years')
+          .eq('id', internalJobId)
+          .single();
         if (!jobDesc) {
           throw new Error(`Job ${internalJobId} not found`);
         }
@@ -149,17 +172,27 @@ Return JSON:
           .maybeSingle();
 
         const saved = existing
-          ? await supabase.from('ats_screenings').update(dataToSave).eq('id', existing.id).select().maybeSingle()
-          : await supabase.from('ats_screenings').insert(dataToSave).select().maybeSingle();
+          ? await supabase
+              .from('ats_screenings')
+              .update(dataToSave)
+              .eq('id', existing.id)
+              .select('*')
+              .maybeSingle()
+          : await supabase
+              .from('ats_screenings')
+              .insert(dataToSave)
+              .select('*')
+              .maybeSingle();
 
         if (saved.error) throw new Error(saved.error.message);
         return saved.data;
       });
 
-      if (jobId) {
-        await updateJobStatus(jobId, 'completed', screeningData);
-      }
-      return { success: true, screeningData };
+        if (jobId) {
+          await updateJobStatus(jobId, 'completed', screeningData);
+        }
+        return { success: true, screeningData };
+      });
     } catch (err: any) {
       console.error('[Inngest] screening-run failed:', err);
       if (jobId) {
