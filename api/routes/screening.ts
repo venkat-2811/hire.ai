@@ -12,7 +12,7 @@ import { ok, badRequest, notFound, methodNotAllowed, requireAuth } from '../_lib
 import { generateJSON } from '../_lib/openai';
 import { checkPlanAccess } from '../_lib/billing-utils';
 import { inngest } from '../_lib/inngest';
-import { createJob } from '../_lib/jobTracker';
+import { createJob, updateJobStatus } from '../_lib/jobTracker';
 
 export default async function handleScreening(req: VercelRequest, res: VercelResponse, segments: string[]) {
   const supabase = getSupabaseAdmin();
@@ -50,14 +50,20 @@ export default async function handleScreening(req: VercelRequest, res: VercelRes
     if (!job) return notFound(res, 'Job not found');
 
     const trackerJobId = await createJob('screening_run', { candidate_id, job_id }, user.id);
-    await inngest.send({
-      name: 'screening/run',
-      data: {
-        job_id: trackerJobId,
-        candidate_id,
-        internal_job_id: job_id
-      }
-    });
+    try {
+      await inngest.send({
+        name: 'screening/run',
+        data: {
+          job_id: trackerJobId,
+          candidate_id,
+          internal_job_id: job_id
+        }
+      });
+    } catch (e: any) {
+      const msg = e?.message || 'Failed to dispatch screening event';
+      await updateJobStatus(trackerJobId, 'failed', null, msg);
+      return res.status(500).json({ error: msg });
+    }
 
     return ok(res, { job_id: trackerJobId, status: 'queued', message: 'Screening queued' }, 202);
   }
