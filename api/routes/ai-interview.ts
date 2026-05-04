@@ -566,7 +566,7 @@ Evaluate and return JSON:
         const token = crypto.randomBytes(32).toString('base64url');
         const sessionId = uuidv4();
 
-        // Generate personalized questions per candidate using their resume data (GPT-4.1-mini)
+        // Generate personalized questions per candidate using their resume data (GPT-4o-mini)
         console.log('[ai-interview/invite] Generating personalized questions for candidate:', c.id, 'with resume:', !!c.resume_parsed_data);
         const questions = await generateCandidateInterviewQuestions(
           { title: job.title, role: job.role, level: job.level, must_have_skills: job.must_have_skills || [], description: job.description || '' },

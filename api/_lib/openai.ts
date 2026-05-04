@@ -25,7 +25,7 @@ export async function generateText(
   const completion = await client.chat.completions
     .create(
       {
-        model: 'gpt-4.1-mini',
+        model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: opts.temperature ?? 0.7,
         max_tokens: opts.maxTokens ?? 2048,
@@ -46,7 +46,7 @@ export async function generateJSON<T>(
   const completion = await client.chat.completions
     .create(
       {
-        model: 'gpt-4.1-mini',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: 'You are a helpful assistant that ONLY responds with valid JSON. No markdown, no code blocks, no explanation - just the JSON object or array.' },
           { role: 'user', content: prompt },
