@@ -74,6 +74,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
+import { isSalesforceRoleText } from '@/lib/utils/salesforce';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -118,6 +119,7 @@ export default function CandidatesPage() {
   const [assessmentDifficulty, setAssessmentDifficulty] = useState<'easy' | 'medium' | 'hard'>('hard');
   const [includeMcq, setIncludeMcq] = useState(true);
   const [includeCoding, setIncludeCoding] = useState(true);
+  const [isApexMode, setIsApexMode] = useState(false);
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
@@ -137,6 +139,24 @@ export default function CandidatesPage() {
 
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
+  const selectedJob = useMemo(() => allJobs.find((j) => j.id === selectedJobId) || null, [allJobs, selectedJobId]);
+  const selectedJobLooksSalesforce = useMemo(() => {
+    if (!selectedJob) return false;
+    const text = [
+      selectedJob.role,
+      selectedJob.title,
+      ...(selectedJob.must_have_skills || []),
+      ...(selectedJob.good_to_have_skills || []),
+      selectedJob.description,
+    ].join(' ');
+    return isSalesforceRoleText(text);
+  }, [selectedJob]);
+
+  useEffect(() => {
+    if (!selectedJobLooksSalesforce) {
+      setIsApexMode(false);
+    }
+  }, [selectedJobLooksSalesforce]);
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -279,6 +299,7 @@ export default function CandidatesPage() {
           difficulty: assessmentDifficulty,
           include_mcq: includeMcq,
           include_coding: includeCoding,
+          is_apex_mode: includeCoding && selectedJobLooksSalesforce ? isApexMode : false,
           total_time_minutes: totalTimeMinutes || undefined,
         }),
       });
@@ -835,6 +856,28 @@ export default function CandidatesPage() {
                     onChange={(e) => setCodingCount(Math.max(0, Number(e.target.value) || 0))}
                     disabled={!includeCoding}
                   />
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                <div className="font-medium text-foreground">If this role is related to Salesforce, enable Apex mode for a more relevant coding assessment.</div>
+                <div className="mt-2 flex items-start gap-2">
+                  <Checkbox
+                    checked={isApexMode}
+                    onCheckedChange={(v) => setIsApexMode(!!v)}
+                    disabled={!includeCoding || !selectedJobLooksSalesforce}
+                  />
+                  <div className="space-y-1">
+                    <div className="text-sm text-foreground">Enable Apex Coding Mode (For Salesforce Roles)</div>
+                    <div className="text-xs text-muted-foreground">
+                      AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)
+                    </div>
+                    {!selectedJobLooksSalesforce && (
+                      <div className="text-xs text-muted-foreground">
+                        Apex mode is available only for Salesforce-related roles.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

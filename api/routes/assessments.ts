@@ -16,6 +16,7 @@ import { getSupabaseAdmin } from '../_lib/supabase';
 import { ok, badRequest, notFound, methodNotAllowed, requireAuth, checkRateLimit, resolveFrontendBaseUrl, normalizeBaseUrl } from '../_lib/helpers';
 import { isSalesforceRole, generateSalesforceApexChallenges } from '../_lib/salesforce';
 import { mapLanguageKey, executeTestCasesViaHackerEarth } from '../_lib/hackerearth';
+import { evaluateApexWithLLM } from '../_lib/apex-evaluator';
 import { checkPlanAccess } from '../_lib/billing-utils';
 import { generateAssessmentMcqsForJob } from '../_lib/mcq';
 import { sendAssessmentInvite } from '../_lib/offer-utils';
@@ -79,6 +80,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         must_have_skills: session.job_descriptions?.must_have_skills || [],
         good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
       });
+      const isApexMode = !!session.is_apex_mode;
 
       // Retrieve pre-generated MCQ questions only
       const getMcqQuestions = async (): Promise<any[]> => {
@@ -97,13 +99,13 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         throw new Error('MCQ questions are not available for this session. Please contact the recruiter.');
       };
 
-      // Fetch coding challenges from DSA bank (or Salesforce-Apex generator for Salesforce roles)
+      // Fetch coding challenges from DSA bank (or Salesforce-Apex generator when Apex mode is enabled)
       const getCodingChallenges = async (): Promise<any[]> => {
         if (!includeCoding) return [];
         const storedCoding: any[] = session.coding_challenges || [];
         if (storedCoding.length > 0) return storedCoding;
 
-        if (salesforceRole) {
+        if (isApexMode && salesforceRole) {
           const challenges = await generateSalesforceApexChallenges({
             job: {
               title: session.job_descriptions?.title,
@@ -173,6 +175,8 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         candidate_name: session.candidates?.full_name,
         job_title: session.job_descriptions?.title,
         job_role: session.job_descriptions?.role,
+        is_apex_mode: isApexMode,
+        coding_environment_label: isApexMode ? 'Apex Coding Environment (AI-Evaluated - Phase 1)' : null,
         mcq_count: safeMcq.length,
         coding_count: codingChallenges.length,
         total_time_minutes: session.total_time_minutes ?? 90,
@@ -424,16 +428,26 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
     if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
-    // Apex challenges are executed client-side via the Netlify execute-apex function.
-    // They are NOT in the dsa_problems table, so skip the DSA pipeline entirely.
-    if (language === 'apex') {
+    // Apex Mode (Phase 1): LLM-only approximate evaluation (no real execution).
+    if (session.is_apex_mode || language === 'apex') {
+      const apexChallenge = (session.coding_challenges || []).find((c: any) => c.id === challenge_id);
+      if (!apexChallenge) return badRequest(res, 'Challenge not found');
+
+      const evalResult = await evaluateApexWithLLM({
+        problemStatement: String(apexChallenge.description || ''),
+        candidateCode: String(code || ''),
+        testCases: Array.isArray(apexChallenge.test_cases) ? apexChallenge.test_cases : [],
+      });
+
       return ok(res, {
         success: true,
-        message: 'Apex code execution is handled client-side via Salesforce Tooling API.',
+        evaluation_mode: 'apex_llm_phase1',
+        disclaimer: 'AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)',
+        ai_evaluation: evalResult,
         results: [],
         passed: 0,
-        total: 0,
-        score_percentage: 0,
+        total: (apexChallenge.test_cases || []).length || 0,
+        score_percentage: evalResult.score,
       });
     }
 
@@ -493,45 +507,68 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     const { data: session } = await supabase.from('assessment_sessions').select('*').eq('id', sessionId).single();
     if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
-    // Apex challenges: store the submission without running through the DSA pipeline.
-    // Apex execution happens client-side via the Netlify execute-apex function.
-    if (language === 'apex') {
+    // Apex Mode (Phase 1): LLM-only approximate evaluation (no real execution).
+    if (session.is_apex_mode || language === 'apex') {
       const apexChallenge = (session.coding_challenges || []).find((c: any) => c.id === challenge_id);
-      const maxPoints = apexChallenge?.points || 100;
+      if (!apexChallenge) return badRequest(res, 'Challenge not found');
 
-      // Store the Apex submission with the code (scoring based on last client-side run)
+      const maxPoints = Number(apexChallenge?.points || 100);
+      const evalResult = await evaluateApexWithLLM({
+        problemStatement: String(apexChallenge.description || ''),
+        candidateCode: String(code || ''),
+        testCases: Array.isArray(apexChallenge.test_cases) ? apexChallenge.test_cases : [],
+      });
+
+      const pointsEarned = Math.round((evalResult.score / 100) * maxPoints);
       const apexSubmission = {
         challenge_id,
         problem_slug: apexChallenge?.slug || 'apex-challenge',
         code,
         language: 'apex',
-        execution_mode: 'apex',
+        execution_mode: 'apex_llm_phase1',
+        ai_evaluation: evalResult,
         test_results: [],
-        summary: { public_passed: 0, public_total: 0, private_passed: 0, private_total: 0, edge_passed: 0, edge_total: 0 },
-        performance: {},
         passed_count: 0,
-        total_tests: 0,
-        score_percentage: 0,
-        points_earned: 0,
+        total_tests: (apexChallenge.test_cases || []).length || 0,
+        score_percentage: evalResult.score,
+        points_earned: pointsEarned,
         max_points: maxPoints,
         submitted_at: new Date().toISOString(),
+        disclaimer: 'AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)',
       };
 
       const existing = session.coding_submissions || [];
       const existingIdx = existing.findIndex((s: any) => s.challenge_id === challenge_id);
-      if (existingIdx >= 0) { existing[existingIdx] = apexSubmission; } else { existing.push(apexSubmission); }
+      if (existingIdx >= 0) {
+        existing[existingIdx] = apexSubmission;
+      } else {
+        existing.push(apexSubmission);
+      }
+
+      // Calculate coding score across all challenges using points earned
+      let totalCodingPoints = 0;
+      let earnedCodingPoints = 0;
+      for (const sub of existing) {
+        totalCodingPoints += sub.max_points || 100;
+        earnedCodingPoints += sub.points_earned || 0;
+      }
+      const codingScore = totalCodingPoints > 0 ? (earnedCodingPoints / totalCodingPoints) * 100 : 0;
 
       await supabase.from('assessment_sessions').update({
         coding_submissions: existing,
+        coding_score: codingScore,
       }).eq('id', sessionId);
 
       return ok(res, {
         success: true,
+        evaluation_mode: 'apex_llm_phase1',
+        disclaimer: 'AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)',
         challenge_id,
+        ai_evaluation: evalResult,
         passed_count: 0,
-        total_tests: 0,
-        score_percentage: 0,
-        points_earned: 0,
+        total_tests: (apexChallenge.test_cases || []).length || 0,
+        score_percentage: evalResult.score,
+        points_earned: pointsEarned,
         test_results: [],
         hidden_tests_passed: 0,
         hidden_tests_total: 0,
@@ -789,6 +826,8 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       .single();
     if (!job) return notFound(res, 'Job not found');
     const salesforceRole = isSalesforceRole(job);
+    const requestedApexMode = body.is_apex_mode === true;
+    const isApexMode = requestedApexMode && salesforceRole;
 
     const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
     if (!candidates?.length) return notFound(res, 'No candidates found');
@@ -841,7 +880,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     }
 
     let preGeneratedCodingChallenges: any[] = [];
-    if (includeCoding && salesforceRole) {
+    if (includeCoding && isApexMode) {
       try {
         preGeneratedCodingChallenges = await generateSalesforceApexChallenges({
           job,
@@ -890,6 +929,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
           total_time_minutes: totalTimeMinutes,
           mcq_questions: preGeneratedMcqQuestions,
           coding_challenges: preGeneratedCodingChallenges,
+          is_apex_mode: isApexMode,
           proctoring_data: {
             tab_switches: 0,
             fullscreen_exits: 0,
@@ -900,6 +940,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
               include_mcq: includeMcq,
               include_coding: includeCoding,
               difficulty,
+              is_apex_mode: isApexMode,
             },
           },
           created_at: new Date().toISOString(),
