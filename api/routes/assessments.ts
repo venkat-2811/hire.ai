@@ -133,7 +133,17 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       const getCodingChallenges = async (): Promise<any[]> => {
         if (!includeCoding) return [];
         const storedCoding: any[] = session.coding_challenges || [];
-        if (storedCoding.length > 0) return storedCoding;
+        if (storedCoding.length > 0) {
+          // If Apex mode is enabled but cached challenges are not Apex-only, regenerate.
+          if (isApexMode) {
+            const looksApex = storedCoding.every((c: any) =>
+              Array.isArray(c?.supported_languages) && c.supported_languages.length === 1 && c.supported_languages[0] === 'apex'
+            );
+            if (looksApex) return storedCoding;
+          } else {
+            return storedCoding;
+          }
+        }
 
         if (isApexMode) {
           const challenges = await generateSalesforceApexChallenges({
@@ -149,7 +159,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
             difficulty,
           });
           if (!challenges.length) return [];
-          supabase.from('assessment_sessions').update({
+          await supabase.from('assessment_sessions').update({
             coding_challenges: challenges,
             updated_at: new Date().toISOString(),
           }).eq('id', session.id).then(() => {});
@@ -281,7 +291,16 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
 
     // Return cached challenges if already assigned
     const storedChallenges = session.coding_challenges || [];
-    if (storedChallenges.length) return ok(res, storedChallenges);
+    if (storedChallenges.length) {
+      const isApexMode = Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
+      if (!isApexMode) return ok(res, storedChallenges);
+
+      const looksApex = storedChallenges.every((c: any) =>
+        Array.isArray(c?.supported_languages) && c.supported_languages.length === 1 && c.supported_languages[0] === 'apex'
+      );
+      if (looksApex) return ok(res, storedChallenges);
+      // If Apex mode is enabled but cached challenges are DSA, fall through and regenerate Apex.
+    }
 
     const isApexMode = Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
 
@@ -862,9 +881,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         .eq('created_by', user.id)
         .single();
       if (!job) return notFound(res, 'Job not found');
-      const salesforceRole = isSalesforceRole(job);
-      const requestedApexMode = body.is_apex_mode === true;
-      const isApexMode = requestedApexMode && salesforceRole;
+      const isApexMode = body.is_apex_mode === true;
 
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
       if (!candidates?.length) return notFound(res, 'No candidates found');
