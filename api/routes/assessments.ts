@@ -96,7 +96,34 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
           console.log('[getMcqQuestions] Returning cached MCQs:', storedMcq.length);
           return storedMcq;
         }
-        throw new Error('MCQ questions are not available for this session. Please contact the recruiter.');
+        try {
+          const generated = await generateAssessmentMcqsForJob({
+            job: {
+              title: session.job_descriptions?.title,
+              role: session.job_descriptions?.role,
+              level: session.job_descriptions?.level,
+              description: '',
+              must_have_skills: session.job_descriptions?.must_have_skills || [],
+              good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
+            },
+            mcqCount,
+            difficulty,
+          });
+
+          if (!generated.length) {
+            throw new Error('MCQ generation returned 0 questions');
+          }
+
+          await supabase.from('assessment_sessions').update({
+            mcq_questions: generated,
+            updated_at: new Date().toISOString(),
+          }).eq('id', session.id);
+
+          return generated;
+        } catch (e: any) {
+          console.error('[getMcqQuestions] MCQ lazy generation failed:', e?.message || e);
+          throw new Error('MCQ questions are not available for this session. Please contact the recruiter.');
+        }
       };
 
       // Fetch coding challenges from DSA bank (or Salesforce-Apex generator when Apex mode is enabled)
@@ -838,63 +865,6 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       return badRequest(res, 'MCQ question count must be at least 1 when MCQ is enabled');
     }
 
-    let preGeneratedMcqQuestions: any[] = [];
-    if (includeMcq) {
-      try {
-        // Retry MCQ generation with short backoff to stay within Vercel timeout budget.
-        // 3 attempts with 1s / 2s gaps keeps total overhead under ~10s.
-        let lastError: any;
-        for (let retry = 0; retry < 3; retry++) {
-          try {
-            preGeneratedMcqQuestions = await generateAssessmentMcqsForJob({
-              job,
-              mcqCount,
-              difficulty,
-            });
-            if (preGeneratedMcqQuestions.length >= Math.max(1, Math.floor(mcqCount * 0.8))) {
-              break; // Success — got at least 80% of requested questions
-            }
-            throw new Error(`Generated ${preGeneratedMcqQuestions.length} questions, expected ${mcqCount}`);
-          } catch (e: any) {
-            lastError = e;
-            console.error(`[assessments/invite] MCQ generation attempt ${retry + 1} failed:`, e?.message || e);
-            if (retry < 2) {
-              // Short linear backoff: 1s, 2s
-              await new Promise(resolve => setTimeout(resolve, 1000 * (retry + 1)));
-            }
-          }
-        }
-        if (preGeneratedMcqQuestions.length === 0) {
-          throw lastError || new Error('MCQ generation failed after retries');
-        }
-        // If we got some questions but not all, use what we have and log warning
-        if (preGeneratedMcqQuestions.length < mcqCount) {
-          console.warn(`[assessments/invite] Generated ${preGeneratedMcqQuestions.length}/${mcqCount} questions, proceeding with available questions`);
-        }
-      } catch (e: any) {
-        console.error('[assessments/invite] MCQ generation failed after all retries:', e?.message || e);
-        return res.status(502).json({
-          error: 'MCQ generation failed. Please try again — if the problem persists, reduce the number of MCQ questions or try a different difficulty.',
-        });
-      }
-    }
-
-    let preGeneratedCodingChallenges: any[] = [];
-    if (includeCoding && isApexMode) {
-      try {
-        preGeneratedCodingChallenges = await generateSalesforceApexChallenges({
-          job,
-          codingCount,
-          difficulty,
-        });
-      } catch (e: any) {
-        console.error('[assessments/invite] Salesforce coding generation failed:', e?.message || e);
-        return res.status(502).json({
-          error: 'Salesforce coding challenge generation failed. Please try again.',
-        });
-      }
-    }
-
     // Auto-calculate time based on questions and difficulty if not provided
     let totalTimeMinutes = body.total_time_minutes;
     if (!totalTimeMinutes) {
@@ -924,11 +894,12 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
           token,
           status: 'pending',
           deadline: deadline.toISOString(),
-          mcq_question_count: preGeneratedMcqQuestions.length || mcqCount,
+          difficulty,
+          mcq_question_count: mcqCount,
           coding_challenge_count: codingCount,
           total_time_minutes: totalTimeMinutes,
-          mcq_questions: preGeneratedMcqQuestions,
-          coding_challenges: preGeneratedCodingChallenges,
+          mcq_questions: [],
+          coding_challenges: [],
           is_apex_mode: isApexMode,
           proctoring_data: {
             tab_switches: 0,
