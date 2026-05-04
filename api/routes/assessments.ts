@@ -80,7 +80,9 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         must_have_skills: session.job_descriptions?.must_have_skills || [],
         good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
       });
-      const isApexMode = !!session.is_apex_mode;
+      // Back-compat: some DBs may not have an is_apex_mode column.
+      // Derive Apex mode from proctoring_data.assessment_config when needed.
+      const isApexMode = Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
 
       // Retrieve pre-generated MCQ questions only
       const getMcqQuestions = async (): Promise<any[]> => {
@@ -89,10 +91,10 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
           return [];
         }
         const storedMcq: any[] = session.mcq_questions || [];
-        if (storedMcq.length !== mcqCount) {
-          throw new Error(`MCQ question count mismatch for this session. Expected ${mcqCount}, found ${storedMcq.length}.`);
-        }
         if (storedMcq.length > 0) {
+          if (storedMcq.length !== mcqCount) {
+            throw new Error(`MCQ question count mismatch for this session. Expected ${mcqCount}, found ${storedMcq.length}.`);
+          }
           console.log('[getMcqQuestions] Returning cached MCQs:', storedMcq.length);
           return storedMcq;
         }
@@ -456,7 +458,9 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
     // Apex Mode (Phase 1): LLM-only approximate evaluation (no real execution).
-    if (session.is_apex_mode || language === 'apex') {
+    const assessmentConfig = session.proctoring_data?.assessment_config || {};
+    const isApexMode = Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
+    if (isApexMode || language === 'apex') {
       const apexChallenge = (session.coding_challenges || []).find((c: any) => c.id === challenge_id);
       if (!apexChallenge) return badRequest(res, 'Challenge not found');
 
@@ -535,7 +539,9 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     if (!session || session.status !== 'in_progress') return badRequest(res, 'Invalid session');
 
     // Apex Mode (Phase 1): LLM-only approximate evaluation (no real execution).
-    if (session.is_apex_mode || language === 'apex') {
+    const assessmentConfig = session.proctoring_data?.assessment_config || {};
+    const isApexMode = Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
+    if (isApexMode || language === 'apex') {
       const apexChallenge = (session.coding_challenges || []).find((c: any) => c.id === challenge_id);
       if (!apexChallenge) return badRequest(res, 'Challenge not found');
 
@@ -895,13 +901,11 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
             token,
             status: 'pending',
             deadline: deadline.toISOString(),
-            difficulty,
             mcq_question_count: mcqCount,
             coding_challenge_count: codingCount,
             total_time_minutes: totalTimeMinutes,
             mcq_questions: [],
             coding_challenges: [],
-            is_apex_mode: isApexMode,
             proctoring_data: {
               tab_switches: 0,
               fullscreen_exits: 0,
