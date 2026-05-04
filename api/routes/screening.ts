@@ -11,8 +11,6 @@ import { getSupabaseAdmin } from '../_lib/supabase';
 import { ok, badRequest, notFound, methodNotAllowed, requireAuth } from '../_lib/helpers';
 import { generateJSON } from '../_lib/openai';
 import { checkPlanAccess } from '../_lib/billing-utils';
-import { inngest } from '../_lib/inngest';
-import { createJob, updateJobStatus } from '../_lib/jobTracker';
 
 export default async function handleScreening(req: VercelRequest, res: VercelResponse, segments: string[]) {
   const supabase = getSupabaseAdmin();
@@ -49,23 +47,77 @@ export default async function handleScreening(req: VercelRequest, res: VercelRes
 
     if (!job) return notFound(res, 'Job not found');
 
-    const trackerJobId = await createJob('screening_run', { candidate_id, job_id }, user.id);
+    // Run ATS screening directly with AI
+    const resumeJson = JSON.stringify(candidate.resume_parsed_data).slice(0, 6000);
+    const prompt = `
+Analyze this candidate's resume against the job requirements and provide ATS screening scores.
+
+Job: ${job.title} (${job.role}, ${job.level})
+Required Skills: ${(job.must_have_skills || []).join(', ')}
+Nice-to-have Skills: ${(job.good_to_have_skills || []).join(', ')}
+Min Experience: ${job.min_experience_years} years
+
+Candidate Resume JSON:
+${resumeJson}
+
+Return JSON:
+{
+  "overall_score": 0-100,
+  "skill_relevance_score": 0-100,
+  "experience_score": 0-100,
+  "education_score": 0-100,
+  "credibility_score": 0-100,
+  "shortlisted": true/false,
+  "shortlist_reason": "...",
+  "reason_codes": [{"code":"SKILL_MATCH","type":"positive","description":"...","impact":10}]
+}`;
+
+    let screeningResult: any;
     try {
-      await inngest.send({
-        name: 'screening/run',
-        data: {
-          job_id: trackerJobId,
-          candidate_id,
-          internal_job_id: job_id
-        }
-      });
-    } catch (e: any) {
-      const msg = e?.message || 'Failed to dispatch screening event';
-      await updateJobStatus(trackerJobId, 'failed', null, msg);
-      return res.status(500).json({ error: msg });
+      screeningResult = await generateJSON<any>(prompt, { timeoutMs: 20000, maxTokens: 1200, temperature: 0.1 });
+    } catch (screenErr: any) {
+      console.error('ATS screening AI failed:', screenErr?.message);
+      return res.status(502).json({ error: 'Failed to run ATS screening. Please try again.' });
     }
 
-    return ok(res, { job_id: trackerJobId, status: 'queued', message: 'Screening queued' }, 202);
+    // Save screening result to database
+    const dataToSave = {
+      candidate_id: candidate_id,
+      job_id: job_id,
+      overall_score: screeningResult.overall_score,
+      skill_relevance_score: screeningResult.skill_relevance_score ?? null,
+      experience_score: screeningResult.experience_score ?? null,
+      education_score: screeningResult.education_score ?? null,
+      credibility_score: screeningResult.credibility_score ?? null,
+      shortlisted: !!screeningResult.shortlisted,
+      shortlist_reason: screeningResult.shortlist_reason ?? null,
+      reason_codes: screeningResult.reason_codes ?? [],
+      screened_at: new Date().toISOString(),
+    };
+
+    const { data: existing } = await supabase
+      .from('ats_screenings')
+      .select('id')
+      .eq('candidate_id', candidate_id)
+      .eq('job_id', job_id)
+      .maybeSingle();
+
+    const saved = existing
+      ? await supabase
+          .from('ats_screenings')
+          .update(dataToSave)
+          .eq('id', existing.id)
+          .select('*')
+          .maybeSingle()
+      : await supabase
+          .from('ats_screenings')
+          .insert(dataToSave)
+          .select('*')
+          .maybeSingle();
+
+    if (saved.error) return res.status(500).json({ error: saved.error.message });
+
+    return ok(res, { success: true, screeningData: saved.data });
   }
 
   // GET /api/screening/candidate/:candidateId

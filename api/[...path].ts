@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { captureException } from './_lib/sentry';
 
 import handleJobs from './routes/jobs';
 import handleAnalytics from './routes/analytics';
@@ -71,8 +70,7 @@ export default async function routeRequest(req: VercelRequest, res: VercelRespon
         return res.status(404).json({ error: 'Route not found' });
     }
   } catch (err: any) {
-    captureException(err, { route: req.url, method: req.method });
-    console.error('[API Router Error]:', err);
+    console.error('[API Router Error]:', err, { route: req.url, method: req.method });
     return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 }

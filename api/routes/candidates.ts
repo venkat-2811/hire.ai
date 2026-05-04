@@ -4,12 +4,10 @@
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabaseAdmin } from '../_lib/supabase';
-import { ok, badRequest, notFound, methodNotAllowed, requireAuth, getFrontendBaseUrl } from '../_lib/helpers';
+import { ok, badRequest, notFound, methodNotAllowed, requireAuth } from '../_lib/helpers';
 import { generateJSON } from '../_lib/openai';
 import { checkPlanAccess } from '../_lib/billing-utils';
 import { parseMultipartSingleFile, extractResumeText } from '../_lib/resume';
-import { inngest } from '../_lib/inngest';
-import { createJob } from '../_lib/jobTracker';
 import { sendAcceptanceEmail, sendRejectionEmail, sendOfferLetterEmail, signOfferToken, verifyOfferToken, buildOfferLetterPdf } from '../_lib/offer-utils';
 
 export default async function handleCandidates(req: VercelRequest, res: VercelResponse, segments: string[]) {
@@ -805,17 +803,41 @@ ${resumeText.slice(0, 8000)}`;
       
       if (upErr) return res.status(500).json({ error: upErr.message });
 
-      const trackerJobId = await createJob('resume_parse', { candidate_id: candidateId }, user.id);
-      await inngest.send({
-        name: 'candidate/parse-resume',
-        data: {
-          job_id: trackerJobId,
-          candidate_id: candidateId,
-          resumeText
-        }
-      });
+      // Parse resume with AI directly
+      let parsedData: any = null;
+      try {
+        const prompt = `You are an expert resume parser.
 
-      return ok(res, { job_id: trackerJobId, status: 'queued', message: 'Resume parsing queued' }, 202);
+Parse the following resume and return ONLY valid JSON in this exact format:
+{
+  "skills": ["skill1"],
+  "experience": [{"title":"","company":"","duration":"","description":""}],
+  "education": [{"degree":"","institution":"","year":""}],
+  "summary": "",
+  "total_experience_years": 0,
+  "certifications": ["cert1"]
+}
+
+RESUME TEXT:
+${resumeText.slice(0, 8000)}`;
+        parsedData = await generateJSON<any>(prompt, { timeoutMs: 20000, maxTokens: 1200, temperature: 0.1 });
+      } catch (parseErr: any) {
+        console.error('Resume AI parsing failed:', parseErr?.message);
+        // Continue without parsed data - just save raw text
+      }
+
+      // Update candidate with parsed data
+      const { error: updateErr } = await supabase
+        .from('candidates')
+        .update({
+          resume_parsed_data: parsedData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', candidateId);
+
+      if (updateErr) return res.status(500).json({ error: updateErr.message });
+
+      return ok(res, { success: true, parsed: !!parsedData, message: 'Resume processed successfully' });
     } catch (e: any) {
       return res.status(400).json({ error: e?.message || 'Failed to upload/parse resume' });
     }
