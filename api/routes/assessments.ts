@@ -811,136 +811,145 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
 
   // POST /api/assessments/invite (manager)
   if (req.method === 'POST' && segments.length === 2 && segments[1] === 'invite') {
-    const user = await requireAuth(req, res);
-    if (!user) return;
+    try {
+      const user = await requireAuth(req, res);
+      if (!user) return;
 
-    const body = req.body;
-    const candidateIds = body.candidate_ids as string[];
-    const jobId = body.job_id as string;
-    const includeMcq = body.include_mcq !== false;
-    const includeCoding = body.include_coding !== false;
-    const difficulty = (body.difficulty as string) || 'medium';
-    const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
-    const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
+      const body = req.body;
+      const candidateIds = body.candidate_ids as string[];
+      const jobId = body.job_id as string;
+      const includeMcq = body.include_mcq !== false;
+      const includeCoding = body.include_coding !== false;
+      const difficulty = (body.difficulty as string) || 'medium';
+      const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
+      const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
 
-    // Deadline: prefer explicit datetime from body.deadline, fallback to deadline_hours
-    let deadline: Date;
-    if (body.deadline) {
-      deadline = new Date(body.deadline);
-      if (Number.isNaN(deadline.getTime())) {
-        return badRequest(res, 'Invalid deadline date/time format');
-      }
-      if (deadline <= new Date()) {
-        return badRequest(res, 'Deadline must be in the future');
-      }
-    } else {
-      const deadlineHours = body.deadline_hours ?? 72;
-      deadline = new Date(Date.now() + Number(deadlineHours) * 3600000);
-    }
-
-    const billingGate = await checkPlanAccess(supabase, user.id, 'assessment_invite', {
-      quantity: Math.max(1, (candidateIds || []).length),
-    });
-    if (!billingGate.allowed) {
-      return res.status(billingGate.status || 402).json(billingGate);
-    }
-
-    const { data: job } = await supabase
-      .from('job_descriptions')
-      .select('id, title, role, level, description, must_have_skills, good_to_have_skills')
-      .eq('id', jobId)
-      .eq('created_by', user.id)
-      .single();
-    if (!job) return notFound(res, 'Job not found');
-    const salesforceRole = isSalesforceRole(job);
-    const requestedApexMode = body.is_apex_mode === true;
-    const isApexMode = requestedApexMode && salesforceRole;
-
-    const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
-    if (!candidates?.length) return notFound(res, 'No candidates found');
-
-    const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
-
-    if (includeMcq && mcqCount < 1) {
-      return badRequest(res, 'MCQ question count must be at least 1 when MCQ is enabled');
-    }
-
-    // Auto-calculate time based on questions and difficulty if not provided
-    let totalTimeMinutes = body.total_time_minutes;
-    if (!totalTimeMinutes) {
-      // MCQ time per question based on difficulty
-      const mcqTimePerQuestion = difficulty === 'easy' ? 1 : difficulty === 'hard' ? 2 : 1.5;
-      // Coding time per challenge based on difficulty
-      const codingTimePerChallenge = difficulty === 'easy' ? 15 : difficulty === 'hard' ? 30 : 20;
-      
-      totalTimeMinutes = Math.ceil(
-        (mcqCount * mcqTimePerQuestion) + (codingCount * codingTimePerChallenge)
-      );
-      
-      // Ensure minimum time of 15 minutes
-      totalTimeMinutes = Math.max(15, totalTimeMinutes);
-    }
-
-    let invitesSent = 0;
-    const failed: string[] = [];
-
-    for (const c of candidates) {
-      try {
-        const token = crypto.randomBytes(32).toString('base64url');
-        const { error: insertError } = await supabase.from('assessment_sessions').insert({
-          id: uuidv4(),
-          candidate_id: c.id,
-          job_id: jobId,
-          token,
-          status: 'pending',
-          deadline: deadline.toISOString(),
-          difficulty,
-          mcq_question_count: mcqCount,
-          coding_challenge_count: codingCount,
-          total_time_minutes: totalTimeMinutes,
-          mcq_questions: [],
-          coding_challenges: [],
-          is_apex_mode: isApexMode,
-          proctoring_data: {
-            tab_switches: 0,
-            fullscreen_exits: 0,
-            copy_paste_attempts: 0,
-            warnings: [],
-            terminated: false,
-            assessment_config: {
-              include_mcq: includeMcq,
-              include_coding: includeCoding,
-              difficulty,
-              is_apex_mode: isApexMode,
-            },
-          },
-          created_at: new Date().toISOString(),
-        });
-
-        if (insertError) {
-          console.error('[assessments/invite] DB insert failed for candidate', c.id, insertError.message);
-          failed.push(c.id);
-          continue;
+      // Deadline: prefer explicit datetime from body.deadline, fallback to deadline_hours
+      let deadline: Date;
+      if (body.deadline) {
+        deadline = new Date(body.deadline);
+        if (Number.isNaN(deadline.getTime())) {
+          return badRequest(res, 'Invalid deadline date/time format');
         }
+        if (deadline <= new Date()) {
+          return badRequest(res, 'Deadline must be in the future');
+        }
+      } else {
+        const deadlineHours = body.deadline_hours ?? 72;
+        deadline = new Date(Date.now() + Number(deadlineHours) * 3600000);
+      }
 
+      const billingGate = await checkPlanAccess(supabase, user.id, 'assessment_invite', {
+        quantity: Math.max(1, (candidateIds || []).length),
+      });
+      if (!billingGate.allowed) {
+        return res.status(billingGate.status || 402).json(billingGate);
+      }
+
+      const { data: job } = await supabase
+        .from('job_descriptions')
+        .select('id, title, role, level, description, must_have_skills, good_to_have_skills')
+        .eq('id', jobId)
+        .eq('created_by', user.id)
+        .single();
+      if (!job) return notFound(res, 'Job not found');
+      const salesforceRole = isSalesforceRole(job);
+      const requestedApexMode = body.is_apex_mode === true;
+      const isApexMode = requestedApexMode && salesforceRole;
+
+      const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
+      if (!candidates?.length) return notFound(res, 'No candidates found');
+
+      const frontendUrl = normalizeBaseUrl(resolveFrontendBaseUrl(req));
+
+      if (includeMcq && mcqCount < 1) {
+        return badRequest(res, 'MCQ question count must be at least 1 when MCQ is enabled');
+      }
+
+      // Auto-calculate time based on questions and difficulty if not provided
+      let totalTimeMinutes = body.total_time_minutes;
+      if (!totalTimeMinutes) {
+        // MCQ time per question based on difficulty
+        const mcqTimePerQuestion = difficulty === 'easy' ? 1 : difficulty === 'hard' ? 2 : 1.5;
+        // Coding time per challenge based on difficulty
+        const codingTimePerChallenge = difficulty === 'easy' ? 15 : difficulty === 'hard' ? 30 : 20;
+
+        totalTimeMinutes = Math.ceil(
+          (mcqCount * mcqTimePerQuestion) + (codingCount * codingTimePerChallenge)
+        );
+
+        // Ensure minimum time of 15 minutes
+        totalTimeMinutes = Math.max(15, totalTimeMinutes);
+      }
+
+      let invitesSent = 0;
+      const failed: string[] = [];
+
+      for (const c of candidates) {
         try {
-          await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
-        } catch (emailErr: any) {
-          // Email failure is non-fatal — the session is created; recruiter can resend later
-          console.error('[assessments/invite] Email send failed for candidate', c.id, emailErr?.message || emailErr);
+          const token = crypto.randomBytes(32).toString('base64url');
+          const { error: insertError } = await supabase.from('assessment_sessions').insert({
+            id: uuidv4(),
+            candidate_id: c.id,
+            job_id: jobId,
+            token,
+            status: 'pending',
+            deadline: deadline.toISOString(),
+            difficulty,
+            mcq_question_count: mcqCount,
+            coding_challenge_count: codingCount,
+            total_time_minutes: totalTimeMinutes,
+            mcq_questions: [],
+            coding_challenges: [],
+            is_apex_mode: isApexMode,
+            proctoring_data: {
+              tab_switches: 0,
+              fullscreen_exits: 0,
+              copy_paste_attempts: 0,
+              warnings: [],
+              terminated: false,
+              assessment_config: {
+                include_mcq: includeMcq,
+                include_coding: includeCoding,
+                difficulty,
+                is_apex_mode: isApexMode,
+              },
+            },
+            created_at: new Date().toISOString(),
+          });
+
+          if (insertError) {
+            console.error('[assessments/invite] DB insert failed for candidate', c.id, insertError.message);
+            failed.push(c.id);
+            continue;
+          }
+
+          try {
+            await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
+          } catch (emailErr: any) {
+            // Email failure is non-fatal — the session is created; recruiter can resend later
+            console.error('[assessments/invite] Email send failed for candidate', c.id, emailErr?.message || emailErr);
+          }
+          invitesSent += 1;
+        } catch (err: any) {
+          console.error('[assessments/invite] Unexpected error for candidate', c.id, err?.message || err);
+          failed.push(c.id);
         }
-        invitesSent += 1;
-      } catch (err: any) {
-        console.error('[assessments/invite] Unexpected error for candidate', c.id, err?.message || err);
-        failed.push(c.id);
       }
-    }
 
-    if (invitesSent === 0 && candidates.length > 0) {
-      return res.status(500).json({ error: 'Failed to create assessment sessions for all selected candidates. Please try again.' });
-    }
+      if (invitesSent === 0 && candidates.length > 0) {
+        return res.status(500).json({ error: 'Failed to create assessment sessions for all selected candidates. Please try again.' });
+      }
 
-    return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed });
+      return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed });
+    } catch (err: any) {
+      const requestId = (req.headers['x-nf-request-id'] || req.headers['x-nf-requestid'] || req.headers['x-request-id']) as string | undefined;
+      console.error('[assessments/invite] Unhandled error', { requestId }, err);
+      return res.status(500).json({
+        error: err?.message || 'Failed to send invites',
+        request_id: requestId || null,
+      });
+    }
   }
 
   return notFound(res);
