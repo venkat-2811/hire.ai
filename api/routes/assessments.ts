@@ -34,7 +34,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       const token = segments[2];
       const { data: session, error } = await supabase
         .from('assessment_sessions')
-        .select('*, candidates(full_name, email), job_descriptions(title, role, level, must_have_skills, good_to_have_skills)')
+        .select('*, candidates(full_name, email), job_descriptions(title, role, level, description, must_have_skills, good_to_have_skills)')
         .eq('token', token)
         .single();
 
@@ -77,6 +77,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       const salesforceRole = isSalesforceRole({
         role: session.job_descriptions?.role,
         title: session.job_descriptions?.title,
+        description: session.job_descriptions?.description,
         must_have_skills: session.job_descriptions?.must_have_skills || [],
         good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
       });
@@ -134,13 +135,13 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         const storedCoding: any[] = session.coding_challenges || [];
         if (storedCoding.length > 0) return storedCoding;
 
-        if (isApexMode && salesforceRole) {
+        if (isApexMode) {
           const challenges = await generateSalesforceApexChallenges({
             job: {
               title: session.job_descriptions?.title,
               role: session.job_descriptions?.role,
               level: session.job_descriptions?.level,
-              description: '',
+              description: session.job_descriptions?.description || '',
               must_have_skills: session.job_descriptions?.must_have_skills || [],
               good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
             },
@@ -282,13 +283,15 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     const storedChallenges = session.coding_challenges || [];
     if (storedChallenges.length) return ok(res, storedChallenges);
 
+    const isApexMode = Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
+
     const { data: jobMeta } = await supabase
       .from('job_descriptions')
       .select('title, role, level, description, must_have_skills, good_to_have_skills')
       .eq('id', session.job_id)
       .single();
 
-    if (jobMeta && isSalesforceRole(jobMeta)) {
+    if (jobMeta && (isApexMode || isSalesforceRole(jobMeta))) {
       const apexChallenges = await generateSalesforceApexChallenges({
         job: jobMeta,
         codingCount: session.coding_challenge_count || 2,

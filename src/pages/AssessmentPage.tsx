@@ -150,6 +150,15 @@ export default function AssessmentPage() {
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const isApexMode = !!assessmentData?.is_apex_mode;
 
+  const apexStarterTemplate = `// Apex Starter Template (Phase 1 - AI Evaluated)
+public class CandidateSolution {
+    public static void run() {
+        // Write your Apex logic here
+        System.debug('Hello from Apex');
+    }
+}
+`;
+
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(true);
@@ -556,7 +565,11 @@ export default function AssessmentPage() {
               ? 'apex'
               : (c.supported_languages?.includes('python3') ? 'python3' : (c.supported_languages?.[0] || 'python3'));
             initialLanguages[c.id] = defaultLang;
-            initialSolutions[c.id] = c.starter_code?.[defaultLang] || '';
+            if (defaultLang === 'apex') {
+              initialSolutions[c.id] = c.starter_code?.apex || apexStarterTemplate;
+            } else {
+              initialSolutions[c.id] = c.starter_code?.[defaultLang] || '';
+            }
           });
           setCodingSolutions(initialSolutions);
           setCodingLanguages(initialLanguages);
@@ -603,7 +616,7 @@ export default function AssessmentPage() {
     setActiveTestCaseTab(0);
 
     try {
-      const selectedLanguage = codingLanguages[challengeId] || 'python3';
+      const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
 
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/run`, {
         method: 'POST',
@@ -711,7 +724,7 @@ export default function AssessmentPage() {
     setActiveTestCaseTab(0);
 
     try {
-      const selectedLanguage = codingLanguages[challengeId] || 'python3';
+      const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
       const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -811,10 +824,14 @@ export default function AssessmentPage() {
   };
 
   const resetCode = (challengeId: string) => {
-    const lang = codingLanguages[challengeId] || 'python3';
+    const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
     const challenge = codingChallenges.find(c => c.id === challengeId);
     if (challenge) {
-      setCodingSolutions(prev => ({ ...prev, [challengeId]: challenge.starter_code?.[lang] || '' }));
+      if (lang === 'apex') {
+        setCodingSolutions(prev => ({ ...prev, [challengeId]: challenge.starter_code?.apex || apexStarterTemplate }));
+      } else {
+        setCodingSolutions(prev => ({ ...prev, [challengeId]: challenge.starter_code?.[lang] || '' }));
+      }
       toast.info('Code reset to starter template');
     }
   };
@@ -855,7 +872,7 @@ export default function AssessmentPage() {
       if (codingChallenges.length > 0) {
         for (const [challengeId, code] of Object.entries(codingSolutions)) {
           const challenge = codingChallenges.find((c) => c.id === challengeId);
-          const lang = codingLanguages[challengeId] || 'python3';
+          const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
           const starter = challenge?.starter_code?.[lang] || '';
           // Only submit if candidate actually changed starter code.
           if (!code?.trim() || code === starter) continue;
@@ -1905,7 +1922,7 @@ export default function AssessmentPage() {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={{ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'apex' }[(isApexMode ? 'apex' : (codingLanguages[currentCoding.id] || 'python3'))] || 'python'}
+                          language={isApexMode ? 'java' : ({ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'apex' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
                           theme="vs-dark"
                           value={codingSolutions[currentCoding.id] || ''}
                           onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
