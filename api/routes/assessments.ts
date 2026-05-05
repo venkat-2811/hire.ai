@@ -960,6 +960,8 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
 
       let invitesSent = 0;
       const failed: string[] = [];
+      const sessionIds: string[] = [];
+      const backgroundSessions: any[] = [];
 
       for (const c of candidates) {
         try {
@@ -970,7 +972,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
             candidate_id: c.id,
             job_id: jobId,
             token,
-            status: 'pending',
+            status: 'generating',
             deadline: deadline.toISOString(),
             mcq_question_count: mcqCount,
             coding_challenge_count: assessmentMode === 'apex' ? effectiveCodingCount : codingCount,
@@ -999,11 +1001,6 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
             failed.push(c.id);
             continue;
           }
-
-          try {
-            let generatedMcqs: any[] = [];
-            let generatedCoding: any[] = [];
-            let generatedApexBlanks: any[] = [];
 
             if (includeMcq && mcqCount > 0) {
               generatedMcqs = await generateAssessmentMcqsForJob({
@@ -1120,5 +1117,162 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     }
   }
 
+  // GET /api/assessments/status?ids=uuid1,uuid2
+  if (req.method === 'GET' && segments.length === 2 && segments[1] === 'status') {
+    const idsParam = req.query.ids;
+    if (!idsParam) return badRequest(res, 'Missing ids parameter');
+    
+    const ids = (Array.isArray(idsParam) ? idsParam[0] : idsParam).split(',').filter(Boolean);
+    if (!ids.length) return badRequest(res, 'No valid ids provided');
+
+    const { data: sessions, error } = await supabase
+      .from('assessment_sessions')
+      .select('id, status')
+      .in('id', ids);
+
+    if (error) return res.status(500).json({ error: 'Failed to fetch status' });
+
+    return ok(res, {
+      sessions: sessions.map(s => ({
+        id: s.id,
+        status: s.status
+      }))
+    });
+  }
+
   return notFound(res);
+}
+
+// Background processor function
+async function processInvitesInBackground({
+  supabase,
+  sessions,
+  job,
+  includeMcq,
+  mcqCount,
+  assessmentMode,
+  effectiveCodingCount,
+  codingCount,
+  difficulty,
+  isApexMode,
+  frontendUrl,
+  deadline,
+}: any) {
+  // Pre-generate the questions ONCE for the entire batch to save LLM costs and time
+  let generatedMcqs: any[] = [];
+  let generatedCoding: any[] = [];
+  let generatedApexBlanks: any[] = [];
+  let generationError: Error | null = null;
+
+  try {
+    if (includeMcq && mcqCount > 0) {
+      generatedMcqs = await generateAssessmentMcqsForJob({
+        job: {
+          title: job.title,
+          role: job.role,
+          level: job.level,
+          description: job.description || '',
+          must_have_skills: job.must_have_skills || [],
+          good_to_have_skills: job.good_to_have_skills || [],
+        },
+        mcqCount,
+        difficulty,
+      });
+    }
+
+    if (assessmentMode === 'apex') {
+      if (effectiveCodingCount > 0) {
+        generatedApexBlanks = await generateApexFillInTheBlanks({
+          job: {
+            title: job.title,
+            role: job.role,
+            level: job.level,
+            description: job.description || '',
+            must_have_skills: job.must_have_skills || [],
+            good_to_have_skills: job.good_to_have_skills || [],
+          },
+          count: Math.max(1, Math.min(20, effectiveCodingCount)),
+          difficulty,
+        });
+      }
+    } else if (includeCoding && codingCount > 0) {
+      let dist: string[];
+      if (difficulty === 'easy') dist = Array(codingCount).fill('easy');
+      else if (difficulty === 'hard') dist = codingCount >= 2 ? ['medium', ...Array(codingCount - 1).fill('hard')] : ['hard'];
+      else dist = codingCount >= 2 ? ['easy', ...Array(codingCount - 1).fill('medium')] : ['medium'];
+
+      const lookups = await Promise.all(dist.map(d =>
+        supabase.from('dsa_problems').select('*').eq('difficulty', d).eq('is_active', true).limit(20)
+      ));
+      const selected: any[] = [];
+      for (const { data: problems } of lookups) {
+        if (problems?.length) {
+          const avail = problems.filter((p: any) => !selected.some(s => s.id === p.id));
+          if (avail.length) selected.push(avail[Math.floor(Math.random() * avail.length)]);
+        }
+      }
+
+      generatedCoding = selected.map((p: any) => {
+        const pub = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
+        return {
+          id: p.id, slug: p.slug, title: p.title, description: p.description,
+          constraints: p.constraints || '', examples: p.examples || [],
+          starter_code: p.starter_code || {},
+          test_cases: pub.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
+          points: p.points, time_limit_seconds: p.time_limit_seconds,
+          supported_languages: Object.keys(p.starter_code || {}),
+        };
+      });
+    }
+  } catch (err: any) {
+    console.error('[processInvitesInBackground] Bulk generation failed:', err);
+    generationError = err;
+  }
+
+  // Update sessions and send emails
+  for (const session of sessions) {
+    const { sessionId, candidate, token } = session;
+    
+    if (generationError) {
+      // Mark as failed
+      await supabase.from('assessment_sessions').update({ status: 'failed' }).eq('id', sessionId);
+      continue;
+    }
+
+    try {
+      // Create a fresh copy of the proctoring data structure for this session to avoid reference sharing issues
+      const proctoringUpdate = {
+        tab_switches: 0,
+        fullscreen_exits: 0,
+        copy_paste_attempts: 0,
+        warnings: [],
+        terminated: false,
+        assessment_config: {
+          include_mcq: includeMcq,
+          include_coding: includeCoding,
+          difficulty,
+          is_apex_mode: isApexMode,
+          assessment_mode: assessmentMode,
+        },
+        assessment_content: assessmentMode === 'apex' ? { apex_blanks: generatedApexBlanks } : undefined,
+      };
+
+      await supabase.from('assessment_sessions').update({
+        status: 'pending', // Mark as pending (ready) only now
+        mcq_questions: Array.isArray(generatedMcqs) ? generatedMcqs : [],
+        coding_challenges: Array.isArray(generatedCoding) ? generatedCoding : [],
+        proctoring_data: proctoringUpdate,
+        updated_at: new Date().toISOString(),
+      }).eq('id', sessionId);
+      
+      try {
+        await sendAssessmentInvite(candidate.email, candidate.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
+      } catch (emailErr: any) {
+        console.error('[processInvitesInBackground] Email send failed for candidate', candidate.id, emailErr?.message || emailErr);
+      }
+    } catch (err: any) {
+      console.error('[processInvitesInBackground] Failed to update session for candidate', candidate.id, err?.message || err);
+      await supabase.from('assessment_sessions').update({ status: 'failed' }).eq('id', sessionId);
+    }
+  }
 }
