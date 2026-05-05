@@ -1005,33 +1005,37 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
             let generatedCoding: any[] = [];
             let generatedApexBlanks: any[] = [];
 
-            // Parallelize AI generation to reduce Netlify function wall time.
-            const jobPayload = {
-              title: job.title,
-              role: job.role,
-              level: job.level,
-              description: job.description || '',
-              must_have_skills: job.must_have_skills || [],
-              good_to_have_skills: job.good_to_have_skills || [],
-            };
+            if (includeMcq && mcqCount > 0) {
+              generatedMcqs = await generateAssessmentMcqsForJob({
+                job: {
+                  title: job.title,
+                  role: job.role,
+                  level: job.level,
+                  description: job.description || '',
+                  must_have_skills: job.must_have_skills || [],
+                  good_to_have_skills: job.good_to_have_skills || [],
+                },
+                mcqCount,
+                difficulty,
+              });
+            }
 
-            const mcqPromise = (includeMcq && mcqCount > 0)
-              ? generateAssessmentMcqsForJob({ job: jobPayload, mcqCount, difficulty })
-              : Promise.resolve([]);
-
-            const apexPromise = (assessmentMode === 'apex' && effectiveCodingCount > 0)
-              ? generateApexFillInTheBlanks({
-                  job: jobPayload,
+            if (assessmentMode === 'apex') {
+              if (effectiveCodingCount > 0) {
+                generatedApexBlanks = await generateApexFillInTheBlanks({
+                  job: {
+                    title: job.title,
+                    role: job.role,
+                    level: job.level,
+                    description: job.description || '',
+                    must_have_skills: job.must_have_skills || [],
+                    good_to_have_skills: job.good_to_have_skills || [],
+                  },
                   count: Math.max(1, Math.min(20, effectiveCodingCount)),
                   difficulty,
-                })
-              : Promise.resolve([]);
-
-            const [mcqGenerated, apexGenerated] = await Promise.all([mcqPromise, apexPromise]);
-            generatedMcqs = Array.isArray(mcqGenerated) ? mcqGenerated : [];
-            generatedApexBlanks = Array.isArray(apexGenerated) ? apexGenerated : [];
-
-            if (assessmentMode !== 'apex' && includeCoding && codingCount > 0) {
+                });
+              }
+            } else if (includeCoding && codingCount > 0) {
               let dist: string[];
               if (difficulty === 'easy') dist = Array(codingCount).fill('easy');
               else if (difficulty === 'hard') dist = codingCount >= 2 ? ['medium', ...Array(codingCount - 1).fill('hard')] : ['hard'];

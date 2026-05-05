@@ -111,8 +111,8 @@ OUTPUT JSON ONLY:
 
   const result = await generateJSON<any>(prompt, {
     temperature: 0.7,
-    maxTokens: Math.min(7000, 1600 + count * 700),
-    timeoutMs: 16000,
+    maxTokens: Math.min(12000, 2000 + count * 1200),
+    timeoutMs: 35000,
   });
 
   const raw: any[] = Array.isArray(result?.questions) ? result.questions : [];

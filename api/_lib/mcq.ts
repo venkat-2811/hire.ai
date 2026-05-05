@@ -227,8 +227,8 @@ Return ONLY valid JSON — no markdown, no explanations:
     const prompt = buildPrompt(batchCount, excludedTexts, excludedTopics);
     const maxTokens = Math.min(14000, 1200 + batchCount * 300);
     const generated = await Promise.race<any>([
-      generateJSON<any>(prompt, { maxTokens, temperature: 0.85, timeoutMs: 14000 }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 16000)),
+      generateJSON<any>(prompt, { maxTokens, temperature: 0.85 }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('MCQ generation timed out')), 45000)),
     ]);
     const raw = Array.isArray(generated)
       ? generated
