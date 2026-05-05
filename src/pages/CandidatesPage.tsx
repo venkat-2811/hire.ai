@@ -318,46 +318,6 @@ export default function CandidatesPage() {
       }
 
       const data = await response.json();
-      
-      if (data.pending && data.session_ids?.length > 0) {
-        toast.info(`Generating assessments for ${data.session_ids.length} candidate(s). This may take a minute...`);
-        
-        // Start polling
-        const pollInterval = setInterval(async () => {
-          try {
-            const statusRes = await fetch(`/api/assessments/status?ids=${data.session_ids.join(',')}`, {
-              headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-            });
-            
-            if (statusRes.ok) {
-              const statusData = await statusRes.json();
-              const sessions = statusData.sessions || [];
-              
-              const isStillGenerating = sessions.some((s: any) => s.status === 'generating');
-              const hasFailed = sessions.some((s: any) => s.status === 'failed');
-              
-              if (!isStillGenerating) {
-                clearInterval(pollInterval);
-                setSendingInvites(false);
-                setAssessmentDialogOpen(false);
-                setSelectedIds(new Set());
-                
-                if (hasFailed) {
-                  toast.error('Some assessments failed to generate. Please try again for those candidates.');
-                } else {
-                  toast.success(`Assessment invites successfully generated and sent to ${data.session_ids.length} candidate(s)`);
-                }
-              }
-            }
-          } catch (pollErr) {
-            console.error('Polling error:', pollErr);
-          }
-        }, 5000); // Poll every 5 seconds
-        
-        // Don't setSendingInvites(false) here, let the poller do it
-        return;
-      }
-
       toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
       setAssessmentDialogOpen(false);
       setSelectedIds(new Set());
