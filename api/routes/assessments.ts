@@ -12,16 +12,17 @@
  * Extracted verbatim from api/[...path].ts — lines 3913-4822.
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getSupabaseAdmin } from '../_lib/supabase';
-import { ok, badRequest, notFound, methodNotAllowed, requireAuth, checkRateLimit, resolveFrontendBaseUrl, normalizeBaseUrl } from '../_lib/helpers';
-import { isSalesforceRole, generateSalesforceApexChallenges } from '../_lib/salesforce';
-import { mapLanguageKey, executeTestCasesViaHackerEarth } from '../_lib/hackerearth';
-import { evaluateApexWithLLM } from '../_lib/apex-evaluator';
-import { checkPlanAccess } from '../_lib/billing-utils';
-import { generateAssessmentMcqsForJob } from '../_lib/mcq';
-import { sendAssessmentInvite } from '../_lib/offer-utils';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
+import { sendAssessmentInvite } from '../_lib/email';
+import { getSupabaseAdmin } from '../_lib/supabase';
+import { requireAuth, ok, badRequest, notFound, methodNotAllowed, normalizeBaseUrl, resolveFrontendBaseUrl, checkRateLimit } from '../_lib/helpers';
+import { checkPlanAccess } from '../_lib/billing-utils';
+import { generateAssessmentMcqsForJob } from '../_lib/mcq';
+import { isSalesforceRole, generateSalesforceApexChallenges } from '../_lib/salesforce';
+import { evaluateApexFillInTheBlanks, generateApexFillInTheBlanks } from '../_lib/apex-blanks';
+import { mapLanguageKey, executeTestCasesViaHackerEarth } from '../_lib/hackerearth';
+import { evaluateApexWithLLM } from '../_lib/apex-evaluator';
 
 export default async function handleAssessments(req: VercelRequest, res: VercelResponse, segments: string[]) {
   const supabase = getSupabaseAdmin();
@@ -69,11 +70,18 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       }
 
       const assessmentConfig = session.proctoring_data?.assessment_config || {};
+      const assessmentMode = (assessmentConfig.assessment_mode === 'apex' || assessmentConfig.assessment_mode === 'dsa')
+        ? assessmentConfig.assessment_mode
+        : (Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode) ? 'apex' : 'dsa');
       const mcqCount = session.mcq_question_count ?? 20;
       const codingCount = session.coding_challenge_count ?? 2;
       const difficulty = assessmentConfig.difficulty || session.difficulty || 'medium';
-      const includeMcq = assessmentConfig.include_mcq !== false && mcqCount > 0;
-      const includeCoding = assessmentConfig.include_coding !== false && codingCount > 0;
+      const includeMcq = assessmentMode === 'apex'
+        ? (mcqCount > 0)
+        : (assessmentConfig.include_mcq !== false && mcqCount > 0);
+      const includeCoding = assessmentMode === 'apex'
+        ? false
+        : (assessmentConfig.include_coding !== false && codingCount > 0);
       const salesforceRole = isSalesforceRole({
         role: session.job_descriptions?.role,
         title: session.job_descriptions?.title,
@@ -82,8 +90,42 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
       });
       // Back-compat: some DBs may not have an is_apex_mode column.
-      // Derive Apex mode from proctoring_data.assessment_config when needed.
-      const isApexMode = Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
+      // Derive Apex mode from assessment_mode when available.
+      const isApexMode = assessmentMode === 'apex' || Boolean((session as any)?.is_apex_mode ?? assessmentConfig.is_apex_mode);
+
+      const getApexBlanks = async (): Promise<any[]> => {
+        if (assessmentMode !== 'apex') return [];
+        const content = session.proctoring_data?.assessment_content || {};
+        const stored: any[] = content.apex_blanks || [];
+        if (stored.length > 0) return stored;
+
+        const generated = await generateApexFillInTheBlanks({
+          job: {
+            title: session.job_descriptions?.title,
+            role: session.job_descriptions?.role,
+            level: session.job_descriptions?.level,
+            description: session.job_descriptions?.description || '',
+            must_have_skills: session.job_descriptions?.must_have_skills || [],
+            good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
+          },
+          count: Math.max(2, Math.min(8, codingCount || 4)),
+          difficulty,
+        });
+
+        const proctoring = session.proctoring_data || {};
+        await supabase.from('assessment_sessions').update({
+          proctoring_data: {
+            ...proctoring,
+            assessment_content: {
+              ...(proctoring.assessment_content || {}),
+              apex_blanks: generated,
+            },
+          },
+          updated_at: new Date().toISOString(),
+        }).eq('id', session.id);
+
+        return generated;
+      };
 
       // Retrieve pre-generated MCQ questions only
       const getMcqQuestions = async (): Promise<any[]> => {
@@ -202,8 +244,12 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         } catch (e) { console.error('[start] Coding fetch failed:', e); return []; }
       };
 
-      // Run both in parallel — halves the wait time
-      const [mcqQuestions, codingChallenges] = await Promise.all([getMcqQuestions(), getCodingChallenges()]);
+      // Run in parallel — halves the wait time
+      const [mcqQuestions, codingChallenges, apexBlanks] = await Promise.all([
+        getMcqQuestions(),
+        getCodingChallenges(),
+        getApexBlanks(),
+      ]);
 
       const safeMcq = mcqQuestions.map((q: any) => ({
         id: q.id, question: q.question, options: q.options,
@@ -215,6 +261,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         candidate_name: session.candidates?.full_name,
         job_title: session.job_descriptions?.title,
         job_role: session.job_descriptions?.role,
+        assessment_mode: assessmentMode,
         is_apex_mode: isApexMode,
         coding_environment_label: isApexMode ? 'Apex Coding Environment (AI-Evaluated - Phase 1)' : null,
         mcq_count: safeMcq.length,
@@ -223,11 +270,109 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         deadline: session.deadline,
         mcq_questions: safeMcq,
         coding_challenges: codingChallenges,
+        apex_blanks: apexBlanks,
       });
     } catch (e: any) {
       console.error('[assessments/start] failed', e?.message || e);
       return res.status(500).json({ error: 'Failed to start assessment' });
     }
+  }
+
+  // GET /api/assessments/:sessionId/apex-blanks
+  if (req.method === 'GET' && segments.length === 3 && segments[2] === 'apex-blanks') {
+    const sessionId = segments[1];
+    const { data: session, error } = await supabase
+      .from('assessment_sessions')
+      .select('id, status, proctoring_data, coding_challenge_count, difficulty, job_id, job_descriptions(title, role, level, description, must_have_skills, good_to_have_skills)')
+      .eq('id', sessionId)
+      .single();
+    if (error || !session) return notFound(res, 'Session not found');
+    if (session.status !== 'in_progress') return badRequest(res, 'Assessment not in progress');
+
+    const assessmentConfig = session.proctoring_data?.assessment_config || {};
+    const assessmentMode = assessmentConfig.assessment_mode === 'apex' ? 'apex' : 'dsa';
+    if (assessmentMode !== 'apex') return badRequest(res, 'Apex blanks not enabled for this assessment');
+
+    const content = session.proctoring_data?.assessment_content || {};
+    const stored: any[] = content.apex_blanks || [];
+    if (stored.length) return ok(res, stored);
+
+    const count = Math.max(2, Math.min(8, Number(session.coding_challenge_count || 4)));
+    const difficulty = assessmentConfig.difficulty || session.difficulty || 'medium';
+    const generated = await generateApexFillInTheBlanks({
+      job: {
+        title: (session as any).job_descriptions?.title,
+        role: (session as any).job_descriptions?.role,
+        level: (session as any).job_descriptions?.level,
+        description: (session as any).job_descriptions?.description || '',
+        must_have_skills: (session as any).job_descriptions?.must_have_skills || [],
+        good_to_have_skills: (session as any).job_descriptions?.good_to_have_skills || [],
+      },
+      count,
+      difficulty,
+    });
+
+    const proctoring = session.proctoring_data || {};
+    await supabase.from('assessment_sessions').update({
+      proctoring_data: {
+        ...proctoring,
+        assessment_content: {
+          ...(proctoring.assessment_content || {}),
+          apex_blanks: generated,
+        },
+      },
+      updated_at: new Date().toISOString(),
+    }).eq('id', sessionId);
+
+    return ok(res, generated);
+  }
+
+  // POST /api/assessments/:sessionId/apex-blanks/submit
+  if (req.method === 'POST' && segments.length === 4 && segments[2] === 'apex-blanks' && segments[3] === 'submit') {
+    const sessionId = segments[1];
+    const submissions = req.body || {};
+
+    const { data: session, error } = await supabase
+      .from('assessment_sessions')
+      .select('id, status, proctoring_data, coding_score')
+      .eq('id', sessionId)
+      .single();
+    if (error || !session) return notFound(res, 'Session not found');
+    if (session.status !== 'in_progress') return badRequest(res, 'Assessment not in progress');
+
+    const assessmentConfig = session.proctoring_data?.assessment_config || {};
+    const assessmentMode = assessmentConfig.assessment_mode === 'apex' ? 'apex' : 'dsa';
+    if (assessmentMode !== 'apex') return badRequest(res, 'Apex blanks not enabled for this assessment');
+
+    const content = session.proctoring_data?.assessment_content || {};
+    const questions: any[] = content.apex_blanks || [];
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return badRequest(res, 'Apex blanks questions are not available for this session.');
+    }
+
+    const evaluation = await evaluateApexFillInTheBlanks({
+      questions,
+      submissions,
+    });
+
+    const proctoring = session.proctoring_data || {};
+    await supabase.from('assessment_sessions').update({
+      proctoring_data: {
+        ...proctoring,
+        submissions: {
+          ...(proctoring.submissions || {}),
+          apex_blanks: submissions,
+        },
+        results: {
+          ...(proctoring.results || {}),
+          apex_blanks: evaluation.results,
+        },
+      },
+      coding_score: evaluation.max_score > 0 ? (evaluation.total_score / evaluation.max_score) * 100 : 0,
+      updated_at: new Date().toISOString(),
+    }).eq('id', sessionId);
+
+    return ok(res, evaluation);
   }
 
   // Everything else requires auth (manager)
@@ -846,8 +991,9 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       const body = req.body;
       const candidateIds = body.candidate_ids as string[];
       const jobId = body.job_id as string;
-      const includeMcq = body.include_mcq !== false;
-      const includeCoding = body.include_coding !== false;
+      const assessmentMode = (body.assessment_mode === 'apex' || body.assessment_mode === 'dsa') ? body.assessment_mode : 'dsa';
+      const includeMcq = assessmentMode === 'apex' ? true : (body.include_mcq !== false);
+      const includeCoding = assessmentMode === 'apex' ? false : (body.include_coding !== false);
       const difficulty = (body.difficulty as string) || 'medium';
       const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
       const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
@@ -881,7 +1027,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         .eq('created_by', user.id)
         .single();
       if (!job) return notFound(res, 'Job not found');
-      const isApexMode = body.is_apex_mode === true;
+      const isApexMode = assessmentMode === 'apex';
 
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
       if (!candidates?.length) return notFound(res, 'No candidates found');
@@ -937,6 +1083,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
                 include_coding: includeCoding,
                 difficulty,
                 is_apex_mode: isApexMode,
+                assessment_mode: assessmentMode,
               },
             },
             created_at: new Date().toISOString(),

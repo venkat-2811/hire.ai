@@ -116,10 +116,10 @@ export default function CandidatesPage() {
   const [sendingInvites, setSendingInvites] = useState(false);
   const [mcqCount, setMcqCount] = useState(20);
   const [codingCount, setCodingCount] = useState(2);
+  const [assessmentMode, setAssessmentMode] = useState<'dsa' | 'apex'>('dsa');
   const [assessmentDifficulty, setAssessmentDifficulty] = useState<'easy' | 'medium' | 'hard'>('hard');
   const [includeMcq, setIncludeMcq] = useState(true);
   const [includeCoding, setIncludeCoding] = useState(true);
-  const [isApexMode, setIsApexMode] = useState(false);
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
@@ -153,10 +153,17 @@ export default function CandidatesPage() {
   }, [selectedJob]);
 
   useEffect(() => {
-    if (!selectedJobLooksSalesforce) {
-      setIsApexMode(false);
+    if (!selectedJobLooksSalesforce && assessmentMode === 'apex') {
+      setAssessmentMode('dsa');
     }
   }, [selectedJobLooksSalesforce]);
+
+  useEffect(() => {
+    if (assessmentMode === 'apex') {
+      setIncludeMcq(true);
+      setIncludeCoding(false);
+    }
+  }, [assessmentMode]);
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -299,7 +306,7 @@ export default function CandidatesPage() {
           difficulty: assessmentDifficulty,
           include_mcq: includeMcq,
           include_coding: includeCoding,
-          is_apex_mode: includeCoding && selectedJobLooksSalesforce ? isApexMode : false,
+          assessment_mode: assessmentMode,
           total_time_minutes: totalTimeMinutes || undefined,
         }),
       });
@@ -826,11 +833,36 @@ export default function CandidatesPage() {
             </DialogHeader>
 
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Technical Assessment Mode (Required)</Label>
+                <Select
+                  value={assessmentMode}
+                  onValueChange={(v: 'dsa' | 'apex') => setAssessmentMode(v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dsa">DSA</SelectItem>
+                    <SelectItem value="apex" disabled={!selectedJobLooksSalesforce}>APEX</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!selectedJobLooksSalesforce && (
+                  <div className="text-xs text-muted-foreground">
+                    APEX mode is available only for Salesforce-related roles.
+                  </div>
+                )}
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Include Technical MCQs</Label>
                   <div className="flex items-center gap-2">
-                    <Checkbox checked={includeMcq} onCheckedChange={(v) => setIncludeMcq(!!v)} />
+                    <Checkbox
+                      checked={includeMcq}
+                      onCheckedChange={(v) => setIncludeMcq(!!v)}
+                      disabled={assessmentMode === 'apex'}
+                    />
                     <span className="text-sm text-muted-foreground">Enable MCQ section</span>
                   </div>
                   <Input
@@ -839,14 +871,20 @@ export default function CandidatesPage() {
                     max={50}
                     value={mcqCount}
                     onChange={(e) => setMcqCount(Math.max(0, Number(e.target.value) || 0))}
-                    disabled={!includeMcq}
+                    disabled={!includeMcq || assessmentMode === 'apex'}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Include Coding Challenges</Label>
+                  <Label>{assessmentMode === 'apex' ? 'Apex Fill-in-the-Blanks Questions' : 'Include Coding Challenges'}</Label>
                   <div className="flex items-center gap-2">
-                    <Checkbox checked={includeCoding} onCheckedChange={(v) => setIncludeCoding(!!v)} />
-                    <span className="text-sm text-muted-foreground">Enable coding section</span>
+                    <Checkbox
+                      checked={assessmentMode === 'apex' ? false : includeCoding}
+                      onCheckedChange={(v) => setIncludeCoding(!!v)}
+                      disabled={assessmentMode === 'apex'}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {assessmentMode === 'apex' ? 'Enabled automatically' : 'Enable coding section'}
+                    </span>
                   </div>
                   <Input
                     type="number"
@@ -854,30 +892,8 @@ export default function CandidatesPage() {
                     max={10}
                     value={codingCount}
                     onChange={(e) => setCodingCount(Math.max(0, Number(e.target.value) || 0))}
-                    disabled={!includeCoding}
+                    disabled={assessmentMode === 'apex' ? false : !includeCoding}
                   />
-                </div>
-              </div>
-
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                <div className="font-medium text-foreground">If this role is related to Salesforce, enable Apex mode for a more relevant coding assessment.</div>
-                <div className="mt-2 flex items-start gap-2">
-                  <Checkbox
-                    checked={isApexMode}
-                    onCheckedChange={(v) => setIsApexMode(!!v)}
-                    disabled={!includeCoding || !selectedJobLooksSalesforce}
-                  />
-                  <div className="space-y-1">
-                    <div className="text-sm text-foreground">Enable Apex Coding Mode (For Salesforce Roles)</div>
-                    <div className="text-xs text-muted-foreground">
-                      AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)
-                    </div>
-                    {!selectedJobLooksSalesforce && (
-                      <div className="text-xs text-muted-foreground">
-                        Apex mode is available only for Salesforce-related roles.
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
 

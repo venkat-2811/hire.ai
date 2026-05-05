@@ -100,11 +100,43 @@ interface CodingChallenge {
   supported_languages: string[];
 }
 
+interface ApexBlankItem {
+  blank_id: string;
+  placeholder: string;
+  guidance?: string;
+}
+
+interface ApexFillInBlankQuestion {
+  id: string;
+  title: string;
+  instructions: string;
+  code_with_blanks: string;
+  blanks: ApexBlankItem[];
+  points: number;
+  topic: string;
+  difficulty: string;
+}
+
+interface ApexBlanksEvaluationResult {
+  question_id: string;
+  score: number;
+  max_score: number;
+  feedback: string;
+  per_blank: Array<{
+    blank_id: string;
+    correct: boolean;
+    expected: string;
+    received: string;
+    notes?: string;
+  }>;
+}
+
 interface AssessmentData {
   session_id: string;
   candidate_name: string;
   job_title: string;
   job_role?: string;
+  assessment_mode?: 'dsa' | 'apex';
   is_apex_mode?: boolean;
   coding_environment_label?: string | null;
   mcq_count: number;
@@ -114,6 +146,7 @@ interface AssessmentData {
   // Eagerly bundled by the backend — eliminates separate /mcq and /coding fetches
   mcq_questions?: MCQQuestion[];
   coding_challenges?: CodingChallenge[];
+  apex_blanks?: ApexFillInBlankQuestion[];
 }
 
 export default function AssessmentPage() {
@@ -127,10 +160,13 @@ export default function AssessmentPage() {
   const [assessmentData, setAssessmentData] = useState<AssessmentData | null>(null);
   const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
   const [codingChallenges, setCodingChallenges] = useState<CodingChallenge[]>([]);
+  const [apexBlanks, setApexBlanks] = useState<ApexFillInBlankQuestion[]>([]);
   const hasCoding = codingChallenges.length > 0;
-  const [currentTab, setCurrentTab] = useState<'mcq' | 'coding'>('mcq');
+  const hasApexBlanks = apexBlanks.length > 0;
+  const [currentTab, setCurrentTab] = useState<'mcq' | 'coding' | 'apex_blanks'>('mcq');
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [currentCodingIndex, setCurrentCodingIndex] = useState(0);
+  const [currentApexBlankIndex, setCurrentApexBlankIndex] = useState(0);
   
   // Reset to description tab when switching coding questions
   useEffect(() => {
@@ -148,7 +184,12 @@ export default function AssessmentPage() {
   const [activeTestCaseTab, setActiveTestCaseTab] = useState(0);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const isApexMode = !!assessmentData?.is_apex_mode;
+  const assessmentMode = assessmentData?.assessment_mode === 'apex' ? 'apex' : 'dsa';
+  const isApexMode = assessmentMode === 'apex' || !!assessmentData?.is_apex_mode;
+
+  const [apexBlankAnswers, setApexBlankAnswers] = useState<Record<string, Record<string, string>>>({});
+  const [apexBlanksEvaluation, setApexBlanksEvaluation] = useState<{ results: ApexBlanksEvaluationResult[]; total_score: number; max_score: number } | null>(null);
+  const [submittingApexBlanks, setSubmittingApexBlanks] = useState(false);
 
   const apexStarterTemplate = `// Apex Starter Template (Phase 1 - AI Evaluated)
 public class CandidateSolution {
@@ -438,125 +479,42 @@ public class CandidateSolution {
     };
   }, [timeRemaining, terminated, completed]);
 
-  // Load assessment data
   useEffect(() => {
     async function loadAssessment() {
-      if (!token) return;
-
-      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-      const fetchJsonWithRetry = async (
-        url: string,
-        attempts = 3,
-        timeoutMs = 25000
-      ): Promise<{ ok: true; data: any } | { ok: false; error: string }> => {
-        let lastError = 'Request failed';
-
-        for (let attempt = 1; attempt <= attempts; attempt++) {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-          try {
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timer);
-
-            if (response.ok) {
-              const data = await response.json();
-              return { ok: true, data };
-            }
-
-            const err = await response.json().catch(() => ({}));
-            lastError = err.error || err.detail || `Request failed with ${response.status}`;
-          } catch (e) {
-            clearTimeout(timer);
-            if (e instanceof DOMException && e.name === 'AbortError') {
-              lastError = 'Request timed out';
-            } else {
-              lastError = e instanceof Error ? e.message : 'Network error';
-            }
-          }
-
-          if (attempt < attempts) {
-            await delay(600 * attempt);
-          }
-        }
-
-        return { ok: false, error: lastError };
-      };
-
       try {
-        setLoadingStep('Verifying your assessment link…');
+        setLoading(true);
+        setError(null);
+        setLoadingStep('Loading your assessment…');
 
-        // Single request — backend now returns questions bundled in the response
-        const startResult = await fetchJsonWithRetry(`${API_BASE_URL}/assessments/start/${token}`, 3, 25000);
-        if (!startResult.ok) {
-          setError(startResult.error || 'Failed to load assessment');
-          return;
+        const response = await fetch(`${API_BASE_URL}/assessments/start/${encodeURIComponent(token || '')}`);
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err?.error || 'Failed to load assessment');
         }
 
-        const data = startResult.data;
+        const data = await response.json();
         setAssessmentData(data);
-        setTimeRemaining((Number(data.total_time_minutes) || 90) * 60);
 
-        setLoadingStep('Loading your questions…');
-
-        // Use questions bundled in the start response if available,
-        // otherwise fall back to the legacy separate endpoints.
-        let mcqList: MCQQuestion[] = [];
-        let codingList: CodingChallenge[] = [];
-
-        if (Array.isArray(data.mcq_questions) && data.mcq_questions.length > 0) {
-          mcqList = data.mcq_questions;
-        } else {
-          // Fallback: questions weren't pre-generated yet, fetch separately
-          const mcqResult = await fetchJsonWithRetry(`${API_BASE_URL}/assessments/${data.session_id}/mcq`, 2, 20000);
-          if (mcqResult.ok) {
-            const mcqData = mcqResult.data;
-            mcqList = Array.isArray(mcqData)
-              ? mcqData
-              : Array.isArray(mcqData?.questions)
-                ? mcqData.questions
-                : [];
-          } else {
-            // Non-fatal: allow candidate to continue with coding section if available
-            console.warn('[assessment] MCQ load failed:', mcqResult.error);
-          }
-        }
-
-        if (Array.isArray(data.coding_challenges) && data.coding_challenges.length > 0) {
-          codingList = data.coding_challenges;
-        } else {
-          const codingResult = await fetchJsonWithRetry(`${API_BASE_URL}/assessments/${data.session_id}/coding`, 2, 20000);
-          if (codingResult.ok) {
-            const codingData = codingResult.data;
-            codingList = Array.isArray(codingData)
-              ? codingData
-              : Array.isArray(codingData?.challenges)
-                ? codingData.challenges
-                : [];
-          } else {
-            // Non-fatal: allow candidate to continue with MCQ section if available
-            console.warn('[assessment] Coding load failed:', codingResult.error);
-          }
-        }
+        const mcqList = Array.isArray(data.mcq_questions) ? data.mcq_questions : [];
+        const codingList = Array.isArray(data.coding_challenges) ? data.coding_challenges : [];
+        const apexBlankList = Array.isArray(data.apex_blanks) ? data.apex_blanks : [];
 
         setMcqQuestions(mcqList);
         setCodingChallenges(codingList);
+        setApexBlanks(apexBlankList);
 
         const hasMcq = mcqList.length > 0;
         const hasCoding = codingList.length > 0;
-        if (!hasMcq && !hasCoding) {
-          setError('No assessment sections were generated. Please refresh or contact the hiring team.');
-          return;
-        }
+        const hasApexBlanks = apexBlankList.length > 0;
 
-        if (hasMcq && !hasCoding) {
+        if (hasMcq && !hasCoding && !hasApexBlanks) {
           setCurrentTab('mcq');
         } else if (!hasMcq && hasCoding) {
           setCurrentTab('coding');
+        } else if (!hasMcq && hasApexBlanks) {
+          setCurrentTab('apex_blanks');
         }
 
-        // Initialize solutions with starter code and default language per challenge
         if (hasCoding) {
           const initialSolutions: Record<string, string> = {};
           const initialLanguages: Record<string, string> = {};
@@ -575,9 +533,20 @@ public class CandidateSolution {
           setCodingLanguages(initialLanguages);
         }
 
+        if (hasApexBlanks) {
+          const initialAnswers: Record<string, Record<string, string>> = {};
+          apexBlankList.forEach((q: ApexFillInBlankQuestion) => {
+            initialAnswers[q.id] = {};
+            (q.blanks || []).forEach((b) => {
+              initialAnswers[q.id][b.blank_id] = '';
+            });
+          });
+          setApexBlankAnswers(initialAnswers);
+        }
+
         setLoadingStep('Preparing your environment…');
-      } catch (e) {
-        setError('Failed to load assessment. Please try again.');
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load assessment. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -601,6 +570,39 @@ public class CandidateSolution {
 
   const handleCodingSolution = (challengeId: string, code: string) => {
     setCodingSolutions((prev) => ({ ...prev, [challengeId]: code }));
+  };
+
+  const handleApexBlankChange = (questionId: string, blankId: string, value: string) => {
+    setApexBlankAnswers((prev) => ({
+      ...prev,
+      [questionId]: {
+        ...(prev[questionId] || {}),
+        [blankId]: value,
+      },
+    }));
+  };
+
+  const submitApexBlanks = async () => {
+    if (!assessmentData || submittingApexBlanks) return;
+    setSubmittingApexBlanks(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/apex-blanks/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(apexBlankAnswers),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to submit Apex blanks');
+      }
+      const data = await response.json();
+      setApexBlanksEvaluation(data);
+      toast.success('Apex blanks submitted');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to submit Apex blanks');
+    } finally {
+      setSubmittingApexBlanks(false);
+    }
   };
 
   const runCode = async (challengeId: string) => {
@@ -1209,7 +1211,9 @@ public class CandidateSolution {
     return challenge && codingSolutions[k] !== (challenge.starter_code?.[lang] || '');
   }).length / codingChallenges.length) * 100;
   const hasMcq = mcqQuestions.length > 0;
-  const activeTab = hasMcq ? (hasCoding ? currentTab : 'mcq') : 'coding';
+  const activeTab = hasMcq
+    ? ((hasCoding || hasApexBlanks) ? currentTab : 'mcq')
+    : (hasApexBlanks ? 'apex_blanks' : 'coding');
 
   return (
     <div className="min-h-screen bg-background select-none">
@@ -1485,17 +1489,24 @@ public class CandidateSolution {
             )}
           </Button>
         </div>
-        <Tabs value={activeTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding')}>
-          {hasMcq && hasCoding && (
+        <Tabs value={activeTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding' | 'apex_blanks')}>
+          {hasMcq && (hasCoding || hasApexBlanks) && (
             <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
               <TabsTrigger value="mcq" className="flex items-center gap-2">
                 <FileQuestion className="h-4 w-4" />
                 MCQ ({Object.keys(mcqAnswers).length}/{mcqQuestions.length})
               </TabsTrigger>
-              <TabsTrigger value="coding" className="flex items-center gap-2">
-                <Code className="h-4 w-4" />
-                Coding ({currentCodingIndex + 1}/{codingChallenges.length})
-              </TabsTrigger>
+              {hasCoding ? (
+                <TabsTrigger value="coding" className="flex items-center gap-2">
+                  <Code className="h-4 w-4" />
+                  Coding ({currentCodingIndex + 1}/{codingChallenges.length})
+                </TabsTrigger>
+              ) : (
+                <TabsTrigger value="apex_blanks" className="flex items-center gap-2">
+                  <Code className="h-4 w-4" />
+                  Apex Syntax ({currentApexBlankIndex + 1}/{apexBlanks.length})
+                </TabsTrigger>
+              )}
             </TabsList>
           )}
 
@@ -1596,6 +1607,101 @@ public class CandidateSolution {
                     </div>
                   </CardContent>
                 </Card>
+              </div>
+            </TabsContent>
+          )}
+
+          {/* Apex Fill-in-the-Blanks Section */}
+          {hasApexBlanks && (
+            <TabsContent value="apex_blanks">
+              <div className="max-w-5xl mx-auto space-y-6">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <div className="font-medium text-foreground">Apex Syntax Evaluation</div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    This section evaluates Apex coding knowledge through syntax-based fill-in-the-blanks questions.
+                  </div>
+                </div>
+
+                <Progress
+                  value={((currentApexBlankIndex + 1) / Math.max(1, apexBlanks.length)) * 100}
+                  className="h-2"
+                />
+
+                {apexBlanks[currentApexBlankIndex] && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{apexBlanks[currentApexBlankIndex].title}</CardTitle>
+                      <CardDescription>
+                        {apexBlanks[currentApexBlankIndex].instructions}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="rounded-lg border bg-muted/20 p-4">
+                        <pre className="text-sm whitespace-pre-wrap leading-relaxed">{apexBlanks[currentApexBlankIndex].code_with_blanks}</pre>
+                      </div>
+
+                      <div className="space-y-3">
+                        {(apexBlanks[currentApexBlankIndex].blanks || []).map((b) => (
+                          <div key={b.blank_id} className="space-y-1">
+                            <Label>{b.placeholder}</Label>
+                            <input
+                              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                              value={apexBlankAnswers?.[apexBlanks[currentApexBlankIndex].id]?.[b.blank_id] || ''}
+                              onChange={(e) => handleApexBlankChange(apexBlanks[currentApexBlankIndex].id, b.blank_id, e.target.value)}
+                              placeholder="Type the missing Apex syntax"
+                            />
+                            {b.guidance && (
+                              <div className="text-xs text-muted-foreground">{b.guidance}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            disabled={currentApexBlankIndex === 0}
+                            onClick={() => setCurrentApexBlankIndex((i) => Math.max(0, i - 1))}
+                          >
+                            Previous
+                          </Button>
+                          <Button
+                            variant="outline"
+                            disabled={currentApexBlankIndex >= apexBlanks.length - 1}
+                            onClick={() => setCurrentApexBlankIndex((i) => Math.min(apexBlanks.length - 1, i + 1))}
+                          >
+                            Next
+                          </Button>
+                        </div>
+
+                        <Button onClick={submitApexBlanks} disabled={submittingApexBlanks}>
+                          {submittingApexBlanks ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Submitting...</>
+                          ) : (
+                            <><Send className="mr-2 h-4 w-4" />Submit</>
+                          )}
+                        </Button>
+                      </div>
+
+                      {apexBlanksEvaluation && (
+                        <div className="rounded-lg border p-4 space-y-2">
+                          <div className="font-medium text-foreground">Evaluation</div>
+                          <div className="text-sm text-muted-foreground">
+                            Score: {apexBlanksEvaluation.total_score} / {apexBlanksEvaluation.max_score}
+                          </div>
+                          {(apexBlanksEvaluation.results || [])
+                            .filter((r) => r.question_id === apexBlanks[currentApexBlankIndex].id)
+                            .map((r) => (
+                              <div key={r.question_id} className="text-sm">
+                                <div className="text-muted-foreground">{r.feedback}</div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </TabsContent>
           )}
