@@ -1002,99 +1002,8 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
             continue;
           }
 
-            if (includeMcq && mcqCount > 0) {
-              generatedMcqs = await generateAssessmentMcqsForJob({
-                job: {
-                  title: job.title,
-                  role: job.role,
-                  level: job.level,
-                  description: job.description || '',
-                  must_have_skills: job.must_have_skills || [],
-                  good_to_have_skills: job.good_to_have_skills || [],
-                },
-                mcqCount,
-                difficulty,
-              });
-            }
-
-            if (assessmentMode === 'apex') {
-              if (effectiveCodingCount > 0) {
-                generatedApexBlanks = await generateApexFillInTheBlanks({
-                  job: {
-                    title: job.title,
-                    role: job.role,
-                    level: job.level,
-                    description: job.description || '',
-                    must_have_skills: job.must_have_skills || [],
-                    good_to_have_skills: job.good_to_have_skills || [],
-                  },
-                  count: Math.max(1, Math.min(20, effectiveCodingCount)),
-                  difficulty,
-                });
-              }
-            } else if (includeCoding && codingCount > 0) {
-              let dist: string[];
-              if (difficulty === 'easy') dist = Array(codingCount).fill('easy');
-              else if (difficulty === 'hard') dist = codingCount >= 2 ? ['medium', ...Array(codingCount - 1).fill('hard')] : ['hard'];
-              else dist = codingCount >= 2 ? ['easy', ...Array(codingCount - 1).fill('medium')] : ['medium'];
-
-              const lookups = await Promise.all(dist.map(d =>
-                supabase.from('dsa_problems').select('*').eq('difficulty', d).eq('is_active', true).limit(20)
-              ));
-              const selected: any[] = [];
-              for (const { data: problems } of lookups) {
-                if (problems?.length) {
-                  const avail = problems.filter((p: any) => !selected.some(s => s.id === p.id));
-                  if (avail.length) selected.push(avail[Math.floor(Math.random() * avail.length)]);
-                }
-              }
-
-              generatedCoding = selected.map((p: any) => {
-                const pub = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
-                return {
-                  id: p.id, slug: p.slug, title: p.title, description: p.description,
-                  constraints: p.constraints || '', examples: p.examples || [],
-                  starter_code: p.starter_code || {},
-                  test_cases: pub.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
-                  points: p.points, time_limit_seconds: p.time_limit_seconds,
-                  supported_languages: Object.keys(p.starter_code || {}),
-                };
-              });
-            }
-
-            await supabase.from('assessment_sessions').update({
-              mcq_questions: Array.isArray(generatedMcqs) ? generatedMcqs : [],
-              coding_challenges: Array.isArray(generatedCoding) ? generatedCoding : [],
-              proctoring_data: {
-                tab_switches: 0,
-                fullscreen_exits: 0,
-                copy_paste_attempts: 0,
-                warnings: [],
-                terminated: false,
-                assessment_config: {
-                  include_mcq: includeMcq,
-                  include_coding: includeCoding,
-                  difficulty,
-                  is_apex_mode: isApexMode,
-                  assessment_mode: assessmentMode,
-                },
-                assessment_content: assessmentMode === 'apex' ? { apex_blanks: generatedApexBlanks } : undefined,
-              },
-              updated_at: new Date().toISOString(),
-            }).eq('id', sessionId);
-          } catch (genErr: any) {
-            console.error('[assessments/invite] Question generation failed for candidate', c.id, genErr?.message || genErr);
-            failed.push(c.id);
-            await supabase.from('assessment_sessions').delete().eq('id', sessionId);
-            continue;
-          }
-
-          try {
-            await sendAssessmentInvite(c.email, c.full_name, job.title, `${frontendUrl}/assessment/${encodeURIComponent(token)}`, deadline.toLocaleString());
-          } catch (emailErr: any) {
-            // Email failure is non-fatal — the session is created; recruiter can resend later
-            console.error('[assessments/invite] Email send failed for candidate', c.id, emailErr?.message || emailErr);
-          }
+          sessionIds.push(sessionId);
+          backgroundSessions.push({ sessionId, candidate: c, token });
           invitesSent += 1;
         } catch (err: any) {
           console.error('[assessments/invite] Unexpected error for candidate', c.id, err?.message || err);
@@ -1102,11 +1011,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         }
       }
 
-      if (invitesSent === 0 && candidates.length > 0) {
-        return res.status(500).json({ error: 'Failed to create assessment sessions for all selected candidates. Please try again.' });
-      }
 
-      return ok(res, { success: invitesSent > 0, invites_sent: invitesSent, failed });
     } catch (err: any) {
       const requestId = (req.headers['x-nf-request-id'] || req.headers['x-nf-requestid'] || req.headers['x-request-id']) as string | undefined;
       console.error('[assessments/invite] Unhandled error', { requestId }, err);
