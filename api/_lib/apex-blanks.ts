@@ -78,6 +78,8 @@ STRICT REQUIREMENTS:
 - These are NOT DSA problems.
 - Each question must be based on practical Salesforce/Apex knowledge.
 - Each question must contain EXACTLY ONE blank.
+- In the code snippet, mark the blank location with the EXACT marker: /* BLANK */
+- The marker /* BLANK */ must appear EXACTLY ONCE in code_with_blanks.
 - Do NOT use placeholders like [[blank]] or [[BLANK_1]] in the question text or code.
 - Do NOT provide hints, guidance, or suggestions for the blank.
 - The blank should test syntax and platform concepts: SOQL, DML, triggers, bulkification, governor limits, sharing, exception handling, collections, null checks.
@@ -129,6 +131,9 @@ OUTPUT JSON ONLY:
 
       const code = String(q?.code_with_blanks || '').trim();
       if (!code || blanks.length < 1) return null;
+
+      const markerCount = (code.match(/\/\*\s*BLANK\s*\*\//g) || []).length;
+      if (markerCount !== 1) return null;
 
       const firstBlank = blanks[0];
       const normalizedBlanks: ApexBlankItem[] = [

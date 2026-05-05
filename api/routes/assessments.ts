@@ -62,13 +62,6 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         return badRequest(res, 'Assessment deadline has passed');
       }
 
-      if (session.status === 'pending') {
-        await supabase.from('assessment_sessions').update({
-          status: 'in_progress',
-          started_at: new Date().toISOString(),
-        }).eq('id', session.id);
-      }
-
       const assessmentConfig = session.proctoring_data?.assessment_config || {};
       const assessmentMode = (assessmentConfig.assessment_mode === 'apex' || assessmentConfig.assessment_mode === 'dsa')
         ? assessmentConfig.assessment_mode
@@ -162,6 +155,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         coding_count: codingChallenges.length,
         total_time_minutes: session.total_time_minutes ?? 90,
         deadline: session.deadline,
+        started_at: (session as any).started_at ?? null,
         mcq_questions: safeMcq,
         coding_challenges: codingChallenges,
         apex_blanks: apexBlanks,
@@ -170,6 +164,49 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       console.error('[assessments/start] failed', e?.message || e);
       return res.status(500).json({ error: 'Failed to start assessment' });
     }
+  }
+
+  // POST /api/assessments/:sessionId/begin (public)
+  // Starts the timer (sets started_at) and transitions session from pending -> in_progress.
+  if (req.method === 'POST' && segments.length === 3 && segments[2] === 'begin') {
+    const sessionId = segments[1];
+    const { data: session, error } = await supabase
+      .from('assessment_sessions')
+      .select('id, status, started_at, deadline, total_time_minutes')
+      .eq('id', sessionId)
+      .single();
+    if (error || !session) return notFound(res, 'Session not found');
+    if (['completed', 'terminated', 'expired'].includes(session.status)) return badRequest(res, 'Assessment not available');
+
+    if (!session.deadline) {
+      return res.status(500).json({ error: 'Assessment session misconfigured (missing deadline)' });
+    }
+    const deadline = new Date(session.deadline as any);
+    if (Number.isNaN(deadline.getTime())) {
+      return res.status(500).json({ error: 'Assessment session misconfigured (invalid deadline)' });
+    }
+    if (new Date() > deadline) {
+      await supabase.from('assessment_sessions').update({
+        status: 'expired',
+        mcq_score: 0,
+        coding_score: 0,
+        total_score: 0,
+        completed_at: new Date().toISOString(),
+      }).eq('id', session.id);
+      return badRequest(res, 'Assessment deadline has passed');
+    }
+
+    if (session.status === 'pending') {
+      const startedAt = new Date().toISOString();
+      await supabase.from('assessment_sessions').update({
+        status: 'in_progress',
+        started_at: startedAt,
+        updated_at: startedAt,
+      }).eq('id', session.id);
+      return ok(res, { started_at: startedAt });
+    }
+
+    return ok(res, { started_at: (session as any).started_at ?? null });
   }
 
   // GET /api/assessments/:sessionId/apex-blanks

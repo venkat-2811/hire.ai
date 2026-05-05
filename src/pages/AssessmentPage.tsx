@@ -143,6 +143,7 @@ interface AssessmentData {
   coding_count: number;
   total_time_minutes: number;
   deadline: string;
+  started_at?: string | null;
   // Eagerly bundled by the backend — eliminates separate /mcq and /coding fetches
   mcq_questions?: MCQQuestion[];
   coding_challenges?: CodingChallenge[];
@@ -219,6 +220,19 @@ public class CandidateSolution {
   // Timer
   const [timeRemaining, setTimeRemaining] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSubmittedRef = useRef(false);
+
+  const getTimerStorageKey = useCallback((sessionId: string) => {
+    return `assessment_end_ts:${sessionId}`;
+  }, []);
+
+  const computeEndTsFromStartedAt = useCallback((startedAtIso: string, totalMinutes: number) => {
+    const started = new Date(startedAtIso).getTime();
+    if (Number.isNaN(started)) return null;
+    const minutes = Number(totalMinutes) || 0;
+    if (minutes <= 0) return null;
+    return started + minutes * 60 * 1000;
+  }, []);
 
   // ── Webcam initialization ──
   const startCamera = useCallback(async () => {
@@ -467,7 +481,10 @@ public class CandidateSolution {
     timerRef.current = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
-          handleSubmitAssessment();
+          if (!autoSubmittedRef.current) {
+            autoSubmittedRef.current = true;
+            void forceSubmitAssessment('time_expired');
+          }
           return 0;
         }
         return prev - 1;
@@ -545,6 +562,20 @@ public class CandidateSolution {
         }
 
         setLoadingStep('Preparing your environment…');
+
+        // Timer bootstrap:
+        // - If assessment hasn't started yet (no started_at), keep timer at 0.
+        // - If started_at exists (refresh or resumed), compute end_ts and resume countdown.
+        const sessionId = String(data?.session_id || '');
+        const startedAt = data?.started_at;
+        if (sessionId && startedAt) {
+          const endTs = computeEndTsFromStartedAt(startedAt, Number(data?.total_time_minutes) || 0);
+          if (endTs) {
+            localStorage.setItem(getTimerStorageKey(sessionId), String(endTs));
+            const remaining = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
+            setTimeRemaining(remaining);
+          }
+        }
       } catch (e: any) {
         setError(e?.message || 'Failed to load assessment. Please try again.');
       } finally {
@@ -553,7 +584,34 @@ public class CandidateSolution {
     }
 
     loadAssessment();
-  }, [token]);
+  }, [token, computeEndTsFromStartedAt, getTimerStorageKey]);
+
+  const beginAssessment = useCallback(async () => {
+    if (!assessmentData) return;
+    try {
+      const resp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/begin`, {
+        method: 'POST',
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to start assessment');
+      }
+      const data = await resp.json();
+      const startedAt = data?.started_at;
+      const totalMinutes = Number(assessmentData.total_time_minutes) || 0;
+      if (startedAt && totalMinutes > 0) {
+        const endTs = computeEndTsFromStartedAt(startedAt, totalMinutes);
+        if (endTs) {
+          localStorage.setItem(getTimerStorageKey(assessmentData.session_id), String(endTs));
+          const remaining = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
+          setTimeRemaining(remaining);
+          setAssessmentData((prev) => prev ? { ...prev, started_at: startedAt } : prev);
+        }
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to start assessment');
+    }
+  }, [assessmentData, computeEndTsFromStartedAt, getTimerStorageKey]);
 
   const handleMcqAnswer = (questionId: string, optionIndex: number) => {
     if (optionIndex === -1) {
@@ -845,6 +903,67 @@ public class CandidateSolution {
     setShowSubmitConfirmation(true);
   };
 
+  const forceSubmitAssessment = async (_reason: 'time_expired') => {
+    if (!assessmentData || submitting) return;
+    if (showSubmitConfirmation) setShowSubmitConfirmation(false);
+    setSubmitting(true);
+
+    try {
+      if (mcqQuestions.length > 0) {
+        const mcqSubmissions = Object.entries(mcqAnswers).map(([questionId, selectedIndex]) => ({
+          question_id: questionId,
+          selected_index: selectedIndex,
+          time_taken_seconds: 0,
+        }));
+
+        const mcqSubmitResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(mcqSubmissions),
+        });
+        if (!mcqSubmitResp.ok) throw new Error('Failed to submit MCQ answers');
+      }
+
+      if (codingChallenges.length > 0) {
+        for (const [challengeId, code] of Object.entries(codingSolutions)) {
+          const challenge = codingChallenges.find((c) => c.id === challengeId);
+          const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+          const starter = challenge?.starter_code?.[lang] || '';
+          if (!code?.trim() || code === starter) continue;
+          await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ challenge_id: challengeId, code, language: lang, time_taken_seconds: 0 }),
+          });
+        }
+      }
+
+      if (apexBlanks.length > 0) {
+        const resp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/apex-blanks/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(apexBlankAnswers || {}),
+        });
+        if (!resp.ok) throw new Error('Failed to submit Apex blanks');
+      }
+
+      const completeResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/complete`, {
+        method: 'POST',
+      });
+      if (!completeResp.ok) throw new Error('Failed to complete assessment');
+
+      setCompleted(true);
+      stopCamera();
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      }
+    } catch (e) {
+      toast.error('Failed to submit assessment');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const confirmSubmitAssessment = async () => {
     if (!assessmentData || submitting) return;
 
@@ -999,6 +1118,16 @@ public class CandidateSolution {
 
   // Completed state
   if (completed) {
+    const attemptedCodingCountLocal = Object.keys(codingSolutions).filter((id) => {
+      const challenge = codingChallenges.find((c) => c.id === id);
+      const lang = codingLanguages[id] || 'python3';
+      const starter = challenge?.starter_code?.[lang] || '';
+      return !!challenge && (codingSolutions[id] || '').trim() !== '' && codingSolutions[id] !== starter;
+    }).length;
+    const answeredApexCount = Object.entries(apexBlankAnswers || {}).filter(([, blanks]) => {
+      const first = Object.values(blanks || {})[0];
+      return typeof first === 'string' && first.trim().length > 0;
+    }).length;
     return (
       <div className="min-h-screen bg-background p-4 flex flex-col items-center gap-6 py-10">
         <motion.div
@@ -1017,6 +1146,26 @@ public class CandidateSolution {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                {mcqQuestions.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>MCQs answered</span>
+                    <span className="font-medium">{Object.keys(mcqAnswers).length} / {mcqQuestions.length}</span>
+                  </div>
+                )}
+                {apexBlanks.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>Apex questions answered</span>
+                    <span className="font-medium">{answeredApexCount} / {apexBlanks.length}</span>
+                  </div>
+                )}
+                {codingChallenges.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>Coding challenges attempted</span>
+                    <span className="font-medium">{attemptedCodingCountLocal} / {codingChallenges.length}</span>
+                  </div>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground text-center pt-2">
                 The hiring team will review your results and contact you regarding next steps.
               </p>
@@ -1176,7 +1325,7 @@ public class CandidateSolution {
                 </div>
                 <div className="flex items-center gap-2">
                   <Code className="h-4 w-4" />
-                  <span className="text-sm">{assessmentData?.coding_count} Coding Challenges</span>
+                  <span className="text-sm">{isApexMode ? `${apexBlanks.length} Apex Questions` : `${assessmentData?.coding_count} Coding Challenges`}</span>
                 </div>
               </div>
             </div>
@@ -1184,7 +1333,10 @@ public class CandidateSolution {
             <Button
               className="w-full"
               size="lg"
-              onClick={enterFullscreen}
+              onClick={async () => {
+                await beginAssessment();
+                await enterFullscreen();
+              }}
               disabled={!cameraReady}
             >
               <Maximize className="mr-2 h-4 w-4" />
@@ -1267,6 +1419,27 @@ public class CandidateSolution {
                         </span>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {apexBlanks.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span>Apex Questions:</span>
+                      <span className="font-medium">
+                        {Object.entries(apexBlankAnswers || {}).filter(([, blanks]) => {
+                          const first = Object.values(blanks || {})[0];
+                          return typeof first === 'string' && first.trim().length > 0;
+                        }).length} / {apexBlanks.length} answered
+                      </span>
+                    </div>
+                    <Progress
+                      value={(Object.entries(apexBlankAnswers || {}).filter(([, blanks]) => {
+                        const first = Object.values(blanks || {})[0];
+                        return typeof first === 'string' && first.trim().length > 0;
+                      }).length / apexBlanks.length) * 100}
+                      className="h-2"
+                    />
                   </div>
                 )}
                 
@@ -1642,6 +1815,10 @@ public class CandidateSolution {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Code Snippet</div>
+                        <pre className="p-3 text-xs font-mono whitespace-pre-wrap overflow-auto">{apexBlanks[currentApexBlankIndex].code_with_blanks}</pre>
+                      </div>
                       <div className="space-y-2">
                         <Label>Blank:</Label>
                         <input
