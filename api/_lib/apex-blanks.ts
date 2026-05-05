@@ -77,11 +77,12 @@ Difficulty: ${difficulty}
 STRICT REQUIREMENTS:
 - These are NOT DSA problems.
 - Each question must be based on practical Salesforce/Apex knowledge.
-- Provide a partial Apex code snippet where certain tokens are replaced with placeholders like [[BLANK_1]].
-- Each question must have 3 to 8 blanks.
-- Blanks should test syntax and platform concepts: SOQL, DML, triggers, bulkification, governor limits, sharing, exception handling, collections, null checks.
+- Each question must contain EXACTLY ONE blank.
+- Do NOT use placeholders like [[blank]] or [[BLANK_1]] in the question text or code.
+- Do NOT provide hints, guidance, or suggestions for the blank.
+- The blank should test syntax and platform concepts: SOQL, DML, triggers, bulkification, governor limits, sharing, exception handling, collections, null checks.
 - Keep snippets small enough to read quickly (roughly 15-40 lines).
-- For each blank, provide the EXACT expected answer string (case-sensitive) and a short guidance message.
+- For the blank, provide the EXACT expected answer string (case-sensitive).
 
 OUTPUT JSON ONLY:
 {
@@ -96,9 +97,9 @@ OUTPUT JSON ONLY:
       "blanks": [
         {
           "blank_id": "BLANK_1",
-          "placeholder": "[[BLANK_1]]",
+          "placeholder": "",
           "expected_answer": "...",
-          "guidance": "..."
+          "guidance": ""
         }
       ]
     }
@@ -129,12 +130,23 @@ OUTPUT JSON ONLY:
       const code = String(q?.code_with_blanks || '').trim();
       if (!code || blanks.length < 1) return null;
 
+      const firstBlank = blanks[0];
+      const normalizedBlanks: ApexBlankItem[] = [
+        {
+          blank_id: String(firstBlank.blank_id || 'BLANK_1').trim() || 'BLANK_1',
+          placeholder: '',
+          expected_answer: String(firstBlank.expected_answer || '').trim(),
+        },
+      ].filter((b) => b.expected_answer.length > 0);
+
+      if (normalizedBlanks.length !== 1) return null;
+
       return {
         id: stableId('apex_blank'),
         title: String(q?.title || `Apex Fill-in-the-Blanks ${i + 1}`).trim(),
         instructions: String(q?.instructions || 'Fill in the missing Apex syntax.').trim(),
         code_with_blanks: code,
-        blanks,
+        blanks: normalizedBlanks,
         points: typeof q?.points === 'number' ? q.points : 10,
         topic: String(q?.topic || 'General').trim(),
         difficulty: (String(q?.difficulty || difficulty).toLowerCase() as any) || 'medium',

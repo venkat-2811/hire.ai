@@ -99,32 +99,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         const stored: any[] = content.apex_blanks || [];
         if (stored.length > 0) return stored;
 
-        const generated = await generateApexFillInTheBlanks({
-          job: {
-            title: session.job_descriptions?.title,
-            role: session.job_descriptions?.role,
-            level: session.job_descriptions?.level,
-            description: session.job_descriptions?.description || '',
-            must_have_skills: session.job_descriptions?.must_have_skills || [],
-            good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
-          },
-          count: Math.max(2, Math.min(8, codingCount || 4)),
-          difficulty,
-        });
-
-        const proctoring = session.proctoring_data || {};
-        await supabase.from('assessment_sessions').update({
-          proctoring_data: {
-            ...proctoring,
-            assessment_content: {
-              ...(proctoring.assessment_content || {}),
-              apex_blanks: generated,
-            },
-          },
-          updated_at: new Date().toISOString(),
-        }).eq('id', session.id);
-
-        return generated;
+        throw new Error('Apex questions are not available for this session. Please ask the recruiter to resend the assessment.');
       };
 
       // Retrieve pre-generated MCQ questions only
@@ -141,34 +116,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
           console.log('[getMcqQuestions] Returning cached MCQs:', storedMcq.length);
           return storedMcq;
         }
-        try {
-          const generated = await generateAssessmentMcqsForJob({
-            job: {
-              title: session.job_descriptions?.title,
-              role: session.job_descriptions?.role,
-              level: session.job_descriptions?.level,
-              description: '',
-              must_have_skills: session.job_descriptions?.must_have_skills || [],
-              good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
-            },
-            mcqCount,
-            difficulty,
-          });
-
-          if (!generated.length) {
-            throw new Error('MCQ generation returned 0 questions');
-          }
-
-          await supabase.from('assessment_sessions').update({
-            mcq_questions: generated,
-            updated_at: new Date().toISOString(),
-          }).eq('id', session.id);
-
-          return generated;
-        } catch (e: any) {
-          console.error('[getMcqQuestions] MCQ lazy generation failed:', e?.message || e);
-          throw new Error('MCQ questions are not available for this session. Please contact the recruiter.');
-        }
+        throw new Error('MCQ questions are not available for this session. Please ask the recruiter to resend the assessment.');
       };
 
       // Fetch coding challenges from DSA bank (or Salesforce-Apex generator when Apex mode is enabled)
@@ -187,61 +135,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
           }
         }
 
-        if (isApexMode) {
-          const challenges = await generateSalesforceApexChallenges({
-            job: {
-              title: session.job_descriptions?.title,
-              role: session.job_descriptions?.role,
-              level: session.job_descriptions?.level,
-              description: session.job_descriptions?.description || '',
-              must_have_skills: session.job_descriptions?.must_have_skills || [],
-              good_to_have_skills: session.job_descriptions?.good_to_have_skills || [],
-            },
-            codingCount,
-            difficulty,
-          });
-          if (!challenges.length) return [];
-          await supabase.from('assessment_sessions').update({
-            coding_challenges: challenges,
-            updated_at: new Date().toISOString(),
-          }).eq('id', session.id).then(() => {});
-          return challenges;
-        }
-
-        let dist: string[];
-        if (difficulty === 'easy') dist = Array(codingCount).fill('easy');
-        else if (difficulty === 'hard') dist = codingCount >= 2 ? ['medium', ...Array(codingCount - 1).fill('hard')] : ['hard'];
-        else dist = codingCount >= 2 ? ['easy', ...Array(codingCount - 1).fill('medium')] : ['medium'];
-
-        try {
-          const lookups = await Promise.all(dist.map(d =>
-            supabase.from('dsa_problems').select('*').eq('difficulty', d).eq('is_active', true).limit(20)
-          ));
-          const selected: any[] = [];
-          for (const { data: problems } of lookups) {
-            if (problems?.length) {
-              const avail = problems.filter((p: any) => !selected.some(s => s.id === p.id));
-              if (avail.length) selected.push(avail[Math.floor(Math.random() * avail.length)]);
-            }
-          }
-          if (!selected.length) return [];
-          const challenges = selected.map((p: any) => {
-            const pub = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
-            return {
-              id: p.id, slug: p.slug, title: p.title, description: p.description,
-              constraints: p.constraints || '', examples: p.examples || [],
-              starter_code: p.starter_code || {},
-              test_cases: pub.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
-              points: p.points, time_limit_seconds: p.time_limit_seconds,
-              supported_languages: Object.keys(p.starter_code || {}),
-            };
-          });
-          supabase.from('assessment_sessions').update({
-            coding_problem_ids: selected.map((p: any) => p.id),
-            coding_challenges: challenges, updated_at: new Date().toISOString(),
-          }).eq('id', session.id).then(() => {});
-          return challenges;
-        } catch (e) { console.error('[start] Coding fetch failed:', e); return []; }
+        throw new Error('Coding challenges are not available for this session. Please ask the recruiter to resend the assessment.');
       };
 
       // Run in parallel — halves the wait time
@@ -297,34 +191,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
     const stored: any[] = content.apex_blanks || [];
     if (stored.length) return ok(res, stored);
 
-    const count = Math.max(2, Math.min(8, Number(session.coding_challenge_count || 4)));
-    const difficulty = assessmentConfig.difficulty || session.difficulty || 'medium';
-    const generated = await generateApexFillInTheBlanks({
-      job: {
-        title: (session as any).job_descriptions?.title,
-        role: (session as any).job_descriptions?.role,
-        level: (session as any).job_descriptions?.level,
-        description: (session as any).job_descriptions?.description || '',
-        must_have_skills: (session as any).job_descriptions?.must_have_skills || [],
-        good_to_have_skills: (session as any).job_descriptions?.good_to_have_skills || [],
-      },
-      count,
-      difficulty,
-    });
-
-    const proctoring = session.proctoring_data || {};
-    await supabase.from('assessment_sessions').update({
-      proctoring_data: {
-        ...proctoring,
-        assessment_content: {
-          ...(proctoring.assessment_content || {}),
-          apex_blanks: generated,
-        },
-      },
-      updated_at: new Date().toISOString(),
-    }).eq('id', sessionId);
-
-    return ok(res, generated);
+    return badRequest(res, 'Apex blanks are not available for this session. Please ask the recruiter to resend the assessment.');
   }
 
   // POST /api/assessments/:sessionId/apex-blanks/submit
@@ -996,7 +863,9 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       const includeCoding = assessmentMode === 'apex' ? false : (body.include_coding !== false);
       const difficulty = (body.difficulty as string) || 'medium';
       const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
+      const apexBlanksCount = assessmentMode === 'apex' ? Number(body.coding_challenge_count ?? 4) : 0;
       const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
+      const effectiveCodingCount = assessmentMode === 'apex' ? apexBlanksCount : codingCount;
 
       // Deadline: prefer explicit datetime from body.deadline, fallback to deadline_hours
       let deadline: Date;
@@ -1046,9 +915,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         // Coding time per challenge based on difficulty
         const codingTimePerChallenge = difficulty === 'easy' ? 15 : difficulty === 'hard' ? 30 : 20;
 
-        totalTimeMinutes = Math.ceil(
-          (mcqCount * mcqTimePerQuestion) + (codingCount * codingTimePerChallenge)
-        );
+        totalTimeMinutes = Math.ceil((mcqCount * mcqTimePerQuestion) + (effectiveCodingCount * codingTimePerChallenge));
 
         // Ensure minimum time of 15 minutes
         totalTimeMinutes = Math.max(15, totalTimeMinutes);
@@ -1060,15 +927,16 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       for (const c of candidates) {
         try {
           const token = crypto.randomBytes(32).toString('base64url');
+          const sessionId = uuidv4();
           const { error: insertError } = await supabase.from('assessment_sessions').insert({
-            id: uuidv4(),
+            id: sessionId,
             candidate_id: c.id,
             job_id: jobId,
             token,
             status: 'pending',
             deadline: deadline.toISOString(),
             mcq_question_count: mcqCount,
-            coding_challenge_count: codingCount,
+            coding_challenge_count: assessmentMode === 'apex' ? effectiveCodingCount : codingCount,
             total_time_minutes: totalTimeMinutes,
             mcq_questions: [],
             coding_challenges: [],
@@ -1092,6 +960,98 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
           if (insertError) {
             console.error('[assessments/invite] DB insert failed for candidate', c.id, insertError.message);
             failed.push(c.id);
+            continue;
+          }
+
+          try {
+            let generatedMcqs: any[] = [];
+            let generatedCoding: any[] = [];
+            let generatedApexBlanks: any[] = [];
+
+            if (includeMcq && mcqCount > 0) {
+              generatedMcqs = await generateAssessmentMcqsForJob({
+                job: {
+                  title: job.title,
+                  role: job.role,
+                  level: job.level,
+                  description: job.description || '',
+                  must_have_skills: job.must_have_skills || [],
+                  good_to_have_skills: job.good_to_have_skills || [],
+                },
+                mcqCount,
+                difficulty,
+              });
+            }
+
+            if (assessmentMode === 'apex') {
+              if (effectiveCodingCount > 0) {
+                generatedApexBlanks = await generateApexFillInTheBlanks({
+                  job: {
+                    title: job.title,
+                    role: job.role,
+                    level: job.level,
+                    description: job.description || '',
+                    must_have_skills: job.must_have_skills || [],
+                    good_to_have_skills: job.good_to_have_skills || [],
+                  },
+                  count: Math.max(1, Math.min(20, effectiveCodingCount)),
+                  difficulty,
+                });
+              }
+            } else if (includeCoding && codingCount > 0) {
+              let dist: string[];
+              if (difficulty === 'easy') dist = Array(codingCount).fill('easy');
+              else if (difficulty === 'hard') dist = codingCount >= 2 ? ['medium', ...Array(codingCount - 1).fill('hard')] : ['hard'];
+              else dist = codingCount >= 2 ? ['easy', ...Array(codingCount - 1).fill('medium')] : ['medium'];
+
+              const lookups = await Promise.all(dist.map(d =>
+                supabase.from('dsa_problems').select('*').eq('difficulty', d).eq('is_active', true).limit(20)
+              ));
+              const selected: any[] = [];
+              for (const { data: problems } of lookups) {
+                if (problems?.length) {
+                  const avail = problems.filter((p: any) => !selected.some(s => s.id === p.id));
+                  if (avail.length) selected.push(avail[Math.floor(Math.random() * avail.length)]);
+                }
+              }
+
+              generatedCoding = selected.map((p: any) => {
+                const pub = (p.test_cases || []).filter((tc: any) => tc.visibility === 'public');
+                return {
+                  id: p.id, slug: p.slug, title: p.title, description: p.description,
+                  constraints: p.constraints || '', examples: p.examples || [],
+                  starter_code: p.starter_code || {},
+                  test_cases: pub.map((tc: any) => ({ id: tc.id, input: tc.input, expected_output: tc.expected_output })),
+                  points: p.points, time_limit_seconds: p.time_limit_seconds,
+                  supported_languages: Object.keys(p.starter_code || {}),
+                };
+              });
+            }
+
+            await supabase.from('assessment_sessions').update({
+              mcq_questions: Array.isArray(generatedMcqs) ? generatedMcqs : [],
+              coding_challenges: Array.isArray(generatedCoding) ? generatedCoding : [],
+              proctoring_data: {
+                tab_switches: 0,
+                fullscreen_exits: 0,
+                copy_paste_attempts: 0,
+                warnings: [],
+                terminated: false,
+                assessment_config: {
+                  include_mcq: includeMcq,
+                  include_coding: includeCoding,
+                  difficulty,
+                  is_apex_mode: isApexMode,
+                  assessment_mode: assessmentMode,
+                },
+                assessment_content: assessmentMode === 'apex' ? { apex_blanks: generatedApexBlanks } : undefined,
+              },
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessionId);
+          } catch (genErr: any) {
+            console.error('[assessments/invite] Question generation failed for candidate', c.id, genErr?.message || genErr);
+            failed.push(c.id);
+            await supabase.from('assessment_sessions').delete().eq('id', sessionId);
             continue;
           }
 

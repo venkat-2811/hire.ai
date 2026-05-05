@@ -1573,6 +1573,12 @@ public class CandidateSolution {
                           >
                             Next Section →
                           </Button>
+                        ) : currentMcqIndex === mcqQuestions.length - 1 && hasApexBlanks ? (
+                          <Button
+                            onClick={() => setCurrentTab('apex_blanks')}
+                          >
+                            Next Section →
+                          </Button>
                         ) : (
                           <Button
                             onClick={() => setCurrentMcqIndex((prev) => Math.min(mcqQuestions.length - 1, prev + 1))}
@@ -1636,25 +1642,19 @@ public class CandidateSolution {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="rounded-lg border bg-muted/20 p-4">
-                        <pre className="text-sm whitespace-pre-wrap leading-relaxed">{apexBlanks[currentApexBlankIndex].code_with_blanks}</pre>
-                      </div>
-
-                      <div className="space-y-3">
-                        {(apexBlanks[currentApexBlankIndex].blanks || []).map((b) => (
-                          <div key={b.blank_id} className="space-y-1">
-                            <Label>{b.placeholder}</Label>
-                            <input
-                              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                              value={apexBlankAnswers?.[apexBlanks[currentApexBlankIndex].id]?.[b.blank_id] || ''}
-                              onChange={(e) => handleApexBlankChange(apexBlanks[currentApexBlankIndex].id, b.blank_id, e.target.value)}
-                              placeholder="Type the missing Apex syntax"
-                            />
-                            {b.guidance && (
-                              <div className="text-xs text-muted-foreground">{b.guidance}</div>
-                            )}
-                          </div>
-                        ))}
+                      <div className="space-y-2">
+                        <Label>Blank:</Label>
+                        <input
+                          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                          value={apexBlankAnswers?.[apexBlanks[currentApexBlankIndex].id]?.[(apexBlanks[currentApexBlankIndex].blanks || [])[0]?.blank_id || 'BLANK_1'] || ''}
+                          onChange={(e) =>
+                            handleApexBlankChange(
+                              apexBlanks[currentApexBlankIndex].id,
+                              (apexBlanks[currentApexBlankIndex].blanks || [])[0]?.blank_id || 'BLANK_1',
+                              e.target.value
+                            )
+                          }
+                        />
                       </div>
 
                       <div className="flex items-center justify-between">

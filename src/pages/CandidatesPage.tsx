@@ -302,7 +302,8 @@ export default function CandidatesPage() {
           job_id: selectedJobId,
           deadline: deadlineDate.toISOString(),
           mcq_question_count: includeMcq ? mcqCount : 0,
-          coding_challenge_count: includeCoding ? codingCount : 0,
+          // In APEX mode, `codingCount` represents the number of Apex fill-in-the-blanks questions.
+          coding_challenge_count: assessmentMode === 'apex' ? codingCount : (includeCoding ? codingCount : 0),
           difficulty: assessmentDifficulty,
           include_mcq: includeMcq,
           include_coding: includeCoding,
@@ -871,7 +872,7 @@ export default function CandidatesPage() {
                     max={50}
                     value={mcqCount}
                     onChange={(e) => setMcqCount(Math.max(0, Number(e.target.value) || 0))}
-                    disabled={!includeMcq || assessmentMode === 'apex'}
+                    disabled={!includeMcq}
                   />
                 </div>
                 <div className="space-y-2">

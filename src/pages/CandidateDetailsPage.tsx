@@ -437,6 +437,60 @@ export default function CandidateDetailsPage() {
                             </div>
                           </div>
                         )}
+
+                        {/* Apex Fill-in-the-Blanks Results */}
+                        {Array.isArray((assessmentDetails.proctoring_data as any)?.assessment_content?.apex_blanks) && (
+                          (assessmentDetails.proctoring_data as any).assessment_content.apex_blanks.length > 0
+                        ) && (
+                          <div>
+                            <h4 className="font-semibold text-sm mb-3">Apex Fill-in-the-Blanks</h4>
+                            <div className="space-y-3">
+                              {(((assessmentDetails.proctoring_data as any)?.assessment_content?.apex_blanks) as any[]).map((q: any, idx: number) => {
+                                const qid = String(q?.id || idx);
+                                const submissions = (assessmentDetails.proctoring_data as any)?.submissions?.apex_blanks || {};
+                                const results = (assessmentDetails.proctoring_data as any)?.results?.apex_blanks || [];
+                                const qSub = submissions?.[qid] || {};
+                                const firstBlankId = Array.isArray(q?.blanks) && q.blanks[0]?.blank_id ? String(q.blanks[0].blank_id) : 'BLANK_1';
+                                const candidateAnswer = typeof qSub?.[firstBlankId] === 'string' ? qSub[firstBlankId] : '';
+                                const qResult = Array.isArray(results) ? results.find((r: any) => String(r?.question_id) === qid) : null;
+
+                                return (
+                                  <div key={qid} className="p-4 rounded-lg border">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1">
+                                        <div className="font-medium text-sm">{safeRender(q?.title) || `Apex Question ${idx + 1}`}</div>
+                                        {q?.instructions && (
+                                          <div className="text-xs text-muted-foreground mt-1">{safeRender(q.instructions)}</div>
+                                        )}
+                                      </div>
+                                      {qResult && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {safeRender(qResult.score)} / {safeRender(qResult.max_score)}
+                                        </Badge>
+                                      )}
+                                    </div>
+
+                                    <div className="mt-3 text-sm">
+                                      <div className="text-xs text-muted-foreground">Candidate Response</div>
+                                      <div className="mt-1 rounded-md bg-muted p-2 text-sm whitespace-pre-wrap">
+                                        {candidateAnswer ? safeRender(candidateAnswer) : <span className="text-muted-foreground">(No answer)</span>}
+                                      </div>
+                                    </div>
+
+                                    {qResult?.feedback && (
+                                      <div className="mt-3 text-sm">
+                                        <div className="text-xs text-muted-foreground">Evaluation Feedback</div>
+                                        <div className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">
+                                          {safeRender(qResult.feedback)}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </TabsContent>
                     )}
 
