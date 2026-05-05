@@ -1118,16 +1118,6 @@ public class CandidateSolution {
 
   // Completed state
   if (completed) {
-    const attemptedCodingCountLocal = Object.keys(codingSolutions).filter((id) => {
-      const challenge = codingChallenges.find((c) => c.id === id);
-      const lang = codingLanguages[id] || 'python3';
-      const starter = challenge?.starter_code?.[lang] || '';
-      return !!challenge && (codingSolutions[id] || '').trim() !== '' && codingSolutions[id] !== starter;
-    }).length;
-    const answeredApexCount = Object.entries(apexBlankAnswers || {}).filter(([, blanks]) => {
-      const first = Object.values(blanks || {})[0];
-      return typeof first === 'string' && first.trim().length > 0;
-    }).length;
     return (
       <div className="min-h-screen bg-background p-4 flex flex-col items-center gap-6 py-10">
         <motion.div
@@ -1140,32 +1130,12 @@ public class CandidateSolution {
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
                 <CheckCircle className="h-8 w-8 text-success" />
               </div>
-              <CardTitle className="text-2xl">Assessment Completed!</CardTitle>
+              <CardTitle className="text-2xl">Assessment Submitted Successfully</CardTitle>
               <CardDescription className="text-base">
                 Thank you for completing the technical assessment. Your responses have been submitted for evaluation.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
-                {mcqQuestions.length > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span>MCQs answered</span>
-                    <span className="font-medium">{Object.keys(mcqAnswers).length} / {mcqQuestions.length}</span>
-                  </div>
-                )}
-                {apexBlanks.length > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span>Apex questions answered</span>
-                    <span className="font-medium">{answeredApexCount} / {apexBlanks.length}</span>
-                  </div>
-                )}
-                {codingChallenges.length > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span>Coding challenges attempted</span>
-                    <span className="font-medium">{attemptedCodingCountLocal} / {codingChallenges.length}</span>
-                  </div>
-                )}
-              </div>
               <p className="text-sm text-muted-foreground text-center pt-2">
                 The hiring team will review your results and contact you regarding next steps.
               </p>
@@ -1809,7 +1779,10 @@ public class CandidateSolution {
                 {apexBlanks[currentApexBlankIndex] && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-lg">{apexBlanks[currentApexBlankIndex].title}</CardTitle>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">Question {currentApexBlankIndex + 1} of {apexBlanks.length}</CardTitle>
+                        <Badge variant="outline">{apexBlanks[currentApexBlankIndex].points} pts</Badge>
+                      </div>
                       <CardDescription>
                         {apexBlanks[currentApexBlankIndex].instructions}
                       </CardDescription>
