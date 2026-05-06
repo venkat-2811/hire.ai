@@ -928,8 +928,8 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       if (!job) return notFound(res, 'Job not found');
       
       // Auto-determine assessment mode based on job role
-      const isSalesforceRole = isSalesforceRole(job);
-      const expectedAssessmentMode = isSalesforceRole ? 'apex' : 'dsa';
+      const isRoleSalesforce = isSalesforceRole(job);
+      const expectedAssessmentMode = isRoleSalesforce ? 'apex' : 'dsa';
       
       // Validate assessment_mode if provided in request
       if (body.assessment_mode && body.assessment_mode !== expectedAssessmentMode) {
