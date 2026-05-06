@@ -538,7 +538,7 @@ Evaluate and return JSON:
 
     const { data: job } = await supabase
       .from('job_descriptions')
-      .select('id, title, role, level, must_have_skills, description')
+      .select('id, title, role, level, must_have_skills, good_to_have_skills, description')
       .eq('id', job_id)
       .eq('created_by', user.id)
       .single();
@@ -569,7 +569,14 @@ Evaluate and return JSON:
         // Generate personalized questions per candidate using their resume data (GPT-4.1-mini)
         console.log('[ai-interview/invite] Generating personalized questions for candidate:', c.id, 'with resume:', !!c.resume_parsed_data);
         const questions = await generateCandidateInterviewQuestions(
-          { title: job.title, role: job.role, level: job.level, must_have_skills: job.must_have_skills || [], description: job.description || '' },
+          {
+            title: job.title,
+            role: job.role,
+            level: job.level,
+            must_have_skills: job.must_have_skills || [],
+            good_to_have_skills: (job as any).good_to_have_skills || [],
+            description: job.description || '',
+          },
           { full_name: c.full_name, resume_parsed_data: c.resume_parsed_data },
           requestedCount
         );
