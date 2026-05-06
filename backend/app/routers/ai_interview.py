@@ -593,7 +593,12 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
     }
     difficulty_desc = difficulty_descriptions.get(difficulty, difficulty_descriptions['medium'])
     
-    prompt = f"""Generate EXACTLY {question_count} highly diverse, natural, and completely independent interview questions for a {level} {title} position.
+    session_seed = uuid.uuid4().hex[:8]
+    
+    prompt = f"""Generate EXACTLY {question_count} highly dynamic, completely unique, and independent interview questions for a {level} {title} position.
+
+SESSION SEED (Force Randomization): {session_seed}
+USE THIS SEED to ensure the phrasing, topic order, and interview flow are entirely different from any previous generations.
 
 DIFFICULTY: {difficulty_desc}
 
@@ -603,19 +608,26 @@ DISTRIBUTION:
 - {situational_count} Situational/problem-solving questions
 - {motivation_count} Question about career goals/motivation
 
-CANDIDATE CONTEXT (Use this to personalize, but DO NOT interrogate them on it):
-{str(resume_data)[:500] if resume_data else "No specific resume data provided."}
+CANDIDATE CONTEXT (Crucial for Contextualizing Questions):
+{str(resume_data)[:1000] if resume_data else "No specific resume data provided. Ask role-specific domain questions."}
 
-CRITICAL RULES (MUST FOLLOW STRICTLY):
-1. PURELY INDEPENDENT: Every question MUST stand completely alone. 
-2. NO FOLLOW-UPS OR ASSUMPTIONS: NEVER assume the candidate missed information in a previous question. DO NOT use phrases like "Since you didn't mention...", "Following up on...", or "You didn't explain...".
-3. NO CORRECTIVE TONE: Do not act like an examiner catching missing words. Maintain a smooth, natural conversational flow that switches topics cleanly.
-4. NO REPETITION: Do not use the same starting phrases repeatedly (Avoid starting every question with "Tell me about..." or "Mention your experience..."). Use varied, natural openings (e.g., "What challenges did you face...", "Why did you choose...", "Can you walk me through...").
-5. VERBAL ONLY: No coding, syntax, or algorithm implementation tasks. Only conceptual, architectural, or experience-based discussions.
-6. YOU MUST RETURN EXACTLY {question_count} QUESTIONS.
+CRITICAL RULES FOR QUESTION SELECTION & FLOW (MUST FOLLOW STRICTLY):
+1. ZERO GENERIC OPENINGS: NEVER start with "Walk me through your experience", "Tell me about your background", or "Mention your technical experience". Dive directly into a highly contextual, resume-driven, or role-specific question (e.g., "I see you used React in your last project, what state management approach did you choose?").
+2. INTELLIGENT PRIORITIZATION:
+   - Fresher/Intern: Focus on projects, core concepts, and learning experiences.
+   - Experienced: Focus on production issues, architecture, scaling, and deployment.
+   - Strong Projects: Ask about implementation details, logic challenges, and why certain tech was used.
+3. ROLE-SPECIFIC NATURAL STYLES (Emulate these):
+   - Python: "What was the most challenging logic you implemented in your Python backend?"
+   - Salesforce: "Can you explain a complex Apex trigger or flow you built recently?"
+   - AWS: "How did you manage infrastructure or deployment in your last project?"
+4. PURELY INDEPENDENT: Every question MUST stand completely alone. 
+5. NO CORRECTIVE FOLLOW-UPS: NEVER assume the candidate missed information. DO NOT use phrases like "Since you didn't mention...", "Following up on...", or "You didn't explain...".
+6. VERBAL ONLY: No coding, syntax, or algorithm implementation tasks.
+7. MAXIMUM DIVERSITY: Randomize question structures, openings, and topic order across the {question_count} questions.
 
 Return as JSON array with EXACTLY {question_count} questions:
-[{{"text": "Completely standalone, natural question text", "type": "technical|behavioral|situational", "duration": 120, "key_points": ["point1", "point2"]}}]
+[{{"text": "Completely standalone, contextual, natural question text", "type": "technical|behavioral|situational", "duration": 120, "key_points": ["point1", "point2"]}}]
 """
     
     try:
