@@ -7,64 +7,68 @@ def get_technical_questions_prompt(
     candidate_skills: str, experience_years: float, num_questions: int
 ) -> tuple[str, str]:
 
-    system_prompt = f"""You are an expert technical interviewer creating advanced, independent interview questions.
-Your role is to generate thoughtful, scenario-based questions that assess deep technical understanding.
+    system_prompt = f"""You are an expert technical interviewer conducting a verbal AI interview.
+Your role is to generate conversational, experience-based, and theoretical discussion questions that simulate a real human HR + Technical discussion.
 
-=== CRITICAL RULES FOR INTERVIEW QUESTIONS ===
+=== CRITICAL RULES FOR QUESTION GENERATION ===
 
-RULE 1 — INDEPENDENCE (MOST IMPORTANT):
-Every question MUST stand completely on its own. Questions must NEVER:
-- Reference or build upon a previous question ("Following up on that...", "Similarly to what we discussed...")
-- Assume the candidate has answered a prior question
-- Be a follow-up, clarification, or extension of another question
-- Use phrases like "Also...", "Additionally...", "What about...", "Now tell me about..."
-Each question is asked in isolation. A candidate could answer question 5 without ever seeing questions 1-4.
+RULE 1 — 50/50 BALANCE & OVERLAP FOCUS:
+Questions MUST be generated based on:
+- 50% Candidate Resume background and past projects
+- 50% Job Requirements (Job Description, Must-Have, and Good-to-Have skills)
+Identify common technologies, skills, tools, frameworks, and experiences between the candidate's resume and job requirements.
+Focus primarily on these OVERLAPPING skills.
 
-RULE 2 — NO REPETITION:
-Each question MUST cover a different skill, concept, or scenario. Never ask two questions about the same topic.
+RULE 2 — NO CODING OR WRITTEN QUESTIONS (ABSOLUTE PROHIBITION):
+This is a VERBAL ONLY interview platform. Candidates cannot write code.
+NEVER generate questions like: "Write a function", "Implement an algorithm", or "Write code for...".
+Questions MUST be theoretical, experience-based, or discussion-oriented.
+Good examples: "What experience do you have in Python?", "Can you explain the project mentioned in your resume?", "How did you implement authentication in your project?", "What challenges did you face while working with React?"
 
-RULE 3 — BROAD SKILL COVERAGE:
-Distribute questions across ALL skills mentioned: {must_have} and {good_to_have}
-Do NOT cluster multiple questions on the same technology or concept.
+RULE 3 — ADAPTIVE DIFFICULTY & ROLE-SPECIFICITY:
+Difficulty must vary dynamically based on the Job Role, Candidate Experience, and Seniority level:
+- Fresher/Junior: Focus on basic conceptual and project-based questions.
+- Mid-level: Focus on implementation details, challenges, and architecture.
+- Experienced/Senior: Focus on scenario-based problem solving, system design, and optimization.
+Questions must be highly specific to the role (e.g., Backend -> APIs/DBs; Frontend -> UI/State; AI/ML -> Models/Training; Salesforce -> Apex/Triggers).
 
-RULE 4 — STANDALONE SCENARIOS:
-Each question must provide its own complete context (role, situation, constraints) within the question text itself.
-Never rely on prior context being established.
+RULE 4 — INDEPENDENCE & NO REPETITION:
+Every question MUST stand completely on its own without referencing prior questions.
+Improve randomness and avoid static/repeated question sets. Each interview should feel completely unique and contextual to the candidate.
 
-RULE 5 — VERBAL-FRIENDLY:
-Questions must be answerable verbally in 2-5 minutes. Focus on reasoning, approaches, and trade-offs — not code syntax."""
+RULE 5 — VERBAL-FRIENDLY & HUMAN-LIKE:
+Questions must be concise, natural, human-sounding, and answerable verbally in 2-5 minutes."""
 
-    user_prompt = f"""Generate {num_questions} unique, independent technical interview questions for a {role} position at {level} level.
+    user_prompt = f"""Generate {num_questions} unique, independent verbal interview questions for a {role} position at {level} level.
 
 CONTEXT:
 - Role: {role}
-- Level: {level}
+- Seniority Level: {level}
 - Job Description: {description[:800]}
 - Must-Have Skills: {must_have}
 - Preferred Skills: {good_to_have}
-- Candidate Background: {candidate_skills} ({experience_years} years experience)
-- Difficulty Range: {min_diff}-{max_diff} (scale 1-5)
+- Candidate Background & Resume: {candidate_skills}
+- Candidate Experience: {experience_years} years
+- Target Difficulty Level: {min_diff}-{max_diff} (scale 1-5, adapt based on candidate experience and level)
 - Uniqueness Seed: {seed}
 
 ABSOLUTE REQUIREMENTS:
-1. INDEPENDENT: Every question is self-contained — no references to "previous questions", "as mentioned", or "following up"
-2. UNIQUE TOPICS: Each question covers a different skill/concept — no repetition across the {num_questions} questions
-3. SCENARIO-BASED: Present realistic technical scenarios, not abstract "explain X" questions
-4. VERBAL-FRIENDLY: Answerable in 2-5 minutes verbally, no code writing required
-5. BROAD COVERAGE: Spread evenly across must-have skills: {must_have} AND preferred skills: {good_to_have}
-6. PRACTICAL: Focus on real-world challenges a {role} would face at {level} level
-7. NO CODE REQUIREMENTS: Emphasize concepts, reasoning, and problem-solving approaches over syntax
+1. 50/50 BALANCE: Half based on the candidate's specific resume projects/skills, half based on core JD requirements. Focus on the overlap.
+2. NO CODE WRITING: The candidate cannot write code. Ask only theoretical, architectural, and experience-based discussion questions.
+3. ADAPTIVE: Tailor the depth and complexity exactly to the {level} level and {experience_years} years of experience.
+4. ROLE-SPECIFIC: Ensure the topics are highly relevant to a {role}.
+5. NATURAL TONE: Keep questions conversational, clear, and human-like. Simulate a real technical discussion.
 {previous_q_text}
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Complete standalone scenario-based technical question with full context",
+            "question_text": "Complete standalone conversational question (e.g. 'Can you explain how you implemented X in your project?')",
             "difficulty_level": 3,
-            "expected_answer": "Key points a strong answer should cover",
+            "expected_answer": "Key points a strong verbal answer should cover",
             "time_limit_seconds": 180,
-            "focus_area": "Specific technical domain being assessed"
+            "focus_area": "Specific overlapping skill or concept being discussed"
         }}
     ]
 }}"""
@@ -128,16 +132,19 @@ Return JSON:
 
 def get_interview_questions_general_prompt(job_description: Dict[str, Any], resume_data: Dict[str, Any], num_technical: int, num_behavioral: int, difficulty: int) -> tuple[str, str]:
     import json
-    system_instruction = """You are an expert interview conductor creating comprehensive, independent assessment questions.
-Your role is to generate balanced, relevant questions where each question is fully self-contained.
+    system_instruction = """You are an expert interview conductor creating comprehensive, independent assessment questions for a verbal AI interview.
+Your role is to generate balanced, relevant, and conversational questions where each is fully self-contained.
 
 === CRITICAL RULES ===
-1. INDEPENDENCE: Every question MUST be standalone — no references to other questions, prior answers, or "following up"
-2. NO REPETITION: Each question tests a different skill, concept, or competency
-3. COMPLETE CONTEXT: Each question provides all necessary context within itself
-4. NEVER use: "As mentioned", "Following up", "Also", "Similarly", "What about" to link questions"""
+1. 50/50 BALANCE: 50% based on Candidate Resume, 50% on Job Requirements. Focus on OVERLAPPING skills.
+2. NO CODING/WRITTEN QUESTIONS: This is a verbal discussion. Never ask candidates to "write code", "implement algorithms", or "write a function".
+3. ADAPTIVE: Scale difficulty appropriately for the candidate's experience level and job role.
+4. INDEPENDENCE: Every question MUST be standalone — no references to other questions, prior answers, or "following up".
+5. HUMAN-LIKE TONE: Simulate a real human HR + technical discussion. Use conversational phrasing like "Can you explain how you...", "What challenges did you face when...".
+6. NO REPETITION: Avoid static question sets. Each question tests a different skill, concept, or competency.
+7. NEVER use: "As mentioned", "Following up", "Also", "Similarly", "What about" to link questions."""
 
-    user_prompt = f"""Generate interview questions for this candidate and role.
+    user_prompt = f"""Generate conversational, verbal interview questions for this candidate and role.
 
 JOB DETAILS:
 - Title: {job_description.get('title', 'N/A')}
@@ -151,27 +158,26 @@ CANDIDATE PROFILE:
 {json.dumps(resume_data, indent=2)}
 
 INTERVIEW REQUIREMENTS:
-- Technical Questions: {num_technical} — each covering a DIFFERENT skill from the must-have and preferred skills list
-- Behavioral Questions: {num_behavioral} — each assessing a DIFFERENT professional competency
+- Technical Questions: {num_technical}
+- Behavioral Questions: {num_behavioral}
 - Target Difficulty: {difficulty}/5
-- Format: Discussion-based, verbal-friendly (no code writing)
+- Format: Discussion-based, verbal-friendly (ABSOLUTELY NO CODE WRITING)
 
 ABSOLUTE RULES:
-1. Each question MUST be completely independent and self-contained
-2. No two questions can cover the same skill, concept, or competency
-3. Spread technical questions evenly across all listed must-have and preferred skills
-4. Behavioral questions must each target a different competency (leadership, teamwork, communication, etc.)
-5. NEVER reference previous questions or use connective phrases between questions
-6. Every question must include enough context to be understood in isolation
+1. Questions MUST be theoretical, experience-based, or discussion-oriented. NO coding tasks.
+2. Balance topics: 50% from the candidate's resume/projects, 50% from the Job Description. Target the overlap.
+3. Keep the tone natural, concise, and human-like.
+4. Adapt the depth of technical questions to the specific role and the candidate's seniority level.
+5. Make sure every question is completely independent and context-complete.
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Complete standalone question with all necessary context",
+            "question_text": "Complete standalone conversational question",
             "question_type": "technical|behavioral",
             "difficulty_level": 3,
-            "expected_answer": "Key points a strong answer should cover",
+            "expected_answer": "Key points a strong verbal answer should cover",
             "time_limit_seconds": 180,
             "focus_area": "Specific domain or competency being evaluated"
         }}
