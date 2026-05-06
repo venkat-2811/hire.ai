@@ -32,6 +32,7 @@ class AssessmentInviteRequest(BaseModel):
     include_mcq: Optional[bool] = True
     include_coding: Optional[bool] = True
     total_time_minutes: Optional[int] = 90
+    assessment_mode: Optional[str] = None  # Will be auto-determined based on job role
 
 
 class AssessmentInviteResponse(BaseModel):
@@ -116,6 +117,18 @@ class ProctoringEvent(BaseModel):
 
 # ── helper ────────────────────────────────────────────────────────────────────
 
+def _is_salesforce_role(job: dict) -> bool:
+    """Determine if a job is a Salesforce role based on role, title, skills, and description."""
+    import re
+    text = ' '.join([
+        job.get('role', ''),
+        job.get('title', ''),
+        job.get('description', ''),
+        ' '.join(job.get('must_have_skills', []) or []),
+        ' '.join(job.get('good_to_have_skills', []) or []),
+    ])
+    return bool(re.search(r'(salesforce|apex|crm developer)', text, re.IGNORECASE))
+
 async def _generate_and_persist_questions(
     supabase,
     session_id: str,
@@ -191,12 +204,35 @@ async def send_assessment_invites(
     settings = get_settings()
     email_service = get_email_service()
     
-    # Verify job exists
-    job_result = supabase.table("job_descriptions").select("id, title").eq("id", request.job_id).execute()
+    # Verify job exists and get full details for role detection
+    job_result = supabase.table("job_descriptions").select(
+        "id, title, role, description, must_have_skills, good_to_have_skills"
+    ).eq("id", request.job_id).execute()
     if not job_result.data:
         raise HTTPException(status_code=404, detail="Job not found")
     
     job = job_result.data[0]
+    
+    # Auto-determine assessment mode based on job role
+    is_salesforce = _is_salesforce_role(job)
+    expected_assessment_mode = 'apex' if is_salesforce else 'dsa'
+    
+    # Validate assessment_mode if provided in request
+    if request.assessment_mode and request.assessment_mode != expected_assessment_mode:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Assessment mode '{request.assessment_mode}' is not valid for this job role. Expected '{expected_assessment_mode}'."
+        )
+    
+    assessment_mode = expected_assessment_mode
+    
+    # Override include_mcq and include_coding based on assessment mode
+    if assessment_mode == 'apex':
+        include_mcq = True
+        include_coding = False
+    else:
+        include_mcq = request.include_mcq if request.include_mcq is not None else True
+        include_coding = request.include_coding if request.include_coding is not None else True
     
     # Get candidate details
     candidates_result = supabase.table("candidates").select(
@@ -214,6 +250,15 @@ async def send_assessment_invites(
     mcq_count_val = request.mcq_question_count or 20
     coding_count_val = request.coding_challenge_count or 2
     difficulty_val = request.difficulty or "medium"
+    
+    # Adjust counts based on assessment mode
+    if assessment_mode == 'apex':
+        # In Apex mode, coding_count represents Apex fill-in-the-blanks questions
+        coding_count_val = coding_count_val  # Keep as is for Apex blanks
+    else:
+        # In DSA mode, respect include_coding flag
+        if not include_coding:
+            coding_count_val = 0
 
     if request.total_time_minutes:
         calculated_time = request.total_time_minutes
@@ -237,6 +282,7 @@ async def send_assessment_invites(
                 "coding_challenge_count": coding_count_val,
                 "total_time_minutes": calculated_time,
                 "difficulty": difficulty_val,
+                "assessment_mode": assessment_mode,
                 "proctoring_data": {
                     "tab_switches": 0,
                     "fullscreen_exits": 0,

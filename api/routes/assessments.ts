@@ -895,14 +895,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
       const body = req.body;
       const candidateIds = body.candidate_ids as string[];
       const jobId = body.job_id as string;
-      const assessmentMode = (body.assessment_mode === 'apex' || body.assessment_mode === 'dsa') ? body.assessment_mode : 'dsa';
-      const includeMcq = assessmentMode === 'apex' ? true : (body.include_mcq !== false);
-      const includeCoding = assessmentMode === 'apex' ? false : (body.include_coding !== false);
       const difficulty = (body.difficulty as string) || 'medium';
-      const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
-      const apexBlanksCount = assessmentMode === 'apex' ? Number(body.coding_challenge_count ?? 4) : 0;
-      const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
-      const effectiveCodingCount = assessmentMode === 'apex' ? apexBlanksCount : codingCount;
 
       // Deadline: prefer explicit datetime from body.deadline, fallback to deadline_hours
       let deadline: Date;
@@ -933,7 +926,27 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
         .eq('created_by', user.id)
         .single();
       if (!job) return notFound(res, 'Job not found');
-      const isApexMode = assessmentMode === 'apex';
+      
+      // Auto-determine assessment mode based on job role
+      const isSalesforceRole = isSalesforceRole(job);
+      const expectedAssessmentMode = isSalesforceRole ? 'apex' : 'dsa';
+      
+      // Validate assessment_mode if provided in request
+      if (body.assessment_mode && body.assessment_mode !== expectedAssessmentMode) {
+        return badRequest(res, `Assessment mode '${body.assessment_mode}' is not valid for this job role. Expected '${expectedAssessmentMode}'.`);
+      }
+      
+      // Use the auto-determined assessment mode
+      const finalAssessmentMode = expectedAssessmentMode;
+      const isApexMode = finalAssessmentMode === 'apex';
+      
+      // Configure include flags based on assessment mode
+      const includeMcq = finalAssessmentMode === 'apex' ? true : (body.include_mcq !== false);
+      const includeCoding = finalAssessmentMode === 'apex' ? false : (body.include_coding !== false);
+      const mcqCount = includeMcq ? Number(body.mcq_question_count ?? 20) : 0;
+      const apexBlanksCount = finalAssessmentMode === 'apex' ? Number(body.coding_challenge_count ?? 4) : 0;
+      const codingCount = includeCoding ? Number(body.coding_challenge_count ?? 2) : 0;
+      const effectiveCodingCount = finalAssessmentMode === 'apex' ? apexBlanksCount : codingCount;
 
       const { data: candidates } = await supabase.from('candidates').select('id, email, full_name').in('id', candidateIds);
       if (!candidates?.length) return notFound(res, 'No candidates found');
@@ -973,7 +986,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
             status: 'pending',
             deadline: deadline.toISOString(),
             mcq_question_count: mcqCount,
-            coding_challenge_count: assessmentMode === 'apex' ? effectiveCodingCount : codingCount,
+            coding_challenge_count: finalAssessmentMode === 'apex' ? effectiveCodingCount : codingCount,
             total_time_minutes: totalTimeMinutes,
             mcq_questions: [],
             coding_challenges: [],
@@ -987,8 +1000,8 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
                 include_mcq: includeMcq,
                 include_coding: includeCoding,
                 difficulty,
+                assessment_mode: finalAssessmentMode,
                 is_apex_mode: isApexMode,
-                assessment_mode: assessmentMode,
               },
             },
             created_at: new Date().toISOString(),
@@ -1020,7 +1033,7 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
               });
             }
 
-            if (assessmentMode === 'apex') {
+            if (finalAssessmentMode === 'apex') {
               if (effectiveCodingCount > 0) {
                 generatedApexBlanks = await generateApexFillInTheBlanks({
                   job: {
@@ -1079,9 +1092,9 @@ export default async function handleAssessments(req: VercelRequest, res: VercelR
                   include_coding: includeCoding,
                   difficulty,
                   is_apex_mode: isApexMode,
-                  assessment_mode: assessmentMode,
+                  assessment_mode: finalAssessmentMode,
                 },
-                assessment_content: assessmentMode === 'apex' ? { apex_blanks: generatedApexBlanks } : undefined,
+                assessment_content: finalAssessmentMode === 'apex' ? { apex_blanks: generatedApexBlanks } : undefined,
               },
               updated_at: new Date().toISOString(),
             }).eq('id', sessionId);

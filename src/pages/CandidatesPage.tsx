@@ -116,7 +116,6 @@ export default function CandidatesPage() {
   const [sendingInvites, setSendingInvites] = useState(false);
   const [mcqCount, setMcqCount] = useState(20);
   const [codingCount, setCodingCount] = useState(2);
-  const [assessmentMode, setAssessmentMode] = useState<'dsa' | 'apex'>('dsa');
   const [assessmentDifficulty, setAssessmentDifficulty] = useState<'easy' | 'medium' | 'hard'>('hard');
   const [includeMcq, setIncludeMcq] = useState(true);
   const [includeCoding, setIncludeCoding] = useState(true);
@@ -152,12 +151,12 @@ export default function CandidatesPage() {
     return isSalesforceRoleText(text);
   }, [selectedJob]);
 
-  useEffect(() => {
-    if (!selectedJobLooksSalesforce && assessmentMode === 'apex') {
-      setAssessmentMode('dsa');
-    }
+  // Auto-determine assessment mode based on job role
+  const assessmentMode = useMemo(() => {
+    return selectedJobLooksSalesforce ? 'apex' : 'dsa';
   }, [selectedJobLooksSalesforce]);
 
+  // Auto-configure sections based on assessment mode
   useEffect(() => {
     if (assessmentMode === 'apex') {
       setIncludeMcq(true);
@@ -835,24 +834,13 @@ export default function CandidatesPage() {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Technical Assessment Mode (Required)</Label>
-                <Select
-                  value={assessmentMode}
-                  onValueChange={(v: 'dsa' | 'apex') => setAssessmentMode(v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="dsa">DSA</SelectItem>
-                    <SelectItem value="apex" disabled={!selectedJobLooksSalesforce}>APEX</SelectItem>
-                  </SelectContent>
-                </Select>
-                {!selectedJobLooksSalesforce && (
-                  <div className="text-xs text-muted-foreground">
-                    APEX mode is available only for Salesforce-related roles.
-                  </div>
-                )}
+                <Label>Technical Assessment Mode</Label>
+                <div className="text-sm font-medium">
+                  {assessmentMode === 'apex' ? 'APEX (Salesforce)' : 'DSA (Data Structures & Algorithms)'}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Automatically determined based on the job role.
+                </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
