@@ -593,33 +593,29 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
     }
     difficulty_desc = difficulty_descriptions.get(difficulty, difficulty_descriptions['medium'])
     
-    prompt = f"""Generate EXACTLY {question_count} interview questions for a {level} {title} position with {difficulty} difficulty level.
+    prompt = f"""Generate EXACTLY {question_count} highly diverse, natural, and completely independent interview questions for a {level} {title} position.
 
-The questions should focus on {difficulty_desc}.
+DIFFICULTY: {difficulty_desc}
 
-Include a mix of:
-- {technical_count} Technical questions specific to {role}
-- {behavioral_count} Behavioral questions (STAR format expected)
+DISTRIBUTION:
+- {technical_count} Technical discussion questions specific to {role}
+- {behavioral_count} Behavioral questions
 - {situational_count} Situational/problem-solving questions
-- {motivation_count} Question about career goals and motivation
+- {motivation_count} Question about career goals/motivation
 
-CRITICAL REQUIREMENTS:
-1. This is an audio-based interview where candidates respond verbally. ALL questions MUST be purely conceptual and discussion-based.
-2. ABSOLUTELY NO coding, implementation, or hands-on task-based questions. Do NOT ask candidates to:
-   - Write code or SQL queries
-   - Debug code snippets
-   - Implement algorithms
-   - Write function implementations
-   - Provide syntax examples
-   - Complete coding exercises
-3. Focus on assessing understanding, reasoning, approaches, trade-offs, and real-world thinking.
-4. Use question formats like: "How would you approach...", "Explain how...", "What are the trade-offs...", "Describe your experience with...", "How do you handle..."
-5. You MUST return EXACTLY {question_count} questions - no more, no less.
+CANDIDATE CONTEXT (Use this to personalize, but DO NOT interrogate them on it):
+{str(resume_data)[:500] if resume_data else "No specific resume data provided."}
 
-{"Consider the candidate's background: " + str(resume_data)[:500] if resume_data else ""}
+CRITICAL RULES (MUST FOLLOW STRICTLY):
+1. PURELY INDEPENDENT: Every question MUST stand completely alone. 
+2. NO FOLLOW-UPS OR ASSUMPTIONS: NEVER assume the candidate missed information in a previous question. DO NOT use phrases like "Since you didn't mention...", "Following up on...", or "You didn't explain...".
+3. NO CORRECTIVE TONE: Do not act like an examiner catching missing words. Maintain a smooth, natural conversational flow that switches topics cleanly.
+4. NO REPETITION: Do not use the same starting phrases repeatedly (Avoid starting every question with "Tell me about..." or "Mention your experience..."). Use varied, natural openings (e.g., "What challenges did you face...", "Why did you choose...", "Can you walk me through...").
+5. VERBAL ONLY: No coding, syntax, or algorithm implementation tasks. Only conceptual, architectural, or experience-based discussions.
+6. YOU MUST RETURN EXACTLY {question_count} QUESTIONS.
 
 Return as JSON array with EXACTLY {question_count} questions:
-[{{"text": "question text", "type": "technical|behavioral|situational", "duration": 120, "key_points": ["point1", "point2"]}}]
+[{{"text": "Completely standalone, natural question text", "type": "technical|behavioral|situational", "duration": 120, "key_points": ["point1", "point2"]}}]
 """
     
     try:
