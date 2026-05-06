@@ -157,19 +157,11 @@ export default async function handleAiInterview(req: VercelRequest, res: VercelR
     const skills = (job.must_have_skills || []).join(', ') || 'General';
     const candidateSkills = Array.isArray(resumeInsights.skills) ? resumeInsights.skills.join(', ') : '';
 
-    const experienceYearsRaw = (resumeInsights as any)?.experience_years;
-    const experienceYears = typeof experienceYearsRaw === 'number' ? experienceYearsRaw : Number(experienceYearsRaw || 0);
-    const experienceLevel = experienceYears >= 5 ? 'experienced' : experienceYears >= 2 ? 'mid' : 'fresher';
-
-    const adaptPrompt = `You are a senior technical interviewer conducting a live, natural conversation for a ${job.level} ${job.role} interview (${job.title}).
+    const adaptPrompt = `You are an expert technical interviewer conducting a live ${job.level} ${job.role} interview for ${job.title}.
 
 Required Skills: ${skills}
 ${candidateSkills ? `Candidate Skills: ${candidateSkills}` : ''}
 ${resumeInsights.experience_summary ? `Candidate Experience: ${resumeInsights.experience_summary}` : ''}
-${(resumeInsights as any)?.projects_summary ? `Candidate Projects: ${(resumeInsights as any).projects_summary}` : ''}
-${(resumeInsights as any)?.certifications_summary ? `Candidate Certifications: ${(resumeInsights as any).certifications_summary}` : ''}
-
-Candidate seniority signal: ${experienceLevel}
 
 ## Interview Progress So Far (last ${Math.min(responses.length, 3)} Q&A pairs):
 ${priorQA}
@@ -184,12 +176,6 @@ Based on the candidate's answers above, generate a BETTER adaptive follow-up que
 - If the answer revealed a gap in required skills, ask about it directly.
 - Keep the question type (${nextPreStored?.type || 'technical'}) unless a behavioral/situational follow-up would reveal more.
 - If the pre-planned question is already ideal given context, you may return it as-is.
-
-FOLLOW-UP QUALITY BAR:
-- Make it feel like a real senior interviewer: ask 1 crisp question with an implied follow-up path.
-- When possible, ground the follow-up in the candidate's stated project/work details (architecture decisions, trade-offs, debugging, incidents, tooling, collaboration).
-- For fresher candidates: focus on fundamentals and what they actually built/learned.
-- For experienced candidates: focus on scalability, reliability, observability, security, performance, production constraints, and decision-making.
 
 Return ONLY this JSON:
 {"text": "<the adaptive question>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}`;

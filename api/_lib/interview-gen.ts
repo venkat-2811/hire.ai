@@ -88,27 +88,6 @@ export async function generateCandidateInterviewQuestions(
 
   // Extract useful resume signals for context
   const candidateSkills = Array.isArray(resume.skills) ? resume.skills.slice(0, 12).join(', ') : '';
-  const projectsText = Array.isArray(resume.projects)
-    ? resume.projects
-        .slice(0, 4)
-        .map((p: any) => {
-          const name = p?.name || p?.title || '';
-          const tech = Array.isArray(p?.technologies) ? p.technologies.join(', ') : (p?.tech_stack || '');
-          const desc = (p?.description || p?.summary || '').toString().slice(0, 180);
-          return [name, tech ? `(${tech})` : '', desc].filter(Boolean).join(' ');
-        })
-        .filter(Boolean)
-        .join('; ')
-    : typeof resume.projects === 'string' ? resume.projects.slice(0, 500) : '';
-  const certificationsText = Array.isArray(resume.certifications)
-    ? resume.certifications
-        .slice(0, 6)
-        .map((c: any) => (c?.name || c?.title || c)?.toString())
-        .filter(Boolean)
-        .join(', ')
-    : typeof resume.certifications === 'string' ? resume.certifications.slice(0, 300) : '';
-  const experienceYearsRaw = (resume.total_experience_years ?? resume.experience_years ?? resume.years_experience);
-  const experienceYears = typeof experienceYearsRaw === 'number' ? experienceYearsRaw : Number(experienceYearsRaw || 0);
   const candidateExperience = Array.isArray(resume.experience)
     ? resume.experience.slice(0, 3).map((e: any) => `${e.title || e.role || ''} at ${e.company || ''} (${e.duration || ''})`).join('; ')
     : typeof resume.experience === 'string' ? resume.experience.slice(0, 400) : '';
@@ -120,10 +99,7 @@ export async function generateCandidateInterviewQuestions(
   const hasResume = candidateSkills || candidateExperience;
   const candidateName = candidate.full_name || 'the candidate';
 
-  const experienceLevel = experienceYears >= 5 ? 'experienced' : experienceYears >= 2 ? 'mid' : 'fresher';
-
-  const prompt = `You are a senior technical interviewer running a natural, role-specific, resume-grounded interview.
-Generate exactly ${count} personalized interview questions for ${candidateName} applying for a ${job.level} ${job.role} position (${job.title}).
+  const prompt = `You are an expert technical interviewer. Generate exactly ${count} personalized, completely independent interview questions for ${candidateName} applying for a ${job.level} ${job.role} position (${job.title}).
 
 ## JOB REQUIREMENTS
 Required Skills: ${skills}
@@ -132,32 +108,22 @@ Job Context: ${(job.description || '').slice(0, 400)}
 ## CANDIDATE PROFILE
 ${candidateSkills ? `Skills on Resume: ${candidateSkills}` : ''}
 ${candidateExperience ? `Work Experience: ${candidateExperience}` : ''}
-${projectsText ? `Projects: ${projectsText}` : ''}
-${certificationsText ? `Certifications: ${certificationsText}` : ''}
 ${candidateEducation ? `Education: ${candidateEducation}` : ''}
 ${summary ? `Profile Summary: ${summary}` : ''}
-${Number.isFinite(experienceYears) && experienceYears > 0 ? `Estimated Experience: ${experienceYears} years` : ''}
-
-## INTERVIEW STYLE
-- Ask questions like a real interviewer: concise, precise, and anchored to the candidate's background.
-- Prefer project/experience-based questions that probe: contributions, architecture decisions, trade-offs, tooling, debugging, failures, learnings, and measurable impact.
-- Questions must be verbal and discussion-based. Do NOT ask for code to be written.
-
-## EXPERIENCE CALIBRATION
-- Candidate seniority signal: ${experienceLevel}
-- If fresher: emphasize fundamentals, projects, learning ability, debugging approach, and basic system concepts.
-- If mid/experienced: emphasize system design, scalability, reliability, production incidents, observability, security, performance, and cross-team collaboration.
 
 ## ABSOLUTE RULES (CRITICAL):
-1. INDEPENDENCE: Every question MUST be completely self-contained and standalone. Do NOT reference prior questions or prior answers.
-2. NO REPETITION: Each question MUST focus on a different competency/area; avoid overlap.
-3. COMPLETE CONTEXT: Every question must include enough context to be understood in isolation.
-4. VERBAL-ONLY: Do not ask the candidate to write code, SQL, or pseudo-code.
+1. INDEPENDENCE: Every question MUST be completely self-contained and standalone.
+   NEVER reference prior questions, prior answers, or use linking phrases like:
+   "Following up on that...", "As you mentioned...", "Similarly...", "Also...", "What about..."
+   Each question is asked in isolation — the candidate sees only ONE question at a time.
+2. NO REPETITION: Each of the ${count} questions MUST cover a completely different skill, technology, or competency. Absolutely zero overlap.
+3. COMPLETE CONTEXT: Every question must include all necessary context within itself to be fully understood without any prior discussion.
+4. BROAD COVERAGE: Distribute questions across ALL required skills: ${skills}. Do NOT ask 2+ questions about the same technology.
 
 ## PERSONALIZATION RULES:
-5. Use the resume content to generate questions tied to their projects, roles, and tools. Ask for concrete examples and decision reasoning.
-6. Include at least 2 project-related questions (if projects exist) probing architecture choices, challenges, and what the candidate personally built.
-7. Probe skill gaps: if a must-have skill is missing from the resume, ask how they would ramp up and apply it in this role.
+5. Cross-reference the candidate's resume with job requirements — ask about gaps or relevant experience.
+6. ${hasResume ? 'Tailor each question to their background — reference specific skills or experience where appropriate.' : 'Use the job requirements to craft highly role-specific questions.'}
+7. Probe skill gaps: if a required skill is missing from their resume, ask how they would approach learning or handling it.
 
 ## QUESTION MIX (for ${count} questions):
 - ${Math.ceil(count * 0.4)} technical questions: each probing a DIFFERENT skill from: ${skills}
