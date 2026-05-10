@@ -1,9 +1,61 @@
 /**
  * API Client for Talent Scout AI Backend
- * Uses Vercel serverless functions at /api/*
+ * Pure FastAPI backend - no Node fallback
  */
 
-const API_BASE_URL = '/api';
+function normalizeBaseUrl(baseUrl: string): string {
+  if (!baseUrl) return '';
+  return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+}
+
+function getFastApiOrigin(): string {
+  return normalizeBaseUrl((import.meta as any)?.env?.VITE_API_BASE_URL ?? '');
+}
+
+function getFastApiBase(): string {
+  const origin = getFastApiOrigin();
+  return `${origin}/api/v2`;
+}
+
+function anySignal(signals: Array<AbortSignal | undefined>): AbortSignal {
+  const filtered = signals.filter(Boolean) as AbortSignal[];
+  if (filtered.length === 0) return new AbortController().signal;
+  if (filtered.length === 1) return filtered[0];
+
+  // Prefer native AbortSignal.any when available
+  const anyFn = (AbortSignal as any)?.any as undefined | ((s: AbortSignal[]) => AbortSignal);
+  if (typeof anyFn === 'function') {
+    return anyFn(filtered);
+  }
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  filtered.forEach((s) => {
+    if (s.aborted) controller.abort();
+    else s.addEventListener('abort', onAbort, { once: true });
+  });
+  return controller.signal;
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const timeoutController = new AbortController();
+  const t = setTimeout(() => timeoutController.abort(), timeoutMs);
+
+  const signal = anySignal([init.signal, timeoutController.signal]);
+
+  try {
+    return await fetch(input, { ...init, signal });
+  } catch (err: any) {
+    // Normalize timeout aborts into a stable message (avoid DOMException "signal is aborted" toasts)
+    const isAbort = err?.name === 'AbortError' || err instanceof DOMException;
+    if (isAbort && timeoutController.signal.aborted) {
+      throw new Error('Request timed out');
+    }
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
+}
 
 // Token getter function - will be set by ClerkAuthProvider
 let getAuthToken: (() => Promise<string | null>) | null = null;
@@ -17,6 +69,7 @@ interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   skipAuth?: boolean;
+  timeoutMs?: number;
 }
 
 class APIError extends Error {
@@ -27,7 +80,13 @@ class APIError extends Error {
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {}, skipAuth = false } = options;
+  const {
+    method = 'GET',
+    body,
+    headers = {},
+    skipAuth = false,
+    timeoutMs = 20000,
+  } = options;
 
   const authHeaders: Record<string, string> = {};
   if (!skipAuth && getAuthToken) {
@@ -50,17 +109,44 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     config.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+  const baseUrl = getFastApiBase();
+  const url = `${baseUrl}${endpoint}`;
+
+  const response = await fetchWithTimeout(url, config, timeoutMs);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new APIError(response.status, error.error || error.detail || 'Request failed');
+    let errorMessage = 'Request failed';
+    try {
+      const error = await response.json();
+      errorMessage = error.error || error.detail || error.message || errorMessage;
+    } catch {
+      // If JSON parsing fails, try to get text
+      try {
+        const text = await response.text();
+        errorMessage = text || errorMessage;
+      } catch {
+        // If text also fails, use status-based message
+        errorMessage = `Request failed with status ${response.status}`;
+      }
+    }
+    throw new APIError(response.status, errorMessage);
   }
 
   return response.json();
 }
 
-async function uploadFile<T>(endpoint: string, formData: FormData, skipAuth = false): Promise<T> {
+export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  return request<T>(endpoint, options);
+}
+
+async function uploadFile<T>(
+  endpoint: string,
+  formData: FormData,
+  skipAuth = false,
+  opts?: { timeoutMs?: number },
+): Promise<T> {
+  const timeoutMs = opts?.timeoutMs ?? 40000;
+
   const headers: Record<string, string> = {};
   if (!skipAuth && getAuthToken) {
     const token = await getAuthToken();
@@ -69,11 +155,18 @@ async function uploadFile<T>(endpoint: string, formData: FormData, skipAuth = fa
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
+  const baseUrl = getFastApiBase();
+  const url = `${baseUrl}${endpoint}`;
+
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers,
+      body: formData,
+    },
+    timeoutMs,
+  );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -81,6 +174,15 @@ async function uploadFile<T>(endpoint: string, formData: FormData, skipAuth = fa
   }
 
   return response.json();
+}
+
+export async function apiUploadFile<T>(
+  endpoint: string,
+  formData: FormData,
+  skipAuth = false,
+  opts?: { timeoutMs?: number },
+): Promise<T> {
+  return uploadFile<T>(endpoint, formData, skipAuth, opts);
 }
 
 // ============== Jobs API ==============
@@ -146,8 +248,13 @@ export interface Profile {
 }
 
 export const profileApi = {
-  get: () => request<Profile>('/profile'),
-  update: (data: Partial<Profile>) => request<Profile>('/profile', { method: 'PATCH', body: data }),
+  get: () =>
+    request<Profile>('/profile', {}),
+  update: (data: Partial<Profile>) =>
+    request<Profile>('/profile', {
+      method: 'PATCH',
+      body: data,
+    }),
 };
 
 export interface JobDescriptionCreate {
@@ -172,13 +279,23 @@ export const jobsApi = {
     if (params?.level) searchParams.set('level', params.level);
     if (params?.is_active !== undefined) searchParams.set('is_active', String(params.is_active));
     const query = searchParams.toString();
-    return request<JobDescription[]>(`/jobs${query ? `?${query}` : ''}`);
+    return request<JobDescription[]>(`/jobs${query ? `?${query}` : ''}`, {});
   },
 
-  get: (id: string) => request<JobDescription>(`/jobs/${id}`),
+  get: (id: string) => request<JobDescription>(`/jobs/${id}`, {}),
 
   create: (data: JobDescriptionCreate) =>
     request<JobDescription>('/jobs', { method: 'POST', body: data }),
+
+  extractSkills: (body: { description: string; title?: string; role?: string }) =>
+    request<{ must_have_skills: string[]; good_to_have_skills: string[] }>(
+      '/jobs/extract-skills',
+      {
+        method: 'POST',
+        body,
+        timeoutMs: 25000,
+      },
+    ),
 
   update: (id: string, data: Partial<JobDescriptionCreate>) =>
     request<JobDescription>(`/jobs/${id}`, { method: 'PATCH', body: data }),
@@ -205,6 +322,15 @@ export interface ResumeData {
   summary: string;
   total_experience_years: number;
   certifications: string[];
+  projects?: {
+    name?: string;
+    title?: string;
+    description?: string;
+    technologies?: string[];
+    link?: string;
+  }[];
+  extracted_text?: string;
+  sections?: Record<string, any>;
 }
 
 export interface Candidate {
@@ -235,10 +361,10 @@ export const candidatesApi = {
     if (params?.limit) searchParams.set('limit', String(params.limit));
     if (params?.offset) searchParams.set('offset', String(params.offset));
     const query = searchParams.toString();
-    return request<Candidate[]>(`/candidates${query ? `?${query}` : ''}`);
+    return request<Candidate[]>(`/candidates${query ? `?${query}` : ''}`, {});
   },
 
-  get: (id: string) => request<Candidate>(`/candidates/${id}`),
+  get: (id: string) => request<Candidate>(`/candidates/${id}`, {}),
 
   create: (data: CandidateCreatePayload) =>
     request<Candidate>('/candidates', { method: 'POST', body: data }),
@@ -249,22 +375,502 @@ export const candidatesApi = {
   uploadResume: (id: string, file: File) => {
     const formData = new FormData();
     formData.append('resume', file);
-    return uploadFile<Candidate>(`/candidates/${id}/upload-resume`, formData);
+    return uploadFile<Candidate>(`/candidates/${id}/upload-resume`, formData, false, {});
   },
 
-  getParsedResume: (id: string) => request<ResumeData>(`/candidates/${id}/parsed-resume`),
+  getParsedResume: (id: string) => request<ResumeData>(`/candidates/${id}/parsed-resume`, {}),
 
-  getAssessmentDetails: (id: string, jobId?: string) => request<AssessmentDetails | null>(`/candidates/${id}/assessment-details${jobId ? `?job_id=${jobId}` : ''}`),
+  getAssessmentDetails: (id: string, jobId?: string) => request<AssessmentDetails | null>(`/candidates/${id}/assessment-details${jobId ? `?job_id=${jobId}` : ''}`, {}),
 
-  getInterviewDetails: (id: string, jobId?: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details${jobId ? `?job_id=${jobId}` : ''}`),
+  getInterviewDetails: (id: string, jobId?: string) => request<InterviewDetails | null>(`/candidates/${id}/interview-details${jobId ? `?job_id=${jobId}` : ''}`, {}),
 
-  getManualInterview: (id: string, jobId: string) => request<ManualInterviewDetails | null>(`/candidates/${id}/manual-interview?job_id=${encodeURIComponent(jobId)}`),
+  getManualInterview: (id: string, jobId: string) => request<ManualInterviewDetails | null>(`/candidates/${id}/manual-interview?job_id=${encodeURIComponent(jobId)}`, {}),
 
   updateManualInterview: (id: string, jobId: string, body: ManualInterviewUpdatePayload) =>
     request<ManualInterviewDetails>(`/candidates/${id}/manual-interview?job_id=${encodeURIComponent(jobId)}`, { method: 'PATCH', body }),
 
   delete: (id: string, jobId?: string) =>
     request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`, { method: 'DELETE' }),
+};
+
+export interface BulkEmailActionResponse {
+  success: boolean;
+  emails_sent: number;
+  error_messages?: string[];
+}
+
+export interface OfferDetails {
+  candidate_id: string;
+  job_id: string;
+  candidate_name: string;
+  candidate_email?: string | null;
+  job_title: string;
+  company_name: string;
+  ctc: string;
+  time_period_years?: number | null;
+  time_period_months?: number | null;
+  start_date?: string | null;
+  reporting_manager?: string | null;
+  location?: string | null;
+  accepted_signature_name?: string | null;
+  accepted_at?: string | null;
+  accepted_ip?: string | null;
+  already_accepted: boolean;
+}
+
+export interface OfferAcceptanceResponse {
+  success: boolean;
+  message: string;
+  already_accepted: boolean;
+}
+
+export interface BulkUpdateInterviewModeResponse {
+  success: boolean;
+  updated_count: number;
+  error_messages?: string[];
+}
+
+export const candidatesWorkflowApi = {
+  sendAcceptance: (body: { candidate_ids: string[]; job_id: string }) =>
+    request<BulkEmailActionResponse>('/candidates/send-acceptance', {
+      method: 'POST',
+      body,
+    }),
+
+  sendRejection: (body: { candidate_ids: string[]; job_id: string }) =>
+    request<BulkEmailActionResponse>('/candidates/send-rejection', {
+      method: 'POST',
+      body,
+    }),
+
+  sendOfferLetter: (body: {
+    candidate_ids: string[];
+    job_id: string;
+    ctc: string;
+    company_name: string;
+    time_period_years?: number | null;
+    time_period_months?: number | null;
+    start_date?: string | null;
+    reporting_manager?: string | null;
+    location?: string | null;
+  }) =>
+    request<BulkEmailActionResponse>('/candidates/send-offer-letter', {
+      method: 'POST',
+      body,
+    }),
+
+  getOfferDetails: (token: string) =>
+    request<OfferDetails>(`/candidates/offer-details?token=${encodeURIComponent(token)}`, {
+            skipAuth: true,
+    }),
+
+  submitOfferAcceptance: (body: { token: string; full_name_signature: string }) =>
+    request<OfferAcceptanceResponse>('/candidates/submit-offer-acceptance', {
+      method: 'POST',
+      body,
+            skipAuth: true,
+    }),
+
+  bulkUpdateInterviewMode: (body: { candidate_ids: string[]; job_id: string; interview_mode: 'ai' | 'manual' }) =>
+    request<BulkUpdateInterviewModeResponse>('/candidates/bulk-update-interview-mode', {
+      method: 'POST',
+      body,
+    }),
+};
+
+// ============== Assessments API ==============
+
+export interface AssessmentInviteRequest {
+  candidate_ids: string[];
+  job_id: string;
+  deadline: string;
+  mcq_question_count: number;
+  coding_challenge_count: number;
+  difficulty: 'easy' | 'medium' | 'hard' | string;
+  include_mcq: boolean;
+  include_coding: boolean;
+  assessment_mode?: 'dsa' | 'apex' | string;
+  total_time_minutes?: number;
+}
+
+export interface AssessmentInviteResponse {
+  success: boolean;
+  invites_sent: number;
+  failed: string[];
+}
+
+export const assessmentsApi = {
+  invite: (body: AssessmentInviteRequest) =>
+    request<AssessmentInviteResponse>('/assessments/invite', {
+      method: 'POST',
+      body,
+            timeoutMs: 45000,
+    }),
+};
+
+// ============== Assessment Runtime API ==============
+
+export interface AssessmentProctoringResponse {
+  warning: boolean;
+  terminated: boolean;
+  message: string;
+  violations_remaining?: number;
+  event_type?: string;
+}
+
+export interface AssessmentCompleteResponse {
+  success: boolean;
+  mcq_score: number;
+  coding_score: number | null;
+  total_score: number;
+}
+
+export interface AssessmentMcqSubmission {
+  question_id: string;
+  selected_index: number;
+  time_taken_seconds?: number;
+}
+
+export interface AssessmentMcqSubmitResponse {
+  success: boolean;
+  score: number;
+  correct_count: number;
+  total_count: number;
+  weighted_points_earned: number;
+  weighted_points_possible: number;
+  results: Array<{
+    question_id: string;
+    question: string;
+    options: string[];
+    selected_index: number;
+    correct_index: number;
+    explanation: string;
+    is_correct: boolean;
+    difficulty: string;
+    topic: string;
+    points_possible: number;
+    points_earned: number;
+  }>;
+}
+
+export interface AssessmentCodingRunResponse {
+  success: boolean;
+  compilation_error?: string | null;
+  runtime_error?: string | null;
+  results: Array<{
+    test_case_id: string | null;
+    input: any;
+    expected_output: any;
+    actual_output: any;
+    passed: boolean;
+    status: string;
+    time_used: string | null;
+    memory_used: string | null;
+    error?: string | null;
+    stdout?: string | null;
+    stderr?: string | null;
+  }>;
+  passed: number;
+  total: number;
+  score_percentage: number;
+  ai_evaluation?: {
+    score: number;
+    verdict?: string;
+    feedback?: string;
+    issues?: string[];
+    improvements?: string[];
+  };
+  disclaimer?: string;
+  performance?: {
+    avg_time_ms?: string | null;
+    max_time_ms?: string | null;
+    avg_memory_kb?: number | null;
+    max_memory_kb?: number | null;
+  };
+}
+
+export interface AssessmentCodingSubmitResponse {
+  success: boolean;
+  challenge_id: string;
+  test_results: Array<{
+    test_case_id: string | null;
+    input: any;
+    expected_output: any;
+    actual_output: any;
+    passed: boolean;
+    status: string;
+    time_used: string | null;
+    memory_used: string | null;
+    error?: string | null;
+    stdout?: string | null;
+    stderr?: string | null;
+  }>;
+  passed_count: number;
+  total_tests: number;
+  score_percentage: number;
+  hidden_tests_passed?: number;
+  hidden_tests_total?: number;
+  compilation_error?: string | null;
+  runtime_error?: string | null;
+  ai_evaluation?: {
+    score: number;
+    verdict?: string;
+    feedback?: string;
+    issues?: string[];
+    improvements?: string[];
+  };
+  disclaimer?: string;
+}
+
+const _assessmentsRuntimeApiBase = {
+  start: (token: string) =>
+    request<any>(`/assessments/start/${encodeURIComponent(token)}`, {
+            timeoutMs: 30000,
+      skipAuth: true,
+    }),
+
+  begin: (sessionId: string) =>
+    request<{ success: boolean; started_at: string | null; expires_at: string | null; time_limit_minutes: number }>(
+      `/assessments/${encodeURIComponent(sessionId)}/begin`,
+      {
+        method: 'POST',
+        timeoutMs: 20000,
+        skipAuth: true,
+      },
+    ),
+
+  mcqSubmit: (sessionId: string, submissions: AssessmentMcqSubmission[]) =>
+    request<AssessmentMcqSubmitResponse>(`/assessments/${encodeURIComponent(sessionId)}/mcq/submit`, {
+      method: 'POST',
+      body: submissions,
+            timeoutMs: 30000,
+      skipAuth: true,
+    }),
+
+  codingRun: (sessionId: string, body: { challenge_id: string; code: string; language: string }) =>
+    request<AssessmentCodingRunResponse>(`/assessments/${encodeURIComponent(sessionId)}/coding/run`, {
+      method: 'POST',
+      body,
+            timeoutMs: 60000,
+      skipAuth: true,
+    }),
+
+  codingSubmit: (
+    sessionId: string,
+    body: { challenge_id: string; code: string; language: string; time_taken_seconds?: number },
+  ) =>
+    request<AssessmentCodingSubmitResponse>(`/assessments/${encodeURIComponent(sessionId)}/coding/submit`, {
+      method: 'POST',
+      body,
+            timeoutMs: 90000,
+      skipAuth: true,
+    }),
+
+  proctoring: (sessionId: string, body: { event_type: string; timestamp: string; details?: unknown }) =>
+    request<AssessmentProctoringResponse>(`/assessments/${encodeURIComponent(sessionId)}/proctoring`, {
+      method: 'POST',
+      body,
+            timeoutMs: 20000,
+      skipAuth: true,
+    }),
+
+  complete: (sessionId: string) =>
+    request<AssessmentCompleteResponse>(`/assessments/${encodeURIComponent(sessionId)}/complete`, {
+      method: 'POST',
+            timeoutMs: 30000,
+      skipAuth: true,
+    }),
+
+  submitApexBlanks: (sessionId: string, submissions: Record<string, Record<string, string>>) =>
+    request<any>(`/assessments/${encodeURIComponent(sessionId)}/apex-blanks/submit`, {
+      method: 'POST',
+      body: submissions,
+            timeoutMs: 30000,
+      skipAuth: true,
+    }),
+};
+
+export const assessmentsRuntimeApi = {
+  ..._assessmentsRuntimeApiBase,
+
+  // Backwards-compatible aliases for existing UI callsites
+  submitMcq: _assessmentsRuntimeApiBase.mcqSubmit,
+  runCode: _assessmentsRuntimeApiBase.codingRun,
+  submitCode: _assessmentsRuntimeApiBase.codingSubmit,
+};
+
+// ============== AI Interview API ==============
+
+export interface AiInterviewInviteRequest {
+  candidate_ids: string[];
+  job_id: string;
+  question_count?: number;
+  difficulty?: 'easy' | 'medium' | 'hard' | string;
+  deadline?: string;
+  scheduled_time?: string;
+}
+
+export interface AiInterviewInviteResponse {
+  success: boolean;
+  invites_sent: number;
+  failed: string[];
+  failed_reasons?: Record<string, string>;
+}
+
+export interface AiInterviewStartResponse {
+  session_id: string;
+  candidate_name: string;
+  job_title: string;
+  total_questions: number;
+  estimated_duration_minutes: number;
+}
+
+export interface AiInterviewQuestionResponse {
+  completed?: boolean;
+  message?: string;
+  index?: number;
+  question_text?: string;
+  question_type?: string;
+  expected_duration_seconds?: number;
+  adaptive?: boolean;
+}
+
+export interface AiInterviewResponseSubmitResponse {
+  success: boolean;
+  is_last_question: boolean;
+}
+
+export interface AiInterviewProctoringResponse {
+  success?: boolean;
+  terminated?: boolean;
+  warning?: boolean;
+  message?: string;
+  violations?: number;
+  threshold?: number;
+}
+
+export interface AiInterviewEvaluationResult {
+  overall_score: number;
+  technical_score: number;
+  communication_score: number;
+  confidence_score: number;
+  recommendation: string;
+  strengths: string[];
+  areas_for_improvement: string[];
+  detailed_feedback: string;
+}
+
+export const aiInterviewApi = {
+  invite: (body: AiInterviewInviteRequest) =>
+    request<AiInterviewInviteResponse>('/ai-interview/invite', {
+      method: 'POST',
+      body,
+            timeoutMs: 60000,
+    }),
+
+  start: (token: string) =>
+    request<AiInterviewStartResponse>(`/ai-interview/start/${encodeURIComponent(token)}`, {
+            timeoutMs: 25000,
+      skipAuth: true,
+    }),
+
+  question: (sessionId: string) =>
+    request<AiInterviewQuestionResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/question`, {
+            timeoutMs: 25000,
+      skipAuth: true,
+    }),
+
+  adaptQuestion: (sessionId: string, next_index: number) =>
+    request<AiInterviewQuestionResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/adapt-question`, {
+      method: 'POST',
+      body: { next_index },
+            timeoutMs: 25000,
+      skipAuth: true,
+    }),
+
+  transcribeStore: (sessionId: string, body: {
+    question_index: number;
+    audio_base64: string;
+    mime_type?: string;
+    audio_duration_seconds?: number;
+  }) =>
+    request<{ success: boolean; question_index: number; transcript_length: number }>(
+      `/ai-interview/${encodeURIComponent(sessionId)}/transcribe-store`,
+      {
+        method: 'POST',
+        body,
+        timeoutMs: 90000,
+        skipAuth: true,
+      },
+    ),
+
+  submitResponse: (sessionId: string, body: {
+    question_index: number;
+    transcript: string;
+    audio_duration_seconds?: number;
+    confidence?: number;
+  }) =>
+    request<AiInterviewResponseSubmitResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/response`, {
+      method: 'POST',
+      body,
+            timeoutMs: 25000,
+      skipAuth: true,
+    }),
+
+  proctoring: (sessionId: string, body: {
+    event_type: string;
+    timestamp: string;
+    details?: unknown;
+  }) =>
+    request<AiInterviewProctoringResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/proctoring`, {
+      method: 'POST',
+      body,
+            timeoutMs: 25000,
+      skipAuth: true,
+    }),
+
+  complete: (sessionId: string) =>
+    request<AiInterviewEvaluationResult>(`/ai-interview/${encodeURIComponent(sessionId)}/complete`, {
+      method: 'POST',
+            timeoutMs: 45000,
+      skipAuth: true,
+    }),
+};
+
+// ============== Apply (Public) API ==============
+
+export interface PublicJob {
+  id: string;
+  title: string;
+  role: string;
+  level: string;
+  description: string;
+  must_have_skills: string[];
+  good_to_have_skills: string[];
+  min_experience_years: number;
+  is_active?: boolean;
+  company_name?: string;
+}
+
+export interface ApplySubmissionResponse {
+  id: string;
+  job_id: string;
+  candidate_id: string;
+  status: string;
+  message: string;
+}
+
+export const applyApi = {
+  getJob: (jobId: string) =>
+    request<PublicJob>(`/apply/job/${encodeURIComponent(jobId)}`, {
+            timeoutMs: 20000,
+      skipAuth: true,
+    }),
+
+  submit: (formData: FormData) =>
+    uploadFile<ApplySubmissionResponse>(`/apply/submit`, formData, true, {
+            timeoutMs: 60000,
+    }),
 };
 
 // ============== Assessment Details ==============
@@ -394,6 +1000,27 @@ export interface ManualInterviewUpdatePayload {
   interview_completed_at?: string | null;
 }
 
+// ============== Job Status API ==============
+
+export type BackgroundJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+
+export interface BackgroundJobState<T = any> {
+  id: string;
+  type: string;
+  status: BackgroundJobStatus;
+  result?: T;
+  error?: string | null;
+  created_at: string;
+  updated_at?: string;
+  completed_at?: string | null;
+}
+
+export const jobStatusApi = {
+  get: <T = any>(jobId: string) =>
+    request<BackgroundJobState<T>>(`/job-status/${jobId}`, {
+    }),
+};
+
 // ============== Screening API ==============
 
 export interface ReasonCode {
@@ -443,17 +1070,21 @@ export const screeningApi = {
     }),
 
   getForCandidate: (candidateId: string) =>
-    request<ATSScreeningResult[]>(`/screening/candidate/${candidateId}`),
+    request<ATSScreeningResult[]>(`/screening/candidate/${candidateId}`, {
+    }),
 
   getForJob: (jobId: string, params?: { shortlisted_only?: boolean; min_score?: number }) => {
     const searchParams = new URLSearchParams();
     if (params?.shortlisted_only) searchParams.set('shortlisted_only', 'true');
     if (params?.min_score) searchParams.set('min_score', String(params.min_score));
     const query = searchParams.toString();
-    return request<ATSScreeningResult[]>(`/screening/job/${jobId}${query ? `?${query}` : ''}`);
+    return request<ATSScreeningResult[]>(`/screening/job/${jobId}${query ? `?${query}` : ''}`, {
+          });
   },
 
-  get: (id: string) => request<ATSScreeningResult>(`/screening/${id}`),
+  get: (id: string) =>
+    request<ATSScreeningResult>(`/screening/${id}`, {
+    }),
 };
 
 // ============== Interviews API ==============
@@ -566,19 +1197,28 @@ export const interviewsApi = {
     if (params?.candidate_id) searchParams.set('candidate_id', params.candidate_id);
     if (params?.job_id) searchParams.set('job_id', params.job_id);
     const query = searchParams.toString();
-    return request<InterviewSession[]>(`/interviews${query ? `?${query}` : ''}`);
+    return request<InterviewSession[]>(`/interviews${query ? `?${query}` : ''}`, {
+          });
   },
 
-  get: (id: string) => request<InterviewSession>(`/interviews/${id}`),
+  get: (id: string) =>
+    request<InterviewSession>(`/interviews/${id}`, {
+    }),
 
   create: (data: { candidate_id: string; job_id: string; screening_id?: string; scheduled_at?: string }) =>
-    request<InterviewSession>('/interviews', { method: 'POST', body: data }),
+    request<InterviewSession>('/interviews', {
+      method: 'POST',
+      body: data,
+    }),
 
   start: (id: string) =>
-    request<InterviewSession>(`/interviews/${id}/start`, { method: 'POST' }),
+    request<InterviewSession>(`/interviews/${id}/start`, {
+      method: 'POST',
+    }),
 
   getQuestions: (id: string) =>
-    request<InterviewQuestion[]>(`/interviews/${id}/questions`),
+    request<InterviewQuestion[]>(`/interviews/${id}/questions`, {
+    }),
 
   submitResponse: (sessionId: string, data: {
     question_id: string;
@@ -592,7 +1232,8 @@ export const interviewsApi = {
     }),
 
   getPracticals: (id: string) =>
-    request<PracticalAssessment[]>(`/interviews/${id}/practicals`),
+    request<PracticalAssessment[]>(`/interviews/${id}/practicals`, {
+    }),
 
   submitPractical: (sessionId: string, assessmentId: string, data: {
     submitted_code?: string;
@@ -611,10 +1252,13 @@ export const interviewsApi = {
     }),
 
   complete: (id: string) =>
-    request<InterviewEvaluation>(`/interviews/${id}/complete`, { method: 'POST' }),
+    request<InterviewEvaluation>(`/interviews/${id}/complete`, {
+      method: 'POST',
+    }),
 
   getEvaluation: (id: string) =>
-    request<InterviewEvaluation>(`/interviews/${id}/evaluation`),
+    request<InterviewEvaluation>(`/interviews/${id}/evaluation`, {
+    }),
 };
 
 // ============== Analytics API ==============
@@ -652,7 +1296,9 @@ export interface CandidateAnalytics {
 }
 
 export const analyticsApi = {
-  getDashboard: () => request<DashboardStats>('/analytics/dashboard'),
+  getDashboard: () =>
+    request<DashboardStats>('/analytics/dashboard', {
+    }),
 
   getCandidates: (params?: { job_id?: string; status?: string; recommendation?: string }) => {
     const searchParams = new URLSearchParams();
@@ -660,7 +1306,8 @@ export const analyticsApi = {
     if (params?.status) searchParams.set('status', params.status);
     if (params?.recommendation) searchParams.set('recommendation', params.recommendation);
     const query = searchParams.toString();
-    return request<CandidateAnalytics[]>(`/analytics/candidates${query ? `?${query}` : ''}`);
+    return request<CandidateAnalytics[]>(`/analytics/candidates${query ? `?${query}` : ''}`, {
+          });
   },
 
   getJobSummary: (jobId: string) =>
@@ -670,7 +1317,8 @@ export const analyticsApi = {
       interviews: Record<string, number>;
       recommendations: Record<string, number>;
       average_score: number;
-    }>(`/analytics/job/${jobId}/summary`),
+    }>(`/analytics/job/${jobId}/summary`, {
+    }),
 
   getTrends: (days?: number) => {
     const query = days ? `?days=${days}` : '';
@@ -684,7 +1332,8 @@ export const analyticsApi = {
         average_score: number;
       }[];
       period_days: number;
-    }>(`/analytics/trends${query}`);
+    }>(`/analytics/trends${query}`, {
+          });
   },
 };
 
@@ -720,7 +1369,9 @@ export interface UsageInfo {
 }
 
 export const subscriptionApi = {
-  get: () => request<SubscriptionInfo>('/subscription'),
+  get: () =>
+    request<SubscriptionInfo>('/subscription', {
+    }),
 
   createOrder: (plan: string) =>
     request<{ session_id: string; url: string; plan: string }>(
@@ -738,14 +1389,20 @@ export const subscriptionApi = {
     ),
 
   selectFree: () =>
-    request<{ success: boolean; plan: string }>('/subscription/select-free', { method: 'POST' }),
+    request<{ success: boolean; plan: string }>('/subscription/select-free', {
+      method: 'POST',
+    }),
 
   cancel: () =>
-    request<{ success: boolean; message: string }>('/subscription/cancel', { method: 'POST' }),
+    request<{ success: boolean; message: string }>('/subscription/cancel', {
+      method: 'POST',
+    }),
 };
 
 export const usageApi = {
-  get: () => request<UsageInfo>('/usage'),
+  get: () =>
+    request<UsageInfo>('/usage', {
+    }),
 };
 
 // ============== Billing API ==============
@@ -791,7 +1448,9 @@ export const billingApi = {
       { method: 'POST', body: { plan } },
     ),
 
-  usage: () => request<BillingUsageResponse>('/billing/usage'),
+  usage: () =>
+    request<BillingUsageResponse>('/billing/usage', {
+    }),
 
   topup: (amount: number) =>
     request<{ success: boolean; session_id: string; checkout_url: string }>('/billing/topup', {
@@ -805,7 +1464,64 @@ export const billingApi = {
       body: { invoice_id: invoiceId },
     }),
 
-  invoices: () => request<BillingInvoice[]>('/billing/invoices'),
+  invoices: () =>
+    request<BillingInvoice[]>('/billing/invoices', {
+    }),
+};
+
+// ============== DSA Problems API ==============
+
+export interface DsaProblem {
+  id: string;
+  slug: string;
+  title: string;
+  difficulty: 'easy' | 'medium' | 'hard' | string;
+  category: string;
+  tags: string[];
+  description?: string;
+  constraints?: string;
+  examples?: unknown[];
+  starter_code?: Record<string, string>;
+  solution_wrappers?: Record<string, string>;
+  test_cases?: unknown[];
+  points: number;
+  time_limit_seconds?: number;
+  memory_limit_kb?: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export const dsaProblemsApi = {
+  list: (params?: { difficulty?: string; category?: string; is_active?: boolean }) => {
+    const sp = new URLSearchParams();
+    if (params?.difficulty) sp.set('difficulty', params.difficulty);
+    if (params?.category) sp.set('category', params.category);
+    if (params?.is_active === false) sp.set('is_active', 'false');
+    const q = sp.toString();
+    return request<DsaProblem[]>(`/dsa-problems${q ? `?${q}` : ''}`, {
+          });
+  },
+
+  get: (id: string) =>
+    request<DsaProblem>(`/dsa-problems/${id}`, {
+    }),
+
+  create: (data: Partial<DsaProblem>) =>
+    request<DsaProblem>('/dsa-problems', {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (id: string, data: Partial<DsaProblem>) =>
+    request<DsaProblem>(`/dsa-problems/${id}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  delete: (id: string) =>
+    request<{ success: boolean; message: string }>(`/dsa-problems/${id}`, {
+      method: 'DELETE',
+    }),
 };
 
 export { APIError };

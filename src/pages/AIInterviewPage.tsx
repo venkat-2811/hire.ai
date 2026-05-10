@@ -36,8 +36,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-
-const API_BASE_URL = '/api';
+import { aiInterviewApi } from '@/lib/api';
 
 interface InterviewData {
   session_id: string;
@@ -157,15 +156,11 @@ export default function AIInterviewPage() {
       }
       const audio_base64 = btoa(binary);
 
-      await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/transcribe-store`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question_index: questionIndex,
-          audio_base64,
-          mime_type: blob.type || 'audio/webm',
-          audio_duration_seconds: audioDurationSeconds,
-        }),
+      await aiInterviewApi.transcribeStore(interviewData.session_id, {
+        question_index: questionIndex,
+        audio_base64,
+        mime_type: blob.type || 'audio/webm',
+        audio_duration_seconds: audioDurationSeconds,
       });
     } catch (error) {
       console.error('Background transcription upload failed', error);
@@ -261,23 +256,15 @@ export default function AIInterviewPage() {
       let data: any;
       if (typeof nextIndex === 'number' && nextIndex > 0) {
         try {
-          const adaptResp = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/adapt-question`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ next_index: nextIndex }),
-          });
-          if (adaptResp.ok) {
-            data = await adaptResp.json();
-            if (data?.adaptive) console.log('[AIInterviewPage] Adaptive question generated for index', nextIndex);
-          }
+          data = await aiInterviewApi.adaptQuestion(interviewData.session_id, nextIndex);
+          if (data?.adaptive) console.log('[AIInterviewPage] Adaptive question generated for index', nextIndex);
         } catch {
           // fall through to standard question endpoint
         }
       }
 
       if (!data) {
-        const response = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/question`);
-        data = await response.json();
+        data = await aiInterviewApi.question(interviewData.session_id);
       }
 
       if (data.completed) {
@@ -301,32 +288,18 @@ export default function AIInterviewPage() {
     if (!interviewData) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/response`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question_index: question.index,
-          transcript: '',
-          audio_duration_seconds: audioDurationSeconds,
-          confidence: 0.9,
-        }),
+      const data = await aiInterviewApi.submitResponse(interviewData.session_id, {
+        question_index: question.index,
+        transcript: '',
+        audio_duration_seconds: audioDurationSeconds,
+        confidence: 0.9,
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || data?.detail || 'Failed to submit response');
-      }
 
       void queueServerTranscription(question.index, audioDurationSeconds, recordedBlob);
 
       if (data.is_last_question) {
-        const completeResp = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/complete`, {
-          method: 'POST',
-        });
-        if (completeResp.ok) {
-          const evalData = await completeResp.json();
-          setFinalEvaluation(evalData);
-        }
+        const evalData = await aiInterviewApi.complete(interviewData.session_id);
+        setFinalEvaluation(evalData);
         setIsCompleted(true);
       } else {
         // Pass the next index so adapt-question can generate a context-aware follow-up
@@ -392,14 +365,10 @@ export default function AIInterviewPage() {
       setWarningMessage('Interview terminated: face not visible 3 times.');
       setShowWarning(true);
       if (interviewData) {
-        fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/proctoring`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event_type: 'face_not_detected',
-            timestamp: new Date().toISOString(),
-            details: { violation_count: count, auto_terminated: true },
-          }),
+        aiInterviewApi.proctoring(interviewData.session_id, {
+          event_type: 'face_not_detected',
+          timestamp: new Date().toISOString(),
+          details: { violation_count: count, auto_terminated: true },
         }).catch(() => {});
       }
     } else {
@@ -409,14 +378,10 @@ export default function AIInterviewPage() {
       );
       setWarningCount((prev) => Math.max(prev, count));
       if (interviewData) {
-        fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/proctoring`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event_type: 'face_not_detected',
-            timestamp: new Date().toISOString(),
-            details: { violation_count: count },
-          }),
+        aiInterviewApi.proctoring(interviewData.session_id, {
+          event_type: 'face_not_detected',
+          timestamp: new Date().toISOString(),
+          details: { violation_count: count },
         }).catch(() => {});
       }
     }
@@ -434,17 +399,11 @@ export default function AIInterviewPage() {
     if (!interviewData) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai-interview/${interviewData.session_id}/proctoring`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          event_type: eventType,
-          timestamp: new Date().toISOString(),
-          details,
-        }),
+      const data = await aiInterviewApi.proctoring(interviewData.session_id, {
+        event_type: eventType,
+        timestamp: new Date().toISOString(),
+        details,
       });
-
-      const data = await response.json();
 
       if (data.terminated) {
         setIsTerminated(true);
@@ -588,53 +547,26 @@ export default function AIInterviewPage() {
 
       const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-      const fetchWithRetry = async (
-        url: string,
-        attempts = 3,
-        timeoutMs = 20000
-      ): Promise<{ ok: true; data: any } | { ok: false; error: string }> => {
-        let lastError = 'Request failed';
+      try {
+        let data: any = null;
+        let lastError = 'Failed to load interview';
 
-        for (let attempt = 1; attempt <= attempts; attempt++) {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), timeoutMs);
-
+        for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timer);
-
-            if (response.ok) {
-              const data = await response.json();
-              return { ok: true, data };
-            }
-
-            const err = await response.json().catch(() => ({}));
-            lastError = err.error || err.detail || `Request failed with ${response.status}`;
+            data = await aiInterviewApi.start(token);
+            break;
           } catch (e) {
-            clearTimeout(timer);
-            if (e instanceof DOMException && e.name === 'AbortError') {
-              lastError = 'Request timed out';
-            } else {
-              lastError = e instanceof Error ? e.message : 'Network error';
+            lastError = e instanceof Error ? e.message : 'Failed to load interview';
+            if (attempt < 3) {
+              await delay(500 * attempt);
             }
-          }
-
-          if (attempt < attempts) {
-            await delay(500 * attempt);
           }
         }
 
-        return { ok: false, error: lastError };
-      };
-
-      try {
-        const result = await fetchWithRetry(`${API_BASE_URL}/ai-interview/start/${token}`, 3, 20000);
-        if (!result.ok) {
-          const errResult = result as { ok: false; error: string };
-          setError(errResult.error || 'Failed to load interview');
+        if (!data) {
+          setError(lastError);
           return;
         }
-        const data = result.data;
         // Validate that we have questions
         if (!data.total_questions || data.total_questions === 0) {
           setError('Interview questions are not available. Please contact the hiring team.');

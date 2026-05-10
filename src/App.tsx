@@ -28,7 +28,23 @@ import BillingPage from "./pages/BillingPage";
 import OfferAcceptancePage from "./pages/OfferAcceptancePage";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error: any) => {
+        const status = (error && typeof error === 'object' && 'status' in error) ? (error as any).status : undefined;
+        if (status === 401 || status === 403 || status === 404) return false;
+        return failureCount < 1;
+      },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+      staleTime: 30_000,
+    },
+    mutations: {
+      retry: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

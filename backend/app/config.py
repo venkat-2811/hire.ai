@@ -1,67 +1,115 @@
 import os
-from typing import List
-from dotenv import load_dotenv, find_dotenv
+from functools import lru_cache
+from typing import Any, Dict, List
 
-load_dotenv(find_dotenv())
-
-
-class Settings:
-    def __init__(self):
-        # OpenAI Configuration
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
-
-        # AssemblyAI (Speech-to-text)
-        self.assemblyai_api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
-        
-        # Supabase Configuration
-        self.supabase_url = os.getenv("SUPABASE_URL", "")
-        self.supabase_key = os.getenv("SUPABASE_KEY", "")
-        self.supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY", "")
-        
-        # Application Settings
-        self.upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
-        self.vector_store_path = os.getenv("VECTOR_STORE_PATH", "./vector_store")
-        
-        # Server Configuration
-        self.host = os.getenv("HOST", "0.0.0.0")
-        self.port = int(os.getenv("PORT", "8000"))
-        self.debug = os.getenv("DEBUG", "false").lower() == "true"
-
-        # Frontend URL (used for email links)
-        self.frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-        
-        # CORS
-        cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080")
-        self.cors_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
-        
-        # Auto-add Vercel deployment URLs to CORS
-        vercel_url = os.getenv("VERCEL_URL", "")
-        if vercel_url and f"https://{vercel_url}" not in self.cors_origins:
-            self.cors_origins.append(f"https://{vercel_url}")
-        # Allow all *.vercel.app subdomains in production
-        frontend_url = os.getenv("FRONTEND_URL", "")
-        if frontend_url and frontend_url not in self.cors_origins:
-            self.cors_origins.append(frontend_url)
-        
-        # Clerk Authentication
-        self.clerk_publishable_key = os.getenv("CLERK_PUBLISHABLE_KEY", "")
-        self.clerk_jwks_url = os.getenv("CLERK_JWKS_URL", "")
-        self.clerk_issuer = os.getenv("CLERK_ISSUER", "")
-        
-        # HackerEarth Code Evaluation API
-        self.hackerearth_client_secret = os.getenv("HACKEREARTH_CLIENT_SECRET", "")
-
-        # Resend Email
-        self.resend_api_key = os.getenv("RESEND_API_KEY", "")
-        self.resend_from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+from pydantic import Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    openai_api_key: str = Field(min_length=1, alias="OPENAI_API_KEY")
+    assemblyai_api_key: str = Field(default="", alias="ASSEMBLYAI_API_KEY")
+
+    supabase_url: str = Field(min_length=1, alias="SUPABASE_URL")
+    supabase_key: str = Field(default="", alias="SUPABASE_KEY")
+    supabase_service_key: str = Field(min_length=1, alias="SUPABASE_SERVICE_KEY")
+
+    upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
+    vector_store_path: str = Field(default="./vector_store", alias="VECTOR_STORE_PATH")
+
+    host: str = Field(default="0.0.0.0", alias="HOST")
+    port: int = Field(default=8000, alias="PORT")
+    debug: bool = Field(default=False, alias="DEBUG")
+
+    frontend_url: str = Field(default="http://localhost:8080", alias="FRONTEND_URL")
+    cors_origins: List[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://localhost:8080",
+        ],
+        alias="CORS_ORIGINS",
+    )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: Any):
+        # Support comma-separated env var value: "a,b,c"
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v
+
+    clerk_publishable_key: str = Field(default="", alias="CLERK_PUBLISHABLE_KEY")
+    clerk_jwks_url: str = Field(min_length=1, alias="CLERK_JWKS_URL")
+    clerk_issuer: str = Field(min_length=1, alias="CLERK_ISSUER")
+
+    hackerearth_client_id: str = Field(default="", alias="HACKEREARTH_CLIENT_ID")
+    hackerearth_client_secret: str = Field(default="", alias="HACKEREARTH_CLIENT_SECRET")
+
+    resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
+    resend_from_email: str = Field(default="onboarding@resend.dev", alias="RESEND_FROM_EMAIL")
+
+    stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
+
+
+def _format_settings_validation_error(exc: ValidationError) -> str:
+    # Prefer environment variable names in messages (aliases)
+    alias_by_field: Dict[str, str] = {
+        "openai_api_key": "OPENAI_API_KEY",
+        "supabase_url": "SUPABASE_URL",
+        "supabase_key": "SUPABASE_KEY",
+        "supabase_service_key": "SUPABASE_SERVICE_KEY",
+        "clerk_jwks_url": "CLERK_JWKS_URL",
+        "clerk_issuer": "CLERK_ISSUER",
+    }
+
+    missing: List[str] = []
+    invalid: List[str] = []
+
+    for err in exc.errors():
+        loc = err.get("loc") or []
+        field = str(loc[0]) if loc else "<unknown>"
+        display = alias_by_field.get(field, field)
+        msg = str(err.get("msg") or "")
+        typ = str(err.get("type") or "")
+        if typ == "missing":
+            missing.append(display)
+        else:
+            invalid.append(f"{display}: {msg}")
+
+    parts: List[str] = ["Environment validation failed."]
+    if missing:
+        parts.append("Missing required environment variables: " + ", ".join(sorted(set(missing))))
+    if invalid:
+        parts.append("Invalid environment variables: " + "; ".join(invalid))
+    parts.append("Fix your .env / environment variables and restart the server.")
+    return " ".join(parts)
+
+
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()
+    try:
+        s = Settings()
+    except ValidationError as e:
+        raise RuntimeError(_format_settings_validation_error(e))
+
+    vercel_url = os.getenv("VERCEL_URL", "").strip()
+    if vercel_url:
+        full = f"https://{vercel_url}"
+        if full not in s.cors_origins:
+            s.cors_origins.append(full)
+    if s.frontend_url and s.frontend_url not in s.cors_origins:
+        s.cors_origins.append(s.frontend_url)
+    return s
 
 
 def ensure_directories():
-    """Ensure required directories exist."""
     settings = get_settings()
     os.makedirs(settings.upload_dir, exist_ok=True)
     os.makedirs(settings.vector_store_path, exist_ok=True)

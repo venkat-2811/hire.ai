@@ -3,6 +3,7 @@
  * Candidates complete MCQ and coding challenges here.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,8 +54,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-
-const API_BASE_URL = '/api';
+import { apiRequest, assessmentsRuntimeApi } from '@/lib/api';
 
 interface MCQQuestion {
   id: string;
@@ -75,9 +75,9 @@ interface TestCase {
 interface TestResult {
   test_case_id: string;
   passed: boolean;
-  input: string;
-  expected_output: string;
-  actual_output: string | null;
+  input: any;
+  expected_output: any;
+  actual_output: any;
   status: string; // AC, WA, TLE, MLE, RE, CE, ERROR
   time_used: string | null;
   memory_used: string | null;
@@ -148,6 +148,66 @@ interface AssessmentData {
   mcq_questions?: MCQQuestion[];
   coding_challenges?: CodingChallenge[];
   apex_blanks?: ApexFillInBlankQuestion[];
+}
+
+// ── React Error Boundary for Assessment Runtime ──
+interface AssessmentErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface AssessmentErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class AssessmentErrorBoundary extends React.Component<AssessmentErrorBoundaryProps, AssessmentErrorBoundaryState> {
+  constructor(props: AssessmentErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): AssessmentErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[AssessmentErrorBoundary] Caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-zinc-950 p-6">
+          <Card className="w-full max-w-md bg-zinc-900 border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-red-500 flex items-center gap-2">
+                <AlertCircle className="h-5 w-5" />
+                Assessment Runtime Error
+              </CardTitle>
+              <CardDescription className="text-zinc-400">
+                An unexpected error occurred. Your progress has been preserved.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-zinc-950 rounded p-3 border border-zinc-800">
+                <p className="text-xs font-mono text-red-400 break-all">
+                  {this.state.error?.message || 'Unknown error'}
+                </p>
+              </div>
+              <Button
+                onClick={() => window.location.reload()}
+                className="w-full"
+              >
+                Refresh Assessment
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export default function AssessmentPage() {
@@ -234,6 +294,148 @@ public class CandidateSolution {
     return started + minutes * 60 * 1000;
   }, []);
 
+  const bootstrapTimerFromStorage = useCallback((sessionId: string) => {
+    try {
+      const raw = localStorage.getItem(getTimerStorageKey(sessionId));
+      if (!raw) return;
+      const endTs = Number(raw);
+      if (!Number.isFinite(endTs) || endTs <= 0) return;
+      const remaining = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
+      setTimeRemaining(remaining);
+    } catch {
+      // ignore
+    }
+  }, [getTimerStorageKey]);
+
+  // ── Safe Stringification Helpers for React Rendering ──
+  const safeString = useCallback((value: any): string => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }, []);
+
+  const renderSafe = useCallback((value: any): React.ReactNode => {
+    const maybeParseJsonString = (v: any): any => {
+      if (typeof v !== 'string') return v;
+      const s = v.trim();
+      if (!s) return v;
+      const looksJson =
+        (s.startsWith('{') && s.endsWith('}')) ||
+        (s.startsWith('[') && s.endsWith(']')) ||
+        (s.startsWith('"') && s.endsWith('"'));
+      if (!looksJson) return v;
+      try {
+        return JSON.parse(s);
+      } catch {
+        return v;
+      }
+    };
+
+    const normalize = (v: any, depth = 0): any => {
+      if (depth > 8) return v;
+      if (typeof v === 'string') {
+        let cur: any = v;
+        for (let i = 0; i < 4; i++) {
+          const parsed = maybeParseJsonString(cur);
+          if (parsed === cur) break;
+          cur = parsed;
+        }
+        return typeof cur === 'string' ? cur.trim() : normalize(cur, depth + 1);
+      }
+      if (v === null || typeof v === 'undefined') return null;
+      if (Array.isArray(v)) return v.map((x) => normalize(x, depth + 1));
+      if (typeof v === 'object') {
+        const out: any = {};
+        Object.keys(v)
+          .sort()
+          .forEach((k) => {
+            out[k] = normalize(v[k], depth + 1);
+          });
+        return out;
+      }
+      return v;
+    };
+
+    const normalized = normalize(value);
+    if (normalized !== null && typeof normalized === 'object') {
+      try {
+        return JSON.stringify(normalized, null, 2);
+      } catch {
+        return safeString(normalized);
+      }
+    }
+    if (typeof normalized === 'string') return normalized;
+    return safeString(normalized);
+  }, [safeString]);
+
+  const safeNumber = useCallback((value: any): number => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  }, []);
+
+  // ── Assessment State Persistence & Recovery ──
+  const getStorageKey = useCallback((sessionId: string, type: string) => {
+    return `assessment_${type}:${sessionId}`;
+  }, []);
+
+  const saveStateToStorage = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      const state = {
+        mcqAnswers,
+        codingSolutions,
+        codingLanguages,
+        currentTab,
+        currentMcqIndex,
+        currentCodingIndex,
+        currentApexBlankIndex,
+        apexBlankAnswers,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(getStorageKey(sessionId, 'state'), JSON.stringify(state));
+    } catch (e) {
+      console.error('[Persistence] Failed to save state:', e);
+    }
+  }, [mcqAnswers, codingSolutions, codingLanguages, currentTab, currentMcqIndex, currentCodingIndex, currentApexBlankIndex, apexBlankAnswers, getStorageKey]);
+
+  const loadStateFromStorage = useCallback((sessionId: string) => {
+    if (!sessionId) return null;
+    try {
+      const raw = localStorage.getItem(getStorageKey(sessionId, 'state'));
+      if (!raw) return null;
+      const state = JSON.parse(raw);
+      // Validate state is recent (within 24 hours)
+      const age = Date.now() - (state.timestamp || 0);
+      if (age > 24 * 60 * 60 * 1000) {
+        localStorage.removeItem(getStorageKey(sessionId, 'state'));
+        return null;
+      }
+      return state;
+    } catch (e) {
+      console.error('[Persistence] Failed to load state:', e);
+      return null;
+    }
+  }, [getStorageKey]);
+
+  const clearStateFromStorage = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      localStorage.removeItem(getStorageKey(sessionId, 'state'));
+      localStorage.removeItem(getTimerStorageKey(sessionId));
+    } catch (e) {
+      console.error('[Persistence] Failed to clear state:', e);
+    }
+  }, [getStorageKey, getTimerStorageKey]);
+
   // ── Webcam initialization ──
   const startCamera = useCallback(async () => {
     // If stream already exists from the permission prompt, just re-attach
@@ -304,32 +506,20 @@ public class CandidateSolution {
       setShowWarning(true);
       // Also report to backend
       if (assessmentData) {
-        fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/proctoring`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event_type: 'face_not_detected',
-            timestamp: new Date().toISOString(),
-            details: { violation_count: count, auto_terminated: true },
-          }),
+        assessmentsRuntimeApi.proctoring(assessmentData.session_id, {
+          event_type: 'face_not_detected',
+          timestamp: new Date().toISOString(),
+          details: { violation_count: count, auto_terminated: true },
         }).catch(() => { });
       }
     } else {
-      toast.error(
-        `Face not visible! Warning ${count}/${MAX_NO_FACE_VIOLATIONS}. Your exam will be terminated if this happens again.`,
-        { duration: 5000 },
-      );
       setWarningCount((prev) => Math.max(prev, count));
       // Report to backend
       if (assessmentData) {
-        fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/proctoring`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event_type: 'face_not_detected',
-            timestamp: new Date().toISOString(),
-            details: { violation_count: count },
-          }),
+        assessmentsRuntimeApi.proctoring(assessmentData.session_id, {
+          event_type: 'face_not_detected',
+          timestamp: new Date().toISOString(),
+          details: { violation_count: count },
         }).catch(() => { });
       }
     }
@@ -346,17 +536,11 @@ public class CandidateSolution {
     if (!assessmentData) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/proctoring`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          event_type: eventType,
-          timestamp: new Date().toISOString(),
-          details,
-        }),
+      const data = await assessmentsRuntimeApi.proctoring(assessmentData.session_id, {
+        event_type: eventType,
+        timestamp: new Date().toISOString(),
+        details,
       });
-
-      const data = await response.json();
 
       if (data.terminated) {
         setTerminated(true);
@@ -429,6 +613,16 @@ public class CandidateSolution {
   }, [reportProctoringEvent]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // STRICT: ESC key = immediate termination
+    if (e.key === 'Escape' && !terminated && !completed && !showFullscreenPrompt) {
+      e.preventDefault();
+      setTerminated(true);
+      setWarningMessage('Assessment terminated: You pressed ESC. This is a strict proctoring violation.');
+      setShowWarning(true);
+      reportProctoringEvent('esc_key');
+      return;
+    }
+
     // Disable common shortcuts and DevTools
     if (
       (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'x')) ||
@@ -446,7 +640,7 @@ public class CandidateSolution {
         toast.error('This keyboard shortcut is disabled during the assessment.');
       }
     }
-  }, [reportProctoringEvent]);
+  }, [terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
 
   // Proctoring event listeners
   useEffect(() => {
@@ -503,13 +697,12 @@ public class CandidateSolution {
         setError(null);
         setLoadingStep('Loading your assessment…');
 
-        const response = await fetch(`${API_BASE_URL}/assessments/start/${encodeURIComponent(token || '')}`);
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          throw new Error(err?.error || 'Failed to load assessment');
+        if (!token) {
+          setError('Invalid assessment link');
+          return;
         }
 
-        const data = await response.json();
+        const data = await assessmentsRuntimeApi.start(token);
         setAssessmentData(data);
 
         const mcqList = Array.isArray(data.mcq_questions) ? data.mcq_questions : [];
@@ -561,6 +754,41 @@ public class CandidateSolution {
           setApexBlankAnswers(initialAnswers);
         }
 
+        // ── Recovery: Restore saved state from localStorage ──
+        const savedState = loadStateFromStorage(data.session_id);
+        if (savedState) {
+          console.log('[Recovery] Restoring saved state:', savedState);
+          // Restore MCQ answers
+          if (savedState.mcqAnswers && Object.keys(savedState.mcqAnswers).length > 0) {
+            setMcqAnswers(savedState.mcqAnswers);
+          }
+          // Restore coding solutions (merge with starter code)
+          if (savedState.codingSolutions && Object.keys(savedState.codingSolutions).length > 0) {
+            setCodingSolutions((prev) => ({ ...prev, ...savedState.codingSolutions }));
+          }
+          // Restore coding languages
+          if (savedState.codingLanguages && Object.keys(savedState.codingLanguages).length > 0) {
+            setCodingLanguages((prev) => ({ ...prev, ...savedState.codingLanguages }));
+          }
+          // Restore navigation state
+          if (savedState.currentTab && (savedState.currentTab === 'mcq' || savedState.currentTab === 'coding' || savedState.currentTab === 'apex_blanks')) {
+            setCurrentTab(savedState.currentTab);
+          }
+          if (savedState.currentMcqIndex !== undefined && savedState.currentMcqIndex >= 0 && savedState.currentMcqIndex < mcqList.length) {
+            setCurrentMcqIndex(savedState.currentMcqIndex);
+          }
+          if (savedState.currentCodingIndex !== undefined && savedState.currentCodingIndex >= 0 && savedState.currentCodingIndex < codingList.length) {
+            setCurrentCodingIndex(savedState.currentCodingIndex);
+          }
+          if (savedState.currentApexBlankIndex !== undefined && savedState.currentApexBlankIndex >= 0 && savedState.currentApexBlankIndex < apexBlankList.length) {
+            setCurrentApexBlankIndex(savedState.currentApexBlankIndex);
+          }
+          // Restore apex blank answers
+          if (savedState.apexBlankAnswers && Object.keys(savedState.apexBlankAnswers).length > 0) {
+            setApexBlankAnswers((prev) => ({ ...prev, ...savedState.apexBlankAnswers }));
+          }
+        }
+
         setLoadingStep('Preparing your environment…');
 
         // Timer bootstrap:
@@ -568,13 +796,36 @@ public class CandidateSolution {
         // - If started_at exists (refresh or resumed), compute end_ts and resume countdown.
         const sessionId = String(data?.session_id || '');
         const startedAt = data?.started_at;
-        if (sessionId && startedAt) {
+        const expiresAt = data?.expires_at;
+        if (sessionId) {
+          bootstrapTimerFromStorage(sessionId);
+        }
+        
+        // If backend provides expires_at (authoritative), use it
+        if (expiresAt) {
+          try {
+            const endTs = new Date(expiresAt).getTime();
+            if (Number.isFinite(endTs) && endTs > 0) {
+              localStorage.setItem(getTimerStorageKey(sessionId), String(endTs));
+              const remaining = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
+              setTimeRemaining(remaining);
+              console.log('[Timer] Bootstrapped from backend expires_at:', { expiresAt, endTs, remaining });
+            }
+          } catch (e) {
+            console.error('[Timer] Failed to parse expires_at from backend:', expiresAt, e);
+          }
+        }
+        // Fallback: compute from started_at if available
+        else if (sessionId && startedAt) {
           const endTs = computeEndTsFromStartedAt(startedAt, Number(data?.total_time_minutes) || 0);
           if (endTs) {
             localStorage.setItem(getTimerStorageKey(sessionId), String(endTs));
             const remaining = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
             setTimeRemaining(remaining);
+            console.log('[Timer] Bootstrapped from started_at:', { startedAt, endTs, remaining });
           }
+        } else {
+          console.log('[Timer] Assessment not started yet, timer at 00:00');
         }
       } catch (e: any) {
         setError(e?.message || 'Failed to load assessment. Please try again.');
@@ -584,38 +835,24 @@ public class CandidateSolution {
     }
 
     loadAssessment();
-  }, [token, computeEndTsFromStartedAt, getTimerStorageKey]);
+  }, [token, computeEndTsFromStartedAt, getTimerStorageKey, loadStateFromStorage]);
 
-  const beginAssessment = useCallback(async () => {
-    if (!assessmentData) return;
-    try {
-      const resp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/begin`, {
-        method: 'POST',
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err?.error || 'Failed to start assessment');
-      }
-      const data = await resp.json();
-      const startedAt = data?.started_at;
-      const totalMinutes = Number(assessmentData.total_time_minutes) || 0;
-      if (startedAt && totalMinutes > 0) {
-        const endTs = computeEndTsFromStartedAt(startedAt, totalMinutes);
-        if (endTs) {
-          localStorage.setItem(getTimerStorageKey(assessmentData.session_id), String(endTs));
-          const remaining = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
-          setTimeRemaining(remaining);
-          setAssessmentData((prev) => prev ? { ...prev, started_at: startedAt } : prev);
-        }
-      }
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to start assessment');
+  // ── Auto-save state to localStorage on changes ──
+  useEffect(() => {
+    if (assessmentData?.session_id && !completed && !terminated) {
+      saveStateToStorage(assessmentData.session_id);
     }
-  }, [assessmentData, computeEndTsFromStartedAt, getTimerStorageKey]);
+  }, [mcqAnswers, codingSolutions, codingLanguages, currentTab, currentMcqIndex, currentCodingIndex, currentApexBlankIndex, apexBlankAnswers, assessmentData?.session_id, completed, terminated, saveStateToStorage]);
+
+  // ── Clear localStorage on completion/termination ──
+  useEffect(() => {
+    if ((completed || terminated) && assessmentData?.session_id) {
+      clearStateFromStorage(assessmentData.session_id);
+    }
+  }, [completed, terminated, assessmentData?.session_id, clearStateFromStorage]);
 
   const handleMcqAnswer = (questionId: string, optionIndex: number) => {
     if (optionIndex === -1) {
-      // Clear response
       setMcqAnswers((prev) => {
         const newAnswers = { ...prev };
         delete newAnswers[questionId];
@@ -640,28 +877,61 @@ public class CandidateSolution {
     }));
   };
 
-  const submitApexBlanks = async () => {
+  const submitApexBlanks = useCallback(async () => {
     if (!assessmentData || submittingApexBlanks) return;
     setSubmittingApexBlanks(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/apex-blanks/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(apexBlankAnswers),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err?.error || 'Failed to submit Apex blanks');
-      }
-      const data = await response.json();
+      const data = await assessmentsRuntimeApi.submitApexBlanks(assessmentData.session_id, apexBlankAnswers);
+
       setApexBlanksEvaluation(data);
-      toast.success('Apex blanks submitted');
+      toast.success('Apex blanks submitted successfully');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to submit Apex blanks');
     } finally {
       setSubmittingApexBlanks(false);
     }
-  };
+  }, [assessmentData, submittingApexBlanks, apexBlankAnswers]);
+
+  const beginAssessment = useCallback(async () => {
+    if (!assessmentData) return;
+    try {
+      const data = await assessmentsRuntimeApi.begin(assessmentData.session_id);
+
+      const startedAtIso = data?.started_at || new Date().toISOString();
+      const expiresAtIso = data?.expires_at;
+      const minutes = Number(data?.time_limit_minutes) || Number(assessmentData?.total_time_minutes) || 0;
+      
+      // Prefer backend-provided expires_at (authoritative), fall back to computation
+      let endTs: number | null = null;
+      if (expiresAtIso) {
+        try {
+          endTs = new Date(expiresAtIso).getTime();
+        } catch (e) {
+          console.error('[Timer] Failed to parse expires_at from backend:', expiresAtIso, e);
+        }
+      }
+      
+      if (!endTs || !Number.isFinite(endTs)) {
+        endTs = computeEndTsFromStartedAt(startedAtIso, minutes);
+      }
+      
+      if (endTs) {
+        localStorage.setItem(getTimerStorageKey(String(assessmentData.session_id)), String(endTs));
+        const remaining = Math.max(0, Math.floor((endTs - Date.now()) / 1000));
+        setTimeRemaining(remaining);
+        console.log('[Timer] Started:', { startedAt: startedAtIso, expiresAt: expiresAtIso, endTs, remaining });
+      } else {
+        console.error('[Timer] Failed to compute end timestamp:', { startedAtIso, expiresAtIso, minutes });
+        bootstrapTimerFromStorage(String(assessmentData.session_id));
+      }
+    } catch (e: any) {
+      console.error('[Timer] Failed to begin assessment:', e);
+      const errorMessage = e?.message || 'Failed to begin assessment';
+      toast.error(errorMessage);
+      // Try to bootstrap from storage as fallback
+      bootstrapTimerFromStorage(String(assessmentData.session_id));
+    }
+  }, [assessmentData, bootstrapTimerFromStorage, computeEndTsFromStartedAt, getTimerStorageKey]);
 
   const runCode = async (challengeId: string) => {
     if (!assessmentData || runningCode) return;
@@ -678,22 +948,13 @@ public class CandidateSolution {
     try {
       const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
 
-      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challenge_id: challengeId,
-          code,
-          language: selectedLanguage,
-        }),
+      const data = await assessmentsRuntimeApi.runCode(assessmentData.session_id, {
+        challenge_id: challengeId,
+        code,
+        language: selectedLanguage,
       });
 
-      if (response.status === 429) {
-        toast.error('Rate limit exceeded. Please wait before running again.');
-        return;
-      }
-
-      const data = await response.json();
+      console.log('[RunCode] execution_result_debug:', data);
 
       if (data.ai_evaluation && typeof data.ai_evaluation?.score === 'number') {
         const score = Number(data.ai_evaluation.score) || 0;
@@ -735,8 +996,8 @@ public class CandidateSolution {
             passed: 0,
             total: data.total || 0,
             score: 0,
-            compilation_error: data.compilation_error,
-            runtime_error: data.runtime_error,
+            compilation_error: safeString(data.compilation_error),
+            runtime_error: safeString(data.runtime_error),
           },
         }));
         // Auto-switch to results tab to show the error
@@ -750,7 +1011,7 @@ public class CandidateSolution {
           results: data.results || [],
           passed: data.passed || 0,
           total: data.total || 0,
-          score: data.score_percentage || 0,
+          score: safeNumber(data.score_percentage),
           compilation_error: undefined,
           runtime_error: undefined,
         },
@@ -764,8 +1025,9 @@ public class CandidateSolution {
       } else {
         toast.info(`${data.passed}/${data.total} test cases passed`);
       }
-    } catch (e) {
-      toast.error('Failed to run code. Please try again.');
+    } catch (e: any) {
+      const errorMessage = e?.message || 'Failed to run code. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setRunningCode(null);
     }
@@ -785,22 +1047,12 @@ public class CandidateSolution {
 
     try {
       const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
-      const response = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challenge_id: challengeId,
-          code,
-          language: selectedLanguage,
-        }),
+
+      const data = await assessmentsRuntimeApi.submitCode(assessmentData.session_id, {
+        challenge_id: challengeId,
+        code,
+        language: selectedLanguage,
       });
-
-      if (response.status === 429) {
-        toast.error('Rate limit exceeded. Maximum 5 submissions per minute.');
-        return;
-      }
-
-      const data = await response.json();
 
       if (data.ai_evaluation && typeof data.ai_evaluation?.score === 'number') {
         const score = Number(data.ai_evaluation.score) || 0;
@@ -842,8 +1094,8 @@ public class CandidateSolution {
             passed: 0,
             total: data.total_tests || 0,
             score: 0,
-            compilation_error: data.compilation_error,
-            runtime_error: data.runtime_error,
+            compilation_error: safeString(data.compilation_error),
+            runtime_error: safeString(data.runtime_error),
           },
         }));
         setProblemTab('submissions');
@@ -857,10 +1109,10 @@ public class CandidateSolution {
           results: data.test_results || [],
           passed: data.passed_count || 0,
           total: data.total_tests || 0,
-          score: data.score_percentage || 0,
+          score: safeNumber(data.score_percentage),
           hidden_passed: data.hidden_tests_passed,
           hidden_total: data.hidden_tests_total,
-          performance: data.performance,
+          performance: undefined,
           compilation_error: undefined,
           runtime_error: undefined,
         },
@@ -876,8 +1128,9 @@ public class CandidateSolution {
       } else {
         toast.info(`${totalPassed}/${totalTests} passed. Score: ${data.score_percentage?.toFixed(1)}%`);
       }
-    } catch (e) {
-      toast.error('Failed to submit solution. Please try again.');
+    } catch (e: any) {
+      const errorMessage = e?.message || 'Failed to submit solution. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setSubmittingCode(null);
     }
@@ -913,15 +1166,10 @@ public class CandidateSolution {
         const mcqSubmissions = Object.entries(mcqAnswers).map(([questionId, selectedIndex]) => ({
           question_id: questionId,
           selected_index: selectedIndex,
-          time_taken_seconds: 0,
+          time_taken_seconds: 0, // TODO: Track per-question time
         }));
 
-        const mcqSubmitResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(mcqSubmissions),
-        });
-        if (!mcqSubmitResp.ok) throw new Error('Failed to submit MCQ answers');
+        await assessmentsRuntimeApi.submitMcq(assessmentData.session_id, mcqSubmissions);
       }
 
       if (codingChallenges.length > 0) {
@@ -930,35 +1178,30 @@ public class CandidateSolution {
           const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
           const starter = challenge?.starter_code?.[lang] || '';
           if (!code?.trim() || code === starter) continue;
-          await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ challenge_id: challengeId, code, language: lang, time_taken_seconds: 0 }),
+          await assessmentsRuntimeApi.submitCode(assessmentData.session_id, {
+            challenge_id: challengeId,
+            code,
+            language: lang,
+            time_taken_seconds: 0,
           });
         }
       }
 
       if (apexBlanks.length > 0) {
-        const resp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/apex-blanks/submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(apexBlankAnswers || {}),
-        });
-        if (!resp.ok) throw new Error('Failed to submit Apex blanks');
+        const data = await assessmentsRuntimeApi.submitApexBlanks(assessmentData.session_id, apexBlankAnswers);
+        if (!data?.success) throw new Error('Failed to submit Apex blanks');
       }
 
-      const completeResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/complete`, {
-        method: 'POST',
-      });
-      if (!completeResp.ok) throw new Error('Failed to complete assessment');
+      await assessmentsRuntimeApi.complete(assessmentData.session_id);
 
       setCompleted(true);
       stopCamera();
       if (document.fullscreenElement) {
         document.exitFullscreen();
       }
-    } catch (e) {
-      toast.error('Failed to submit assessment');
+    } catch (e: any) {
+      const errorMessage = e?.message || 'Failed to submit assessment';
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -979,14 +1222,7 @@ public class CandidateSolution {
           time_taken_seconds: 0, // TODO: Track per-question time
         }));
 
-        const mcqSubmitResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/mcq/submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(mcqSubmissions),
-        });
-        if (!mcqSubmitResp.ok) {
-          throw new Error('Failed to submit MCQ answers');
-        }
+        await assessmentsRuntimeApi.submitMcq(assessmentData.session_id, mcqSubmissions);
       }
 
       // Submit coding solutions (if coding section exists)
@@ -997,27 +1233,16 @@ public class CandidateSolution {
           const starter = challenge?.starter_code?.[lang] || '';
           // Only submit if candidate actually changed starter code.
           if (!code?.trim() || code === starter) continue;
-          await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/coding/submit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              challenge_id: challengeId,
-              code,
-              language: lang,
-              time_taken_seconds: 0,
-            }),
+          await assessmentsRuntimeApi.codingSubmit(assessmentData.session_id, {
+            challenge_id: challengeId,
+            code,
+            language: lang,
+            time_taken_seconds: 0,
           });
         }
       }
 
-      // Complete assessment
-      const completeResp = await fetch(`${API_BASE_URL}/assessments/${assessmentData.session_id}/complete`, {
-        method: 'POST',
-      });
-
-      if (!completeResp.ok) {
-        throw new Error('Failed to complete assessment');
-      }
+      await assessmentsRuntimeApi.complete(assessmentData.session_id);
 
       setCompleted(true);
       stopCamera();
@@ -1026,8 +1251,9 @@ public class CandidateSolution {
       if (document.fullscreenElement) {
         document.exitFullscreen();
       }
-    } catch (e) {
-      toast.error('Failed to submit assessment');
+    } catch (e: any) {
+      const errorMessage = e?.message || 'Failed to submit assessment';
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -1338,7 +1564,8 @@ public class CandidateSolution {
     : (hasApexBlanks ? 'apex_blanks' : 'coding');
 
   return (
-    <div className="min-h-screen bg-background select-none">
+    <AssessmentErrorBoundary>
+      <div className="min-h-screen bg-background select-none">
       {/* Submit Confirmation Dialog */}
       <AlertDialog open={showSubmitConfirmation} onOpenChange={setShowSubmitConfirmation}>
         <AlertDialogContent>
@@ -1790,21 +2017,33 @@ public class CandidateSolution {
                     <CardContent className="space-y-4">
                       <div className="rounded-lg border bg-muted/20 overflow-hidden">
                         <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Code Snippet</div>
-                        <pre className="p-3 text-xs font-mono whitespace-pre-wrap overflow-auto">{apexBlanks[currentApexBlankIndex].code_with_blanks}</pre>
+                        <pre className="p-3 text-xs font-mono whitespace-pre-wrap overflow-auto max-h-64">{apexBlanks[currentApexBlankIndex].code_with_blanks}</pre>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Blank:</Label>
-                        <input
-                          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                          value={apexBlankAnswers?.[apexBlanks[currentApexBlankIndex].id]?.[(apexBlanks[currentApexBlankIndex].blanks || [])[0]?.blank_id || 'BLANK_1'] || ''}
-                          onChange={(e) =>
-                            handleApexBlankChange(
-                              apexBlanks[currentApexBlankIndex].id,
-                              (apexBlanks[currentApexBlankIndex].blanks || [])[0]?.blank_id || 'BLANK_1',
-                              e.target.value
-                            )
-                          }
-                        />
+                      <div className="space-y-3">
+                        <Label className="text-sm font-semibold">Fill in the Blanks</Label>
+                        {(apexBlanks[currentApexBlankIndex].blanks || []).map((blank, bi) => (
+                          <div key={blank.blank_id} className="space-y-1">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-primary/20 text-primary text-[10px] font-bold">{bi + 1}</span>
+                              {blank.placeholder}
+                            </Label>
+                            {blank.guidance && (
+                              <p className="text-[11px] text-muted-foreground italic pl-6">{blank.guidance}</p>
+                            )}
+                            <input
+                              className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+                              placeholder={`Enter value for ${blank.placeholder}…`}
+                              value={apexBlankAnswers?.[apexBlanks[currentApexBlankIndex].id]?.[blank.blank_id] || ''}
+                              onChange={(e) =>
+                                handleApexBlankChange(
+                                  apexBlanks[currentApexBlankIndex].id,
+                                  blank.blank_id,
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </div>
+                        ))}
                       </div>
 
                       <div className="flex items-center justify-between">
@@ -1881,8 +2120,8 @@ public class CandidateSolution {
                         <span className="flex items-center gap-1.5">
                           {isAccepted && <CheckCircle2 className="h-3 w-3" />}
                           {hasResult && !isAccepted && <AlertCircle className="h-3 w-3" />}
-                          Q{idx + 1}: {c.title}
-                          <span className="text-[10px] opacity-70">({c.points}pts)</span>
+                          Q{idx + 1}: {renderSafe(c.title)}
+                          <span className="text-[10px] opacity-70">({renderSafe(c.points)}pts)</span>
                         </span>
                       </button>
                     );
@@ -1899,8 +2138,8 @@ public class CandidateSolution {
                       {/* Problem Header */}
                       <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-sm">{currentCoding.title}</h3>
-                          <Badge variant="outline" className="text-[10px]">{currentCoding.points} pts</Badge>
+                          <h3 className="font-semibold text-sm">{renderSafe(currentCoding.title)}</h3>
+                          <Badge variant="outline" className="text-[10px]">{renderSafe(currentCoding.points)} pts</Badge>
                         </div>
                         <div className="flex gap-1">
                           <button
@@ -1918,12 +2157,11 @@ public class CandidateSolution {
                         </div>
                       </div>
 
-                      {/* Problem Content */}
                       <div className="flex-1 overflow-auto p-4 space-y-4">
                         {problemTab === 'description' ? (
                           <>
                             <div className="prose prose-sm dark:prose-invert max-w-none">
-                              <p className="whitespace-pre-wrap text-sm leading-relaxed">{currentCoding.description}</p>
+                              <p className="whitespace-pre-wrap text-sm leading-relaxed">{renderSafe(currentCoding.description)}</p>
                             </div>
 
                             {currentCoding.examples && currentCoding.examples.length > 0 && (
@@ -1932,10 +2170,10 @@ public class CandidateSolution {
                                   <div key={idx} className="rounded-lg border bg-muted/20 overflow-hidden">
                                     <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Example {idx + 1}</div>
                                     <div className="p-3 text-xs font-mono space-y-1">
-                                      <div><span className="text-emerald-500 font-semibold">Input: </span>{ex.input}</div>
-                                      <div><span className="text-blue-500 font-semibold">Output: </span>{ex.output}</div>
+                                      <div><span className="text-muted-foreground">Input:</span> {renderSafe(ex.input)}</div>
+                                      <div><span className="text-muted-foreground">Output:</span> {renderSafe(ex.output)}</div>
                                       {ex.explanation && (
-                                        <div className="text-muted-foreground font-sans pt-1 border-t mt-2"><span className="font-semibold">Explanation: </span>{ex.explanation}</div>
+                                        <div><span className="text-muted-foreground">Explanation:</span> {renderSafe(ex.explanation)}</div>
                                       )}
                                     </div>
                                   </div>
@@ -1946,7 +2184,7 @@ public class CandidateSolution {
                             {currentCoding.constraints && (
                               <div className="rounded-lg border bg-muted/20 overflow-hidden">
                                 <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Constraints</div>
-                                <div className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{currentCoding.constraints}</div>
+                                <div className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{renderSafe(currentCoding.constraints)}</div>
                               </div>
                             )}
 
@@ -1955,8 +2193,8 @@ public class CandidateSolution {
                                 <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide">Sample Test Cases</h4>
                                 {currentCoding.test_cases.map((tc, idx) => (
                                   <div key={tc.id || idx} className="bg-muted/30 rounded-lg p-2.5 text-xs font-mono border">
-                                    <div><span className="text-muted-foreground">Input:</span> {tc.input}</div>
-                                    <div><span className="text-muted-foreground">Expected:</span> {tc.expected_output}</div>
+                                    <div><span className="text-muted-foreground">Input:</span> {renderSafe(tc.input)}</div>
+                                    <div><span className="text-muted-foreground">Expected:</span> {renderSafe(tc.expected_output)}</div>
                                   </div>
                                 ))}
                                 <p className="text-[10px] text-muted-foreground italic">Hidden test cases will be evaluated on submission.</p>
@@ -1981,7 +2219,7 @@ public class CandidateSolution {
                                     </span>
                                   </div>
                                   <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-black/30 rounded p-3 overflow-auto max-h-40">
-                                    {codingResults[currentCoding.id].compilation_error || codingResults[currentCoding.id].runtime_error}
+                                    {renderSafe(codingResults[currentCoding.id].compilation_error || codingResults[currentCoding.id].runtime_error)}
                                   </pre>
                                 </motion.div>
                               )}
@@ -2008,7 +2246,7 @@ public class CandidateSolution {
                                         {codingResults[currentCoding.id].passed === codingResults[currentCoding.id].total && codingResults[currentCoding.id].total > 0 ? 'Accepted' : 'Not Accepted'}
                                       </span>
                                     </div>
-                                    <span className="text-2xl font-bold">{codingResults[currentCoding.id].score.toFixed(0)}%</span>
+                                    <span className="text-2xl font-bold">{safeNumber(codingResults[currentCoding.id].score).toFixed(0)}%</span>
                                   </div>
                                   <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                                     <span>{codingResults[currentCoding.id].passed}/{codingResults[currentCoding.id].total} tests passed</span>
@@ -2016,10 +2254,10 @@ public class CandidateSolution {
                                       <span>({codingResults[currentCoding.id].hidden_passed}/{codingResults[currentCoding.id].hidden_total} hidden)</span>
                                     )}
                                     {codingResults[currentCoding.id].performance?.avg_time_ms && (
-                                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {codingResults[currentCoding.id].performance?.avg_time_ms}ms avg</span>
+                                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {safeString(codingResults[currentCoding.id].performance?.avg_time_ms)}ms avg</span>
                                     )}
                                     {codingResults[currentCoding.id].performance?.avg_memory_kb && (
-                                      <span>{codingResults[currentCoding.id].performance?.avg_memory_kb}KB avg</span>
+                                      <span>{safeString(codingResults[currentCoding.id].performance?.avg_memory_kb)}KB avg</span>
                                     )}
                                   </div>
                                 </motion.div>
@@ -2056,35 +2294,35 @@ public class CandidateSolution {
                                             'border-red-500/50 text-red-600'
                                           }`}
                                         >
-                                          {result.status}
+                                          {renderSafe(result.status)}
                                         </Badge>
                                       </div>
                                       <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-sans">
-                                        {result.time_used && <span>{(parseFloat(result.time_used) * 1000).toFixed(0)} ms</span>}
-                                        {result.memory_used && <span>{result.memory_used} KB</span>}
+                                        {result.time_used && <span>{safeNumber(result.time_used) ? (safeNumber(result.time_used) * 1000).toFixed(0) : '0'} ms</span>}
+                                        {result.memory_used && <span>{renderSafe(result.memory_used)} KB</span>}
                                       </div>
                                     </div>
                                     {/* Always show details for all tests */}
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
-                                      <div><span className="text-muted-foreground/70">Input:</span> {result.input}</div>
-                                      <div><span className="text-muted-foreground/70">Expected:</span> {result.expected_output}</div>
+                                      <div><span className="text-muted-foreground/70">Input:</span> {renderSafe(result.input)}</div>
+                                      <div><span className="text-muted-foreground/70">Expected:</span> {renderSafe(result.expected_output)}</div>
                                       <div className={result.passed ? 'text-green-400' : 'text-red-400'}>
                                         {result.error ? (
-                                          <><span className="text-muted-foreground/70">Error:</span> {result.error}</>
+                                          <><span className="text-muted-foreground/70">Error:</span> {renderSafe(result.error)}</>
                                         ) : (
-                                          <><span className="text-muted-foreground/70">Output:</span> {result.actual_output ?? 'N/A'}</>
+                                          <><span className="text-muted-foreground/70">Output:</span> {renderSafe(result.actual_output) || 'N/A'}</>
                                         )}
                                       </div>
                                       {result.stdout && (
                                         <div className="mt-1 pt-1 border-t border-dotted border-zinc-700">
                                           <span className="text-muted-foreground/70 text-[10px] uppercase">Stdout:</span>
-                                          <pre className="text-[11px] font-mono text-zinc-300 whitespace-pre-wrap bg-black/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{result.stdout}</pre>
+                                          <pre className="text-[11px] font-mono text-zinc-300 whitespace-pre-wrap bg-black/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{renderSafe(result.stdout)}</pre>
                                         </div>
                                       )}
                                       {result.stderr && (
                                         <div className="mt-1 pt-1 border-t border-dotted border-zinc-700">
                                           <span className="text-muted-foreground/70 text-[10px] uppercase">Stderr:</span>
-                                          <pre className="text-[11px] font-mono text-red-400/90 whitespace-pre-wrap bg-red-950/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{result.stderr}</pre>
+                                          <pre className="text-[11px] font-mono text-red-400/90 whitespace-pre-wrap bg-red-950/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{renderSafe(result.stderr)}</pre>
                                         </div>
                                       )}
                                     </div>
@@ -2246,7 +2484,7 @@ public class CandidateSolution {
                                     <AlertCircle className="h-3 w-3" /> Compilation Error
                                   </p>
                                   <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-orange-950/30 border border-orange-500/20 rounded px-2.5 py-2">
-                                    {compilationError}
+                                    {safeString(compilationError)}
                                   </pre>
                                 </div>
                               )}
@@ -2255,7 +2493,7 @@ public class CandidateSolution {
                                 <div>
                                   <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1">Apex Execution Logs</p>
                                   <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap bg-zinc-900 border border-zinc-800 rounded px-2.5 py-2 max-h-48 overflow-auto">
-                                    {result.apex_logs}
+                                    {safeString(result.apex_logs)}
                                   </pre>
                                 </div>
                               )}
@@ -2268,7 +2506,7 @@ public class CandidateSolution {
                                       {result.passed === result.total ? 'Accepted' : 'Wrong Answer'}
                                     </span>
                                     {result.performance?.avg_time_ms && (
-                                      <span className="text-xs text-zinc-400 font-medium tracking-tight">Runtime: {result.performance.avg_time_ms} ms</span>
+                                      <span className="text-xs text-zinc-400 font-medium tracking-tight">Runtime: {safeString(result.performance.avg_time_ms)} ms</span>
                                     )}
                                   </div>
 
@@ -2297,7 +2535,7 @@ public class CandidateSolution {
                                         <p className="text-[10px] font-semibold text-zinc-500 mb-1">Input</p>
                                         <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
                                           <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">
-                                            {activeResult.input || 'No input'}
+                                            {renderSafe(activeResult.input) || 'No input'}
                                           </pre>
                                         </div>
                                       </div>
@@ -2306,7 +2544,7 @@ public class CandidateSolution {
                                         <p className="text-[10px] font-semibold text-zinc-500 mb-1">Output</p>
                                         <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
                                           <pre className={`text-xs font-mono whitespace-pre-wrap ${(!activeResult.passed && !activeResult.stderr) ? 'text-red-400' : 'text-zinc-300'}`}>
-                                            {activeResult.actual_output || activeResult.stdout || ''}
+                                            {renderSafe(activeResult.actual_output || activeResult.stdout)}
                                           </pre>
                                           {(!activeResult.actual_output && !activeResult.stdout && !activeResult.stderr) && (
                                             <span className="text-xs italic text-zinc-600">No output</span>
@@ -2318,7 +2556,7 @@ public class CandidateSolution {
                                         <p className="text-[10px] font-semibold text-zinc-500 mb-1">Expected</p>
                                         <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
                                           <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">
-                                            {activeResult.expected_output || 'No expected output'}
+                                            {renderSafe(activeResult.expected_output) || 'No expected output'}
                                           </pre>
                                         </div>
                                       </div>
@@ -2329,7 +2567,7 @@ public class CandidateSolution {
                                             <XCircleIcon className="h-3 w-3" /> Runtime Error / Stderr
                                           </p>
                                           <pre className="text-xs font-mono text-red-400 bg-red-950/20 border border-red-500/20 rounded px-3 py-2 whitespace-pre-wrap">
-                                            {activeResult.stderr}
+                                            {safeString(activeResult.stderr)}
                                           </pre>
                                         </div>
                                       )}
@@ -2382,5 +2620,6 @@ public class CandidateSolution {
 
       </main>
     </div>
+    </AssessmentErrorBoundary>
   );
 }

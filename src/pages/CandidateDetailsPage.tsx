@@ -44,6 +44,18 @@ const safeRender = (val: any): string => {
   return String(val);
 };
 
+const asArray = <T,>(v: any): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+const getAssessmentContent = (assessmentDetails: any): any => {
+  if (!assessmentDetails) return {};
+  const pd = assessmentDetails?.proctoring_data;
+  if (pd && typeof pd === 'object') {
+    const ac = (pd as any)?.assessment_content;
+    if (ac && typeof ac === 'object') return ac;
+  }
+  return {};
+};
+
 export default function CandidateDetailsPage() {
   const { candidateId } = useParams<{ candidateId: string }>();
   const navigate = useNavigate();
@@ -275,20 +287,107 @@ export default function CandidateDetailsPage() {
                   <CardTitle>Resume</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {candidate.resume_url ? (
-                    <a
-                      href={candidate.resume_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      Open uploaded Resume
-                    </a>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Uploaded resume is noted, but no file URL is available yet.
-                    </p>
-                  )}
+                  <div className="space-y-4">
+                    {candidate.resume_parsed_data && typeof candidate.resume_parsed_data === 'object' ? (
+                      <>
+                        {Array.isArray((candidate.resume_parsed_data as any).skills) && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-2">Skills</div>
+                            <div className="flex flex-wrap gap-2">
+                              {asArray<string>((candidate.resume_parsed_data as any).skills).map((s, i) => (
+                                <Badge key={i} variant="outline" className="text-xs">{safeRender(s)}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {typeof (candidate.resume_parsed_data as any).summary === 'string' && (candidate.resume_parsed_data as any).summary.trim() && (
+                          <div>
+                            <div className="text-xs text-muted-foreground">Resume Summary</div>
+                            <div className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">
+                              {safeRender((candidate.resume_parsed_data as any).summary)}
+                            </div>
+                          </div>
+                        )}
+
+                        {Array.isArray((candidate.resume_parsed_data as any).experience) && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-2">Experience</div>
+                            <div className="space-y-3">
+                              {asArray<any>((candidate.resume_parsed_data as any).experience).map((e, i) => (
+                                <div key={i} className="rounded-md border p-3">
+                                  <div className="font-medium text-sm">{safeRender(e?.title) || 'Role'}</div>
+                                  <div className="text-xs text-muted-foreground">{safeRender(e?.company)}{e?.duration ? ` • ${safeRender(e.duration)}` : ''}</div>
+                                  {e?.description && (
+                                    <div className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{safeRender(e.description)}</div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {Array.isArray((candidate.resume_parsed_data as any).education) && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-2">Education</div>
+                            <div className="space-y-3">
+                              {asArray<any>((candidate.resume_parsed_data as any).education).map((ed, i) => (
+                                <div key={i} className="rounded-md border p-3">
+                                  <div className="font-medium text-sm">{safeRender(ed?.degree) || 'Degree'}</div>
+                                  <div className="text-xs text-muted-foreground">{safeRender(ed?.institution)}{ed?.year ? ` • ${safeRender(ed.year)}` : ''}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {Array.isArray((candidate.resume_parsed_data as any).projects) && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-2">Projects</div>
+                            <div className="space-y-3">
+                              {asArray<any>((candidate.resume_parsed_data as any).projects).map((p, i) => (
+                                <div key={i} className="rounded-md border p-3">
+                                  <div className="font-medium text-sm">{safeRender(p?.name || p?.title) || 'Project'}</div>
+                                  {p?.description && (
+                                    <div className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{safeRender(p.description)}</div>
+                                  )}
+                                  {Array.isArray(p?.technologies) && p.technologies.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {p.technologies.map((t: any, ti: number) => (
+                                        <Badge key={ti} variant="outline" className="text-xs">{safeRender(t)}</Badge>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {typeof (candidate.resume_parsed_data as any).extracted_text === 'string' && (candidate.resume_parsed_data as any).extracted_text.trim() && (
+                          <div>
+                            <div className="text-xs text-muted-foreground">Extracted Text</div>
+                            <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg overflow-auto max-h-96 mt-2">
+                              {safeRender((candidate.resume_parsed_data as any).extracted_text)}
+                            </pre>
+                          </div>
+                        )}
+
+                        {((candidate.resume_parsed_data as any).sections && typeof (candidate.resume_parsed_data as any).sections === 'object') && (
+                          <div>
+                            <div className="text-xs text-muted-foreground">Parsed Sections</div>
+                            <pre className="whitespace-pre-wrap text-xs bg-muted p-4 rounded-lg overflow-auto max-h-96 mt-2">
+                              {JSON.stringify((candidate.resume_parsed_data as any).sections, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No parsed resume details available.
+                      </p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -373,70 +472,134 @@ export default function CandidateDetailsPage() {
                         </div>
 
                         {/* MCQ Results */}
-                        {Array.isArray(assessmentDetails.mcq_submissions) && assessmentDetails.mcq_submissions.length > 0 && (
-                          <div>
-                            <h4 className="font-semibold text-sm mb-3">MCQ Results ({assessmentDetails.mcq_submissions.filter(s => s.is_correct).length}/{assessmentDetails.mcq_submissions.length} correct)</h4>
-                            <div className="space-y-2 max-h-64 overflow-auto">
-                              {assessmentDetails.mcq_submissions.map((sub, idx) => (
-                                <div key={idx} className={`p-3 rounded-lg border ${sub.is_correct ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5'}`}>
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1">
-                                      <p className="text-sm font-medium">{typeof sub.question === 'object' ? JSON.stringify(sub.question) : sub.question}</p>
-                                      <p className="text-xs text-muted-foreground mt-1">
-                                        Your answer: {Array.isArray(sub.options) ? sub.options[sub.selected_index] : 'N/A'}
-                                        {!sub.is_correct && (
-                                          <span className="ml-2 text-success">Correct: {Array.isArray(sub.options) ? sub.options[sub.correct_index] : 'N/A'}</span>
+                        {(() => {
+                          const content = getAssessmentContent(assessmentDetails);
+                          const questions = asArray<any>(assessmentDetails.mcq_questions).length > 0
+                            ? asArray<any>(assessmentDetails.mcq_questions)
+                            : asArray<any>((content as any)?.mcq_questions);
+                          const subs = asArray<any>(assessmentDetails.mcq_submissions);
+                          if (questions.length === 0 && subs.length === 0) return null;
+
+                          const subMap = new Map<string, any>();
+                          subs.forEach((s: any) => {
+                            const qid = s?.question_id != null ? String(s.question_id) : '';
+                            if (qid) subMap.set(qid, s);
+                          });
+
+                          const correctCount = subs.filter((s: any) => s?.is_correct).length;
+
+                          return (
+                            <div>
+                              <h4 className="font-semibold text-sm mb-3">MCQ Results ({correctCount}/{questions.length} correct)</h4>
+                              <div className="space-y-2 max-h-64 overflow-auto">
+                                {questions.map((q: any, idx: number) => {
+                                  const qid = q?.id != null ? String(q.id) : String(idx);
+                                  const sub = subMap.get(qid);
+                                  const attempted = !!sub;
+                                  const isCorrect = !!sub?.is_correct;
+                                  return (
+                                    <div
+                                      key={qid}
+                                      className={`p-3 rounded-lg border ${attempted ? (isCorrect ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5') : 'border-border bg-muted/20'}`}
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1">
+                                          <p className="text-sm font-medium">{safeRender(q?.question || q?.text || q?.question_text) || `Question ${idx + 1}`}</p>
+                                          {!attempted ? (
+                                            <p className="text-xs text-muted-foreground mt-1">Status: Not Attempted</p>
+                                          ) : (
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                              Your answer: {Array.isArray(sub?.options) ? sub.options[sub.selected_index] : 'N/A'}
+                                              {!isCorrect && (
+                                                <span className="ml-2 text-success">Correct: {Array.isArray(sub?.options) ? sub.options[sub.correct_index] : 'N/A'}</span>
+                                              )}
+                                            </p>
+                                          )}
+                                        </div>
+                                        {attempted ? (
+                                          isCorrect ? (
+                                            <CheckCircle className="h-5 w-5 text-success flex-shrink-0" />
+                                          ) : (
+                                            <XCircle className="h-5 w-5 text-destructive flex-shrink-0" />
+                                          )
+                                        ) : (
+                                          <Badge variant="secondary" className="text-xs">Not Attempted</Badge>
                                         )}
-                                      </p>
+                                      </div>
+                                      {attempted && (
+                                        <div className="flex gap-2 mt-2">
+                                          <Badge variant="outline" className="text-xs">{safeRender(sub?.difficulty)}</Badge>
+                                          <Badge variant="outline" className="text-xs">{safeRender(sub?.topic)}</Badge>
+                                        </div>
+                                      )}
                                     </div>
-                                    {sub.is_correct ? (
-                                      <CheckCircle className="h-5 w-5 text-success flex-shrink-0" />
-                                    ) : (
-                                      <XCircle className="h-5 w-5 text-destructive flex-shrink-0" />
-                                    )}
-                                  </div>
-                                  <div className="flex gap-2 mt-2">
-                                    <Badge variant="outline" className="text-xs">{safeRender(sub.difficulty)}</Badge>
-                                    <Badge variant="outline" className="text-xs">{safeRender(sub.topic)}</Badge>
-                                  </div>
-                                </div>
-                              ))}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Coding Results */}
-                        {Array.isArray(assessmentDetails.coding_submissions) && assessmentDetails.coding_submissions.length > 0 && (
-                          <div>
-                            <h4 className="font-semibold text-sm mb-3">Coding Challenges</h4>
-                            <div className="space-y-4">
-                              {assessmentDetails.coding_submissions.map((sub, idx) => {
-                                const challenge = Array.isArray(assessmentDetails.coding_challenges) ? assessmentDetails.coding_challenges.find(c => c.id === sub.challenge_id) : undefined;
-                                return (
-                                  <div key={idx} className="p-4 rounded-lg border">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <h5 className="font-medium">{safeRender(challenge?.title) || `Challenge ${idx + 1}`}</h5>
-                                      <Badge variant={sub.score_percentage >= 70 ? 'default' : 'secondary'}>
-                                        {sub.passed_count}/{sub.total_tests} tests passed
-                                      </Badge>
-                                    </div>
-                                    <pre className="text-xs bg-muted p-3 rounded max-h-40 overflow-auto mb-3 whitespace-pre-wrap">
-                                      {typeof sub.code === 'object' ? JSON.stringify(sub.code, null, 2) : sub.code}
-                                    </pre>
-                                    <div className="space-y-1">
-                                      {Array.isArray(sub.test_results) && sub.test_results.map((tr, ti) => (
-                                        <div key={ti} className={`flex items-center gap-2 text-xs ${tr.passed ? 'text-success' : 'text-destructive'}`}>
-                                          {tr.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                                          <span>Input: {safeRender(tr.input)} → Expected: {safeRender(tr.expected_output)}, Got: {safeRender(tr.actual_output) || 'Error'}</span>
+                        {(() => {
+                          const content = getAssessmentContent(assessmentDetails);
+                          const challenges = asArray<any>(assessmentDetails.coding_challenges).length > 0
+                            ? asArray<any>(assessmentDetails.coding_challenges)
+                            : asArray<any>((content as any)?.coding_challenges);
+                          const subs = asArray<any>(assessmentDetails.coding_submissions);
+
+                          if (challenges.length === 0 && subs.length === 0) return null;
+
+                          const subMap = new Map<string, any>();
+                          subs.forEach((s: any) => {
+                            const cid = s?.challenge_id != null ? String(s.challenge_id) : '';
+                            if (cid) subMap.set(cid, s);
+                          });
+
+                          return (
+                            <div>
+                              <h4 className="font-semibold text-sm mb-3">Coding Challenges</h4>
+                              <div className="space-y-4">
+                                {challenges.map((ch: any, idx: number) => {
+                                  const cid = ch?.id != null ? String(ch.id) : String(idx);
+                                  const sub = subMap.get(cid);
+                                  const attempted = !!sub;
+                                  return (
+                                    <div key={cid} className="p-4 rounded-lg border">
+                                      <div className="flex items-center justify-between mb-2 gap-3">
+                                        <h5 className="font-medium">{safeRender(ch?.title) || `Challenge ${idx + 1}`}</h5>
+                                        {attempted ? (
+                                          <Badge variant={(sub?.score_percentage ?? 0) >= 70 ? 'default' : 'secondary'}>
+                                            {safeRender(sub?.passed_count)}/{safeRender(sub?.total_tests)} tests passed
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="secondary">Not Attempted</Badge>
+                                        )}
+                                      </div>
+
+                                      <pre className="text-xs bg-muted p-3 rounded max-h-40 overflow-auto mb-3 whitespace-pre-wrap">
+                                        {attempted ? (typeof sub?.code === 'object' ? JSON.stringify(sub.code, null, 2) : String(sub?.code || '')) : ''}
+                                      </pre>
+
+                                      {!attempted ? (
+                                        <div className="text-xs text-muted-foreground">Status: Not Attempted</div>
+                                      ) : (
+                                        <div className="space-y-1">
+                                          {Array.isArray(sub?.test_results) && sub.test_results.map((tr: any, ti: number) => (
+                                            <div key={ti} className={`flex items-center gap-2 text-xs ${tr?.passed ? 'text-success' : 'text-destructive'}`}>
+                                              {tr?.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                                              <span>Input: {safeRender(tr?.input)} → Expected: {safeRender(tr?.expected_output)}, Got: {safeRender(tr?.actual_output) || 'Error'}</span>
+                                            </div>
+                                          ))}
                                         </div>
-                                      ))}
+                                      )}
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Apex Fill-in-the-Blanks Results */}
                         {Array.isArray((assessmentDetails.proctoring_data as any)?.assessment_content?.apex_blanks) && (
@@ -566,7 +729,7 @@ export default function CandidateDetailsPage() {
                                         <p>{typeof response.transcript === 'object' ? JSON.stringify(response.transcript) : response.transcript}</p>
                                       </div>
                                     ) : (
-                                      <p className="text-sm text-muted-foreground italic">No response recorded</p>
+                                      <p className="text-sm text-muted-foreground italic">Status: Not Attempted</p>
                                     )}
                                   </div>
                                 );
@@ -678,9 +841,11 @@ export default function CandidateDetailsPage() {
                   <CardDescription>ATS screening analysis</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                  <div className="p-4 bg-muted/50 rounded-lg">
                     <p className="text-xs text-muted-foreground mb-1">Overall Score</p>
-                    <ScoreBadge score={screening.overall_score} size="lg" />
+                    <div className="flex justify-center">
+                      <ScoreBadge score={screening.overall_score} size="lg" />
+                    </div>
                     {screening.shortlisted && (
                       <Badge className="mt-2" variant="default">Shortlisted</Badge>
                     )}
@@ -690,27 +855,35 @@ export default function CandidateDetailsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     {typeof screening.skill_relevance_score === 'number' && (
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                      <div className="p-3 bg-muted/30 rounded-lg">
                         <p className="text-xs text-muted-foreground mb-1">Skills</p>
-                        <ScoreBadge score={screening.skill_relevance_score} size="sm" />
+                        <div className="flex justify-center">
+                          <ScoreBadge score={screening.skill_relevance_score} size="sm" />
+                        </div>
                       </div>
                     )}
                     {typeof screening.experience_score === 'number' && (
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                      <div className="p-3 bg-muted/30 rounded-lg">
                         <p className="text-xs text-muted-foreground mb-1">Experience</p>
-                        <ScoreBadge score={screening.experience_score} size="sm" />
+                        <div className="flex justify-center">
+                          <ScoreBadge score={screening.experience_score} size="sm" />
+                        </div>
                       </div>
                     )}
                     {typeof screening.education_score === 'number' && (
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                      <div className="p-3 bg-muted/30 rounded-lg">
                         <p className="text-xs text-muted-foreground mb-1">Education</p>
-                        <ScoreBadge score={screening.education_score} size="sm" />
+                        <div className="flex justify-center">
+                          <ScoreBadge score={screening.education_score} size="sm" />
+                        </div>
                       </div>
                     )}
                     {typeof screening.credibility_score === 'number' && (
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
+                      <div className="p-3 bg-muted/30 rounded-lg">
                         <p className="text-xs text-muted-foreground mb-1">Credibility</p>
-                        <ScoreBadge score={screening.credibility_score} size="sm" />
+                        <div className="flex justify-center">
+                          <ScoreBadge score={screening.credibility_score} size="sm" />
+                        </div>
                       </div>
                     )}
                   </div>

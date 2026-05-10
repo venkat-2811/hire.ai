@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth, useAuth } from '@/hooks/useAuth';
+import { useJob } from '@/hooks/useJobs';
+import { LEVEL_CONFIG, type RoleLevel } from '@/types/database';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,20 +18,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ArrowLeft, Loader2, Save, Sparkles } from 'lucide-react';
-import { useJob } from '@/hooks/useJobs';
 import { toast } from 'sonner';
-import { LEVEL_CONFIG } from '@/types/database';
+import { jobsApi } from '@/lib/api';
 
 export default function EditJobPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const { loading: authLoading } = useRequireAuth();
-  const { getToken } = useAuth();
+  useAuth();
   const { data: job, isLoading } = useJob(jobId || '');
 
   const [title, setTitle] = useState('');
   const [role, setRole] = useState('');
-  const [level, setLevel] = useState('');
+  const [level, setLevel] = useState<RoleLevel | ''>('');
   const [description, setDescription] = useState('');
   const [mustHaveSkills, setMustHaveSkills] = useState('');
   const [goodToHaveSkills, setGoodToHaveSkills] = useState('');
@@ -68,33 +69,20 @@ export default function EditJobPage() {
 
     setSaving(true);
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/jobs/${jobId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          title,
-          role,
-          level,
-          description,
-          must_have_skills: mustHaveSkills.split(',').map(s => s.trim()).filter(Boolean),
-          good_to_have_skills: goodToHaveSkills.split(',').map(s => s.trim()).filter(Boolean),
-          min_experience_years: parseInt(minExperience) || 0,
-          resume_cutoff: parseInt(resumeCutoff) || 0,
-          assessment_cutoff: parseInt(assessmentCutoff) || 0,
-          interview_cutoff: parseInt(interviewCutoff) || 0,
-          location: location || undefined,
-          endCustomer: endCustomer || undefined,
-        }),
+      await jobsApi.update(jobId || '', {
+        title,
+        role: role as any,
+        level,
+        description,
+        must_have_skills: mustHaveSkills.split(',').map(s => s.trim()).filter(Boolean),
+        good_to_have_skills: goodToHaveSkills.split(',').map(s => s.trim()).filter(Boolean),
+        min_experience_years: parseInt(minExperience) || 0,
+        resume_cutoff: parseInt(resumeCutoff) || 0,
+        assessment_cutoff: parseInt(assessmentCutoff) || 0,
+        interview_cutoff: parseInt(interviewCutoff) || 0,
+        location: location || undefined,
+        endCustomer: endCustomer || undefined,
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update job');
-      }
 
       toast.success('Job updated successfully');
       navigate(`/jobs/${jobId}`);
@@ -112,20 +100,7 @@ export default function EditJobPage() {
     }
     setExtractingSkills(true);
     try {
-      const token = await getToken();
-      const response = await fetch('/api/jobs/extract-skills', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ description, title, role }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to extract skills');
-      }
-      const data = await response.json();
+      const data = await jobsApi.extractSkills({ description, title, role });
       const currentMustHave = mustHaveSkills.split(',').map(s => s.trim()).filter(Boolean);
       const currentGoodToHave = goodToHaveSkills.split(',').map(s => s.trim()).filter(Boolean);
       const newMustHave = (data.must_have_skills || []).filter(
@@ -207,14 +182,14 @@ export default function EditJobPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="level">Level *</Label>
-                  <Select value={level} onValueChange={setLevel}>
+                  <Select value={level} onValueChange={(v) => setLevel(v as RoleLevel)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select level" />
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(LEVEL_CONFIG).map(([key, config]) => (
                         <SelectItem key={key} value={key}>
-                          {config.label}
+                          {(config as any).label}
                         </SelectItem>
                       ))}
                     </SelectContent>

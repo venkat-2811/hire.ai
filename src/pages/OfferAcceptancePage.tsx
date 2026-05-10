@@ -11,8 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-
-const API_BASE_URL = '/api';
+import { candidatesWorkflowApi } from '@/lib/api';
 
 interface OfferDetails {
   candidate_id: string;
@@ -52,12 +51,7 @@ export default function OfferAcceptancePage() {
 
     async function fetchOffer() {
       try {
-        const res = await fetch(`${API_BASE_URL}/candidates/offer-details?token=${encodeURIComponent(token!)}`);
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail || 'This offer link is invalid or has expired.');
-        }
-        const data: OfferDetails = await res.json();
+        const data: OfferDetails = await candidatesWorkflowApi.getOfferDetails(token);
         setOffer(data);
         if (data.already_accepted) {
           setAccepted(true);
@@ -90,19 +84,10 @@ export default function OfferAcceptancePage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/candidates/submit-offer-acceptance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          full_name_signature: fullNameInput.trim(),
-        }),
+      await candidatesWorkflowApi.submitOfferAcceptance({
+        token,
+        full_name_signature: fullNameInput.trim(),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || 'Failed to submit acceptance.');
-      }
 
       setAccepted(true);
       toast.success('Your offer has been accepted. Welcome aboard! 🎉');

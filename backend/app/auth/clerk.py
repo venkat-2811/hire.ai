@@ -18,9 +18,34 @@ security = HTTPBearer(auto_error=False)
 @lru_cache(maxsize=1)
 def _get_jwks_cached(jwks_url: str) -> Dict[str, Any]:
     """Fetch and cache JWKS from Clerk."""
-    response = httpx.get(jwks_url, timeout=10.0)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = httpx.get(
+            jwks_url,
+            timeout=10.0,
+            follow_redirects=True,
+            headers={"Accept": "application/json"},
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch Clerk JWKS from {jwks_url}: {e}")
+
+    if response.status_code != 200:
+        body_preview = (response.text or "")[:300]
+        raise RuntimeError(
+            f"Failed to fetch Clerk JWKS from {jwks_url}: HTTP {response.status_code}. Body preview: {body_preview}"
+        )
+
+    try:
+        jwks = response.json()
+    except Exception as e:
+        body_preview = (response.text or "")[:300]
+        raise RuntimeError(
+            f"Invalid JSON from Clerk JWKS endpoint {jwks_url}: {e}. Body preview: {body_preview}"
+        )
+
+    if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
+        raise RuntimeError(f"Invalid JWKS format from {jwks_url}")
+
+    return jwks
 
 
 def get_jwks() -> Dict[str, Any]:
@@ -28,7 +53,11 @@ def get_jwks() -> Dict[str, Any]:
     settings = get_settings()
     if not settings.clerk_jwks_url:
         raise RuntimeError("CLERK_JWKS_URL is not configured")
-    return _get_jwks_cached(settings.clerk_jwks_url)
+    try:
+        return _get_jwks_cached(settings.clerk_jwks_url)
+    except Exception:
+        _get_jwks_cached.cache_clear()
+        raise
 
 
 def get_signing_key(token: str) -> Any:
@@ -37,8 +66,13 @@ def get_signing_key(token: str) -> Any:
         unverified_header = jwt.get_unverified_header(token)
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token header: {e}")
-    
-    jwks = get_jwks()
+
+    try:
+        jwks = get_jwks()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication unavailable: {e}")
     
     for key in jwks.get("keys", []):
         if key.get("kid") == unverified_header.get("kid"):
@@ -56,8 +90,13 @@ def verify_clerk_token(token: str) -> Dict[str, Any]:
     
     if not settings.clerk_issuer:
         raise RuntimeError("CLERK_ISSUER is not configured")
-    
-    signing_key = get_signing_key(token)
+
+    try:
+        signing_key = get_signing_key(token)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication unavailable: {e}")
     
     try:
         payload = jwt.decode(
@@ -122,7 +161,12 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     token = credentials.credentials
-    payload = verify_clerk_token(token)
+    try:
+        payload = verify_clerk_token(token)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return ClerkUser(payload)
 
 
