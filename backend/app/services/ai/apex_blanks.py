@@ -21,20 +21,26 @@ async def generate_apex_fill_in_the_blanks(
         "REQUIREMENTS:\n"
         f"- Generate exactly {count} questions.\n"
         f"- Difficulty: {difficulty}.\n"
-        "- Each question must include a code snippet with blanks.\n"
-        "- Each blank must have a unique id (e.g., BLANK_1, BLANK_2).\n"
+        "- Each question must include a realistic Apex code snippet with blanks removed.\n"
+        "- CRITICAL: Replace each missing part in the code with the EXACT token ___ (three underscores).\n"
+        "- The code field MUST contain ___ for every blank, in the same order as the blanks array.\n"
+        "- Example code: 'List<Account> accs = [___ Id, Name FROM ___ LIMIT ___];'\n"
+        "- Each blank must have a unique id (BLANK_1, BLANK_2, ...) in order of appearance in the code.\n"
+        "- placeholder must be a short descriptive hint (e.g. 'SOQL keyword', 'object name', 'integer limit').\n"
         "- Provide expected answers for each blank.\n"
         "- Include points per question (5-15).\n\n"
         "OUTPUT JSON ONLY in this shape:\n"
         "{\n"
         '  "questions": [\n'
         "    {\n"
-        '      "id": "...",\n'
-        '      "title": "...",\n'
-        '      "prompt": "...",\n'
-        '      "code": "...",\n'
+        '      "id": "q1",\n'
+        '      "title": "SOQL Query",\n'
+        '      "prompt": "Complete the SOQL query to fetch accounts.",\n'
+        '      "code": "List<Account> accs = [___ Id FROM ___ LIMIT ___];",\n'
         '      "blanks": [\n'
-        '        {"blank_id": "BLANK_1", "placeholder": "___", "expected": "..."}\n'
+        '        {"blank_id": "BLANK_1", "placeholder": "SOQL keyword", "expected": "SELECT"},\n'
+        '        {"blank_id": "BLANK_2", "placeholder": "object name", "expected": "Account"},\n'
+        '        {"blank_id": "BLANK_3", "placeholder": "integer limit", "expected": "100"}\n'
         "      ],\n"
         '      "points": 10\n'
         "    }\n"
@@ -46,7 +52,25 @@ async def generate_apex_fill_in_the_blanks(
     questions = generated.get("questions") if isinstance(generated, dict) else None
     if not isinstance(questions, list):
         return []
-    return [q for q in questions if isinstance(q, dict)]
+    result = []
+    for q in questions:
+        if not isinstance(q, dict):
+            continue
+        # Normalize field names to match frontend interface
+        if "code_with_blanks" not in q and "code" in q:
+            q["code_with_blanks"] = q["code"]
+        if "instructions" not in q and "prompt" in q:
+            q["instructions"] = q["prompt"]
+        if "instructions" not in q and "title" in q:
+            q["instructions"] = q["title"]
+        if "code_with_blanks" not in q:
+            q["code_with_blanks"] = ""
+        # Normalize blank guidance field
+        for blank in q.get("blanks", []):
+            if isinstance(blank, dict) and "guidance" not in blank:
+                blank["guidance"] = blank.get("hint") or blank.get("notes") or ""
+        result.append(q)
+    return result
 
 
 async def evaluate_apex_fill_in_the_blanks(
@@ -94,7 +118,7 @@ async def evaluate_apex_fill_in_the_blanks(
     )
 
     ai = get_ai()
-    judged = await ai.generate_json(prompt, temperature=0.2, max_tokens=4000, timeout_s=25)
+    judged = await ai.generate_json(prompt, temperature=0.2, max_tokens=4000, timeout_s=60)
 
     results = judged.get("results") if isinstance(judged, dict) else None
     if not isinstance(results, list):

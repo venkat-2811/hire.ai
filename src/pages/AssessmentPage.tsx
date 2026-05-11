@@ -74,6 +74,7 @@ interface TestCase {
 
 interface TestResult {
   test_case_id: string;
+  is_hidden?: boolean;
   passed: boolean;
   input: any;
   expected_output: any;
@@ -364,7 +365,7 @@ public class CandidateSolution {
     const normalized = normalize(value);
     if (normalized !== null && typeof normalized === 'object') {
       try {
-        return JSON.stringify(normalized, null, 2);
+        return JSON.stringify(normalized);
       } catch {
         return safeString(normalized);
       }
@@ -2015,9 +2016,21 @@ public class CandidateSolution {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="rounded-lg border bg-muted/20 overflow-hidden">
-                        <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Code Snippet</div>
-                        <pre className="p-3 text-xs font-mono whitespace-pre-wrap overflow-auto max-h-64">{apexBlanks[currentApexBlankIndex].code_with_blanks}</pre>
+                      <div className="rounded-lg border border-zinc-700 bg-zinc-900 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-zinc-800 border-b border-zinc-700 text-xs font-semibold text-zinc-300">Code Snippet</div>
+                        <pre className="p-3 text-xs font-mono text-zinc-100 whitespace-pre-wrap overflow-auto max-h-64 leading-relaxed">
+                          {apexBlanks[currentApexBlankIndex].code_with_blanks.split('___').map((part, i, arr) => (
+                            <span key={i}>
+                              {part}
+                              {i < arr.length - 1 && (
+                                <span className="inline-flex items-center gap-0.5 mx-0.5 px-1.5 py-0.5 rounded bg-amber-400/20 border border-amber-400/50 text-amber-300 font-bold text-[10px] align-middle">
+                                  <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-amber-400/30 text-[9px]">{i + 1}</span>
+                                  ___
+                                </span>
+                              )}
+                            </span>
+                          ))}
+                        </pre>
                       </div>
                       <div className="space-y-3">
                         <Label className="text-sm font-semibold">Fill in the Blanks</Label>
@@ -2074,18 +2087,8 @@ public class CandidateSolution {
                       </div>
 
                       {apexBlanksEvaluation && (
-                        <div className="rounded-lg border p-4 space-y-2">
-                          <div className="font-medium text-foreground">Evaluation</div>
-                          <div className="text-sm text-muted-foreground">
-                            Score: {apexBlanksEvaluation.total_score} / {apexBlanksEvaluation.max_score}
-                          </div>
-                          {(apexBlanksEvaluation.results || [])
-                            .filter((r) => r.question_id === apexBlanks[currentApexBlankIndex].id)
-                            .map((r) => (
-                              <div key={r.question_id} className="text-sm">
-                                <div className="text-muted-foreground">{r.feedback}</div>
-                              </div>
-                            ))}
+                        <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3">
+                          <p className="text-sm text-green-400 font-medium">Answers submitted successfully.</p>
                         </div>
                       )}
                     </CardContent>
@@ -2302,10 +2305,17 @@ public class CandidateSolution {
                                         {result.memory_used && <span>{renderSafe(result.memory_used)} KB</span>}
                                       </div>
                                     </div>
-                                    {/* Always show details for all tests */}
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
-                                      <div><span className="text-muted-foreground/70">Input:</span> {renderSafe(result.input)}</div>
-                                      <div><span className="text-muted-foreground/70">Expected:</span> {renderSafe(result.expected_output)}</div>
+                                      {result.is_hidden ? (
+                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground italic">
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400">🔒 Hidden test — input &amp; expected not shown</span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div><span className="text-muted-foreground/70">Input:</span> {renderSafe(result.input)}</div>
+                                          <div><span className="text-muted-foreground/70">Expected:</span> {renderSafe(result.expected_output)}</div>
+                                        </>
+                                      )}
                                       <div className={result.passed ? 'text-green-400' : 'text-red-400'}>
                                         {result.error ? (
                                           <><span className="text-muted-foreground/70">Error:</span> {renderSafe(result.error)}</>
@@ -2316,7 +2326,7 @@ public class CandidateSolution {
                                       {result.stdout && (
                                         <div className="mt-1 pt-1 border-t border-dotted border-zinc-700">
                                           <span className="text-muted-foreground/70 text-[10px] uppercase">Stdout:</span>
-                                          <pre className="text-[11px] font-mono text-zinc-300 whitespace-pre-wrap bg-black/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{renderSafe(result.stdout)}</pre>
+                                          <pre className="text-[11px] font-mono text-zinc-100 whitespace-pre-wrap bg-black/30 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{renderSafe(result.stdout)}</pre>
                                         </div>
                                       )}
                                       {result.stderr && (

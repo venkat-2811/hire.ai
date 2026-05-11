@@ -343,209 +343,220 @@ class HackerEarthExecutor:
             )
 
         if language in ("python3", "python"):
-            # Use repr() to safely embed the JSON string as a Python string literal.
+            # Use repr() to safely embed values — then substitute via .replace()
+            # NOT an f-string to avoid any { } parsing issues with template body.
             tc_repr = repr(tc_json)
             ps_repr = repr(ps_json)
             fn_repr = repr(fn)
             mode_repr = repr(mode)
             cls_repr = repr(cls)
-            # Candidate code must be embedded safely — use repr to avoid triple-quote collision.
             code_repr = repr(code)
-            return f'''import json
-import sys
-import traceback
-import re
-from math import isfinite
-
-TEST_CASES = json.loads({tc_repr})
-PARAM_SCHEMA = json.loads({ps_repr})
-FUNCTION_NAME = {fn_repr}
-EXECUTION_MODE = {mode_repr}
-CLASS_NAME = {cls_repr}
-
-def _get_args(input_data, target=None):
-    import inspect as _inspect
-    if isinstance(input_data, dict):
-        # Try to match dict keys to the target function's parameter names (skip 'self')
-        if target is not None:
-            try:
-                sig = _inspect.signature(target)
-                param_names = [
-                    p for p in sig.parameters
-                    if p not in ("self", "cls") and sig.parameters[p].kind not in
-                    (_inspect.Parameter.VAR_POSITIONAL, _inspect.Parameter.VAR_KEYWORD)
-                ]
-                if param_names:
-                    # If input has a single "input" key and only one param, unwrap it
-                    if list(input_data.keys()) == ["input"] and len(param_names) == 1:
-                        return [input_data["input"]]
-                    # Match by name
-                    if all(p in input_data for p in param_names):
-                        return [input_data[p] for p in param_names]
-                    # Positional fallback
-                    return list(input_data.values())
-            except Exception:
-                pass
-        if PARAM_SCHEMA:
-            return [input_data.get(p.get("name")) for p in PARAM_SCHEMA]
-        if list(input_data.keys()) == ["input"]:
-            return [input_data["input"]]
-        return list(input_data.values())
-    if isinstance(input_data, (list, tuple)):
-        return list(input_data)
-    return [input_data]
-
-def _nv(v, d=0):
-    if d > 8:
-        return v
-    if isinstance(v, str):
-        s = v.strip()
-        for _ in range(4):
-            st = s.strip()
-            if not st:
-                break
-            if not ((st.startswith("{{") and st.endswith("}}")) or (st.startswith("[") and st.endswith("]")) or (st.startswith('"') and st.endswith('"'))):
-                break
-            try:
-                parsed = json.loads(st)
-                if isinstance(parsed, str):
-                    s = parsed
-                    continue
-                return _nv(parsed, d + 1)
-            except Exception:
-                break
-        sl = s.lower()
-        if sl == "true": return True
-        if sl == "false": return False
-        if sl in ("null", "none"): return None
-        try:
-            if re.match(r"^[+-]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][+-]?\\d+)?$", s):
-                n = float(s)
-                return int(n) if abs(n - round(n)) < 1e-12 else n
-        except Exception:
-            pass
-        return s
-    if v is None: return None
-    if isinstance(v, bool): return v
-    if isinstance(v, float):
-        return str(v) if not isfinite(v) else v
-    if isinstance(v, int): return v
-    if isinstance(v, (list, tuple)):
-        return [_nv(x, d + 1) for x in v]
-    if isinstance(v, dict):
-        return {{str(k): _nv(v[k], d + 1) for k in sorted(str(kk) for kk in v.keys())}}
-    return v
-
-def _eq(a, b):
-    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        try: return abs(float(a) - float(b)) <= 1e-6
-        except: return a == b
-    if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(_eq(x, y) for x, y in zip(a, b))
-    return a == b
-
-def _cmp(actual, expected):
-    return _eq(_nv(actual), _nv(expected))
-
-if __name__ == "__main__":
-    import io as _io
-    _real_stdin = sys.stdin
-    sys.stdin = _io.StringIO("")  # prevent candidate code from blocking on input()
-    report = {{"success": True, "status": "accepted", "score": 0, "testcases": []}}
-    try:
-        namespace = {{}}
-        exec(compile({code_repr}, "<candidate_code>", "exec"), namespace)
-        sys.stdin = _real_stdin
-
-        # Resolve target callable
-        if EXECUTION_MODE == "class":
-            klass = namespace.get(CLASS_NAME)
-            if klass is None:
-                # Try any class in namespace
-                klass = next((v for v in namespace.values() if isinstance(v, type) and not v.__name__.startswith("_")), None)
-            if klass is None:
-                raise NameError(f"Class '{{CLASS_NAME}}' not found in submitted code")
-            inst = klass()
-            if FUNCTION_NAME:
-                target = getattr(inst, FUNCTION_NAME, None)
-            else:
-                target = None
-            if target is None:
-                # Auto-detect: first public non-dunder method
-                import inspect as _insp
-                target = next(
-                    (getattr(inst, m) for m in dir(inst)
-                     if not m.startswith("_") and callable(getattr(inst, m, None))
-                     and not isinstance(getattr(type(inst), m, None), (staticmethod, classmethod))),
-                    None
-                )
-            if target is None:
-                raise AttributeError(f"No callable method found on '{{CLASS_NAME}}'")
-        elif FUNCTION_NAME:
-            target = namespace.get(FUNCTION_NAME)
-            if target is None:
-                # Auto-detect: look for class Solution first, then any def
-                if "Solution" in namespace:
-                    inst = namespace["Solution"]()
-                    target = getattr(inst, FUNCTION_NAME, None) or next(
-                        (getattr(inst, m) for m in dir(inst) if not m.startswith("_") and callable(getattr(inst, m))), None
-                    )
-                if target is None:
-                    raise NameError(f"Function '{{FUNCTION_NAME}}' not found in submitted code")
-        else:
-            # No function_name — auto-detect
-            if "Solution" in namespace:
-                inst = namespace["Solution"]()
-                target = next((getattr(inst, m) for m in dir(inst) if not m.startswith("_") and callable(getattr(inst, m))), None)
-            else:
-                target = next((v for v in namespace.values() if callable(v) and not isinstance(v, type)), None)
-            if target is None:
-                raise NameError("Could not find a callable function in submitted code")
-
-        _real_stdout = sys.stdout
-        passed = 0
-        for idx, tc in enumerate(TEST_CASES):
-            input_data = tc.get("input")
-            expected = tc.get("expected")
-            tr = {{"index": idx, "input": input_data, "expected": expected, "actual": None,
-                   "passed": False, "status": "NA", "stdout": "", "stderr": "", "error": None}}
-            try:
-                if input_data is None:
-                    raise ValueError("Testcase input is None")
-                args = _get_args(input_data, target)
-                _cap = _io.StringIO()
-                sys.stdout = _cap
-                try:
-                    result = target(*args)
-                finally:
-                    sys.stdout = _real_stdout
-                tr["stdout"] = _cap.getvalue()
-                tr["actual"] = result
-                tr["passed"] = _cmp(result, expected)
-                tr["status"] = "AC" if tr["passed"] else "WA"
-                if not tr["passed"]:
-                    tr["stderr"] = json.dumps({{"norm_actual": _nv(result), "norm_expected": _nv(expected)}}, ensure_ascii=False)
-                if tr["passed"]:
-                    passed += 1
-            except Exception as exc:
-                sys.stdout = _real_stdout
-                tr["status"] = "RE"
-                tr["error"] = str(exc)
-                tr["stderr"] = traceback.format_exc()
-            report["testcases"].append(tr)
-
-        total = len(TEST_CASES)
-        report["score"] = round(passed / total * 100, 2) if total else 0
-        report["success"] = passed == total and total > 0
-        report["status"] = "accepted" if report["success"] else "wrong_answer"
-    except Exception:
-        report["success"] = False
-        report["status"] = "compile_error"
-        report["stderr"] = traceback.format_exc()
-
-    print("---RESULT_SEPARATOR---")
-    print(json.dumps(report, ensure_ascii=False))
-'''
+            _TEMPLATE = (
+                'import json\n'
+                'import sys\n'
+                'import traceback\n'
+                'import re\n'
+                'from math import isfinite\n'
+                '\n'
+                'TEST_CASES = json.loads(__TC_REPR__)\n'
+                'PARAM_SCHEMA = json.loads(__PS_REPR__)\n'
+                'FUNCTION_NAME = __FN_REPR__\n'
+                'EXECUTION_MODE = __MODE_REPR__\n'
+                'CLASS_NAME = __CLS_REPR__\n'
+                '\n'
+                'def _get_args(input_data, target=None):\n'
+                '    import inspect as _inspect\n'
+                '    unwrapped = input_data\n'
+                '    if isinstance(input_data, dict) and list(input_data.keys()) == ["input"]:\n'
+                '        unwrapped = input_data["input"]\n'
+                '    if isinstance(input_data, dict):\n'
+                '        if target is not None:\n'
+                '            try:\n'
+                '                sig = _inspect.signature(target)\n'
+                '                param_names = [\n'
+                '                    p for p in sig.parameters\n'
+                '                    if p not in ("self", "cls") and sig.parameters[p].kind not in\n'
+                '                    (_inspect.Parameter.VAR_POSITIONAL, _inspect.Parameter.VAR_KEYWORD)\n'
+                '                ]\n'
+                '                if param_names:\n'
+                '                    if len(param_names) == 1:\n'
+                '                        return [unwrapped]\n'
+                '                    if isinstance(unwrapped, list) and len(unwrapped) == len(param_names):\n'
+                '                        return list(unwrapped)\n'
+                '                    if isinstance(unwrapped, dict):\n'
+                '                        if all(p in unwrapped for p in param_names):\n'
+                '                            return [unwrapped[p] for p in param_names]\n'
+                '                        return list(unwrapped.values())\n'
+                '                    if isinstance(input_data, dict) and all(p in input_data for p in param_names):\n'
+                '                        return [input_data[p] for p in param_names]\n'
+                '                    return list(unwrapped.values()) if isinstance(unwrapped, dict) else [unwrapped]\n'
+                '            except Exception:\n'
+                '                pass\n'
+                '        if PARAM_SCHEMA:\n'
+                '            src = unwrapped if isinstance(unwrapped, dict) else input_data\n'
+                '            return [src.get(p.get("name")) for p in PARAM_SCHEMA]\n'
+                '        if isinstance(unwrapped, dict):\n'
+                '            return list(unwrapped.values())\n'
+                '        if isinstance(unwrapped, list):\n'
+                '            return unwrapped\n'
+                '        if unwrapped is not input_data:\n'
+                '            return [unwrapped]\n'
+                '        return list(input_data.values())\n'
+                '    if isinstance(input_data, (list, tuple)):\n'
+                '        return list(input_data)\n'
+                '    return [input_data]\n'
+                '\n'
+                'def _nv(v, d=0):\n'
+                '    if d > 8:\n'
+                '        return v\n'
+                '    if isinstance(v, str):\n'
+                '        s = v.strip()\n'
+                '        for _ in range(4):\n'
+                '            st = s.strip()\n'
+                '            if not st:\n'
+                '                break\n'
+                '            if not ((st.startswith("{") and st.endswith("}")) or (st.startswith("[") and st.endswith("]")) or (st.startswith(\'"\') and st.endswith(\'"\') )):\n'
+                '                break\n'
+                '            try:\n'
+                '                parsed = json.loads(st)\n'
+                '                if isinstance(parsed, str):\n'
+                '                    s = parsed\n'
+                '                    continue\n'
+                '                return _nv(parsed, d + 1)\n'
+                '            except Exception:\n'
+                '                break\n'
+                '        sl = s.lower()\n'
+                '        if sl == "true": return True\n'
+                '        if sl == "false": return False\n'
+                '        if sl in ("null", "none"): return None\n'
+                '        try:\n'
+                r'            if re.match(r"^[+-]?(\d+\.?\d*|\d*\.?\d+)([eE][+-]?\d+)?$", s):' + '\n'
+                '                n = float(s)\n'
+                '                return int(n) if abs(n - round(n)) < 1e-12 else n\n'
+                '        except Exception:\n'
+                '            pass\n'
+                '        return s\n'
+                '    if v is None: return None\n'
+                '    if isinstance(v, bool): return v\n'
+                '    if isinstance(v, float):\n'
+                '        return str(v) if not isfinite(v) else v\n'
+                '    if isinstance(v, int): return v\n'
+                '    if isinstance(v, (list, tuple)):\n'
+                '        return [_nv(x, d + 1) for x in v]\n'
+                '    if isinstance(v, dict):\n'
+                '        return {str(k): _nv(v[k], d + 1) for k in sorted(str(kk) for kk in v.keys())}\n'
+                '    return v\n'
+                '\n'
+                'def _eq(a, b):\n'
+                '    if isinstance(a, (int, float)) and isinstance(b, (int, float)):\n'
+                '        try: return abs(float(a) - float(b)) <= 1e-6\n'
+                '        except: return a == b\n'
+                '    if isinstance(a, list) and isinstance(b, list):\n'
+                '        return len(a) == len(b) and all(_eq(x, y) for x, y in zip(a, b))\n'
+                '    return a == b\n'
+                '\n'
+                'def _cmp(actual, expected):\n'
+                '    return _eq(_nv(actual), _nv(expected))\n'
+                '\n'
+                'if __name__ == "__main__":\n'
+                '    import io as _io\n'
+                '    _real_stdin = sys.stdin\n'
+                '    sys.stdin = _io.StringIO("")\n'
+                '    report = {"success": True, "status": "accepted", "score": 0, "testcases": []}\n'
+                '    try:\n'
+                '        namespace = {}\n'
+                '        exec(compile(__CODE_REPR__, "<candidate_code>", "exec"), namespace)\n'
+                '        sys.stdin = _real_stdin\n'
+                '        if EXECUTION_MODE == "class":\n'
+                '            klass = namespace.get(CLASS_NAME)\n'
+                '            if klass is None:\n'
+                '                klass = next((v for v in namespace.values() if isinstance(v, type) and not v.__name__.startswith("_")), None)\n'
+                '            if klass is None:\n'
+                '                raise NameError("Class \'" + CLASS_NAME + "\' not found in submitted code")\n'
+                '            inst = klass()\n'
+                '            if FUNCTION_NAME:\n'
+                '                target = getattr(inst, FUNCTION_NAME, None)\n'
+                '            else:\n'
+                '                target = None\n'
+                '            if target is None:\n'
+                '                import inspect as _insp\n'
+                '                target = next(\n'
+                '                    (getattr(inst, m) for m in dir(inst)\n'
+                '                     if not m.startswith("_") and callable(getattr(inst, m, None))\n'
+                '                     and not isinstance(getattr(type(inst), m, None), (staticmethod, classmethod))),\n'
+                '                    None\n'
+                '                )\n'
+                '            if target is None:\n'
+                '                raise AttributeError("No callable method found on \'" + CLASS_NAME + "\'")\n'
+                '        elif FUNCTION_NAME:\n'
+                '            target = namespace.get(FUNCTION_NAME)\n'
+                '            if target is None:\n'
+                '                if "Solution" in namespace:\n'
+                '                    inst = namespace["Solution"]()\n'
+                '                    target = getattr(inst, FUNCTION_NAME, None) or next(\n'
+                '                        (getattr(inst, m) for m in dir(inst) if not m.startswith("_") and callable(getattr(inst, m))), None\n'
+                '                    )\n'
+                '                if target is None:\n'
+                '                    raise NameError("Function \'" + FUNCTION_NAME + "\' not found in submitted code")\n'
+                '        else:\n'
+                '            if "Solution" in namespace:\n'
+                '                inst = namespace["Solution"]()\n'
+                '                target = next((getattr(inst, m) for m in dir(inst) if not m.startswith("_") and callable(getattr(inst, m))), None)\n'
+                '            else:\n'
+                '                target = next((v for v in namespace.values() if callable(v) and not isinstance(v, type)), None)\n'
+                '            if target is None:\n'
+                '                raise NameError("Could not find a callable function in submitted code")\n'
+                '        _real_stdout = sys.stdout\n'
+                '        passed = 0\n'
+                '        for idx, tc in enumerate(TEST_CASES):\n'
+                '            input_data = tc.get("input")\n'
+                '            expected = tc.get("expected")\n'
+                '            tr = {"index": idx, "input": input_data, "expected": expected, "actual": None,\n'
+                '                  "passed": False, "status": "NA", "stdout": "", "stderr": "", "error": None}\n'
+                '            try:\n'
+                '                if input_data is None:\n'
+                '                    raise ValueError("Testcase input is None")\n'
+                '                args = _get_args(input_data, target)\n'
+                '                _cap = _io.StringIO()\n'
+                '                sys.stdout = _cap\n'
+                '                try:\n'
+                '                    result = target(*args)\n'
+                '                finally:\n'
+                '                    sys.stdout = _real_stdout\n'
+                '                tr["stdout"] = _cap.getvalue()\n'
+                '                tr["actual"] = result\n'
+                '                tr["passed"] = _cmp(result, expected)\n'
+                '                tr["status"] = "AC" if tr["passed"] else "WA"\n'
+                '                if not tr["passed"]:\n'
+                '                    tr["stderr"] = json.dumps({"norm_actual": _nv(result), "norm_expected": _nv(expected)}, ensure_ascii=False)\n'
+                '                if tr["passed"]:\n'
+                '                    passed += 1\n'
+                '            except Exception as exc:\n'
+                '                sys.stdout = _real_stdout\n'
+                '                tr["status"] = "RE"\n'
+                '                tr["error"] = str(exc)\n'
+                '                tr["stderr"] = traceback.format_exc()\n'
+                '            report["testcases"].append(tr)\n'
+                '        total = len(TEST_CASES)\n'
+                '        report["score"] = round(passed / total * 100, 2) if total else 0\n'
+                '        report["success"] = passed == total and total > 0\n'
+                '        report["status"] = "accepted" if report["success"] else "wrong_answer"\n'
+                '    except Exception:\n'
+                '        report["success"] = False\n'
+                '        report["status"] = "compile_error"\n'
+                '        report["stderr"] = traceback.format_exc()\n'
+                '    print("---RESULT_SEPARATOR---")\n'
+                '    print(json.dumps(report, ensure_ascii=False))\n'
+            )
+            return (
+                _TEMPLATE
+                .replace('__TC_REPR__', tc_repr)
+                .replace('__PS_REPR__', ps_repr)
+                .replace('__FN_REPR__', fn_repr)
+                .replace('__MODE_REPR__', mode_repr)
+                .replace('__CLS_REPR__', cls_repr)
+                .replace('__CODE_REPR__', code_repr)
+            )
 
         if language in ("javascript", "typescript"):
             tc_js = json.dumps(tc_json)
@@ -689,11 +700,12 @@ console.log(JSON.stringify(report));
 '''
 
         if language == "java":
-            tc_java = json.dumps(tc_json).replace("\\", "\\\\").replace('"', '\\"')
-            ps_java = json.dumps(ps_json).replace("\\", "\\\\").replace('"', '\\"')
+            def _java_str_escape(s: str) -> str:
+                return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "").replace("\t", "\\t")
+            tc_java = _java_str_escape(tc_json)
+            ps_java = _java_str_escape(ps_json)
             return f'''import java.util.*;
 import java.lang.reflect.*;
-import javax.script.*;
 
 {code}
 
@@ -822,6 +834,8 @@ public class Main {{
         if (v instanceof double[]) {{ double[] a=(double[])v; StringBuilder sb=new StringBuilder("["); for(int i=0;i<a.length;i++){{if(i>0)sb.append(",");sb.append(a[i]);}} sb.append("]"); return sb.toString(); }}
         if (v instanceof String[]) {{ String[] a=(String[])v; StringBuilder sb=new StringBuilder("["); for(int i=0;i<a.length;i++){{if(i>0)sb.append(",");sb.append(jsonStrLit(a[i]));}} sb.append("]"); return sb.toString(); }}
         if (v instanceof int[][]) {{ int[][] a=(int[][])v; StringBuilder sb=new StringBuilder("["); for(int i=0;i<a.length;i++){{if(i>0)sb.append(",");sb.append(toJsonStr(a[i]));}} sb.append("]"); return sb.toString(); }}
+        if (v instanceof char[]) {{ char[] a=(char[])v; StringBuilder sb=new StringBuilder("["); for(int i=0;i<a.length;i++){{if(i>0)sb.append(",");sb.append(jsonStrLit(String.valueOf(a[i])));}} sb.append("]"); return sb.toString(); }}
+        if (v instanceof char[][]) {{ char[][] a=(char[][])v; StringBuilder sb=new StringBuilder("["); for(int i=0;i<a.length;i++){{if(i>0)sb.append(",");sb.append(toJsonStr(a[i]));}} sb.append("]"); return sb.toString(); }}
         if (v instanceof List) {{ List<?> a=(List<?>)v; StringBuilder sb=new StringBuilder("["); for(int i=0;i<a.size();i++){{if(i>0)sb.append(",");sb.append(toJsonStr(a.get(i)));}} sb.append("]"); return sb.toString(); }}
         return jsonStrLit(v.toString());
     }}
@@ -847,11 +861,23 @@ public class Main {{
         if (input.isObj()) {{
             if (paramTypes.length == 1) {{
                 JVal inner = input.get("input");
+                if (inner.isNull() && input.size() == 1) {{
+                    inner = input.obj().values().iterator().next();
+                }}
                 argList.add(convert(inner.isNull() ? input : inner, paramTypes[0]));
             }} else {{
-                List<String> keys = new ArrayList<>(input.obj().keySet());
-                for (int i = 0; i < keys.size() && i < paramTypes.length; i++) {{
-                    argList.add(convert(input.get(keys.get(i)), paramTypes[i]));
+                // Unwrap {{"input":...}} wrapper for multi-param methods
+                JVal src = input;
+                if (src.isObj() && src.size() == 1 && !src.get("input").isNull()) src = src.get("input");
+                if (src.isObj()) {{
+                    List<String> keys = new ArrayList<>(src.obj().keySet());
+                    for (int i = 0; i < keys.size() && i < paramTypes.length; i++) {{
+                        argList.add(convert(src.get(keys.get(i)), paramTypes[i]));
+                    }}
+                }} else if (src.isArr()) {{
+                    for (int i = 0; i < src.size() && i < paramTypes.length; i++) {{
+                        argList.add(convert(src.get(i), paramTypes[i]));
+                    }}
                 }}
             }}
         }} else if (input.isArr()) {{
@@ -861,6 +887,7 @@ public class Main {{
         }} else {{
             if (paramTypes.length > 0) argList.add(convert(input, paramTypes[0]));
         }}
+        while (argList.size() < paramTypes.length) argList.add(null);
         return argList.toArray();
     }}
 
@@ -887,15 +914,43 @@ public class Main {{
             int[][] r = new int[v.size()][];
             for (int i=0; i<v.size(); i++) {{ JVal row=v.get(i); r[i]=new int[row.size()]; for(int j=0;j<row.size();j++) r[i][j]=row.get(j).asInt(); }} return r;
         }}
+        if (t == char.class || t == Character.class) {{ String sv=v.asStr(); return sv!=null&&sv.length()>0?sv.charAt(0):(char)v.asInt(); }}
+        if (t == char[].class && v.isArr()) {{
+            char[] r=new char[v.size()];
+            for(int i=0;i<v.size();i++){{JVal e=v.get(i);String sv=e.asStr();r[i]=sv!=null&&sv.length()>0?sv.charAt(0):(char)e.asInt();}}
+            return r;
+        }}
+        if (t == char[][].class && v.isArr()) {{
+            char[][] r=new char[v.size()][];
+            for(int i=0;i<v.size();i++){{JVal row=v.get(i);r[i]=new char[row.size()];for(int j=0;j<row.size();j++){{JVal e=row.get(j);String sv=e.asStr();r[i][j]=sv!=null&&sv.length()>0?sv.charAt(0):(char)e.asInt();}}}}
+            return r;
+        }}
         if (t == List.class) {{
             List<Object> list = new ArrayList<>();
             if (v.isArr()) for (int i=0; i<v.size(); i++) list.add(v.get(i).v);
             return list;
         }}
+        if (t.isArray()) return java.lang.reflect.Array.newInstance(t.getComponentType(), 0);
+        String tn = t.getSimpleName();
+        if (tn.equals("int")||tn.equals("Integer")) return v.asInt();
+        if (tn.equals("long")||tn.equals("Long")) return v.asLong();
+        if (tn.equals("double")||tn.equals("Double")||tn.equals("float")||tn.equals("Float")) return v.asDouble();
+        if (tn.equals("boolean")||tn.equals("Boolean")) return v.asBool();
+        if (tn.equals("String")) return v.asStr();
         return v.v;
     }}
 
     private static boolean normalizeAndCompare(Object result, JVal expected) {{
+        // Direct value comparison first — avoids any JSON serialization edge cases
+        if (result instanceof String && expected.v instanceof String) {{
+            if (((String)result).equals((String)expected.v)) return true;
+        }}
+        if (result instanceof Boolean && expected.v instanceof Boolean) {{
+            return result.equals(expected.v);
+        }}
+        if (result instanceof Number && expected.v instanceof Number) {{
+            try {{ return Math.abs(((Number)result).doubleValue() - ((Number)expected.v).doubleValue()) < 1e-6; }} catch(Exception e) {{}}
+        }}
         String sa = toJsonStr(result).trim();
         String sb = expected.toString().trim();
         if (sa.equals(sb)) return true;
@@ -904,7 +959,7 @@ public class Main {{
         String ub = sb.startsWith("\\"") && sb.endsWith("\\"") ? sb.substring(1, sb.length()-1) : sb;
         if (ua.equals(ub)) return true;
         // numeric tolerance
-        try {{ return Math.abs(Double.parseDouble(sa) - Double.parseDouble(sb)) < 1e-6; }} catch(Exception e) {{}}
+        try {{ return Math.abs(Double.parseDouble(ua) - Double.parseDouble(ub)) < 1e-6; }} catch(Exception e) {{}}
         return false;
     }}
 }}
@@ -950,6 +1005,7 @@ public class Main {{
                 'string j_val(long long v) { return to_string(v); }\n'
                 'string j_val(double v) { ostringstream o; o<<v; return o.str(); }\n'
                 'string j_val(bool v) { return v?"true":"false"; }\n'
+                'string j_val(char v) { return j_str(string(1,v)); }\n'
                 'template<typename T> string j_val(const vector<T>& v) {\n'
                 '    string r="["; for (size_t i=0;i<v.size();i++) { if(i) r+=","; r+=j_val(v[i]); } r+="]"; return r;\n'
                 '}\n'
@@ -1001,8 +1057,9 @@ public class Main {{
                 '    if (_js.substr(_ji,4)=="null") { v.is_null=true; _ji+=4; return v; }\n'
                 '    if (_js.substr(_ji,4)=="true") { v.is_bool=true; v.bool_val=true; _ji+=4; return v; }\n'
                 '    if (_js.substr(_ji,5)=="false") { v.is_bool=true; v.bool_val=false; _ji+=5; return v; }\n'
-                '    size_t end=_ji; while(end<_js.size()&&!isspace(_js[end])&&_js[end]!=\',\'&&_js[end]!=\']\'&&_js[end]!=\')\') end++;\n'
-                '    v.is_num=true; v.num_val=stod(_js.substr(_ji,end-_ji)); _ji=end; return v;\n'
+                '    size_t end=_ji; while(end<_js.size()&&!isspace(_js[end])&&_js[end]!=\',\'&&_js[end]!=\']\'&&_js[end]!=\')\'&&_js[end]!=\'}\'&&_js[end]!=\':\') end++;\n'
+                '    if(end>_ji) { v.is_num=true; try{v.num_val=stod(_js.substr(_ji,end-_ji));}catch(...){} _ji=end; return v; }\n'
+                '    _ji++; return v;\n'
                 '}\n'
                 'JVal parse_json(const string& s) { _js=s; _ji=0; return parse_val(); }\n\n'
                 'vector<int> to_int_vec(const JVal& v) {\n'
@@ -1013,94 +1070,172 @@ public class Main {{
                 '}\n'
                 'vector<string> to_str_vec(const JVal& v) {\n'
                 '    vector<string> r; if(v.is_arr) for(auto& x:v.arr) r.push_back(x.str_val); return r;\n'
-                '}\n\n'
-                'int main() {\n'
-                '    string TC_JSON = "' + tc_cpp + '";\n'
-                '    JVal tcs = parse_json(TC_JSON);\n'
-                '    int passed = 0, total = (int)tcs.arr.size();\n'
-                '    cout << "{\\"success\\":true,\\"status\\":\\"running\\",\\"score\\":0,\\"testcases\\":[";\n'
-                '    Solution sol;\n'
-                '    for (int i = 0; i < total; i++) {\n'
-                '        if (i) cout << ",";\n'
-                '        JVal tc = tcs.arr[i];\n'
-                '        JVal input_val = tc.obj.count("input") ? tc.obj["input"] : JVal();\n'
-                '        JVal expected_val = tc.obj.count("expected") ? tc.obj["expected"] : JVal();\n'
-                '        string actual_str = "null";\n'
-                '        string status = "RE";\n'
-                '        string err = "";\n'
-                '        bool ok = false;\n'
-                '        try {\n'
-                '            // Unwrap single-key {"input": ...} wrapper\n'
-                '            JVal iv = input_val;\n'
-                '            if (iv.is_obj && iv.obj.size() == 1 && iv.obj.count("input")) iv = iv.obj["input"];\n'
-                '            if (iv.is_num) {\n'
-                '                auto res = sol.' + fn_call + '((int)iv.num_val);\n'
-                '                actual_str = j_val(res);\n'
-                '            } else if (iv.is_bool) {\n'
-                '                auto res = sol.' + fn_call + '(iv.bool_val);\n'
-                '                actual_str = j_val(res);\n'
-                '            } else if (iv.is_str) {\n'
-                '                auto res = sol.' + fn_call + '(iv.str_val);\n'
-                '                actual_str = j_val(res);\n'
-                '            } else if (iv.is_arr && !iv.arr.empty() && iv.arr[0].is_arr) {\n'
-                '                auto res = sol.' + fn_call + '(to_int_mat(iv));\n'
-                '                actual_str = j_val(res);\n'
-                '            } else if (iv.is_arr) {\n'
-                '                auto res = sol.' + fn_call + '(to_int_vec(iv));\n'
-                '                actual_str = j_val(res);\n'
-                '            } else if (iv.is_obj) {\n'
-                '                // Multi-param: extract values in key order\n'
-                '                vector<JVal> vals;\n'
-                '                for (auto& kv : iv.obj) vals.push_back(kv.second);\n'
-                '                if (vals.size() == 1) {\n'
-                '                    JVal v0 = vals[0];\n'
-                '                    if (v0.is_arr && !v0.arr.empty() && v0.arr[0].is_arr) { auto res = sol.' + fn_call + '(to_int_mat(v0)); actual_str = j_val(res); }\n'
-                '                    else if (v0.is_arr) { auto res = sol.' + fn_call + '(to_int_vec(v0)); actual_str = j_val(res); }\n'
-                '                    else if (v0.is_num) { auto res = sol.' + fn_call + '((int)v0.num_val); actual_str = j_val(res); }\n'
-                '                    else if (v0.is_str) { auto res = sol.' + fn_call + '(v0.str_val); actual_str = j_val(res); }\n'
-                '                } else if (vals.size() == 2) {\n'
-                '                    JVal v0=vals[0], v1=vals[1];\n'
-                '                    if (v0.is_arr && v1.is_num) { auto res = sol.' + fn_call + '(to_int_vec(v0),(int)v1.num_val); actual_str = j_val(res); }\n'
-                '                    else if (v0.is_arr && v1.is_arr) { auto res = sol.' + fn_call + '(to_int_vec(v0),to_int_vec(v1)); actual_str = j_val(res); }\n'
-                '                    else if (v0.is_num && v1.is_num) { auto res = sol.' + fn_call + '((int)v0.num_val,(int)v1.num_val); actual_str = j_val(res); }\n'
-                '                    else if (v0.is_str && v1.is_str) { auto res = sol.' + fn_call + '(v0.str_val,v1.str_val); actual_str = j_val(res); }\n'
-                '                } else if (vals.size() >= 3) {\n'
-                '                    // 3+ params: best-effort int args\n'
-                '                    JVal v0=vals[0],v1=vals[1],v2=vals[2];\n'
-                '                    if (v0.is_num&&v1.is_num&&v2.is_num) { auto res=sol.' + fn_call + '((int)v0.num_val,(int)v1.num_val,(int)v2.num_val); actual_str=j_val(res); }\n'
-                '                }\n'
-                '            }\n'
-                '            string exp_str = expected_val.is_num ? to_string((long long)expected_val.num_val) :\n'
-                '                (expected_val.is_str ? expected_val.str_val :\n'
-                '                (expected_val.is_bool ? (expected_val.bool_val?"true":"false") :\n'
-                '                (expected_val.is_null ? "null" : "complex")));\n'
-                '            ok = (actual_str == exp_str);\n'
-                '            if (!ok && expected_val.is_num) {\n'
-                '                try { ok = abs(stod(actual_str) - expected_val.num_val) <= 1e-6; } catch (...) {}\n'
-                '            }\n'
-                '            status = ok ? "AC" : "WA";\n'
-                '            if (ok) passed++;\n'
-                '        } catch (exception& ex) {\n'
-                '            err = ex.what(); status = "RE";\n'
-                '        } catch (...) {\n'
-                '            err = "Unknown exception"; status = "RE";\n'
-                '        }\n'
-                '        cout << "{\\"index\\":" << i\n'
-                '             << ",\\"passed\\":" << (ok?"true":"false")\n'
-                '             << ",\\"status\\":\\"" << status << "\\""\n'
-                '             << ",\\"actual\\":" << actual_str\n'
-                '             << ",\\"error\\":" << (err.empty()?"null":j_str(err))\n'
-                '             << "}";\n'
-                '    }\n'
-                '    double score = total > 0 ? round(passed * 10000.0 / total) / 100.0 : 0;\n'
-                '    cout << "]";\n'
-                '    cout << ",\\"score\\":" << score\n'
-                '         << ",\\"success\\":" << ((passed==total&&total>0)?"true":"false")\n'
-                '         << ",\\"status\\":\\"" << ((passed==total&&total>0)?"accepted":"wrong_answer") << "\\"}\\n";\n'
-                '    cout << "---RESULT_SEPARATOR---" << endl;\n'
-                '    return 0;\n'
                 '}\n'
+                'vector<char> to_char_vec(const JVal& v) {\n'
+                '    vector<char> r; if(v.is_arr) for(auto& x:v.arr) r.push_back(x.is_str&&!x.str_val.empty()?x.str_val[0]:(char)(int)x.num_val); return r;\n'
+                '}\n'
+                'vector<vector<char>> to_char_mat(const JVal& v) {\n'
+                '    vector<vector<char>> r; if(v.is_arr) for(auto& row:v.arr) r.push_back(to_char_vec(row)); return r;\n'
+                '}\n'
+                'vector<long long> to_ll_vec(const JVal& v) {\n'
+                '    vector<long long> r; if(v.is_arr) for(auto& x:v.arr) r.push_back((long long)x.num_val); return r;\n'
+                '}\n'
+                'vector<double> to_dbl_vec(const JVal& v) {\n'
+                '    vector<double> r; if(v.is_arr) for(auto& x:v.arr) r.push_back(x.num_val); return r;\n'
+                '}\n'
+                'vector<vector<double>> to_dbl_mat(const JVal& v) {\n'
+                '    vector<vector<double>> r; if(v.is_arr) for(auto& row:v.arr) r.push_back(to_dbl_vec(row)); return r;\n'
+                '}\n'
+                'vector<vector<string>> to_str_mat(const JVal& v) {\n'
+                '    vector<vector<string>> r; if(v.is_arr) for(auto& row:v.arr) r.push_back(to_str_vec(row)); return r;\n'
+                '}\n\n'
+                'string jval_to_str(const JVal& v) {\n'
+                '    if (v.is_null) return "null";\n'
+                '    if (v.is_bool) return v.bool_val ? "true" : "false";\n'
+                '    if (v.is_str) return j_str(v.str_val);\n'
+                '    if (v.is_num) { double d=v.num_val; if(d==(long long)d) return to_string((long long)d); ostringstream os; os<<d; return os.str(); }\n'
+                '    if (v.is_arr) { string r="["; for(size_t i=0;i<v.arr.size();i++){if(i)r+=",";r+=jval_to_str(v.arr[i]);} r+="]"; return r; }\n'
+                '    if (v.is_obj) { string r="{"; bool f=true; for(auto& kv:v.obj){if(!f)r+=",";r+=j_str(kv.first);r+=":";r+=jval_to_str(kv.second);f=false;} r+="}"; return r; }\n'
+                '    return "null";\n'
+                '}\n\n'
             )
+            # ── Signature-aware C++ main() generation ────────────────────────────────
+            import re as _sig_re
+
+            def _parse_cpp_sig(src, fname):
+                pat = rf'\b{_sig_re.escape(fname)}\s*\(([^{{;]*?)\)\s*(?:const\s*)?(?:\{{|$)'
+                m = _sig_re.search(pat, src)
+                if not m:
+                    return []
+                ps = m.group(1).strip()
+                if not ps:
+                    return []
+                parts, depth, cur = [], 0, ''
+                for ch in ps:
+                    if ch == '<': depth += 1
+                    elif ch == '>': depth -= 1
+                    if ch == ',' and depth == 0:
+                        parts.append(cur.strip()); cur = ''
+                    else:
+                        cur += ch
+                if cur.strip():
+                    parts.append(cur.strip())
+                result = []
+                for p in parts:
+                    p = _sig_re.sub(r'\bconst\b', '', p).replace('&', '').replace('*', '').strip()
+                    p = _sig_re.sub(r'\s+', ' ', p).strip()
+                    toks = p.split()
+                    if len(toks) >= 2:
+                        nm, ts = toks[-1], ' '.join(toks[:-1])
+                    elif toks:
+                        nm, ts = f'arg{len(result)}', toks[0]
+                    else:
+                        continue
+                    ts = _sig_re.sub(r'\s*<\s*', '<', ts)
+                    ts = _sig_re.sub(r'\s*>\s*', '>', ts)
+                    ts = _sig_re.sub(r'\s+', '', ts).replace('std::', '')
+                    result.append((ts, nm))
+                return result
+
+            def _jval_expr(t, jv):
+                if t in ('int', 'int32_t', 'short', 'uint32_t', 'size_t'): return f'(int)({jv}).num_val'
+                if t in ('longlong', 'long long', 'int64_t', 'uint64_t', 'long'): return f'(long long)({jv}).num_val'
+                if t in ('double', 'float'): return f'({jv}).num_val'
+                if t == 'bool': return f'({jv}).bool_val'
+                if t == 'string': return f'({jv}).str_val'
+                if t == 'char': return f'(({jv}).is_str&&!({jv}).str_val.empty()?({jv}).str_val[0]:(char)(int)({jv}).num_val)'
+                if t in ('vector<int>', 'vector<int32_t>', 'vector<uint32_t>'): return f'to_int_vec({jv})'
+                if t in ('vector<longlong>', 'vector<long long>', 'vector<int64_t>'): return f'to_ll_vec({jv})'
+                if t in ('vector<double>', 'vector<float>'): return f'to_dbl_vec({jv})'
+                if t == 'vector<char>': return f'to_char_vec({jv})'
+                if t == 'vector<string>': return f'to_str_vec({jv})'
+                if t in ('vector<vector<int>>', 'vector<vector<int32_t>>'): return f'to_int_mat({jv})'
+                if t == 'vector<vector<char>>': return f'to_char_mat({jv})'
+                if t in ('vector<vector<string>>',): return f'to_str_mat({jv})'
+                if t in ('vector<vector<double>>', 'vector<vector<float>>'): return f'to_dbl_mat({jv})'
+                if 'vector' in t and t.count('vector') >= 2: return f'to_int_mat({jv})'
+                if 'vector' in t: return f'to_int_vec({jv})'
+                return f'(int)({jv}).num_val'
+
+            _sig_params = _parse_cpp_sig(code, fn_call)
+            _ml = []
+            _ml.append('int main() {\n')
+            _ml.append(f'    string TC_JSON = "{tc_cpp}";\n')
+            _ml.append('    JVal tcs = parse_json(TC_JSON);\n')
+            _ml.append('    int passed = 0, total = (int)tcs.arr.size();\n')
+            _ml.append('    ostringstream __json_buf;\n')
+            _ml.append('    __json_buf << "{\\"success\\":true,\\"status\\":\\"running\\",\\"score\\":0,\\"testcases\\":[";\n')
+            _ml.append('    Solution sol;\n')
+            _ml.append('    for (int i = 0; i < total; i++) {\n')
+            _ml.append('        if (i) __json_buf << ",";\n')
+            _ml.append('        streambuf* __cout_orig = cout.rdbuf();\n')
+            _ml.append('        ostringstream __user_stdout;\n')
+            _ml.append('        cout.rdbuf(__user_stdout.rdbuf());\n')
+            _ml.append('        JVal tc = tcs.arr[i];\n')
+            _ml.append('        JVal input_val = tc.obj.count("input") ? tc.obj["input"] : JVal();\n')
+            _ml.append('        JVal expected_val = tc.obj.count("expected") ? tc.obj["expected"] : JVal();\n')
+            _ml.append('        string actual_str = "null";\n')
+            _ml.append('        string status = "RE";\n')
+            _ml.append('        string err = "";\n')
+            _ml.append('        bool ok = false;\n')
+            _ml.append('        try {\n')
+            if _sig_params:
+                for _pi, (_pt, _pn) in enumerate(_sig_params):
+                    if len(_sig_params) == 1:
+                        _pv = f'(input_val.is_obj && input_val.obj.count("{_pn}") ? input_val.obj["{_pn}"] : (input_val.is_obj && input_val.obj.count("input") ? input_val.obj["input"] : input_val))'
+                    else:
+                        _pv = f'(input_val.is_obj && input_val.obj.count("{_pn}") ? input_val.obj["{_pn}"] : JVal())'
+                    _ml.append(f'            JVal _pv{_pi} = {_pv};\n')
+                    _ml.append(f'            auto _arg{_pi} = {_jval_expr(_pt, f"_pv{_pi}")};\n')
+                _call = ', '.join(f'_arg{i}' for i in range(len(_sig_params)))
+                _ml.append(f'            auto _res = sol.{fn_call}({_call});\n')
+                _ml.append('            actual_str = j_val(_res);\n')
+            else:
+                _ml.append('            JVal iv = input_val;\n')
+                _ml.append('            if (iv.is_obj && iv.obj.size() == 1 && iv.obj.count("input")) iv = iv.obj["input"];\n')
+                _ml.append(f'            if (iv.is_num) {{ auto res = sol.{fn_call}((int)iv.num_val); actual_str = j_val(res); }}\n')
+                _ml.append(f'            else if (iv.is_bool) {{ auto res = sol.{fn_call}(iv.bool_val); actual_str = j_val(res); }}\n')
+                _ml.append(f'            else if (iv.is_str) {{ auto res = sol.{fn_call}(iv.str_val); actual_str = j_val(res); }}\n')
+                _ml.append(f'            else if (iv.is_arr && !iv.arr.empty() && iv.arr[0].is_arr) {{ auto res = sol.{fn_call}(to_int_mat(iv)); actual_str = j_val(res); }}\n')
+                _ml.append(f'            else if (iv.is_arr) {{ auto res = sol.{fn_call}(to_int_vec(iv)); actual_str = j_val(res); }}\n')
+            _ml.append('            string exp_str = jval_to_str(expected_val);\n')
+            _ml.append('            ok = (actual_str == exp_str);\n')
+            _ml.append('            if (!ok) {\n')
+            _ml.append('                char Q=\'"\';\n')
+            _ml.append('                string ua=(actual_str.size()>=2&&actual_str[0]==Q&&actual_str.back()==Q)?actual_str.substr(1,actual_str.size()-2):actual_str;\n')
+            _ml.append('                string ub=(exp_str.size()>=2&&exp_str[0]==Q&&exp_str.back()==Q)?exp_str.substr(1,exp_str.size()-2):exp_str;\n')
+            _ml.append('                ok=(ua==ub);\n')
+            _ml.append('            }\n')
+            _ml.append('            if (!ok && expected_val.is_num) {\n')
+            _ml.append('                try { ok = abs(stod(actual_str) - expected_val.num_val) <= 1e-6; } catch (...) {}\n')
+            _ml.append('            }\n')
+            _ml.append('            status = ok ? "AC" : "WA";\n')
+            _ml.append('            if (ok) passed++;\n')
+            _ml.append('        } catch (exception& ex) {\n')
+            _ml.append('            err = ex.what(); status = "RE";\n')
+            _ml.append('        } catch (...) {\n')
+            _ml.append('            err = "Unknown exception"; status = "RE";\n')
+            _ml.append('        }\n')
+            _ml.append('        cout.rdbuf(__cout_orig);\n')
+            _ml.append('        __json_buf << "{\\"index\\":" << i\n')
+            _ml.append('             << ",\\"input\\":" << jval_to_str(input_val)\n')
+            _ml.append('             << ",\\"expected\\":" << jval_to_str(expected_val)\n')
+            _ml.append('             << ",\\"actual\\":" << actual_str\n')
+            _ml.append('             << ",\\"passed\\":" << (ok?"true":"false")\n')
+            _ml.append('             << ",\\"status\\":\\"" << status << "\\""\n')
+            _ml.append('             << ",\\"error\\":" << (err.empty()?"null":j_str(err))\n')
+            _ml.append('             << "}";\n')
+            _ml.append('    }\n')
+            _ml.append('    double score = total > 0 ? round(passed * 10000.0 / total) / 100.0 : 0;\n')
+            _ml.append('    __json_buf << "]"\n')
+            _ml.append('              << ",\\"score\\":" << score\n')
+            _ml.append('              << ",\\"success\\":" << ((passed==total&&total>0)?"true":"false")\n')
+            _ml.append('              << ",\\"status\\":\\"" << ((passed==total&&total>0)?"accepted":"wrong_answer") << "\\"}";\n')
+            _ml.append('    cout << "\\n---RESULT_SEPARATOR---\\n";\n')
+            _ml.append('    cout << __json_buf.str() << "\\n";\n')
+            _ml.append('    return 0;\n')
+            _ml.append('}\n')
+            cpp_src += ''.join(_ml)
             return cpp_src
 
         if language in ("go", "golang"):
@@ -1370,18 +1505,58 @@ fn main() {{
         test_results: List[TestResult] = []
         passed_count = 0
 
+        def _py_cmp_normalize(v: Any) -> Any:
+            """Strip one level of JSON string encoding for comparison."""
+            if isinstance(v, str):
+                s = v.strip()
+                if s.startswith('"') and s.endswith('"') and len(s) >= 2:
+                    try:
+                        parsed = json.loads(s)
+                        if isinstance(parsed, str):
+                            return parsed
+                        return parsed
+                    except Exception:
+                        pass
+                try:
+                    f = float(s)
+                    return int(f) if f == int(f) else f
+                except Exception:
+                    pass
+            return v
+
+        def _py_values_match(actual: Any, expected: Any) -> bool:
+            """Python-side equality check as safety net for compiled-language runner bugs."""
+            if actual is None or expected is None:
+                return actual is expected
+            a, b = _py_cmp_normalize(actual), _py_cmp_normalize(expected)
+            if a == b:
+                return True
+            try:
+                return abs(float(a) - float(b)) <= 1e-6  # type: ignore[arg-type]
+            except Exception:
+                pass
+            return False
+
         for tc in tc_out:
             if not isinstance(tc, dict):
                 continue
+            raw_passed = bool(tc.get("passed"))
+            raw_status = str(tc.get("status") or "NA")
+            if not raw_passed:
+                act_v = tc.get("actual")
+                exp_v = tc.get("expected")
+                if act_v is not None and exp_v is not None and _py_values_match(act_v, exp_v):
+                    raw_passed = True
+                    raw_status = "AC"
             tr = TestResult(
-                passed=bool(tc.get("passed")),
+                passed=raw_passed,
                 input_data=tc.get("input"),
                 expected=tc.get("expected"),
                 actual=tc.get("actual"),
                 error=tc.get("error") or None,
                 stdout=tc.get("stdout") or None,
                 stderr=tc.get("stderr") or None,
-                status=str(tc.get("status") or "NA"),
+                status=raw_status,
                 time_used=str(time_used) if time_used is not None else None,
                 memory_used=str(memory_used) if memory_used is not None else None,
             )
@@ -1390,13 +1565,11 @@ fn main() {{
                 passed_count += 1
 
         total_count = len(original_test_cases)
-        report_score = report_obj.get("score")
-        try:
-            score = float(report_score) if report_score is not None else (passed_count / total_count * 100 if total_count else 0)
-        except (TypeError, ValueError):
-            score = passed_count / total_count * 100 if total_count else 0
+        # Always recompute score from Python-verified passed_count for consistency
+        score = round(passed_count / total_count * 100, 2) if total_count else 0
 
-        overall_success = bool(report_obj.get("success")) if isinstance(report_obj, dict) else (passed_count == total_count and total_count > 0)
+        # Re-derive overall_success from Python-verified passed_count
+        overall_success = (passed_count == total_count and total_count > 0)
 
         # Extract runner-level stderr/runtime_error
         runner_stderr = report_obj.get("stderr") if isinstance(report_obj, dict) else None

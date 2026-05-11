@@ -1524,8 +1524,9 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
         "test_results": [
             {
                 "test_case_id": all_tests[i].get("id") if i < len(all_tests) else None,
-                "input": r.input_data,
-                "expected_output": r.expected,
+                "is_hidden": (i < len(all_tests) and isinstance(all_tests[i], dict) and all_tests[i].get("visibility") == "hidden"),
+                "input": None if (i < len(all_tests) and isinstance(all_tests[i], dict) and all_tests[i].get("visibility") == "hidden") else r.input_data,
+                "expected_output": None if (i < len(all_tests) and isinstance(all_tests[i], dict) and all_tests[i].get("visibility") == "hidden") else r.expected,
                 "actual_output": r.actual,
                 "passed": r.passed,
                 "status": r.status,
@@ -2086,7 +2087,7 @@ async def submit_apex_blanks(
     if not session:
         return api_error(message="Session not found", status_code=404)
 
-    if session.get("status") in ("completed", "terminated", "expired"):
+    if session.get("status") in ("terminated", "expired"):
         return api_error(message="Assessment not available", status_code=400)
 
     try:
@@ -2140,8 +2141,6 @@ async def submit_apex_blanks(
         {
             "coding_score": total_score,
             "total_score": total_score,
-            "status": "completed",
-            "completed_at": _utc_now_iso(),
             "proctoring_data": {
                 **(proctoring_data if isinstance(proctoring_data, dict) else {}),
                 "apex_blanks_submission": submissions,

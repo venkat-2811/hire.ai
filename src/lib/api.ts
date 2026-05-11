@@ -685,7 +685,7 @@ const _assessmentsRuntimeApiBase = {
     request<any>(`/assessments/${encodeURIComponent(sessionId)}/apex-blanks/submit`, {
       method: 'POST',
       body: submissions,
-            timeoutMs: 30000,
+      timeoutMs: 90000,
       skipAuth: true,
     }),
 };
