@@ -1014,8 +1014,9 @@ def _ensure_in_progress_or_error(session: Dict[str, Any]):
 
 
 def _weighted_mcq_score(stored_questions: List[Dict[str, Any]], submissions: List[Dict[str, Any]]):
-    qmap = {str(q.get("id")): q for q in stored_questions if isinstance(q, dict) and q.get("id")}
     difficulty_weight = {"easy": 1, "medium": 2, "hard": 3}
+    # Index submissions by question_id for O(1) lookup
+    smap = {str(s.get("question_id") or ""): s for s in submissions if isinstance(s, dict)}
 
     total_weighted_points = 0.0
     scored_weighted_points = 0.0
@@ -1023,12 +1024,12 @@ def _weighted_mcq_score(stored_questions: List[Dict[str, Any]], submissions: Lis
     total_count = 0
     detailed_results: List[Dict[str, Any]] = []
 
-    for s in submissions:
-        if not isinstance(s, dict):
+    # Iterate over ALL stored questions so unattempted ones count toward the total
+    for q in stored_questions:
+        if not isinstance(q, dict):
             continue
-        qid = str(s.get("question_id") or "")
-        q = qmap.get(qid)
-        if not q:
+        qid = str(q.get("id") or "")
+        if not qid:
             continue
 
         total_count += 1
@@ -1041,9 +1042,15 @@ def _weighted_mcq_score(stored_questions: List[Dict[str, Any]], submissions: Lis
         weighted_points = base_points_f * float(weight)
         total_weighted_points += weighted_points
 
-        selected_index = s.get("selected_index")
+        s = smap.get(qid)
+        selected_index = s.get("selected_index") if s else None
         correct_index = q.get("correct_index")
-        is_correct = selected_index == correct_index
+        # Unattempted (selected_index is None) is treated as incorrect.
+        # Cast to int to guard against string/float selected_index from JSON payload.
+        try:
+            is_correct = selected_index is not None and int(selected_index) == int(correct_index)
+        except (TypeError, ValueError):
+            is_correct = False
         if is_correct:
             scored_weighted_points += weighted_points
             correct_count += 1

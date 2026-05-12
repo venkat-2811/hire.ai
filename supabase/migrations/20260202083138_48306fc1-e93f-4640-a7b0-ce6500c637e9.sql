@@ -411,7 +411,7 @@ CREATE POLICY "Recruiters can manage submissions"
   USING (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'recruiter'));
 
 -- Create storage bucket for resumes
-INSERT INTO storage.buckets (id, name, public) VALUES ('resumes', 'resumes', false);
+INSERT INTO storage.buckets (id, name, public) VALUES ('resumes', 'resumes', true);
 
 -- Storage policies for resumes
 CREATE POLICY "Authenticated users can upload resumes"

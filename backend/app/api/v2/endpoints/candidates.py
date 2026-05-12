@@ -303,7 +303,6 @@ async def upload_resume(
     """
     import uuid
     import os
-    import anyio
 
     db = get_db_admin_service()
 
@@ -329,43 +328,42 @@ async def upload_resume(
 
     original_name = resume.filename or "resume"
     ext = os.path.splitext(original_name)[1].lower() or ".pdf"
-    storage_filename = f"resumes/{candidate_id}/{uuid.uuid4().hex}{ext}"
+    # Object path is relative to the bucket root — no bucket-name prefix
+    object_path = f"{candidate_id}/{uuid.uuid4().hex}{ext}"
 
-    # 3. Upload to Supabase Storage (bucket: "resumes"), fall back to local disk
+    # 3. Upload to Supabase Storage (bucket: "resumes")
     resume_url: str = ""
     try:
         from app.config import get_settings
         settings = get_settings()
 
+        # Ensure the bucket exists and is public; create it if missing
+        def _ensure_bucket():
+            try:
+                db.client.storage.create_bucket("resumes", options={"public": True})
+            except Exception:
+                # Bucket already exists — make sure it is public
+                try:
+                    db.client.storage.update_bucket("resumes", options={"public": True})
+                except Exception:
+                    pass
+
+        await db.run(_ensure_bucket)
+
         def _upload_storage():
             return db.client.storage.from_("resumes").upload(
-                storage_filename,
+                object_path,
                 file_bytes,
                 {"content-type": resume.content_type or "application/octet-stream"},
             )
 
         await db.run(_upload_storage)
 
-        # Build the public URL
+        # Build the persistent public URL
         supabase_url = settings.supabase_url.rstrip("/")
-        resume_url = f"{supabase_url}/storage/v1/object/public/resumes/{storage_filename}"
-    except Exception:
-        # Fall back: save to local uploads dir
-        try:
-            from app.config import get_settings
-            settings = get_settings()
-            local_dir = os.path.join(settings.upload_dir, "resumes", candidate_id)
-            os.makedirs(local_dir, exist_ok=True)
-            local_path = os.path.join(local_dir, f"{uuid.uuid4().hex}{ext}")
-
-            def _write_file():
-                with open(local_path, "wb") as f:
-                    f.write(file_bytes)
-
-            await anyio.to_thread.run_sync(_write_file)
-            resume_url = f"/uploads/resumes/{candidate_id}/{os.path.basename(local_path)}"
-        except Exception as e:
-            return api_error(message=f"Failed to store resume file: {e}", status_code=500)
+        resume_url = f"{supabase_url}/storage/v1/object/public/resumes/{object_path}"
+    except Exception as e:
+        return api_error(message=f"Failed to upload resume to Supabase Storage: {e}", status_code=500)
 
     # 4. Extract text from the resume
     resume_text = ""

@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     supabase_key: str = Field(default="", alias="SUPABASE_KEY")
     supabase_service_key: str = Field(min_length=1, alias="SUPABASE_SERVICE_KEY")
 
-    upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
     vector_store_path: str = Field(default="./vector_store", alias="VECTOR_STORE_PATH")
 
     host: str = Field(default="0.0.0.0", alias="HOST")
@@ -111,5 +110,4 @@ def get_settings() -> Settings:
 
 def ensure_directories():
     settings = get_settings()
-    os.makedirs(settings.upload_dir, exist_ok=True)
     os.makedirs(settings.vector_store_path, exist_ok=True)
