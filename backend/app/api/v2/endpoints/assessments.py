@@ -647,6 +647,8 @@ async def invite_assessments(
             token = meta["token"]
             assessment_link = f"{str(settings.frontend_url).rstrip('/')}/assessment/{token}"
             try:
+                recipient_email = str(meta.get("email") or "").strip()
+
                 def _fetch_pd_email():
                     return (
                         bg_db.client.from_("assessment_sessions")
@@ -685,8 +687,11 @@ async def invite_assessments(
                 await bg_db.run(_mark_email_sending)
 
                 send_started = time()
+                if not recipient_email:
+                    raise RuntimeError("Candidate email is missing")
+
                 await bg_email.send_assessment_invite(
-                    to=str(meta.get("email") or ""),
+                    to=recipient_email,
                     candidate_name=str(meta.get("candidate_name") or "Candidate"),
                     job_title=str(job.get("title") or ""),
                     assessment_link=assessment_link,

@@ -3,6 +3,7 @@ Email service using Resend API for sending transactional emails.
 """
 import httpx
 import base64
+import re
 from typing import Optional, List
 from app.config import get_settings
 
@@ -28,8 +29,16 @@ class EmailService:
         """Send an email using Resend API."""
         if not self.api_key:
             raise RuntimeError("RESEND_API_KEY is not configured")
-        
-        recipients = [to] if isinstance(to, str) else to
+
+        recipients = [to] if isinstance(to, str) else list(to)
+        recipients = [str(r).strip() for r in recipients if str(r).strip()]
+        if not recipients:
+            raise RuntimeError("Email recipient is missing")
+
+        # Basic sanity check to avoid accidental hardcoded/fallback delivery
+        for r in recipients:
+            if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", r):
+                raise RuntimeError(f"Invalid recipient email: {r}")
         
         payload = {
             "from": self.from_email,
