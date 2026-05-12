@@ -310,8 +310,11 @@ async def invite_ai_interviews(
             # Email is non-blocking infra
             try:
                 interview_link = f"{str(settings.frontend_url).rstrip('/')}/ai-interview/{token}"
+                recipient_email = str(c.get("email") or "").strip()
+                if not recipient_email:
+                    raise RuntimeError("Candidate email is missing")
                 await email_service.send_interview_invite(
-                    to=str(c.get("email") or ""),
+                    to=recipient_email,
                     candidate_name=str(c.get("full_name") or "Candidate"),
                     job_title=str(job.get("title") or ""),
                     interview_link=interview_link,
