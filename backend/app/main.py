@@ -1,26 +1,32 @@
 import asyncio
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from app.config import get_settings, ensure_directories
+
+from app.api.v1.router import api_router as api_v1_router
+from app.api.v2.router import api_router as api_v2_router
+from app.config import ensure_directories, get_settings
+from app.core.config_validation import validate_environment
+from app.core.error_handlers import register_exception_handlers
+from app.core.logging import setup_logging
+from app.middleware.clerk_auth import ClerkAuthMiddleware
+from app.middleware.request_id import RequestIdMiddleware
+from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.openai_client import get_openai_service
-from app.routers import (
-    jobs_router,
-    candidates_router,
-    interviews_router,
-    screening_router,
-    analytics_router
-)
-from app.routers.applications import router as applications_router
-from app.routers.assessments import router as assessments_router
-from app.routers.ai_interview import router as ai_interview_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
+    setup_logging(os.getenv("LOG_LEVEL", "INFO"))
+    validate_environment()
     ensure_directories()
+
+    # Register exception handlers (foundation)
+    register_exception_handlers(app)
     yield
     # Shutdown
     pass
@@ -33,6 +39,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Middleware (foundation)
+app.add_middleware(RequestIdMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(ClerkAuthMiddleware)
+
 # Configure CORS
 settings = get_settings()
 app.add_middleware(
@@ -44,14 +55,11 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(jobs_router)
-app.include_router(candidates_router)
-app.include_router(interviews_router)
-app.include_router(screening_router)
-app.include_router(analytics_router)
-app.include_router(applications_router)
-app.include_router(assessments_router)
-app.include_router(ai_interview_router)
+# Versioned API base (foundation)
+app.include_router(api_v1_router, prefix="/api/v1")
+
+# AI-heavy migration API base (parallel)
+app.include_router(api_v2_router, prefix="/api/v2")
 
 
 @app.get("/")

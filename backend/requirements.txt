@@ -5,6 +5,8 @@ python-multipart==0.0.6
 
 # Database
 supabase==2.3.4
+gotrue==2.8.1
+postgrest==0.15.1
 python-dotenv==1.0.0
 
 # AI/ML
@@ -24,10 +26,14 @@ numpy>=2.1
 email-validator>=2.1
 
 # Utilities
-httpx>=0.24,<0.26
+httpx==0.25.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 aiofiles==23.2.1
+
+# Background workers (foundation scaffolding)
+celery>=5.3,<6
+tenacity>=8.2,<10
 
 # PDF Generation
 reportlab>=4.0.0

@@ -73,8 +73,10 @@ import { useCandidateAnalytics } from '@/hooks/useAnalytics';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/hooks/useAuth';
 import { isSalesforceRoleText } from '@/lib/utils/salesforce';
+import { assessmentsApi } from '@/lib/api';
+import { aiInterviewApi } from '@/lib/api';
+import { candidatesWorkflowApi } from '@/lib/api';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -91,7 +93,6 @@ type SortOrder = 'asc' | 'desc';
 
 export default function CandidatesPage() {
   const { loading: authLoading } = useRequireAuth();
-  const { getToken } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('date');
@@ -213,7 +214,7 @@ export default function CandidatesPage() {
             comparison = new Date((a as any).applied_at || a.created_at).getTime() - new Date((b as any).applied_at || b.created_at).getTime();
             break;
           case 'score':
-            comparison = 0; // Will implement when we have scores
+            comparison = (a.ats_score || 0) - (b.ats_score || 0);
             break;
         }
         return sortOrder === 'asc' ? comparison : -comparison;
@@ -289,34 +290,19 @@ export default function CandidatesPage() {
 
     setSendingInvites(true);
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/assessments/invite`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
-          job_id: selectedJobId,
-          deadline: deadlineDate.toISOString(),
-          mcq_question_count: includeMcq ? mcqCount : 0,
-          // In APEX mode, `codingCount` represents the number of Apex fill-in-the-blanks questions.
-          coding_challenge_count: assessmentMode === 'apex' ? codingCount : (includeCoding ? codingCount : 0),
-          difficulty: assessmentDifficulty,
-          include_mcq: includeMcq,
-          include_coding: includeCoding,
-          assessment_mode: assessmentMode,
-          total_time_minutes: totalTimeMinutes || undefined,
-        }),
+      const data = await assessmentsApi.invite({
+        candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
+        job_id: selectedJobId,
+        deadline: deadlineDate.toISOString(),
+        mcq_question_count: includeMcq ? mcqCount : 0,
+        // In APEX mode, `codingCount` represents the number of Apex fill-in-the-blanks questions.
+        coding_challenge_count: assessmentMode === 'apex' ? codingCount : (includeCoding ? codingCount : 0),
+        difficulty: assessmentDifficulty,
+        include_mcq: includeMcq,
+        include_coding: includeCoding,
+        assessment_mode: assessmentMode,
+        total_time_minutes: totalTimeMinutes || undefined,
       });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || error.detail || 'Failed to send invites');
-      }
-
-      const data = await response.json();
       toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
       setAssessmentDialogOpen(false);
       setSelectedIds(new Set());
@@ -374,29 +360,13 @@ export default function CandidatesPage() {
 
     setSendingInvites(true);
     try {
-      const token = await getToken();
-      
       if (interviewMode === 'manual') {
         // For manual interviews, set interview_mode to 'manual' in job_applications
-        const response = await fetch(`/api/candidates/bulk-update-interview-mode`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({
-            candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
-            job_id: selectedJobId,
-            interview_mode: 'manual',
-          }),
+        const data = await candidatesWorkflowApi.bulkUpdateInterviewMode({
+          candidate_ids: Array.from(selectedIds).map((id) => id.split('_')[0]),
+          job_id: selectedJobId,
+          interview_mode: 'manual',
         });
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          throw new Error(error.error || error.detail || 'Failed to set manual interview mode');
-        }
-
-        const data = await response.json();
         toast.success(`Manual interview mode set for ${data.updated_count} candidate(s). You can now enter scores in the candidate details page.`);
       } else {
         // AI interview flow
@@ -412,27 +382,13 @@ export default function CandidatesPage() {
           return;
         }
 
-        const response = await fetch(`/api/ai-interview/invite`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({
-            candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
-            job_id: selectedJobId,
-            question_count: interviewQuestionCount,
-            difficulty: interviewDifficulty,
-            deadline: deadlineDate.toISOString(),
-          }),
+        const data = await aiInterviewApi.invite({
+          candidate_ids: Array.from(selectedIds).map(id => id.split('_')[0]),
+          job_id: selectedJobId,
+          question_count: interviewQuestionCount,
+          difficulty: interviewDifficulty,
+          deadline: deadlineDate.toISOString(),
         });
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          throw new Error(error.error || error.detail || 'Failed to send invites');
-        }
-
-        const data = await response.json();
         toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
       }
       

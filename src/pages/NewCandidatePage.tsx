@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useRequireAuth, useAuth } from '@/hooks/useAuth';
+import { useRequireAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types
 import { useCreateCandidate, useRunScreening, useUploadResume } from '@/hooks/useCandidates';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { useJobs } from '@/hooks/useJobs';
+import { apiUploadFile } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -42,7 +43,6 @@ type Step = 'upload' | 'details' | 'job' | 'consent' | 'processing';
 
 export default function NewCandidatePage() {
   const { user, loading } = useRequireAuth();
-  const { getToken } = useAuth();
   const navigate = useNavigate();
   
   const [currentStep, setCurrentStep] = useState<Step>('upload');
@@ -134,24 +134,12 @@ export default function NewCandidatePage() {
     if (!resumeFile) return;
     setIsParsingResume(true);
     try {
-      const token = await getToken();
       const formData = new FormData();
       formData.append('resume', resumeFile);
 
-      const response = await fetch('/api/candidates/parse-resume-preview', {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: formData,
+      const data = await apiUploadFile<any>('/candidates/parse-resume-preview', formData, false, {
+        timeoutMs: 40000,
       });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to parse resume');
-      }
-
-      const data = await response.json();
 
       // Pre-populate form fields with extracted data
       if (data.full_name) setFullName(data.full_name);

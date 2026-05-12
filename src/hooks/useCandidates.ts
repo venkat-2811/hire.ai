@@ -70,14 +70,15 @@ export function useRunScreening() {
     mutationFn: async ({ candidateId, jobId }: { candidateId: string; jobId: string }) => {
       return screeningApi.run(candidateId, jobId);
     },
-    onSuccess: (result) => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['screenings'] });
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
 
-      if (result.shortlisted) {
-        toast.success(`Candidate shortlisted with score ${result.overall_score}%`);
+      const data = result.screeningData || result;
+      if (data.shortlisted) {
+        toast.success(`Candidate shortlisted with score ${data.overall_score}%`);
       } else {
-        toast.info(`Screening complete. Score: ${result.overall_score}%`);
+        toast.info(`Screening complete. Score: ${data.overall_score}%`);
       }
     },
     onError: (error: Error) => {

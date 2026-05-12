@@ -29,20 +29,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-const API_BASE_URL = '/api';
-
-interface PublicJob {
-  id: string;
-  title: string;
-  role: string;
-  level: string;
-  description: string;
-  must_have_skills: string[];
-  good_to_have_skills: string[];
-  min_experience_years: number;
-  company_name: string;
-}
+import { applyApi, type PublicJob } from '@/lib/api';
 
 export default function ApplyPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -73,19 +60,15 @@ export default function ApplyPage() {
       if (!jobId) return;
 
       try {
-        const response = await fetch(`${API_BASE_URL}/apply/job/${jobId}`);
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('This job is no longer accepting applications.');
-          } else {
-            setError('Failed to load job details.');
-          }
-          return;
-        }
-        const data = await response.json();
+        const data = await applyApi.getJob(jobId);
         setJob(data);
       } catch (e) {
-        setError('Failed to load job details. Please try again later.');
+        const msg = e instanceof Error ? e.message : '';
+        if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('no longer accepting')) {
+          setError('This job is no longer accepting applications.');
+        } else {
+          setError('Failed to load job details. Please try again later.');
+        }
       } finally {
         setLoading(false);
       }
@@ -143,15 +126,7 @@ export default function ApplyPage() {
       formData.append('consent_given', String(consentGiven));
       formData.append('resume', resumeFile);
 
-      const response = await fetch(`${API_BASE_URL}/apply/submit`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || errorData.detail || errorData.message || 'Failed to submit application');
-      }
+      await applyApi.submit(formData);
 
       setSubmitted(true);
       toast.success('Application submitted successfully!');

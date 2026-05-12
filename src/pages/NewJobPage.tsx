@@ -13,10 +13,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCreateJob, type JobDescriptionCreate } from '@/hooks/useJobs';
 import { LEVEL_CONFIG, type RoleLevel } from '@/types/database';
 import { toast } from 'sonner';
+import { jobsApi } from '@/lib/api';
 
 export default function NewJobPage() {
   const { loading: authLoading } = useRequireAuth();
-  const { getToken } = useAuth();
+  useAuth();
   const navigate = useNavigate();
   const createJob = useCreateJob();
 
@@ -66,20 +67,7 @@ export default function NewJobPage() {
     }
     setExtractingSkills(true);
     try {
-      const token = await getToken();
-      const response = await fetch('/api/jobs/extract-skills', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ description, title, role }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to extract skills');
-      }
-      const data = await response.json();
+      const data = await jobsApi.extractSkills({ description, title, role });
       const newMustHave = (data.must_have_skills || []).filter(
         (s: string) => !mustHaveSkills.includes(s)
       );

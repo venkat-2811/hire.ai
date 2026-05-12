@@ -1,1 +1,17 @@
 venv/
+.venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Runtime uploads
+uploads/

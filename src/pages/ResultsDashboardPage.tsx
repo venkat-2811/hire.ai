@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth, useRequireAuth } from '@/hooks/useAuth';
 import { useJobs } from '@/hooks/useJobs';
-import { analyticsApi, type CandidateAnalytics, type JobDescription } from '@/lib/api';
+import { analyticsApi, candidatesWorkflowApi, type CandidateAnalytics, type JobDescription } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -62,14 +62,11 @@ import { PDFExportService } from '@/lib/pdf-export';
 import { useProfile } from '@/hooks/useProfile';
 import { Download } from 'lucide-react';
 
-const API_BASE_URL = '/api';
-
 type SortField = 'name' | 'ats_score' | 'assessment_score' | 'interview_score' | 'total_score';
 type SortOrder = 'asc' | 'desc';
 
 export default function ResultsDashboardPage() {
   const { loading: authLoading } = useRequireAuth();
-  const { getToken } = useAuth();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
   const { data: profile } = useProfile();
 
@@ -311,26 +308,11 @@ export default function ResultsDashboardPage() {
 
     setSendingEmails(true);
     try {
-      const token = await getToken();
       const candidateIds = Array.from(selectedCandidates);
-      const response = await fetch(`${API_BASE_URL}/candidates/send-acceptance`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          candidate_ids: candidateIds,
-          job_id: selectedJobId,
-        }),
+      const data = await candidatesWorkflowApi.sendAcceptance({
+        candidate_ids: candidateIds,
+        job_id: selectedJobId,
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        const msg = data?.error || data?.detail || 'Failed to send acceptance emails';
-        toast.error(msg);
-        return;
-      }
 
       if (data?.error_messages?.length) {
         toast.error(`Some emails failed: ${data.error_messages[0]}`);
@@ -360,26 +342,11 @@ export default function ResultsDashboardPage() {
 
     setSendingEmails(true);
     try {
-      const token = await getToken();
       const candidateIds = Array.from(selectedCandidates);
-      const response = await fetch(`${API_BASE_URL}/candidates/send-rejection`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          candidate_ids: candidateIds,
-          job_id: selectedJobId,
-        }),
+      const data = await candidatesWorkflowApi.sendRejection({
+        candidate_ids: candidateIds,
+        job_id: selectedJobId,
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        const msg = data?.error || data?.detail || 'Failed to send rejection emails';
-        toast.error(msg);
-        return;
-      }
 
       if (data?.error_messages?.length) {
         toast.error(`Some emails failed: ${data.error_messages[0]}`);
@@ -413,46 +380,26 @@ export default function ResultsDashboardPage() {
 
     setSendingEmails(true);
     try {
-      const token = await getToken();
       const candidateIds = Array.from(selectedCandidates);
+      const resp = await candidatesWorkflowApi.sendOfferLetter({
+        candidate_ids: candidateIds,
+        job_id: selectedJobId,
+        ctc: offerCtc.trim(),
+        company_name: companyName.trim(),
+        time_period_years: offerTimePeriodYears ? parseInt(offerTimePeriodYears) : null,
+        time_period_months: offerTimePeriodMonths ? parseInt(offerTimePeriodMonths) : null,
+      });
 
-      let successCount = 0;
-      let failures: string[] = [];
-
-      // Send one by one (backend endpoint is per-candidate)
-      for (const candidateId of candidateIds) {
-        const response = await fetch(`${API_BASE_URL}/candidates/send-offer-letter`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            candidate_ids: [candidateId],
-            job_id: selectedJobId,
-            ctc: offerCtc.trim(),
-            company_name: companyName.trim(),
-            time_period_years: offerTimePeriodYears ? parseInt(offerTimePeriodYears) : null,
-            time_period_months: offerTimePeriodMonths ? parseInt(offerTimePeriodMonths) : null,
-          }),
-        });
-
-        if (response.ok) {
-          successCount++;
-        } else {
-          const data = await response.json().catch(() => ({}));
-          failures.push(data?.detail || data?.error || candidateId);
-        }
-      }
-
-      if (successCount > 0) {
-        toast.success(`Offer letter${successCount > 1 ? 's' : ''} sent to ${successCount} candidate${successCount > 1 ? 's' : ''}`);
+      if (resp.emails_sent > 0) {
+        toast.success(
+          `Offer letter${resp.emails_sent > 1 ? 's' : ''} sent to ${resp.emails_sent} candidate${resp.emails_sent > 1 ? 's' : ''}`
+        );
         const newOfferSent = new Set(offerSentIds);
         candidateIds.forEach((id) => newOfferSent.add(id));
         setOfferSentIds(newOfferSent);
       }
-      if (failures.length > 0) {
-        toast.error(`${failures.length} offer letter(s) failed to send.`);
+      if (resp?.error_messages?.length) {
+        toast.error(`${resp.error_messages.length} offer letter(s) failed to send.`);
       }
 
       setOfferLetterDialogOpen(false);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAuth } from './useAuth';
+import { jobStatusApi } from '@/lib/api';
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
@@ -23,7 +23,6 @@ interface UseJobPollingOptions<T> {
 export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPollingOptions<T>) {
   const [job, setJob] = useState<JobState<T> | null>(null);
   const [isPolling, setIsPolling] = useState(false);
-  const { getToken } = useAuth();
   
   const pollingInterval = options?.pollingInterval || 3000;
   const maxRetries = options?.maxRetries || 100; // ~5 mins at 3s interval
@@ -36,16 +35,7 @@ export function useJobPolling<T = any>(jobId: string | null, options?: UseJobPol
     if (!jobId) return;
 
     try {
-      const token = await getToken();
-      const res = await fetch(`/api/job-status/${jobId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!res.ok) throw new Error('Failed to fetch job status');
-      
-      const data: JobState<T> = await res.json();
+      const data = await jobStatusApi.get<JobState<T>>(jobId);
       setJob(data);
       console.log(`[useJobPolling] Job ${jobId} status: ${data.status}`);
 
