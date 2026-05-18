@@ -196,16 +196,12 @@ async def _aggregate_usage(db, user_id: str, period_start: str, period_end: str)
 
 
 async def _send_email(to: str, subject: str, html: str) -> None:
-    key = os.environ.get("RESEND_API_KEY", "")
-    if not key:
-        return
-    from_email = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
-    async with httpx.AsyncClient() as client:
-        await client.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"from": from_email, "to": to, "subject": subject, "html": html},
-        )
+    try:
+        from app.services.email_service import get_email_service
+        email_service = get_email_service()
+        await email_service.send_email(to=to, subject=subject, html=html)
+    except Exception:
+        pass
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
