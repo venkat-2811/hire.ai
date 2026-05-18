@@ -1,23 +1,34 @@
 """
-Email service using Resend API for sending transactional emails.
+Email service using SMTP (aiosmtplib) for sending transactional emails.
+Configured for Hostinger (smtp.hostinger.com:465 SSL) by default.
 """
-import httpx
-import base64
 import re
+import logging
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from typing import Optional, List
+
+import aiosmtplib
+
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Service for sending emails via Resend API."""
-    
-    BASE_URL = "https://api.resend.com"
-    
+    """Service for sending emails via SMTP."""
+
     def __init__(self):
         settings = get_settings()
-        self.api_key = settings.resend_api_key
-        self.from_email = settings.resend_from_email
-        
+        self.smtp_host = settings.smtp_host
+        self.smtp_port = settings.smtp_port
+        self.smtp_user = settings.smtp_user
+        self.smtp_password = settings.smtp_password
+        self.from_email = settings.smtp_from_email or settings.smtp_user
+        self.use_ssl = settings.smtp_use_ssl
+
     async def send_email(
         self,
         to: str | List[str],
@@ -26,47 +37,43 @@ class EmailService:
         text: Optional[str] = None,
         reply_to: Optional[str] = None,
     ) -> dict:
-        """Send an email using Resend API."""
-        if not self.api_key:
-            raise RuntimeError("RESEND_API_KEY is not configured")
+        """Send an email using SMTP."""
+        if not self.smtp_user or not self.smtp_password:
+            raise RuntimeError("SMTP_USER and SMTP_PASSWORD are not configured")
 
         recipients = [to] if isinstance(to, str) else list(to)
         recipients = [str(r).strip() for r in recipients if str(r).strip()]
         if not recipients:
             raise RuntimeError("Email recipient is missing")
 
-        # Basic sanity check to avoid accidental hardcoded/fallback delivery
         for r in recipients:
             if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", r):
                 raise RuntimeError(f"Invalid recipient email: {r}")
-        
-        payload = {
-            "from": self.from_email,
-            "to": recipients,
-            "subject": subject,
-            "html": html,
-        }
-        
-        if text:
-            payload["text"] = text
+
+        msg = MIMEMultipart("alternative")
+        msg["From"] = self.from_email
+        msg["To"] = ", ".join(recipients)
+        msg["Subject"] = subject
         if reply_to:
-            payload["reply_to"] = reply_to
-            
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.BASE_URL}/emails",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=30.0,
-            )
-            
-            if response.status_code >= 400:
-                raise RuntimeError(f"Resend API error: {response.status_code} - {response.text}")
-            
-            return response.json()
+            msg["Reply-To"] = reply_to
+
+        if text:
+            msg.attach(MIMEText(text, "plain", "utf-8"))
+        msg.attach(MIMEText(html, "html", "utf-8"))
+
+        await aiosmtplib.send(
+            msg,
+            hostname=self.smtp_host,
+            port=self.smtp_port,
+            username=self.smtp_user,
+            password=self.smtp_password,
+            use_tls=self.use_ssl,
+            start_tls=not self.use_ssl,
+            timeout=30,
+        )
+
+        logger.info("[email] sent to=%s subject=%s", recipients, subject)
+        return {"status": "sent", "to": recipients}
     
     async def send_application_received(self, to: str, candidate_name: str, job_title: str) -> dict:
         """Send application received confirmation email."""
@@ -218,44 +225,52 @@ class EmailService:
         attachment_content_type: str = "application/pdf",
         text: Optional[str] = None,
     ) -> dict:
-        """Send an email with a single file attachment using Resend API."""
-        if not self.api_key:
-            raise RuntimeError("RESEND_API_KEY is not configured")
+        """Send an email with a single file attachment using SMTP."""
+        if not self.smtp_user or not self.smtp_password:
+            raise RuntimeError("SMTP_USER and SMTP_PASSWORD are not configured")
 
-        recipients = [to] if isinstance(to, str) else to
+        recipients = [to] if isinstance(to, str) else list(to)
+        recipients = [str(r).strip() for r in recipients if str(r).strip()]
+        if not recipients:
+            raise RuntimeError("Email recipient is missing")
 
-        payload = {
-            "from": self.from_email,
-            "to": recipients,
-            "subject": subject,
-            "html": html,
-            "attachments": [
-                {
-                    "filename": attachment_filename,
-                    "content": base64.b64encode(attachment_content).decode("utf-8"),
-                    "content_type": attachment_content_type,
-                }
-            ],
-        }
+        for r in recipients:
+            if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", r):
+                raise RuntimeError(f"Invalid recipient email: {r}")
 
+        msg = MIMEMultipart("mixed")
+        msg["From"] = self.from_email
+        msg["To"] = ", ".join(recipients)
+        msg["Subject"] = subject
+
+        body_part = MIMEMultipart("alternative")
         if text:
-            payload["text"] = text
+            body_part.attach(MIMEText(text, "plain", "utf-8"))
+        body_part.attach(MIMEText(html, "html", "utf-8"))
+        msg.attach(body_part)
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.BASE_URL}/emails",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=60.0,
-            )
+        maintype, _, subtype = attachment_content_type.partition("/")
+        attachment_part = MIMEBase(maintype or "application", subtype or "octet-stream")
+        attachment_part.set_payload(attachment_content)
+        encoders.encode_base64(attachment_part)
+        attachment_part.add_header(
+            "Content-Disposition", "attachment", filename=attachment_filename
+        )
+        msg.attach(attachment_part)
 
-            if response.status_code >= 400:
-                raise RuntimeError(f"Resend API error: {response.status_code} - {response.text}")
+        await aiosmtplib.send(
+            msg,
+            hostname=self.smtp_host,
+            port=self.smtp_port,
+            username=self.smtp_user,
+            password=self.smtp_password,
+            use_tls=self.use_ssl,
+            start_tls=not self.use_ssl,
+            timeout=60,
+        )
 
-            return response.json()
+        logger.info("[email] sent (with attachment) to=%s subject=%s", recipients, subject)
+        return {"status": "sent", "to": recipients}
 
     async def send_offer_letter_email(
         self,

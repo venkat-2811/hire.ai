@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
     resend_from_email: str = Field(default="onboarding@resend.dev", alias="RESEND_FROM_EMAIL")
 
+    smtp_host: str = Field(default="smtp.hostinger.com", alias="SMTP_HOST")
+    smtp_port: int = Field(default=465, alias="SMTP_PORT")
+    smtp_user: str = Field(default="", alias="SMTP_USER")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field(default="", alias="SMTP_FROM_EMAIL")
+    smtp_use_ssl: bool = Field(default=True, alias="SMTP_USE_SSL")
+
     stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
 
 
