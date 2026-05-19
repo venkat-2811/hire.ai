@@ -101,7 +101,7 @@ export default function DashboardPage() {
               animate={{ opacity: 1, y: 0 }}
               className="text-2xl lg:text-3xl font-bold text-foreground"
             >
-              Welcome back! 👋
+              Welcome back!!! 👋
             </motion.h1>
             <p className="text-muted-foreground mt-1">
               See how your hiring pipeline is performing today.
@@ -192,7 +192,7 @@ export default function DashboardPage() {
                   <div className="space-y-4">
                     {candidates.slice(0, 4).map((candidate) => (
                       <div
-                        key={candidate.id}
+                        key={candidate.job_id ? `${candidate.id}-${candidate.job_id}` : candidate.id}
                         className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                       >
                         <div className="flex items-center gap-4">
