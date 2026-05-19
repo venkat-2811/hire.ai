@@ -524,6 +524,13 @@ class HackerEarthExecutor:
                 '                _inp_kw = input_data\n'
                 '                if isinstance(_inp_kw, dict) and list(_inp_kw.keys()) == ["input"]:\n'
                 '                    _inp_kw = _inp_kw["input"]\n'
+                '                if isinstance(_inp_kw, str):\n'
+                '                    try:\n'
+                '                        _inp_kw = json.loads(_inp_kw)\n'
+                '                        if isinstance(_inp_kw, dict) and list(_inp_kw.keys()) == ["input"]:\n'
+                '                            _inp_kw = _inp_kw["input"]\n'
+                '                    except Exception:\n'
+                '                        pass\n'
                 '                _cap = _io.StringIO()\n'
                 '                sys.stdout = _cap\n'
                 '                try:\n'
@@ -924,6 +931,19 @@ public class Main {{
         return target.invoke(inst, callArgs);
     }}
 
+    private static int typeCompatScore(JVal v, Class<?> t) {{
+        if (v.isNull()) return 0;
+        boolean vArr = v.isArr();
+        boolean tArr = t.isArray() || t == List.class;
+        if (vArr && (t == int[].class || t == long[].class || t == double[].class || t == String[].class || t == int[][].class || t == char[].class || t == char[][].class || t == List.class || t.isArray())) return 10;
+        if (!vArr && (t == int.class || t == Integer.class || t == long.class || t == Long.class || t == double.class || t == Double.class || t == float.class || t == Float.class) && v.v instanceof Number) return 10;
+        if (!vArr && t == String.class && v.v instanceof String) return 10;
+        if (!vArr && (t == boolean.class || t == Boolean.class) && v.v instanceof Boolean) return 10;
+        if (vArr && !tArr) return 1;
+        if (!vArr && tArr) return 1;
+        return 5;
+    }}
+
     private static Object[] buildArgs(JVal input, Class<?>[] paramTypes) {{
         List<Object> argList = new ArrayList<>();
         if (input.isObj()) {{
@@ -939,8 +959,16 @@ public class Main {{
                 if (src.isObj() && src.size() == 1 && !src.get("input").isNull()) src = src.get("input");
                 if (src.isObj()) {{
                     List<String> keys = new ArrayList<>(src.obj().keySet());
-                    for (int i = 0; i < keys.size() && i < paramTypes.length; i++) {{
-                        argList.add(convert(src.get(keys.get(i)), paramTypes[i]));
+                    boolean[] usedKey = new boolean[keys.size()];
+                    for (int pi = 0; pi < paramTypes.length; pi++) {{
+                        int bestIdx = -1, bestScore = -1;
+                        for (int ki = 0; ki < keys.size(); ki++) {{
+                            if (usedKey[ki]) continue;
+                            int score = typeCompatScore(src.get(keys.get(ki)), paramTypes[pi]);
+                            if (score > bestScore) {{ bestScore = score; bestIdx = ki; }}
+                        }}
+                        argList.add(bestIdx >= 0 ? convert(src.get(keys.get(bestIdx)), paramTypes[pi]) : null);
+                        if (bestIdx >= 0) usedKey[bestIdx] = true;
                     }}
                 }} else if (src.isArr()) {{
                     for (int i = 0; i < src.size() && i < paramTypes.length; i++) {{
