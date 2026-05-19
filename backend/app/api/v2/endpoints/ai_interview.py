@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,8 @@ from app.services.db.supabase_service import get_db_admin_service
 from app.services.email_service import get_email_service
 from app.services.openai_client import get_openai_service
 from app.utils.responses import api_error, ok
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai-interview")
 
@@ -305,6 +308,7 @@ async def invite_ai_interviews(
                 "created_at": _utc_now_iso(),
             }
 
+            logger.info("[ai_interview.invite] inserting session session_id=%s candidate_id=%s job_id=%s", session_id, cid, body.job_id)
             await db.run(lambda: db.client.from_("ai_interview_sessions").insert(insert_row).execute())
 
             # Email is non-blocking infra
@@ -629,6 +633,8 @@ async def transcribe_store(session_id: str, body: TranscribeStoreRequest):
     else:
         responses.append(updated)
 
+    logger.info("[ai_interview.transcribe_store] saved transcript session_id=%s question_index=%s transcript_len=%s",
+                session_id, body.question_index, len(transcript))
     await db.update(
         "ai_interview_sessions",
         {"responses": responses, "updated_at": _utc_now_iso()},
@@ -682,6 +688,8 @@ async def submit_response(session_id: str, body: Dict[str, Any] = Body(...)):
     questions = _normalize_questions(session.get("questions"))
     is_last = next_index >= len(questions)
 
+    logger.info("[ai_interview.response] saving response session_id=%s question_index=%s is_last=%s transcript_len=%s",
+                session_id, q_index, is_last, len(payload.get("transcript") or ""))
     await db.update(
         "ai_interview_sessions",
         {"responses": responses, "current_question_index": next_index, "updated_at": _utc_now_iso()},
@@ -855,6 +863,16 @@ async def complete(session_id: str):
             "areas_for_improvement": ["Could not perform AI evaluation - scores are approximate"],
             "detailed_feedback": f"Candidate answered {answered} of {len(questions)} questions.",
         }
+
+    answered = len([r for r in responses if isinstance(r, dict) and isinstance(r.get("transcript"), str) and r.get("transcript", "").strip()])
+    logger.info("[ai_interview.complete] session_id=%s questions=%s answered=%s recommendation=%s",
+                session_id, len(questions), answered, final_eval.get("recommendation"))
+
+    # Normalize: always include both field names for backward compatibility
+    if "areas_for_improvement" in final_eval and "weaknesses" not in final_eval:
+        final_eval["weaknesses"] = final_eval["areas_for_improvement"]
+    elif "weaknesses" in final_eval and "areas_for_improvement" not in final_eval:
+        final_eval["areas_for_improvement"] = final_eval["weaknesses"]
 
     await db.update(
         "ai_interview_sessions",

@@ -35,8 +35,9 @@ import { useProfile } from '@/hooks/useProfile';
 import { candidatesApi, type AssessmentDetails, type InterviewDetails, type ManualInterviewDetails } from '@/lib/api';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { PDFExportService } from '@/lib/pdf-export';
-import { Download } from 'lucide-react';
+import { Download, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
 
 const safeRender = (val: any): string => {
   if (val == null) return '';
@@ -76,6 +77,7 @@ export default function CandidateDetailsPage() {
   const [manualInterviewDetails, setManualInterviewDetails] = useState<ManualInterviewDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [savingManual, setSavingManual] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   const [manualScore, setManualScore] = useState<string>('');
   const [manualFeedback, setManualFeedback] = useState<string>('');
@@ -115,7 +117,8 @@ export default function CandidateDetailsPage() {
 
       if (manualInterview) {
         setManualScore(manualInterview.manual_interview_score != null ? String(manualInterview.manual_interview_score) : '');
-        setManualFeedback(manualInterview.manual_interview_feedback || '');
+        // Use feedback field (backend normalises both feedback and notes)
+        setManualFeedback(manualInterview.manual_interview_feedback || manualInterview.manual_interview_notes || '');
         setManualNotes(manualInterview.manual_interview_notes || '');
       } else {
         setManualScore('');
@@ -218,10 +221,18 @@ export default function CandidateDetailsPage() {
               <p className="text-muted-foreground">{safeRender(candidate.email)}</p>
             </div>
           </div>
-          <Button variant="outline" onClick={handleDownloadReport} className="w-full sm:w-auto mt-2 sm:mt-0">
-            <Download className="mr-2 h-4 w-4" />
-            Download Candidate Report
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+            {candidate.applied_at && (
+              <Button variant="outline" onClick={() => setEditModalOpen(true)} className="w-full sm:w-auto">
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit Details
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleDownloadReport} className="w-full sm:w-auto">
+              <Download className="mr-2 h-4 w-4" />
+              Download Candidate Report
+            </Button>
+          </div>
         </div>
 
         {/* Candidate Details */}
@@ -672,13 +683,20 @@ export default function CandidateDetailsPage() {
                         {typeof interviewDetails.final_evaluation?.recommendation === 'string' && (
                           <div className="p-4 rounded-lg bg-muted/50">
                             <p className="text-sm font-medium mb-1">Recommendation</p>
-                            <Badge variant={interviewDetails.final_evaluation.recommendation.toLowerCase().includes('hire') ? 'default' : 'secondary'}>
-                              {interviewDetails.final_evaluation.recommendation.replace(/_/g, ' ').toUpperCase()}
-                            </Badge>
+                            {(() => {
+                              const rec = interviewDetails.final_evaluation.recommendation.toLowerCase();
+                              const isHire = rec === 'hire' || rec === 'strong_hire';
+                              const isMaybe = rec === 'maybe';
+                              return (
+                                <Badge variant={isHire ? 'default' : isMaybe ? 'outline' : 'destructive'}>
+                                  {interviewDetails.final_evaluation.recommendation.replace(/_/g, ' ').toUpperCase()}
+                                </Badge>
+                              );
+                            })()}
                           </div>
                         )}
 
-                        {/* Strengths & Weaknesses */}
+                        {/* Strengths & Areas to Improve */}
                         {interviewDetails.final_evaluation && (
                           <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -697,14 +715,18 @@ export default function CandidateDetailsPage() {
                             <div>
                               <h5 className="font-medium text-sm mb-2 text-destructive">Areas to Improve</h5>
                               <ul className="space-y-1">
-                                {Array.isArray(interviewDetails.final_evaluation.weaknesses) ? interviewDetails.final_evaluation.weaknesses.map((w, i) => (
-                                  <li key={i} className="text-sm flex items-start gap-2">
-                                    <XCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
-                                    {typeof w === 'string' ? w : JSON.stringify(w)}
-                                  </li>
-                                )) : (
-                                  <li className="text-sm text-muted-foreground">{typeof interviewDetails.final_evaluation.weaknesses === 'string' ? interviewDetails.final_evaluation.weaknesses : 'None noted'}</li>
-                                )}
+                                {(() => {
+                                  const items = (interviewDetails.final_evaluation as any).areas_for_improvement
+                                    || (interviewDetails.final_evaluation as any).weaknesses;
+                                  return Array.isArray(items) ? items.map((w: any, i: number) => (
+                                    <li key={i} className="text-sm flex items-start gap-2">
+                                      <XCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                                      {typeof w === 'string' ? w : JSON.stringify(w)}
+                                    </li>
+                                  )) : (
+                                    <li className="text-sm text-muted-foreground">{typeof items === 'string' ? items : 'None noted'}</li>
+                                  );
+                                })()}
                               </ul>
                             </div>
                           </div>
@@ -899,6 +921,14 @@ export default function CandidateDetailsPage() {
           </div>
         </div>
       </div>
+
+      {/* Edit Candidate Modal */}
+      <EditCandidateModal
+        candidate={candidate as any}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onUpdated={() => refetch()}
+      />
     </DashboardLayout>
   );
 }

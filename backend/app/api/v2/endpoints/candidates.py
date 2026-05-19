@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +11,8 @@ from app.auth.clerk import ClerkUser
 from app.services.ai.factory import get_ai
 from app.services.db.supabase_service import get_db_admin_service
 from app.utils.responses import ok, api_error
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/candidates")
 
@@ -571,22 +574,47 @@ async def update_candidate(
     payload: Dict[str, Any],
     user: ClerkUser = Depends(require_user),
 ):
-    """PATCH /api/v2/candidates/{candidate_id}"""
+    """PATCH /api/v2/candidates/{candidate_id}
+
+    Editable fields: full_name, email, phone, portfolio_url, github_url, location, vendorName, mainSkillset.
+    Resume fields (resume_url, resume_text, resume_parsed_data) are intentionally excluded — immutable after submission.
+    """
     db = get_db_admin_service()
 
-    # Build safe update dict — only allow recognised fields
+    # Resume fields are immutable after application submission — never allow them via this endpoint
     allowed = {
-        "full_name", "phone", "portfolio_url", "github_url",
+        "full_name", "email", "phone", "portfolio_url", "github_url",
         "location", "vendorName", "mainSkillset",
-        "resume_url", "resume_text", "resume_parsed_data",
         "consent_given", "consent_timestamp",
     }
     update_data: Dict[str, Any] = {k: v for k, v in payload.items() if k in allowed}
     if not update_data:
         return api_error(message="No valid fields to update", status_code=400)
 
-    from datetime import datetime, timezone
+    # If email is being changed, check for duplicates
+    if "email" in update_data:
+        new_email = str(update_data["email"]).strip().lower()
+        if not new_email:
+            return api_error(message="Email cannot be empty", status_code=400)
+        update_data["email"] = new_email
+
+        def _check_email_conflict():
+            return (
+                db.client.from_("candidates")
+                .select("id")
+                .eq("email", new_email)
+                .neq("id", candidate_id)
+                .limit(1)
+                .execute()
+            )
+
+        conflict_res = await db.run(_check_email_conflict)
+        conflict = getattr(conflict_res, "data", None) or []
+        if isinstance(conflict, list) and conflict:
+            return api_error(message="Another candidate already uses this email address", status_code=409)
+
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    logger.info("[candidates.update] candidate_id=%s fields=%s", candidate_id, list(update_data.keys()))
 
     def _update():
         return (
@@ -813,7 +841,12 @@ async def get_manual_interview(
     def _fetch():
         return (
             db.client.from_("job_applications")
-            .select("manual_interview_score, manual_interview_notes, manual_interview_date, interview_mode")
+            .select(
+                "candidate_id, job_id, interview_mode, interview_status, "
+                "manual_interview_score, manual_interview_notes, manual_interview_feedback, "
+                "manual_interview_date, manual_interview_at, interview_completed_at, "
+                "manual_interview_entered_by"
+            )
             .eq("candidate_id", candidate_id)
             .eq("job_id", job_id)
             .maybe_single()
@@ -824,7 +857,21 @@ async def get_manual_interview(
     row = getattr(res, "data", None)
     if not isinstance(row, dict):
         return ok(None)
-    return ok(row)
+    # Normalise: return consistent field names regardless of which DB column exists
+    feedback = row.get("manual_interview_feedback") or row.get("manual_interview_notes")
+    at_val = row.get("manual_interview_at") or row.get("manual_interview_date")
+    return ok({
+        "candidate_id": row.get("candidate_id", candidate_id),
+        "job_id": row.get("job_id", job_id),
+        "interview_mode": row.get("interview_mode"),
+        "interview_status": row.get("interview_status"),
+        "manual_interview_score": row.get("manual_interview_score"),
+        "manual_interview_feedback": feedback,
+        "manual_interview_notes": row.get("manual_interview_notes"),
+        "manual_interview_at": at_val,
+        "interview_completed_at": row.get("interview_completed_at"),
+        "manual_interview_entered_by": row.get("manual_interview_entered_by"),
+    })
 
 
 @router.patch("/{candidate_id}/manual-interview")
@@ -835,19 +882,46 @@ async def update_manual_interview(
     user: ClerkUser = Depends(require_user),
 ):
     """PATCH /api/v2/candidates/{candidate_id}/manual-interview?job_id=..."""
-    from datetime import datetime, timezone
-
     db = get_db_admin_service()
-    allowed = {"manual_interview_score", "manual_interview_notes", "manual_interview_date", "interview_mode"}
-    update_data = {k: v for k, v in payload.items() if k in allowed}
-    if not update_data:
-        return api_error(message="No valid fields to update", status_code=400)
+
+    # Accept both feedback/notes field names for compatibility
+    allowed = {
+        "manual_interview_score", "manual_interview_notes", "manual_interview_feedback",
+        "manual_interview_date", "manual_interview_at", "interview_mode",
+        "interview_status", "interview_completed_at",
+    }
+    update_data: Dict[str, Any] = {k: v for k, v in payload.items() if k in allowed}
+
+    # Normalise: store feedback in both columns if either is provided
+    if "manual_interview_feedback" in update_data and "manual_interview_notes" not in update_data:
+        update_data["manual_interview_notes"] = update_data["manual_interview_feedback"]
+    elif "manual_interview_notes" in update_data and "manual_interview_feedback" not in update_data:
+        update_data["manual_interview_feedback"] = update_data["manual_interview_notes"]
+
+    # Normalise date field names
+    if "manual_interview_at" in update_data and "manual_interview_date" not in update_data:
+        update_data["manual_interview_date"] = update_data["manual_interview_at"]
+
+    if not {k for k in update_data if k not in ("manual_interview_feedback", "manual_interview_at")}:
+        if not update_data:
+            return api_error(message="No valid fields to update", status_code=400)
+
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Filter to only columns that actually exist in job_applications (safe subset)
+    db_allowed = {
+        "manual_interview_score", "manual_interview_notes", "manual_interview_date",
+        "interview_mode", "interview_status", "interview_completed_at", "updated_at",
+    }
+    db_update = {k: v for k, v in update_data.items() if k in db_allowed}
+
+    if not db_update:
+        return api_error(message="No valid fields to update", status_code=400)
 
     def _update():
         return (
             db.client.from_("job_applications")
-            .update(update_data)
+            .update(db_update)
             .eq("candidate_id", candidate_id)
             .eq("job_id", job_id)
             .execute()
@@ -855,10 +929,16 @@ async def update_manual_interview(
 
     await db.run(_update)
 
+    # Re-fetch using the same normalised shape as get_manual_interview
     def _fetch():
         return (
             db.client.from_("job_applications")
-            .select("manual_interview_score, manual_interview_notes, manual_interview_date, interview_mode")
+            .select(
+                "candidate_id, job_id, interview_mode, interview_status, "
+                "manual_interview_score, manual_interview_notes, manual_interview_feedback, "
+                "manual_interview_date, manual_interview_at, interview_completed_at, "
+                "manual_interview_entered_by"
+            )
             .eq("candidate_id", candidate_id)
             .eq("job_id", job_id)
             .maybe_single()
@@ -866,7 +946,23 @@ async def update_manual_interview(
         )
 
     res = await db.run(_fetch)
-    return ok(getattr(res, "data", None))
+    row = getattr(res, "data", None)
+    if not isinstance(row, dict):
+        return ok(None)
+    feedback = row.get("manual_interview_feedback") or row.get("manual_interview_notes")
+    at_val = row.get("manual_interview_at") or row.get("manual_interview_date")
+    return ok({
+        "candidate_id": row.get("candidate_id", candidate_id),
+        "job_id": row.get("job_id", job_id),
+        "interview_mode": row.get("interview_mode"),
+        "interview_status": row.get("interview_status"),
+        "manual_interview_score": row.get("manual_interview_score"),
+        "manual_interview_feedback": feedback,
+        "manual_interview_notes": row.get("manual_interview_notes"),
+        "manual_interview_at": at_val,
+        "interview_completed_at": row.get("interview_completed_at"),
+        "manual_interview_entered_by": row.get("manual_interview_entered_by"),
+    })
 
 
 @router.post("/parse-resume-preview")

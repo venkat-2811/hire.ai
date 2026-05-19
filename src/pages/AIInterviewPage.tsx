@@ -295,13 +295,15 @@ export default function AIInterviewPage() {
         confidence: 0.9,
       });
 
-      void queueServerTranscription(question.index, audioDurationSeconds, recordedBlob);
-
       if (data.is_last_question) {
+        // CRITICAL: await transcription before evaluating — empty transcripts cause "No responses" evaluation
+        await queueServerTranscription(question.index, audioDurationSeconds, recordedBlob);
         const evalData = await aiInterviewApi.complete(interviewData.session_id);
         setFinalEvaluation(evalData);
         setIsCompleted(true);
       } else {
+        // Non-last questions: fire-and-forget transcription while advancing
+        void queueServerTranscription(question.index, audioDurationSeconds, recordedBlob);
         // Pass the next index so adapt-question can generate a context-aware follow-up
         const nextIndex = (question.index ?? 0) + 1;
         await loadCurrentQuestion(nextIndex);

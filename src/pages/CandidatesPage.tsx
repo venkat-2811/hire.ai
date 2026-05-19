@@ -77,6 +77,8 @@ import { isSalesforceRoleText } from '@/lib/utils/salesforce';
 import { assessmentsApi } from '@/lib/api';
 import { aiInterviewApi } from '@/lib/api';
 import { candidatesWorkflowApi } from '@/lib/api';
+import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
+import { Pencil } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,7 +103,7 @@ export default function CandidatesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
 
-  const { data: candidates, isLoading: candidatesLoading } = useCandidates();
+  const { data: candidates, isLoading: candidatesLoading, refetch: refetchCandidates } = useCandidates();
   const deleteCandidate = useDeleteCandidate();
   const createInterview = useCreateInterview();
   const startInterview = useStartInterview();
@@ -136,6 +138,10 @@ export default function CandidatesPage() {
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState<{ id: string; jobId: string } | null>(null);
+
+  // Edit Candidate State
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [candidateToEdit, setCandidateToEdit] = useState<any | null>(null);
 
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
@@ -731,6 +737,15 @@ export default function CandidatesPage() {
                                         View Details
                                       </Link>
                                     </DropdownMenuItem>
+                                    {(candidate as any).applied_at && (
+                                      <DropdownMenuItem onClick={() => {
+                                        setCandidateToEdit(candidate);
+                                        setEditModalOpen(true);
+                                      }}>
+                                        <Pencil className="mr-2 h-4 w-4" />
+                                        Edit Details
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem onClick={() => {
                                       setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
                                       setStartJobId(jobId);
@@ -1059,6 +1074,17 @@ export default function CandidatesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Edit Candidate Modal */}
+        <EditCandidateModal
+          candidate={candidateToEdit}
+          open={editModalOpen}
+          onOpenChange={(open) => {
+            setEditModalOpen(open);
+            if (!open) setCandidateToEdit(null);
+          }}
+          onUpdated={() => { void refetchCandidates(); }}
+        />
       </div>
     </DashboardLayout>
   );

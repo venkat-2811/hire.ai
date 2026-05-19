@@ -956,11 +956,12 @@ export interface InterviewFinalEvaluation {
   technical_score: number;
   communication_score: number;
   confidence_score: number;
-  integrity_score: number;
-  role_fit_index: number;
+  integrity_score?: number;
+  role_fit_index?: number;
   recommendation: string;
   strengths: string[];
-  weaknesses: string[];
+  weaknesses?: string[];
+  areas_for_improvement?: string[];
   detailed_feedback: string;
 }
 
