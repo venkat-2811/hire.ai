@@ -6,7 +6,7 @@ export default function ManualInterviewPage() {
   return (
     <div className="w-full h-screen bg-background">
       <iframe
-        src={`https://meet.jit.si/TalentScoutAI-${roomId}`}
+        src={`https://meet.jit.si/Rekshift-${roomId}`}
         allow="camera; microphone; fullscreen; display-capture; autoplay"
         style={{ width: '100%', height: '100%', border: 'none' }}
         title="Manual Interview Room"

@@ -122,7 +122,7 @@ export default function LandingPage() {
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
               <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-lg font-bold">HireAI</span>
+            <span className="text-lg font-bold">Rekshift</span>
           </div>
 
           {/* ScrollSpy Links (Desktop) */}
@@ -335,7 +335,7 @@ export default function LandingPage() {
       <section id="how-it-works" className="py-24 px-4 bg-muted/30">
         <div className="container mx-auto max-w-4xl" ref={containerRef}>
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">How HireAI Works</h2>
+            <h2 className="text-3xl font-bold mb-4">How Rekshift Works</h2>
             <p className="text-muted-foreground">
               Streamline your hiring process in three simple steps.
             </p>
@@ -424,10 +424,10 @@ export default function LandingPage() {
         <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            <span className="font-semibold">HireAI</span>
+            <span className="font-semibold">Rekshift</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            © 2024 HireAI. Built with Lovable.
+            © 2024 Rekshift. Built with Lovable.
           </p>
         </div>
       </footer>

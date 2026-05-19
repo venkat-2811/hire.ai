@@ -1,4 +1,4 @@
-# Talent Scout AI - AI-Powered Interview & Hiring Platform
+# Rekshift - AI-Powered Interview & Hiring Platform
 
 An intelligent hiring platform that automates resume screening, generates adaptive interview questions, evaluates candidate responses, and provides explainable AI-driven hiring recommendations.
 
@@ -32,7 +32,7 @@ An intelligent hiring platform that automates resume screening, generates adapti
 ## Project Structure
 
 ```
-talent-scout-ai/
+rekshift/
 ├── src/                    # Frontend React application
 │   ├── components/         # Reusable UI components
 │   ├── hooks/              # React Query hooks and auth
@@ -126,7 +126,7 @@ This project is deployed **entirely on Vercel**:
 ```bash
 # Clone and install
 git clone <repository-url>
-cd talent-scout-ai
+cd rekshift
 npm install
 
 # Copy environment file

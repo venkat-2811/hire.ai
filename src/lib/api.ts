@@ -1,5 +1,5 @@
 /**
- * API Client for Talent Scout AI Backend
+ * API Client for Rekshift Backend
  * Pure FastAPI backend - no Node fallback
  */
 

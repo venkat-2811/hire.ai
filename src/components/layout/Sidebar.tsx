@@ -60,7 +60,7 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
           {!((!isMobile && collapsed)) && (
             <div className="flex flex-col">
               <span className="text-lg font-bold text-sidebar-foreground inline-flex items-center gap-2">
-                HireAI
+                Rekshift
                 {profile?.company_name && (
                   <>
                     <span className="text-sidebar-foreground/50 text-sm font-normal">|</span>

@@ -35,7 +35,7 @@ export default function AuthPage() {
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur">
               <Sparkles className="h-6 w-6 text-white" />
             </div>
-            <span className="text-2xl font-bold text-white">HireAI</span>
+            <span className="text-2xl font-bold text-white">Rekshift</span>
           </div>
         </div>
 
@@ -93,7 +93,7 @@ export default function AuthPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
               <Sparkles className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold">HireAI</span>
+            <span className="text-xl font-bold">Rekshift</span>
           </div>
 
           <div className="flex justify-center w-full">

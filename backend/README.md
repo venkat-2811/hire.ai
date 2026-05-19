@@ -1,6 +1,6 @@
 # FastAPI Backend (Foundation)
 
-This folder contains a **parallel FastAPI backend foundation** for the HireAI application.
+This folder contains a **parallel FastAPI backend foundation** for the Rekshift application.
 
 Important:
 - This does **not** remove or modify the existing Node.js/Netlify backend.

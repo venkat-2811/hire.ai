@@ -14,7 +14,7 @@ export const PDFExportService = {
         // Header
         doc.setFontSize(22);
         doc.setTextColor(30, 64, 175); // Primary blue
-        doc.text('HireAI', 14, 20);
+        doc.text('Rekshift', 14, 20);
 
         doc.setFontSize(14);
         doc.setTextColor(100);
@@ -69,7 +69,7 @@ export const PDFExportService = {
         // Header
         doc.setFontSize(22);
         doc.setTextColor(30, 64, 175);
-        doc.text('HireAI', 14, 20);
+        doc.text('Rekshift', 14, 20);
 
         doc.setFontSize(14);
         doc.setTextColor(100);

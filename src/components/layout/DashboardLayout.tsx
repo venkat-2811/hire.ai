@@ -42,7 +42,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Mobile Header */}
         <header className="md:hidden flex items-center justify-between h-14 px-4 border-b bg-sidebar">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold text-sidebar-foreground">HireAI</span>
+            <span className="text-lg font-bold text-sidebar-foreground">Rekshift</span>
           </div>
           <Sheet>
             <SheetTrigger asChild>
