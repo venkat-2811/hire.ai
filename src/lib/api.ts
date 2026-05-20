@@ -1468,6 +1468,12 @@ export const billingApi = {
   invoices: () =>
     request<BillingInvoice[]>('/billing/invoices', {
     }),
+
+  verifySession: (sessionId: string, plan: string) =>
+    request<{ success: boolean; plan: string; message: string }>(
+      '/billing/verify-session',
+      { method: 'POST', body: { session_id: sessionId, plan } },
+    ),
 };
 
 // ============== DSA Problems API ==============

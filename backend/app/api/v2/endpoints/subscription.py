@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -13,6 +14,8 @@ from app.auth.clerk import ClerkUser
 from app.config import get_settings
 from app.services.db.supabase_service import get_db_admin_service
 from app.utils.responses import api_error, ok
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/subscription")
 
@@ -164,6 +167,8 @@ async def create_order(payload: Dict[str, Any], request: Request, user: ClerkUse
             plan_id=plan,
             success_url=success_url,
             cancel_url=cancel_url,
+            # Include user_id and action so Stripe webhooks can process this session
+            metadata={"action": "subscribe", "user_id": user.id, "plan": plan},
         )
     except Exception as exc:
         msg = str(exc)
@@ -171,6 +176,7 @@ async def create_order(payload: Dict[str, Any], request: Request, user: ClerkUse
             return api_error(message=msg, status_code=502)
         return api_error(message=msg, status_code=500)
 
+    logger.info("[subscription.create_order] user_id=%s plan=%s session_id=%s", user.id, plan, session["id"])
     return ok({"session_id": session["id"], "url": session["url"], "plan": plan})
 
 
@@ -190,10 +196,14 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
     if session.get("payment_status") != "paid":
         return api_error(message="Payment not completed", status_code=400)
 
+    amount = float((session.get("amount_total") or 0)) / 100
+    cfg = BILLING_PLAN_CONFIG[plan]
     db = get_db_admin_service()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
 
-    def _update():
+    # 1. Update profiles table
+    def _update_profile():
         return (
             db.client.from_("profiles")
             .update({
@@ -201,16 +211,65 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
                 "subscription_id": session_id,
                 "stripe_payment_id": session.get("payment_intent") or session_id,
                 "subscription_status": "active",
-                "plan_selected_at": now,
-                "updated_at": now,
+                "plan_selected_at": now_iso,
+                "updated_at": now_iso,
             })
             .eq("user_id", user.id)
             .execute()
         )
 
-    up_res = await db.run(_update)
+    up_res = await db.run(_update_profile)
     if getattr(up_res, "error", None):
         return api_error(message="Failed to update profile", status_code=500)
+
+    # 2. Sync the subscriptions table so billing usage/plan display is accurate
+    try:
+        cycle_end = now.replace(month=(now.month % 12) + 1) if now.month < 12 else now.replace(year=now.year + 1, month=1)
+
+        def _fetch_sub():
+            return db.client.from_("subscriptions").select("id").eq("user_id", user.id).maybe_single().execute()
+
+        sub_res = await db.run(_fetch_sub)
+        existing_sub = getattr(sub_res, "data", None)
+
+        if isinstance(existing_sub, dict) and existing_sub.get("id"):
+            def _update_sub():
+                return (
+                    db.client.from_("subscriptions")
+                    .update({
+                        "plan": plan,
+                        "status": "active",
+                        "deposit_amount": amount or cfg["monthly_deposit"],
+                        "wallet_balance": amount or cfg["monthly_deposit"],
+                        "billing_cycle_start": now_iso,
+                        "billing_cycle_end": cycle_end.isoformat(),
+                        "overage_cap": cfg["overage_cap"],
+                        "paused_at": None,
+                        "resumed_at": now_iso,
+                        "warning_80_sent_at": None,
+                        "updated_at": now_iso,
+                    })
+                    .eq("id", existing_sub["id"])
+                    .execute()
+                )
+            await db.run(_update_sub)
+        else:
+            def _insert_sub():
+                return db.client.from_("subscriptions").insert({
+                    "user_id": user.id,
+                    "plan": plan,
+                    "status": "active",
+                    "deposit_amount": amount or cfg["monthly_deposit"],
+                    "wallet_balance": amount or cfg["monthly_deposit"],
+                    "billing_cycle_start": now_iso,
+                    "billing_cycle_end": cycle_end.isoformat(),
+                    "overage_amount": 0,
+                    "overage_cap": cfg["overage_cap"],
+                    "metadata": {"source": "subscription-verify"},
+                }).execute()
+            await db.run(_insert_sub)
+    except Exception as e:
+        logger.warning("[subscription.verify] subscriptions sync failed user_id=%s: %s", user.id, e)
 
     def _fetch_profile():
         return db.client.from_("profiles").select("*").eq("user_id", user.id).maybe_single().execute()
@@ -220,6 +279,7 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
     if not isinstance(updated, dict):
         return api_error(message="Failed to update profile", status_code=500)
 
+    logger.info("[subscription.verify] user_id=%s plan=%s activated", user.id, plan)
     return ok({
         "success": True,
         "plan": plan,

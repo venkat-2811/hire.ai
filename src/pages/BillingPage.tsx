@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { billingApi, type BillingInvoice } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -37,6 +37,8 @@ export default function BillingPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const verifyingRef = useRef(false);
 
   const usageQuery = useQuery({
     queryKey: ['billing-usage'],
@@ -53,6 +55,8 @@ export default function BillingPage() {
   useEffect(() => {
     const checkout = searchParams.get('checkout');
     const action = searchParams.get('action');
+    const sessionId = searchParams.get('session_id');
+    const plan = searchParams.get('plan');
     if (!checkout) return;
 
     const actionLabel =
@@ -61,17 +65,39 @@ export default function BillingPage() {
       action === 'invoice_payment' ? 'Invoice payment' :
       'Payment';
 
-    if (checkout === 'success') {
-      toast.success(`${actionLabel} successful! Your account has been updated.`);
-      // Refetch billing data so the UI reflects the new balance / plan
-      usageQuery.refetch();
-      invoicesQuery.refetch();
-    } else if (checkout === 'cancelled') {
+    // Clean URL immediately to prevent re-triggering on refresh
+    navigate('/billing', { replace: true });
+
+    if (checkout === 'cancelled') {
       toast.info(`${actionLabel} was cancelled. No charges were made.`);
+      return;
     }
 
-    // Remove query params from the URL so a page refresh doesn't re-trigger
-    navigate('/billing', { replace: true });
+    if (checkout === 'success') {
+      // For subscribe actions with a session_id, verify directly with Stripe
+      // to activate the plan without relying on webhooks
+      if (action === 'subscribe' && sessionId && plan && !verifyingRef.current) {
+        verifyingRef.current = true;
+        billingApi.verifySession(sessionId, plan)
+          .then(() => {
+            toast.success('Subscription activated! Your plan has been upgraded.');
+            // Invalidate all relevant queries so the new plan shows everywhere
+            void queryClient.invalidateQueries({ queryKey: ['billing-usage'] });
+            void queryClient.invalidateQueries({ queryKey: ['layout-billing-usage'] });
+            void queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
+            void queryClient.invalidateQueries({ queryKey: ['profile'] });
+          })
+          .catch((err: Error) => {
+            toast.error(err.message || 'Plan activation failed. Contact support if charged.');
+          })
+          .finally(() => { verifyingRef.current = false; });
+      } else {
+        toast.success(`${actionLabel} successful! Your account has been updated.`);
+        void usageQuery.refetch();
+        void invoicesQuery.refetch();
+        void queryClient.invalidateQueries({ queryKey: ['profile'] });
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

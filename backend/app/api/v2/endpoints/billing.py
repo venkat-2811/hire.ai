@@ -59,7 +59,9 @@ def _normalize_status(raw: Optional[str]) -> str:
 
 
 def _get_stripe_key() -> str:
-    return os.environ.get("STRIPE_SECRET_KEY", "")
+    from app.config import get_settings
+    settings = get_settings()
+    return str(settings.stripe_secret_key or os.environ.get("STRIPE_SECRET_KEY", "") or "").strip()
 
 
 async def _create_stripe_checkout(
@@ -317,7 +319,8 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
 
     cfg = BILLING_PLAN_CONFIG[plan]
     frontend_url = _get_frontend_url(request)
-    success_url = f"{frontend_url}/billing?checkout=success&action=subscribe"
+    # Include {CHECKOUT_SESSION_ID} so the frontend can verify payment directly
+    success_url = f"{frontend_url}/billing?checkout=success&action=subscribe&session_id={{CHECKOUT_SESSION_ID}}&plan={plan}"
     cancel_url = f"{frontend_url}/billing?checkout=cancelled&action=subscribe"
 
     try:
@@ -338,6 +341,97 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
         "checkout_url": session["url"],
         "plan": plan,
         "deposit_amount": cfg["monthly_deposit"],
+    })
+
+
+@router.post("/verify-session")
+async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depends(require_user)):
+    """POST /api/billing/verify-session
+
+    Directly verify a Stripe checkout session and update both profiles AND subscriptions.
+    Called by the frontend after the billing page redirect-back includes a session_id.
+    Works regardless of whether the Stripe webhook is configured.
+    """
+    session_id = str(payload.get("session_id") or "").strip()
+    plan = _normalize_plan(payload.get("plan"))
+    if not session_id:
+        return api_error(message="session_id is required", status_code=400)
+    if plan == "free":
+        return api_error(message="Free plan does not require payment verification", status_code=400)
+
+    key = _get_stripe_key()
+    if not key:
+        return api_error(message="STRIPE_SECRET_KEY not configured", status_code=500)
+
+    # Fetch the Stripe session to confirm payment
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"https://api.stripe.com/v1/checkout/sessions/{session_id}",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+    if resp.status_code != 200:
+        return api_error(message=f"Stripe error: {resp.text}", status_code=502)
+
+    stripe_session = resp.json()
+    if stripe_session.get("payment_status") != "paid":
+        return api_error(message="Payment not completed", status_code=400)
+
+    amount = float((stripe_session.get("amount_total") or 0)) / 100
+    cfg = BILLING_PLAN_CONFIG[plan]
+    db = get_db_admin_service()
+    now = datetime.now(timezone.utc)
+
+    # 1. Update profiles table
+    def _update_profile():
+        return (
+            db.client.from_("profiles")
+            .update({
+                "subscription_plan": plan,
+                "subscription_id": session_id,
+                "stripe_payment_id": stripe_session.get("payment_intent") or session_id,
+                "subscription_status": "active",
+                "plan_selected_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            })
+            .eq("user_id", user.id)
+            .execute()
+        )
+
+    await db.run(_update_profile)
+
+    # 2. Upsert subscriptions table
+    try:
+        sub = await _get_or_create_subscription(db, user.id)
+        cycle_end = now.replace(month=(now.month % 12) + 1) if now.month < 12 else now.replace(year=now.year + 1, month=1)
+
+        def _update_sub():
+            return (
+                db.client.from_("subscriptions")
+                .update({
+                    "plan": plan,
+                    "status": "active",
+                    "deposit_amount": amount or cfg["monthly_deposit"],
+                    "wallet_balance": amount or cfg["monthly_deposit"],
+                    "billing_cycle_start": now.isoformat(),
+                    "billing_cycle_end": cycle_end.isoformat(),
+                    "overage_cap": cfg["overage_cap"],
+                    "paused_at": None,
+                    "resumed_at": now.isoformat(),
+                    "warning_80_sent_at": None,
+                    "updated_at": now.isoformat(),
+                })
+                .eq("id", sub["id"])
+                .execute()
+            )
+
+        await db.run(_update_sub)
+    except Exception:
+        pass  # subscriptions table update is best-effort; profiles was already updated
+
+    return ok({
+        "success": True,
+        "plan": plan,
+        "message": f"{plan.capitalize()} plan activated successfully!",
     })
 
 

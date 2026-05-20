@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,6 +85,7 @@ export default function OnboardingPage() {
   const [searchParams] = useSearchParams();
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
@@ -140,6 +142,10 @@ export default function OnboardingPage() {
       subscriptionApi.verify({ session_id: sessionId, plan })
         .then(() => {
           toast.success(`${plan === 'pro' ? 'Pro' : 'Premium'} plan activated! 🎉`);
+          // Invalidate billing queries so the plan shows correctly on first dashboard load
+          void queryClient.invalidateQueries({ queryKey: ['billing-usage'] });
+          void queryClient.invalidateQueries({ queryKey: ['layout-billing-usage'] });
+          void queryClient.invalidateQueries({ queryKey: ['profile'] });
           updateProfile.mutate(
             { onboarding_completed: true } as any,
             { onSuccess: () => navigate('/dashboard', { replace: true }) },
