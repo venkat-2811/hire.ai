@@ -5,15 +5,15 @@ import {
   Users,
   Briefcase,
   TrendingUp,
-  Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
   Trophy,
   UserCircle,
   Wallet,
 } from "lucide-react";
+import logoFull from "@/assets/LOGO_full.png";
+import logoIcon from "@/assets/logo.png";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
@@ -52,27 +52,39 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
       )}
     >
       {/* Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-            <Sparkles className="h-4 w-4 text-sidebar-primary-foreground" />
-          </div>
-          {!((!isMobile && collapsed)) && (
-            <div className="flex flex-col">
-              <span className="text-lg font-bold text-sidebar-foreground inline-flex items-center gap-2">
-                Rekshift
-                {profile?.company_name && (
-                  <>
-                    <span className="text-sidebar-foreground/50 text-sm font-normal">|</span>
-                    <span className="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[120px]" title={profile.company_name}>
-                      {profile.company_name}
-                    </span>
-                  </>
-                )}
-              </span>
+      <div className="flex items-center h-16 px-3 border-b border-sidebar-border">
+        <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
+          {(!isMobile && collapsed) ? (
+            /* Collapsed: icon only */
+            <div className="flex-shrink-0 rounded-lg bg-white/95 p-1.5">
+              <img
+                src={logoIcon}
+                alt="Rekshift"
+                className="h-6 w-6 object-contain block"
+                draggable={false}
+              />
+            </div>
+          ) : (
+            /* Expanded: full logo */
+            <div className="flex-shrink-0 rounded-xl bg-white/95 px-2.5 py-1.5">
+              <img
+                src={logoFull}
+                alt="Rekshift"
+                className="h-8 w-auto object-contain block"
+                draggable={false}
+              />
             </div>
           )}
-        </div>
+          {/* Company name as secondary context — only in expanded state */}
+          {!((!isMobile && collapsed)) && profile?.company_name && (
+            <span
+              className="text-xs text-sidebar-foreground/55 truncate max-w-[90px] leading-tight"
+              title={profile.company_name}
+            >
+              {profile.company_name}
+            </span>
+          )}
+        </Link>
       </div>
 
       {/* Navigation */}

@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import logoFull from '@/assets/LOGO_full.png';
+import logoIcon from '@/assets/logo.png';
 import {
   Sparkles,
   ArrowRight,
@@ -118,11 +120,13 @@ export default function LandingPage() {
       {/* Navigation (Detached NavSpy) */}
       <nav className="fixed top-4 left-1/2 -translate-x-1/2 w-[95%] md:w-[80%] lg:w-[60%] z-50 bg-background/80 backdrop-blur-xl border rounded-full shadow-lg transition-all duration-300">
         <div className="px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => scrollTo('hero')}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold">Rekshift</span>
+          <div className="flex items-center cursor-pointer" onClick={() => scrollTo('hero')}>
+            <img
+              src={logoFull}
+              alt="Rekshift"
+              className="h-9 w-auto object-contain"
+              draggable={false}
+            />
           </div>
 
           {/* ScrollSpy Links (Desktop) */}
@@ -423,7 +427,7 @@ export default function LandingPage() {
       <footer className="py-8 px-4 border-t">
         <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
+            <img src={logoIcon} alt="Rekshift" className="h-5 w-5 object-contain" draggable={false} />
             <span className="font-semibold">Rekshift</span>
           </div>
           <p className="text-sm text-muted-foreground">

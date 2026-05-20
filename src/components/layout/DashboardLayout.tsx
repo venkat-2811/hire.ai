@@ -7,6 +7,7 @@ import { billingApi } from "@/lib/api";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import logoFull from "@/assets/LOGO_full.png";
 
 
 interface DashboardLayoutProps {
@@ -41,8 +42,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Mobile Header */}
         <header className="md:hidden flex items-center justify-between h-14 px-4 border-b bg-sidebar">
-          <div className="flex items-center gap-2">
-            <span className="text-lg font-bold text-sidebar-foreground">Rekshift</span>
+          <div className="flex items-center">
+            <div className="rounded-xl bg-white/95 px-2.5 py-1.5">
+              <img
+                src={logoFull}
+                alt="Rekshift"
+                className="h-7 w-auto object-contain block"
+                draggable={false}
+              />
+            </div>
           </div>
           <Sheet>
             <SheetTrigger asChild>

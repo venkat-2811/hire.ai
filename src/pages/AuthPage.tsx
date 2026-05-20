@@ -5,7 +5,8 @@ import { SignIn, SignUp } from '@clerk/clerk-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Sparkles } from 'lucide-react';
+import logoFull from '@/assets/LOGO_full.png';
+import logoIcon from '@/assets/logo.png';
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -32,10 +33,10 @@ export default function AuthPage() {
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary/90 to-info/80 p-12 flex-col justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur">
-              <Sparkles className="h-6 w-6 text-white" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur p-2">
+              <img src={logoIcon} alt="Rekshift" className="h-full w-full object-contain" draggable={false} />
             </div>
-            <span className="text-2xl font-bold text-white">Rekshift</span>
+            <span className="text-2xl font-bold text-white tracking-wide">Rekshift</span>
           </div>
         </div>
 
@@ -89,11 +90,13 @@ export default function AuthPage() {
           transition={{ duration: 0.3 }}
           className="w-full max-w-md"
         >
-          <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold">Rekshift</span>
+          <div className="lg:hidden flex items-center justify-center mb-8">
+            <img
+              src={logoFull}
+              alt="Rekshift"
+              className="h-12 w-auto object-contain"
+              draggable={false}
+            />
           </div>
 
           <div className="flex justify-center w-full">

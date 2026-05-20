@@ -16,8 +16,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import logoFull from '@/assets/LOGO_full.png';
 import {
-  Sparkles,
   Briefcase,
   MapPin,
   Clock,
@@ -219,11 +219,13 @@ export default function ApplyPage() {
       {/* Header */}
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="font-semibold">Rekshift</span>
+          <div className="flex items-center">
+            <img
+              src={logoFull}
+              alt="Rekshift"
+              className="h-9 w-auto object-contain"
+              draggable={false}
+            />
           </div>
           {isLoaded && !isSignedIn && (
             <Button variant="outline" size="sm" onClick={() => navigate('/sign-in')}>
