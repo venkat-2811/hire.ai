@@ -1901,7 +1901,8 @@ public class CandidateSolution {
                       <p className="text-base">{currentMcq.question}</p>
 
                       <RadioGroup
-                        value={mcqAnswers[currentMcq.id]?.toString()}
+                        key={`mcq-radio-${currentMcq.id}`}
+                        value={mcqAnswers[currentMcq.id] !== undefined ? mcqAnswers[currentMcq.id].toString() : ''}
                         onValueChange={(v) => handleMcqAnswer(currentMcq.id, parseInt(v))}
                       >
                         {currentMcq.options.map((option, index) => (
@@ -1913,8 +1914,8 @@ public class CandidateSolution {
                               }`}
                             onClick={() => handleMcqAnswer(currentMcq.id, index)}
                           >
-                            <RadioGroupItem value={index.toString()} id={`option-${index}`} />
-                            <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
+                            <RadioGroupItem value={index.toString()} id={`option-${currentMcq.id}-${index}`} />
+                            <Label htmlFor={`option-${currentMcq.id}-${index}`} className="flex-1 cursor-pointer">
                               {option}
                             </Label>
                           </div>

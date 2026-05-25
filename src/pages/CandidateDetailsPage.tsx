@@ -621,12 +621,18 @@ export default function CandidateDetailsPage() {
                             <div className="space-y-3">
                               {(((assessmentDetails.proctoring_data as any)?.assessment_content?.apex_blanks) as any[]).map((q: any, idx: number) => {
                                 const qid = String(q?.id || idx);
-                                const submissions = (assessmentDetails.proctoring_data as any)?.submissions?.apex_blanks || {};
-                                const results = (assessmentDetails.proctoring_data as any)?.results?.apex_blanks || [];
-                                const qSub = submissions?.[qid] || {};
-                                const firstBlankId = Array.isArray(q?.blanks) && q.blanks[0]?.blank_id ? String(q.blanks[0].blank_id) : 'BLANK_1';
-                                const candidateAnswer = typeof qSub?.[firstBlankId] === 'string' ? qSub[firstBlankId] : '';
-                                const qResult = Array.isArray(results) ? results.find((r: any) => String(r?.question_id) === qid) : null;
+                                // Backend stores at apex_blanks_submission (dict: qid → {blank_id → answer})
+                                // and apex_blanks_results (array of {question_id, score, max_score, feedback, per_blank[]})
+                                const allSubmissions = (assessmentDetails.proctoring_data as any)?.apex_blanks_submission || {};
+                                const allResults: any[] = (assessmentDetails.proctoring_data as any)?.apex_blanks_results || [];
+                                const qSub: Record<string, string> = allSubmissions?.[qid] || {};
+                                const qResult = Array.isArray(allResults) ? allResults.find((r: any) => String(r?.question_id) === qid) : null;
+                                const blanks: any[] = Array.isArray(q?.blanks) ? q.blanks : [];
+                                // Build per-blank display: show all blanks, not just the first one
+                                const blankAnswers = blanks.length > 0
+                                  ? blanks.map((b: any) => ({ blankId: String(b?.blank_id || ''), answer: qSub[String(b?.blank_id || '')] || '' }))
+                                  : Object.entries(qSub).map(([blankId, answer]) => ({ blankId, answer: String(answer) }));
+                                const hasAnyAnswer = blankAnswers.some((b) => b.answer.trim().length > 0);
 
                                 return (
                                   <div key={qid} className="p-4 rounded-lg border">
@@ -637,18 +643,25 @@ export default function CandidateDetailsPage() {
                                           <div className="text-xs text-muted-foreground mt-1">{safeRender(q.instructions)}</div>
                                         )}
                                       </div>
-                                      {qResult && (
+                                      {qResult ? (
                                         <Badge variant="outline" className="text-xs">
                                           {safeRender(qResult.score)} / {safeRender(qResult.max_score)}
                                         </Badge>
-                                      )}
+                                      ) : !hasAnyAnswer ? (
+                                        <Badge variant="secondary" className="text-xs">Not Attempted</Badge>
+                                      ) : null}
                                     </div>
 
-                                    <div className="mt-3 text-sm">
-                                      <div className="text-xs text-muted-foreground">Candidate Response</div>
-                                      <div className="mt-1 rounded-md bg-muted p-2 text-sm whitespace-pre-wrap">
-                                        {candidateAnswer ? safeRender(candidateAnswer) : <span className="text-muted-foreground">(No answer)</span>}
-                                      </div>
+                                    <div className="mt-3 text-sm space-y-2">
+                                      <div className="text-xs text-muted-foreground">Candidate Responses</div>
+                                      {hasAnyAnswer ? blankAnswers.map((b) => (
+                                        <div key={b.blankId} className="rounded-md bg-muted p-2 text-sm">
+                                          <span className="text-xs text-muted-foreground mr-2">{b.blankId}:</span>
+                                          <span className="whitespace-pre-wrap">{b.answer || <span className="text-muted-foreground">(empty)</span>}</span>
+                                        </div>
+                                      )) : (
+                                        <div className="rounded-md bg-muted p-2 text-sm text-muted-foreground">(No answer submitted)</div>
+                                      )}
                                     </div>
 
                                     {qResult?.feedback && (
@@ -657,6 +670,18 @@ export default function CandidateDetailsPage() {
                                         <div className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">
                                           {safeRender(qResult.feedback)}
                                         </div>
+                                      </div>
+                                    )}
+
+                                    {Array.isArray(qResult?.per_blank) && qResult.per_blank.length > 0 && (
+                                      <div className="mt-3 space-y-1">
+                                        {qResult.per_blank.map((pb: any, pbi: number) => (
+                                          <div key={pbi} className={`flex items-start gap-2 text-xs ${pb?.correct ? 'text-success' : 'text-destructive'}`}>
+                                            <CheckCircle className={`h-3 w-3 mt-0.5 flex-shrink-0 ${pb?.correct ? '' : 'hidden'}`} />
+                                            <XCircle className={`h-3 w-3 mt-0.5 flex-shrink-0 ${pb?.correct ? 'hidden' : ''}`} />
+                                            <span><span className="font-medium">{pb?.blank_id}</span>: got "{safeRender(pb?.received)}" — expected "{safeRender(pb?.expected)}"</span>
+                                          </div>
+                                        ))}
                                       </div>
                                     )}
                                   </div>

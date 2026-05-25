@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
@@ -17,7 +17,6 @@ import JobDetailsPage from "./pages/JobDetailsPage";
 import EditJobPage from "./pages/EditJobPage";
 import InterviewsPage from "./pages/InterviewsPage";
 import InterviewSessionPage from "./pages/InterviewSessionPage";
-import AnalyticsPage from "./pages/AnalyticsPage";
 import ProfilePage from "./pages/ProfilePage";
 import OnboardingPage from "./pages/OnboardingPage";
 import ApplyPage from "./pages/ApplyPage";
@@ -69,7 +68,7 @@ const App = () => (
             <Route path="/jobs/:jobId/edit" element={<EditJobPage />} />
             <Route path="/interviews" element={<InterviewsPage />} />
             <Route path="/interviews/:sessionId" element={<InterviewSessionPage />} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/analytics" element={<Navigate to="/dashboard" replace />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/apply/:jobId" element={<ApplyPage />} />

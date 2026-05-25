@@ -7,10 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Loader2, Wallet, Receipt, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+
+// ── Currency helpers ──────────────────────────────────────────────────────────
+const USD_TO_INR = 83;
+const isIndia = Intl.DateTimeFormat().resolvedOptions().timeZone === 'Asia/Kolkata';
+const currencySymbol = isIndia ? '₹' : '$';
+const fmtAmount = (usd: number) =>
+  isIndia
+    ? `₹${(usd * USD_TO_INR).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+    : `$${usd.toFixed(2)}`;
 
 const PLAN_META = {
   pro: {
@@ -33,7 +40,6 @@ const formatFeatureLabel = (feature: string) =>
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function BillingPage() {
-  const [topupAmount, setTopupAmount] = useState<number>(25);
   const [busy, setBusy] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -141,18 +147,6 @@ export default function BillingPage() {
     }
   };
 
-  const handleTopup = async () => {
-    setBusy('topup');
-    try {
-      const res = await billingApi.topup(topupAmount);
-      window.location.href = res.checkout_url;
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to start top up checkout');
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const handlePayInvoice = async (invoiceId: string) => {
     setBusy(`invoice-${invoiceId}`);
     try {
@@ -194,18 +188,12 @@ export default function BillingPage() {
 
         {usage?.status === 'paused' && (
           <Card className="border-destructive/50 bg-destructive/5">
-            <CardContent className="pt-6 flex items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
-                <div>
-                  <p className="font-medium">Services are paused</p>
-                  <p className="text-sm text-muted-foreground">Pay pending invoices or add wallet balance to resume services.</p>
-                </div>
+            <CardContent className="pt-6 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
+              <div>
+                <p className="font-medium">Services are paused</p>
+                <p className="text-sm text-muted-foreground">Your wallet balance is exhausted. Upgrade your plan to resume AI features, or contact support.</p>
               </div>
-              <Button onClick={handleTopup} disabled={busy === 'topup'}>
-                {busy === 'topup' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Pay Now
-              </Button>
             </CardContent>
           </Card>
         )}
@@ -220,26 +208,13 @@ export default function BillingPage() {
           <CardContent className="space-y-5">
             <div className="rounded-xl border p-4 sm:p-5 bg-muted/20 space-y-3">
               <div className="flex items-end gap-2">
-                <span className="text-3xl sm:text-4xl font-bold leading-none">${Number(usage?.wallet_balance || 0).toFixed(2)}</span>
-                <span className="text-2xl text-muted-foreground leading-none">/ ${Number(usage?.deposit_amount || 0).toFixed(2)}</span>
+                <span className="text-3xl sm:text-4xl font-bold leading-none">{fmtAmount(Number(usage?.wallet_balance || 0))}</span>
+                <span className="text-2xl text-muted-foreground leading-none">/ {fmtAmount(Number(usage?.deposit_amount || 0))}</span>
               </div>
               <Progress value={consumedPercent} className="h-3" />
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Available balance</span>
                 <span>Consumed {consumedPercent}% this cycle</span>
-              </div>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="topup">Top-up Amount ($)</Label>
-                <Input id="topup" type="number" min={1} value={topupAmount} onChange={(e) => setTopupAmount(Number(e.target.value) || 0)} />
-              </div>
-              <div className="flex items-end">
-                <Button className="w-full" onClick={handleTopup} disabled={busy === 'topup' || topupAmount <= 0}>
-                  {busy === 'topup' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Add Funds
-                </Button>
               </div>
             </div>
 
@@ -269,8 +244,8 @@ export default function BillingPage() {
                         </div>
 
                         <div className="space-y-1">
-                          <p className="text-2xl font-bold">${meta.monthly.toFixed(2)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
-                          <p className="text-xs text-muted-foreground">Monthly wallet deposit: ${meta.deposit.toFixed(2)}</p>
+                          <p className="text-2xl font-bold">{fmtAmount(meta.monthly)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
+                          <p className="text-xs text-muted-foreground">Monthly wallet deposit: {fmtAmount(meta.deposit)}</p>
                         </div>
 
                         <div className="rounded-lg border bg-muted/20">
@@ -280,7 +255,7 @@ export default function BillingPage() {
                               featurePricingRows.map((row) => (
                                 <div key={row.feature} className="flex items-center justify-between text-xs">
                                   <span className="text-muted-foreground">{row.label}</span>
-                                  <span className="font-medium">${row.unitCost.toFixed(2)} / unit</span>
+                                  <span className="font-medium">{fmtAmount(row.unitCost)} / unit</span>
                                 </div>
                               ))
                             ) : (
@@ -317,7 +292,7 @@ export default function BillingPage() {
                 {Object.entries(usage.usage_breakdown).map(([feature, val]) => (
                   <div key={feature} className="flex items-center justify-between text-sm border-b py-2">
                     <span>{feature}</span>
-                    <span className="text-muted-foreground">{val.quantity} units | ${Number(val.total_cost || 0).toFixed(2)}</span>
+                    <span className="text-muted-foreground">{val.quantity} units | {fmtAmount(Number(val.total_cost || 0))}</span>
                   </div>
                 ))}
               </div>
@@ -344,7 +319,7 @@ export default function BillingPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={invoice.status === 'paid' ? 'default' : 'secondary'}>{invoice.status}</Badge>
-                      <span className="text-sm font-medium">${Number(invoice.total || 0).toFixed(2)}</span>
+                      <span className="text-sm font-medium">{fmtAmount(Number(invoice.total || 0))}</span>
                       {invoice.status !== 'paid' && (
                         <Button size="sm" onClick={() => handlePayInvoice(invoice.id)} disabled={busy === `invoice-${invoice.id}`}>
                           {busy === `invoice-${invoice.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pay'}

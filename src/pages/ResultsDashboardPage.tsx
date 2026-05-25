@@ -80,7 +80,6 @@ export default function ResultsDashboardPage() {
   // Track which candidates have had acceptance emails sent (keyed by candidate_id)
   // We also seed from server-side final_status === 'accepted' | 'offer_sent'
   const [acceptedCandidateIds, setAcceptedCandidateIds] = useState<Set<string>>(new Set());
-  const [offerSentIds, setOfferSentIds] = useState<Set<string>>(new Set());
 
   // Filtering & Sorting State
   const [searchQuery, setSearchQuery] = useState('');
@@ -93,12 +92,7 @@ export default function ResultsDashboardPage() {
   // Dialog States
   const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
-  const [offerLetterDialogOpen, setOfferLetterDialogOpen] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
-  const [companyName, setCompanyName] = useState('');
-  const [offerCtc, setOfferCtc] = useState('');
-  const [offerTimePeriodYears, setOfferTimePeriodYears] = useState<string>('');
-  const [offerTimePeriodMonths, setOfferTimePeriodMonths] = useState<string>('');
 
   useEffect(() => {
     async function loadGlobalResults() {
@@ -122,7 +116,6 @@ export default function ResultsDashboardPage() {
     if (!selectedJobId) {
       setCandidates([]);
       setAcceptedCandidateIds(new Set());
-      setOfferSentIds(new Set());
       return;
     }
 
@@ -134,17 +127,12 @@ export default function ResultsDashboardPage() {
 
         // Seed accepted/offer_sent status from server data
         const accepted = new Set<string>();
-        const offerSent = new Set<string>();
         data.forEach((c) => {
           if (c.final_status === 'accepted' || c.final_status === 'offer_sent' || c.final_status === 'offer_accepted') {
             accepted.add(c.candidate_id);
           }
-          if (c.final_status === 'offer_sent' || c.final_status === 'offer_accepted') {
-            offerSent.add(c.candidate_id);
-          }
         });
         setAcceptedCandidateIds(accepted);
-        setOfferSentIds(offerSent);
       } catch (e) {
         console.error('Error loading candidates', e);
         toast.error('Failed to load candidate data');
@@ -363,53 +351,6 @@ export default function ResultsDashboardPage() {
     }
   };
 
-  const sendOfferLetterEmails = async () => {
-    if (selectedCandidates.size === 0) return;
-    if (!selectedJobId) {
-      toast.error('Please select a job first');
-      return;
-    }
-    if (!offerCtc.trim()) {
-      toast.error('CTC is required. Please enter the annual Cost to Company.');
-      return;
-    }
-    if (!companyName.trim()) {
-      toast.error('Company name is required.');
-      return;
-    }
-
-    setSendingEmails(true);
-    try {
-      const candidateIds = Array.from(selectedCandidates);
-      const resp = await candidatesWorkflowApi.sendOfferLetter({
-        candidate_ids: candidateIds,
-        job_id: selectedJobId,
-        ctc: offerCtc.trim(),
-        company_name: companyName.trim(),
-        time_period_years: offerTimePeriodYears ? parseInt(offerTimePeriodYears) : null,
-        time_period_months: offerTimePeriodMonths ? parseInt(offerTimePeriodMonths) : null,
-      });
-
-      if (resp.emails_sent > 0) {
-        toast.success(
-          `Offer letter${resp.emails_sent > 1 ? 's' : ''} sent to ${resp.emails_sent} candidate${resp.emails_sent > 1 ? 's' : ''}`
-        );
-        const newOfferSent = new Set(offerSentIds);
-        candidateIds.forEach((id) => newOfferSent.add(id));
-        setOfferSentIds(newOfferSent);
-      }
-      if (resp?.error_messages?.length) {
-        toast.error(`${resp.error_messages.length} offer letter(s) failed to send.`);
-      }
-
-      setOfferLetterDialogOpen(false);
-      setSelectedCandidates(new Set());
-    } catch (e) {
-      toast.error('Failed to send offer letters');
-    } finally {
-      setSendingEmails(false);
-    }
-  };
 
   // ─── Render Helpers ───────────────────────────────────────────────────────
 
@@ -818,19 +759,6 @@ export default function ResultsDashboardPage() {
                             </Button>
                           </>
                         )}
-                        {/* Show Offer Letter button only when all selected candidates are accepted */}
-                        {selectedCandidates.size > 0 &&
-                          Array.from(selectedCandidates).every(id => acceptedCandidateIds.has(id)) && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
-                              onClick={() => setOfferLetterDialogOpen(true)}
-                            >
-                              <Mail className="mr-2 h-4 w-4" />
-                              Send Offer Letter
-                            </Button>
-                          )}
                       </div>
                     </div>
 
@@ -925,7 +853,6 @@ export default function ResultsDashboardPage() {
                       ) : (
                         processedCandidates.map((candidate) => {
                           const isAccepted = acceptedCandidateIds.has(candidate.candidate_id);
-                          const isOfferSent = offerSentIds.has(candidate.candidate_id);
                           const isOfferAccepted = candidate.final_status === 'offer_accepted';
 
                           return (
@@ -949,7 +876,7 @@ export default function ResultsDashboardPage() {
                                 <div>
                                   <div className="flex items-center gap-2">
                                     <p className="font-medium">{candidate.candidate_name}</p>
-                                    {isAccepted && !isOfferSent && (
+                                    {isAccepted && !isOfferAccepted && (
                                       <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5">
                                         Accepted
                                       </Badge>
@@ -957,11 +884,6 @@ export default function ResultsDashboardPage() {
                                     {isOfferAccepted && (
                                       <Badge className="bg-emerald-600 text-white border-emerald-700 text-[10px] py-0 px-1.5">
                                         Offer Accepted
-                                      </Badge>
-                                    )}
-                                    {isOfferSent && !isOfferAccepted && (
-                                      <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px] py-0 px-1.5">
-                                        Offer Sent ✓
                                       </Badge>
                                     )}
                                   </div>
@@ -1027,9 +949,7 @@ export default function ResultsDashboardPage() {
                     <DialogTitle>Send Acceptance Emails</DialogTitle>
                     <DialogDescription>
                       Send acceptance emails to <strong>{selectedCandidates.size}</strong> selected
-                      candidate(s). Once sent, the{' '}
-                      <span className="text-indigo-600 font-medium">Send Offer Letter</span> button
-                      will become available for each accepted candidate.
+                      candidate(s).
                     </DialogDescription>
                   </DialogHeader>
                   <div className="py-4">
@@ -1101,102 +1021,6 @@ export default function ResultsDashboardPage() {
                 </DialogContent>
               </Dialog>
 
-              {/* ─── Offer Letter Dialog ─────────────────────────────────────── */}
-              <Dialog open={offerLetterDialogOpen} onOpenChange={setOfferLetterDialogOpen}>
-                <DialogContent className="max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Send Offer Letter</DialogTitle>
-                    <DialogDescription>
-                      Send a formal offer letter to{' '}
-                      <strong>{selectedCandidates.size}</strong> selected candidate(s).
-                      A PDF offer letter will be attached to the email automatically.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="py-2 space-y-4">
-                    {/* Company Name - required */}
-                    <div className="space-y-1">
-                      <Label htmlFor="ol-company-name">
-                        Company Name <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        id="ol-company-name"
-                        placeholder="e.g. Acme Corp"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                      />
-                    </div>
-
-                    {/* CTC - required */}
-                    <div className="space-y-1">
-                      <Label htmlFor="ol-ctc">
-                        Annual CTC (Cost to Company) <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        id="ol-ctc"
-                        placeholder="e.g. ₹12,00,000 or $80,000 per annum"
-                        value={offerCtc}
-                        onChange={(e) => setOfferCtc(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Enter the yearly salary package. This will appear prominently in the offer letter.
-                      </p>
-                    </div>
-
-                    {/* Time Period - optional */}
-                    <div className="space-y-1">
-                      <Label>Contract Duration <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Input
-                            id="ol-years"
-                            type="number"
-                            min={0}
-                            max={20}
-                            placeholder="Years"
-                            value={offerTimePeriodYears}
-                            onChange={(e) => setOfferTimePeriodYears(e.target.value)}
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <Input
-                            id="ol-months"
-                            type="number"
-                            min={0}
-                            max={11}
-                            placeholder="Months"
-                            value={offerTimePeriodMonths}
-                            onChange={(e) => setOfferTimePeriodMonths(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Leave blank for a permanent / open-ended contract. If filled, this will be shown in the offer letter.
-                      </p>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground">
-                      Attachment format is standardized to <strong>PDF (.pdf)</strong> for all offer letters.
-                    </p>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setOfferLetterDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={sendOfferLetterEmails}
-                      disabled={sendingEmails || !offerCtc.trim() || !companyName.trim()}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                    >
-                      {sendingEmails ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Mail className="mr-2 h-4 w-4" />
-                      )}
-                      Send Offer Letter{selectedCandidates.size > 1 ? 's' : ''}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
             </>
           )}
         </div>

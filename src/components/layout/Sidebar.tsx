@@ -25,7 +25,6 @@ const navigation = [
   { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
   { name: 'Results', href: '/results', icon: Trophy },
-  { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Billing', href: '/billing', icon: Wallet },
   { name: 'Profile', href: '/profile', icon: UserCircle },
 ];
