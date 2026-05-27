@@ -145,26 +145,68 @@ export default function AIInterviewPage() {
     audioDurationSeconds: number,
     blob: Blob | null,
   ) => {
-    if (!interviewData || !blob || blob.size === 0) return;
+    if (!interviewData) return;
 
+    // If no audio blob, still save an empty response record so the Q&A shows up in recruiter view
+    if (!blob || blob.size === 0) {
+      try {
+        await aiInterviewApi.submitResponse(interviewData.session_id, {
+          question_index: questionIndex,
+          transcript: '',
+          audio_duration_seconds: 0,
+          confidence: 0,
+        });
+      } catch { /* ignore */ }
+      return;
+    }
+
+    let audio_base64: string;
     try {
       const arrayBuffer = await blob.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
       let binary = '';
-      for (let i = 0; i < uint8.byteLength; i++) {
-        binary += String.fromCharCode(uint8[i]);
+      const CHUNK = 8192;
+      for (let i = 0; i < uint8.byteLength; i += CHUNK) {
+        binary += String.fromCharCode(...uint8.subarray(i, i + CHUNK));
       }
-      const audio_base64 = btoa(binary);
-
-      await aiInterviewApi.transcribeStore(interviewData.session_id, {
-        question_index: questionIndex,
-        audio_base64,
-        mime_type: blob.type || 'audio/webm',
-        audio_duration_seconds: audioDurationSeconds,
-      });
-    } catch (error) {
-      console.error('Background transcription upload failed', error);
+      audio_base64 = btoa(binary);
+    } catch (e) {
+      console.error('[Whisper] Failed to encode audio for question', questionIndex, e);
+      return;
     }
+
+    // Retry up to 3 times with exponential backoff
+    const MAX_ATTEMPTS = 3;
+    const BACKOFF_MS = [0, 2000, 5000];
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+      }
+      try {
+        await aiInterviewApi.transcribeStore(interviewData.session_id, {
+          question_index: questionIndex,
+          audio_base64,
+          mime_type: blob.type || 'audio/webm',
+          audio_duration_seconds: audioDurationSeconds,
+        });
+        return; // success
+      } catch (error) {
+        lastError = error;
+        console.warn(`[Whisper] Transcription attempt ${attempt + 1}/${MAX_ATTEMPTS} failed for Q${questionIndex}`, error);
+      }
+    }
+
+    // All retries exhausted — save empty transcript so response always shows in recruiter view
+    console.error('[Whisper] All transcription attempts failed for Q', questionIndex, lastError);
+    try {
+      await aiInterviewApi.submitResponse(interviewData.session_id, {
+        question_index: questionIndex,
+        transcript: '',
+        audio_duration_seconds: audioDurationSeconds,
+        confidence: 0,
+      });
+    } catch { /* ignore fallback */ }
   }, [interviewData]);
 
   const stopRecording = useCallback(async (): Promise<Blob | null> => {
@@ -302,11 +344,13 @@ export default function AIInterviewPage() {
         setFinalEvaluation(evalData);
         setIsCompleted(true);
       } else {
-        // Non-last questions: fire-and-forget transcription while advancing
-        void queueServerTranscription(question.index, audioDurationSeconds, recordedBlob);
-        // Pass the next index so adapt-question can generate a context-aware follow-up
+        // Non-last questions: run Whisper transcription and next-question load in parallel so
+        // every response is captured without blocking the UX longer than necessary.
         const nextIndex = (question.index ?? 0) + 1;
-        await loadCurrentQuestion(nextIndex);
+        await Promise.allSettled([
+          queueServerTranscription(question.index, audioDurationSeconds, recordedBlob),
+          loadCurrentQuestion(nextIndex),
+        ]);
       }
     } catch (e) {
       toast.error('Failed to continue interview automatically. Please refresh and try again.');

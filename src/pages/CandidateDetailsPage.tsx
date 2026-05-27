@@ -760,23 +760,55 @@ export default function CandidateDetailsPage() {
                         {/* Q&A */}
                         {Array.isArray(interviewDetails.questions) && interviewDetails.questions.length > 0 && (
                           <div>
-                            <h4 className="font-semibold text-sm mb-3">Interview Q&A</h4>
-                            <div className="space-y-4 max-h-96 overflow-auto">
+                            <h4 className="font-semibold text-sm mb-3">
+                              Interview Q&A
+                              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                ({interviewDetails.questions.length} questions,{' '}
+                                {Array.isArray(interviewDetails.responses) ? interviewDetails.responses.filter(r => typeof r.transcript === 'string' && r.transcript.trim().length > 0).length : 0} answered)
+                              </span>
+                            </h4>
+                            <div className="space-y-4 max-h-[600px] overflow-auto pr-1">
                               {interviewDetails.questions.map((q, idx) => {
-                                const response = Array.isArray(interviewDetails.responses) ? interviewDetails.responses.find(r => r.question_index === idx) : undefined;
+                                const response = Array.isArray(interviewDetails.responses)
+                                  ? interviewDetails.responses.find(r => r.question_index === idx)
+                                  : undefined;
+                                const transcript = response
+                                  ? (typeof response.transcript === 'object'
+                                      ? JSON.stringify(response.transcript)
+                                      : String(response.transcript ?? ''))
+                                  : null;
+                                const hasTranscript = transcript !== null && transcript.trim().length > 0;
+                                const wasAttempted = response !== undefined;
+                                const durSecs = response?.audio_duration_seconds;
+
                                 return (
                                   <div key={idx} className="p-4 rounded-lg border">
-                                    <div className="flex items-start gap-2 mb-2">
-                                      <Badge variant="outline" className="text-xs">{safeRender(q.question_type)}</Badge>
-                                      <p className="text-sm font-medium">{safeRender(q.question_text)}</p>
+                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                      <div className="flex items-start gap-2 flex-1">
+                                        <Badge variant="outline" className="text-xs shrink-0 mt-0.5">{safeRender(q.question_type)}</Badge>
+                                        <p className="text-sm font-medium">{safeRender(q.question_text)}</p>
+                                      </div>
+                                      <span className="text-xs text-muted-foreground shrink-0">Q{idx + 1}</span>
                                     </div>
-                                    {response ? (
+                                    {hasTranscript ? (
                                       <div className="bg-muted/50 p-3 rounded text-sm">
-                                        <p className="text-muted-foreground text-xs mb-1">Candidate's Answer:</p>
-                                        <p>{typeof response.transcript === 'object' ? JSON.stringify(response.transcript) : response.transcript}</p>
+                                        <div className="flex items-center justify-between mb-1">
+                                          <p className="text-muted-foreground text-xs">Candidate's Answer:</p>
+                                          {typeof durSecs === 'number' && durSecs > 0 && (
+                                            <span className="text-xs text-muted-foreground">{durSecs.toFixed(0)}s recorded</span>
+                                          )}
+                                        </div>
+                                        <p className="whitespace-pre-wrap">{transcript}</p>
+                                      </div>
+                                    ) : wasAttempted ? (
+                                      <div className="bg-muted/30 p-3 rounded text-sm flex items-center gap-2">
+                                        <span className="text-muted-foreground italic text-xs">No speech detected</span>
+                                        {typeof durSecs === 'number' && durSecs > 0 && (
+                                          <span className="text-xs text-muted-foreground">({durSecs.toFixed(0)}s recorded)</span>
+                                        )}
                                       </div>
                                     ) : (
-                                      <p className="text-sm text-muted-foreground italic">Status: Not Attempted</p>
+                                      <p className="text-sm text-muted-foreground italic">Not attempted</p>
                                     )}
                                   </div>
                                 );

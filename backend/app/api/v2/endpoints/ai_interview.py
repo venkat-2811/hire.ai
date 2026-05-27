@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from app.api.v2.deps import require_user
 from app.auth.clerk import ClerkUser
 from app.config import get_settings
-from app.services.assemblyai_service import get_assemblyai_service
+from app.services.whisper_service import get_whisper_service
 from app.services.db.supabase_service import get_db_admin_service
 from app.services.email_service import get_email_service
 from app.services.openai_client import get_openai_service
@@ -577,7 +577,7 @@ class TranscribeStoreRequest(BaseModel):
 @router.post("/{session_id}/transcribe-store")
 async def transcribe_store(session_id: str, body: TranscribeStoreRequest):
     db = get_db_admin_service()
-    assembly = get_assemblyai_service()
+    whisper = get_whisper_service()
 
     sessions = await db.select(
         "ai_interview_sessions",
@@ -602,13 +602,9 @@ async def transcribe_store(session_id: str, body: TranscribeStoreRequest):
         return api_error(message="Empty audio data received.", status_code=400)
 
     try:
-        transcript = await assembly.transcribe(audio_bytes)
+        transcript = await whisper.transcribe(audio_bytes, mime_type=body.mime_type or "audio/webm")
     except RuntimeError as e:
-        if "ASSEMBLYAI_API_KEY" in str(e):
-            return api_error(message=str(e), status_code=503)
         return api_error(message=f"Transcription failed: {str(e)}", status_code=500)
-    except TimeoutError:
-        return api_error(message="Transcription timed out", status_code=504)
     except Exception as e:
         return api_error(message=f"Transcription failed: {str(e)}", status_code=500)
 
