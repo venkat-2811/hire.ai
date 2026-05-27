@@ -4,10 +4,13 @@ Configured for Hostinger (smtp.hostinger.com:465 SSL) by default.
 """
 import re
 import logging
+import uuid
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from email.utils import formatdate, formataddr
 from typing import Optional, List
 
 import aiosmtplib
@@ -51,26 +54,35 @@ class EmailService:
                 raise RuntimeError(f"Invalid recipient email: {r}")
 
         msg = MIMEMultipart("alternative")
-        msg["From"] = self.from_email
+        msg["From"] = formataddr(("Rekshift", self.from_email))
         msg["To"] = ", ".join(recipients)
         msg["Subject"] = subject
+        msg["Date"] = formatdate(localtime=True)
+        msg["Message-ID"] = f"<{uuid.uuid4().hex}@rekshift.com>"
+        msg["MIME-Version"] = "1.0"
+        msg["X-Mailer"] = "Rekshift/1.0"
         if reply_to:
             msg["Reply-To"] = reply_to
 
-        if text:
-            msg.attach(MIMEText(text, "plain", "utf-8"))
+        # Always include plain-text version for deliverability
+        plain_text = text or re.sub(r'<[^>]+>', '', html).strip()[:2000]
+        msg.attach(MIMEText(plain_text, "plain", "utf-8"))
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-        await aiosmtplib.send(
-            msg,
-            hostname=self.smtp_host,
-            port=self.smtp_port,
-            username=self.smtp_user,
-            password=self.smtp_password,
-            use_tls=self.use_ssl,
-            start_tls=not self.use_ssl,
-            timeout=30,
-        )
+        try:
+            await aiosmtplib.send(
+                msg,
+                hostname=self.smtp_host,
+                port=self.smtp_port,
+                username=self.smtp_user,
+                password=self.smtp_password,
+                use_tls=self.use_ssl,
+                start_tls=not self.use_ssl,
+                timeout=30,
+            )
+        except Exception as e:
+            logger.error("[email] SMTP FAILED to=%s subject=%s error=%s", recipients, subject, str(e))
+            raise
 
         logger.info("[email] sent to=%s subject=%s", recipients, subject)
         return {"status": "sent", "to": recipients}
@@ -239,13 +251,16 @@ class EmailService:
                 raise RuntimeError(f"Invalid recipient email: {r}")
 
         msg = MIMEMultipart("mixed")
-        msg["From"] = self.from_email
+        msg["From"] = formataddr(("Rekshift", self.from_email))
         msg["To"] = ", ".join(recipients)
         msg["Subject"] = subject
+        msg["Date"] = formatdate(localtime=True)
+        msg["Message-ID"] = f"<{uuid.uuid4().hex}@rekshift.com>"
+        msg["MIME-Version"] = "1.0"
 
         body_part = MIMEMultipart("alternative")
-        if text:
-            body_part.attach(MIMEText(text, "plain", "utf-8"))
+        plain_text = text or re.sub(r'<[^>]+>', '', html).strip()[:2000]
+        body_part.attach(MIMEText(plain_text, "plain", "utf-8"))
         body_part.attach(MIMEText(html, "html", "utf-8"))
         msg.attach(body_part)
 

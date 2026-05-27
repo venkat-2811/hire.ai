@@ -294,6 +294,8 @@ async def invite_ai_interviews(
                 "invite_delivery": {"status": "pending", "attempted_at": _utc_now_iso()},
             }
 
+            proctoring_data["difficulty"] = difficulty
+
             insert_row = {
                 "id": session_id,
                 "candidate_id": cid,
@@ -304,7 +306,6 @@ async def invite_ai_interviews(
                 "current_question_index": 0,
                 "questions": questions,
                 "responses": [],
-                "difficulty": difficulty,
                 "proctoring_data": proctoring_data,
                 "created_at": _utc_now_iso(),
             }
@@ -327,6 +328,7 @@ async def invite_ai_interviews(
                 )
                 proctoring_data["invite_delivery"] = {"status": "sent", "sent_at": _utc_now_iso()}
             except Exception as e:
+                logger.error("[ai_interview.invite] EMAIL FAILED session=%s to=%s error=%s", session_id, recipient_email if 'recipient_email' in dir() else '?', str(e))
                 proctoring_data["invite_delivery"] = {"status": "failed", "failed_at": _utc_now_iso(), "error": str(e)}
 
             await db.run(
