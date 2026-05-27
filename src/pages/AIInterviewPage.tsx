@@ -147,27 +147,14 @@ export default function AIInterviewPage() {
   ) => {
     if (!interviewData) return;
 
-    // IMPORTANT: advanceAfterTimeout already called submitResponse (empty placeholder) before
-    // calling this function. Do NOT call submitResponse here — that would double-increment
-    // current_question_index and cause the next /question fetch to return {completed:true} early.
-    if (!blob || blob.size === 0) return;
-
-    let audio_base64: string;
-    try {
-      const arrayBuffer = await blob.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      let binary = '';
-      const CHUNK = 8192;
-      for (let i = 0; i < uint8.byteLength; i += CHUNK) {
-        binary += String.fromCharCode(...uint8.subarray(i, i + CHUNK));
-      }
-      audio_base64 = btoa(binary);
-    } catch (e) {
-      console.error('[Whisper] Failed to encode audio for Q', questionIndex, e);
+    // advanceAfterTimeout already saved a placeholder via submitResponse.
+    // Do NOT call submitResponse here — it would double-increment current_question_index.
+    if (!blob || blob.size === 0) {
+      console.warn('[Transcribe] No audio blob for Q', questionIndex, '— skipping transcription');
       return;
     }
 
-    // Retry up to 3 times with exponential backoff
+    // Send blob directly as multipart/form-data — no base64 encoding required.
     const MAX_ATTEMPTS = 3;
     const BACKOFF_MS = [0, 2000, 5000];
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -175,19 +162,19 @@ export default function AIInterviewPage() {
         await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
       }
       try {
-        await aiInterviewApi.transcribeStore(interviewData.session_id, {
-          question_index: questionIndex,
-          audio_base64,
-          mime_type: blob.type || 'audio/webm',
-          audio_duration_seconds: audioDurationSeconds,
-        });
-        return; // success — transcript updated in DB
+        const result = await aiInterviewApi.transcribeStore(
+          interviewData.session_id,
+          blob,
+          questionIndex,
+          audioDurationSeconds,
+        );
+        console.log(`[Transcribe] Q${questionIndex} OK — chars=${result.transcript_length}`);
+        return;
       } catch (error) {
-        console.warn(`[Whisper] Attempt ${attempt + 1}/${MAX_ATTEMPTS} failed for Q${questionIndex}`, error);
+        console.warn(`[Transcribe] Attempt ${attempt + 1}/${MAX_ATTEMPTS} failed for Q${questionIndex}`, error);
       }
     }
-    // All retries exhausted — empty placeholder from submitResponse stays; do NOT call submitResponse again
-    console.error('[Whisper] All transcription attempts failed for Q', questionIndex);
+    console.error('[Transcribe] All attempts failed for Q', questionIndex);
   }, [interviewData]);
 
   const stopRecording = useCallback(async (): Promise<Blob | null> => {

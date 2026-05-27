@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.v2.deps import require_user
@@ -55,120 +55,120 @@ def _normalize_questions(raw: Any) -> List[Dict[str, Any]]:
     return out
 
 
-def get_fallback_questions(question_count: int, role: str = "developer") -> List[dict]:
-    """Generate fallback questions that respect the requested count and are purely verbal."""
+def get_fallback_questions(question_count: int, role: str = "developer", difficulty: str = "medium") -> List[dict]:
+    """Role-appropriate fallback questions calibrated by difficulty."""
+    dur = _DIFFICULTY_DURATION.get(difficulty, 120)
     base_questions = [
-        {"text": "Tell me about yourself and your experience.", "type": "behavioral", "duration": 120},
-        {"text": "What interests you about this role?", "type": "behavioral", "duration": 90},
-        {"text": "Describe a challenging project you worked on.", "type": "situational", "duration": 150},
-        {"text": "How do you approach problem-solving?", "type": "situational", "duration": 120},
-        {"text": "What are your technical strengths?", "type": "technical", "duration": 120},
-        {"text": "Where do you see yourself in 5 years?", "type": "behavioral", "duration": 90},
-        {"text": "How do you handle tight deadlines?", "type": "situational", "duration": 120},
-        {"text": "Explain your experience with team collaboration.", "type": "behavioral", "duration": 120},
-        {"text": "How do you stay updated with technology trends?", "type": "technical", "duration": 120},
-        {"text": "Describe a time you had to learn a new technology quickly.", "type": "situational", "duration": 150},
-        {"text": "What motivates you in your work?", "type": "behavioral", "duration": 90},
-        {"text": "How do you handle constructive feedback?", "type": "behavioral", "duration": 120},
-        {"text": "Explain your approach to debugging complex issues.", "type": "technical", "duration": 150},
-        {"text": "How do you ensure code quality in your work?", "type": "technical", "duration": 120},
-        {"text": "Describe your ideal work environment.", "type": "behavioral", "duration": 120},
-        {"text": "How do you prioritize tasks when everything seems urgent?", "type": "situational", "duration": 150},
-        {"text": "What do you consider your greatest professional achievement?", "type": "behavioral", "duration": 150},
-        {"text": "How do you handle disagreements with team members?", "type": "situational", "duration": 120},
-        {"text": "Explain your experience with system design principles.", "type": "technical", "duration": 150},
-        {"text": "How do you approach technical documentation?", "type": "technical", "duration": 120},
+        {"text": f"What is the most technically complex challenge you have solved in your {role} work, and how did you approach it?", "type": "technical", "duration": dur},
+        {"text": "Describe a project where you had to balance quality with a tight deadline — what trade-offs did you make?", "type": "situational", "duration": dur},
+        {"text": "How do you keep your technical skills sharp, and what have you learned in the last three months?", "type": "behavioral", "duration": dur},
+        {"text": f"What does good code quality mean to you in a {role} context, and how do you enforce it?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a time you disagreed with a technical decision made by your team — how did you handle it?", "type": "behavioral", "duration": dur},
+        {"text": "Describe a production issue you dealt with. How did you diagnose and resolve it under pressure?", "type": "situational", "duration": dur},
+        {"text": "How do you approach onboarding onto an unfamiliar codebase or technology stack?", "type": "situational", "duration": dur},
+        {"text": f"Which aspect of {role} development do you find most interesting and why?", "type": "behavioral", "duration": dur},
+        {"text": "Walk me through how you would design a system to handle 10x the current load.", "type": "technical", "duration": dur},
+        {"text": "Describe a situation where you had to influence a technical direction without direct authority.", "type": "behavioral", "duration": dur},
+        {"text": "How do you approach writing automated tests, and what is your philosophy around test coverage?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a time a project did not go as planned — what did you learn from it?", "type": "situational", "duration": dur},
+        {"text": "How do you prioritize competing tasks when multiple stakeholders have urgent requests?", "type": "situational", "duration": dur},
+        {"text": "What is your approach to code reviews — both giving and receiving feedback?", "type": "behavioral", "duration": dur},
+        {"text": f"Where do you want to grow professionally in the next two years as a {role}?", "type": "behavioral", "duration": dur},
+        {"text": "Describe a time you refactored legacy code. What was your strategy and what were the outcomes?", "type": "technical", "duration": dur},
+        {"text": "How do you handle ambiguity when requirements are unclear or changing frequently?", "type": "situational", "duration": dur},
+        {"text": "Tell me about a collaboration with a non-technical stakeholder — how did you bridge the gap?", "type": "behavioral", "duration": dur},
+        {"text": "What observability or monitoring practices do you apply to systems you own?", "type": "technical", "duration": dur},
+        {"text": "Describe a technical decision you made that you later regretted — what would you do differently?", "type": "situational", "duration": dur},
     ]
-    
-    # Return exactly the requested number of questions
     return base_questions[:question_count]
 
 
-async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = 'medium') -> List[dict]:
-    """Generate personalized interview questions using AI."""
+# Duration in seconds per difficulty level
+_DIFFICULTY_DURATION = {"easy": 90, "medium": 120, "hard": 150}
+
+
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium") -> List[dict]:
+    """Generate personalized, difficulty-calibrated interview questions using AI."""
     role = job.get("role", "developer")
     level = job.get("level", "mid")
     title = job.get("title", "Software Developer")
-    
-    # Calculate question distribution based on count
+    skills = ", ".join(job.get("must_have_skills") or []) if isinstance(job.get("must_have_skills"), list) else ""
+    difficulty = (difficulty or "medium").strip().lower()
+    default_duration = _DIFFICULTY_DURATION.get(difficulty, 120)
+
     technical_count = max(1, int(question_count * 0.4))
     behavioral_count = max(1, int(question_count * 0.3))
     situational_count = max(1, int(question_count * 0.2))
-    motivation_count = question_count - technical_count - behavioral_count - situational_count
-    
-    # Adjust difficulty descriptions
-    difficulty_descriptions = {
-        'easy': 'fundamental concepts, basic scenarios, and straightforward questions suitable for junior candidates',
-        'medium': 'intermediate concepts, practical scenarios, and balanced questions suitable for mid-level candidates',
-        'hard': 'advanced concepts, complex scenarios, and challenging questions suitable for senior candidates'
+    motivation_count = max(0, question_count - technical_count - behavioral_count - situational_count)
+
+    difficulty_config = {
+        "easy": {
+            "desc": "fundamental concepts and straightforward scenarios for junior/entry-level candidates",
+            "tech_style": "Ask about core concepts, basic usage, and simple implementations. Avoid architecture or production-scale problems.",
+            "behavioral_style": "Focus on learning experiences, academic projects, internships, and team collaboration.",
+        },
+        "medium": {
+            "desc": "intermediate concepts and practical real-world scenarios for mid-level candidates",
+            "tech_style": "Ask about real projects, trade-offs, debugging experience, and practical optimizations.",
+            "behavioral_style": "Focus on cross-team work, ownership of deliverables, handling complexity, and growth.",
+        },
+        "hard": {
+            "desc": "advanced concepts, system design, and complex production scenarios for senior candidates",
+            "tech_style": "Ask about architecture decisions, scalability, reliability, performance bottlenecks, and engineering trade-offs.",
+            "behavioral_style": "Focus on leadership, mentoring, influencing decisions, managing ambiguity, and organizational impact.",
+        },
     }
-    difficulty_desc = difficulty_descriptions.get(difficulty, difficulty_descriptions['medium'])
-    
+    cfg = difficulty_config.get(difficulty, difficulty_config["medium"])
     session_seed = uuid.uuid4().hex[:8]
-    
-    prompt = f"""Generate EXACTLY {question_count} highly dynamic, completely unique, and independent interview questions for a {level} {title} position.
 
-SESSION SEED (Force Randomization): {session_seed}
-USE THIS SEED to ensure the phrasing, topic order, and interview flow are entirely different from any previous generations.
+    prompt = f"""You are an expert technical interviewer. Generate EXACTLY {question_count} independent, verbal interview questions for a {level} {title} role.
 
-DIFFICULTY: {difficulty_desc}
+SESSION SEED: {session_seed}  ← use this to vary phrasing and topic order uniquely each time.
 
-DISTRIBUTION:
-- {technical_count} Technical discussion questions specific to {role}
-- {behavioral_count} Behavioral questions
-- {situational_count} Situational/problem-solving questions
-- {motivation_count} Question about career goals/motivation
+ROLE: {title} ({level})
+KEY SKILLS: {skills or role}
+DIFFICULTY: {difficulty.upper()} — {cfg['desc']}
 
-CANDIDATE CONTEXT (Crucial for Contextualizing Questions):
-{str(resume_data)[:1000] if resume_data else "No specific resume data provided. Ask role-specific domain questions."}
+QUESTION DISTRIBUTION:
+- {technical_count} Technical: {cfg['tech_style']}
+- {behavioral_count} Behavioral: {cfg['behavioral_style']}
+- {situational_count} Situational/problem-solving
+- {motivation_count} Career goals/motivation
 
-CRITICAL RULES FOR QUESTION SELECTION & FLOW (MUST FOLLOW STRICTLY):
-1. ZERO GENERIC OPENINGS: NEVER start with "Walk me through your experience", "Tell me about your background", or "Mention your technical experience". Dive directly into a highly contextual, resume-driven, or role-specific question (e.g., "I see you used React in your last project, what state management approach did you choose?").
-2. INTELLIGENT PRIORITIZATION:
-   - Fresher/Intern: Focus on projects, core concepts, and learning experiences.
-   - Experienced: Focus on production issues, architecture, scaling, and deployment.
-   - Strong Projects: Ask about implementation details, logic challenges, and why certain tech was used.
-3. ROLE-SPECIFIC NATURAL STYLES (Emulate these):
-   - Python: "What was the most challenging logic you implemented in your Python backend?"
-   - Salesforce: "Can you explain a complex Apex trigger or flow you built recently?"
-   - AWS: "How did you manage infrastructure or deployment in your last project?"
-4. PURELY INDEPENDENT: Every question MUST stand completely alone. 
-5. NO CORRECTIVE FOLLOW-UPS: NEVER assume the candidate missed information. DO NOT use phrases like "Since you didn't mention...", "Following up on...", or "You didn't explain...".
-6. VERBAL ONLY: No coding, syntax, or algorithm implementation tasks.
-7. MAXIMUM DIVERSITY: Randomize question structures, openings, and topic order across the {question_count} questions.
+CANDIDATE BACKGROUND (use to personalise questions):
+{str(resume_data)[:1200] if resume_data else 'No resume data — use role-specific domain questions.'}
 
-Return as JSON array with EXACTLY {question_count} questions:
-[{{"text": "Completely standalone, contextual, natural question text", "type": "technical|behavioral|situational", "duration": 120, "key_points": ["point1", "point2"]}}]
+RULES:
+1. NO generic openers like "Tell me about yourself" or "Walk me through your background".
+2. Start each question with a direct, specific angle tied to the role or candidate background.
+3. Every question must stand completely alone — no follow-up or referencing a previous question.
+4. VERBAL ONLY — no live coding, whiteboard algorithms, or syntax writing.
+5. Calibrate depth strictly to {difficulty.upper()}: {'straightforward, conceptual' if difficulty == 'easy' else 'practical, trade-off oriented' if difficulty == 'medium' else 'architectural, production-scale, nuanced'}.
+6. Maximum diversity — vary structure, topic, and phrasing across all {question_count} questions.
+
+Return ONLY a JSON array of EXACTLY {question_count} objects:
+[{{"text": "<question>", "type": "technical|behavioral|situational", "duration": {default_duration}}}]
 """
-    
+
     try:
         result = await openai.generate_json(prompt)
-        
-        if isinstance(result, list):
-            questions = result
-        elif isinstance(result, dict) and "questions" in result:
-            questions = result["questions"]
-        else:
-            questions = []
-        
-        # Validate that we got the correct number of questions
-        if len(questions) != question_count:
-            if len(questions) > question_count:
-                # Truncate if we got too many
-                questions = questions[:question_count]
-            elif len(questions) < question_count:
-                # If we got too few, pad with fallback questions
-                fallback = get_fallback_questions(question_count - len(questions), role)
-                questions = questions + fallback
-        
-        # Final validation - ensure we have exactly the requested count
-        if len(questions) != question_count:
-            return get_fallback_questions(question_count, role)
-        
+        questions = result if isinstance(result, list) else (result.get("questions") if isinstance(result, dict) else [])
+
+        # Normalize and enforce count
+        questions = [q for q in questions if isinstance(q, dict) and q.get("text")]
+        if len(questions) > question_count:
+            questions = questions[:question_count]
+        elif len(questions) < question_count:
+            questions += get_fallback_questions(question_count - len(questions), role, difficulty)
+
+        # Enforce correct duration per difficulty
+        for q in questions:
+            if not isinstance(q.get("duration"), int) or q["duration"] <= 0:
+                q["duration"] = default_duration
+
         return questions
-    except Exception as e:
-        # Fallback questions that respect the count
-        return get_fallback_questions(question_count, role)
+    except Exception:
+        return get_fallback_questions(question_count, role, difficulty)
 
 
 class InterviewInviteRequest(BaseModel):
@@ -304,6 +304,7 @@ async def invite_ai_interviews(
                 "current_question_index": 0,
                 "questions": questions,
                 "responses": [],
+                "difficulty": difficulty,
                 "proctoring_data": proctoring_data,
                 "created_at": _utc_now_iso(),
             }
@@ -500,8 +501,8 @@ async def adapt_question(session_id: str, body: AdaptQuestionRequest):
 
     prior_pairs: List[str] = []
     for r in sorted(
-        [rr for rr in responses if isinstance(rr, dict) and isinstance(rr.get("question_index"), int)],
-        key=lambda x: int(x.get("question_index")),
+        [rr for rr in responses if isinstance(rr, dict) and rr.get("question_index") is not None],
+        key=lambda x: int(x.get("question_index") or 0),
     )[-3:]:
         qi = int(r.get("question_index"))
         if qi < 0 or qi >= len(questions):
@@ -567,15 +568,15 @@ async def adapt_question(session_id: str, body: AdaptQuestionRequest):
     )
 
 
-class TranscribeStoreRequest(BaseModel):
-    question_index: int
-    audio_base64: str
-    mime_type: Optional[str] = "audio/webm"
-    audio_duration_seconds: Optional[float] = 0
-
-
 @router.post("/{session_id}/transcribe-store")
-async def transcribe_store(session_id: str, body: TranscribeStoreRequest):
+async def transcribe_store(
+    session_id: str,
+    audio: UploadFile = File(...),
+    question_index: int = Form(...),
+    mime_type: str = Form("audio/webm"),
+    audio_duration_seconds: float = Form(0.0),
+):
+    """Accept multipart audio upload, transcribe with gpt-4o-mini-transcribe, store result."""
     db = get_db_admin_service()
     whisper = get_whisper_service()
 
@@ -589,37 +590,41 @@ async def transcribe_store(session_id: str, body: TranscribeStoreRequest):
     if not session:
         return api_error(message="Session not found", status_code=404)
     if session.get("status") not in ("in_progress", "completed"):
-        return api_error(message="Interview not in progress", status_code=400)
+        return api_error(message="Interview session is not active", status_code=400)
 
-    if body.question_index < 0:
-        return api_error(message="Missing or invalid question_index.", status_code=400)
+    if question_index < 0:
+        return api_error(message="Invalid question_index", status_code=400)
 
-    try:
-        audio_bytes = base64.b64decode(body.audio_base64)
-    except Exception:
-        return api_error(message="Invalid base64 audio data.", status_code=400)
+    audio_bytes = await audio.read()
     if not audio_bytes:
-        return api_error(message="Empty audio data received.", status_code=400)
+        logger.warning("[transcribe_store] Empty audio received for session=%s q=%s", session_id, question_index)
+        return api_error(message="Empty audio data received", status_code=400)
+
+    effective_mime = mime_type or audio.content_type or "audio/webm"
+    logger.info("[transcribe_store] session=%s q=%s bytes=%d mime=%s", session_id, question_index, len(audio_bytes), effective_mime)
 
     try:
-        transcript = await whisper.transcribe(audio_bytes, mime_type=body.mime_type or "audio/webm")
+        transcript = await whisper.transcribe(audio_bytes, mime_type=effective_mime)
     except RuntimeError as e:
-        return api_error(message=f"Transcription failed: {str(e)}", status_code=500)
+        logger.error("[transcribe_store] Auth error: %s", str(e))
+        return api_error(message=f"Transcription service error: {str(e)}", status_code=500)
     except Exception as e:
-        return api_error(message=f"Transcription failed: {str(e)}", status_code=500)
+        logger.error("[transcribe_store] Unexpected error: %s", str(e))
+        transcript = ""
 
     responses = session.get("responses") if isinstance(session.get("responses"), list) else []
     responses = list(responses)
     existing_idx = next(
-        (i for i, r in enumerate(responses) if isinstance(r, dict) and int(r.get("question_index") or -1) == body.question_index),
+        (i for i, r in enumerate(responses)
+         if isinstance(r, dict) and int(r.get("question_index") if r.get("question_index") is not None else -1) == question_index),
         -1,
     )
     existing = responses[existing_idx] if existing_idx >= 0 and isinstance(responses[existing_idx], dict) else {}
     updated = {
         **existing,
-        "question_index": body.question_index,
+        "question_index": question_index,
         "transcript": transcript,
-        "audio_duration_seconds": float(body.audio_duration_seconds or existing.get("audio_duration_seconds") or 0),
+        "audio_duration_seconds": float(audio_duration_seconds or existing.get("audio_duration_seconds") or 0),
         "confidence": float(existing.get("confidence") or 0.9),
         "transcribed_at": _utc_now_iso(),
         "submitted_at": existing.get("submitted_at") or _utc_now_iso(),
@@ -629,15 +634,14 @@ async def transcribe_store(session_id: str, body: TranscribeStoreRequest):
     else:
         responses.append(updated)
 
-    logger.info("[ai_interview.transcribe_store] saved transcript session_id=%s question_index=%s transcript_len=%s",
-                session_id, body.question_index, len(transcript))
+    logger.info("[transcribe_store] saved session=%s q=%s transcript_len=%s", session_id, question_index, len(transcript))
     await db.update(
         "ai_interview_sessions",
         {"responses": responses, "updated_at": _utc_now_iso()},
         filters={"id": session_id},
     )
 
-    return ok({"success": True, "question_index": body.question_index, "transcript_length": len(transcript)})
+    return ok({"success": True, "question_index": question_index, "transcript_length": len(transcript)})
 
 
 @router.post("/{session_id}/response")

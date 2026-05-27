@@ -30,7 +30,8 @@ class _NamedBytesIO(io.BytesIO):
 
 
 class WhisperService:
-    MODEL = "whisper-1"
+    # gpt-4o-mini-transcribe: faster, cheaper, more accurate than whisper-1
+    MODEL = "gpt-4o-mini-transcribe"
 
     def _get_client(self) -> AsyncOpenAI:
         settings = get_settings()
@@ -40,7 +41,7 @@ class WhisperService:
 
     async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
         if not audio_bytes:
-            logger.warning("[Whisper] Empty audio bytes, returning empty transcript")
+            logger.warning("[Transcribe] Empty audio bytes — returning empty transcript")
             return ""
 
         client = self._get_client()
@@ -49,24 +50,22 @@ class WhisperService:
         ext = _EXT_MAP.get(base_mime, "webm")
         audio_file = _NamedBytesIO(audio_bytes, f"audio.{ext}")
 
+        logger.info("[Transcribe] Starting transcription model=%s mime=%s bytes=%d", self.MODEL, mime_type, len(audio_bytes))
         try:
-            # Use default response_format (json) which returns Transcription(text=...)
-            # Do NOT use response_format="text" — SDK version behaviour differs
             result = await client.audio.transcriptions.create(
                 model=self.MODEL,
                 file=audio_file,
-                timeout=60.0,
+                timeout=90.0,
             )
             text = result.text if hasattr(result, "text") else str(result)
-            logger.info("[Whisper] Transcription ok, chars=%d", len(text or ""))
+            logger.info("[Transcribe] OK chars=%d", len(text or ""))
             return (text or "").strip()
         except Exception as e:
             err_lower = str(e).lower()
-            logger.error("[Whisper] Transcription error (mime=%s, bytes=%d): %s", mime_type, len(audio_bytes), str(e))
-            # Auth/config errors should propagate so ops can detect them
+            logger.error("[Transcribe] Error model=%s mime=%s bytes=%d: %s", self.MODEL, mime_type, len(audio_bytes), str(e))
             if "api key" in err_lower or "authentication" in err_lower or "unauthorized" in err_lower:
-                raise RuntimeError(f"Whisper auth error: {str(e)}")
-            # All other errors (bad audio, no speech, network) → return empty transcript
+                raise RuntimeError(f"Transcription auth error: {str(e)}")
+            # Bad audio / no speech / network — return empty so interview can continue
             return ""
 
 

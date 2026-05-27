@@ -788,21 +788,23 @@ export const aiInterviewApi = {
       skipAuth: true,
     }),
 
-  transcribeStore: (sessionId: string, body: {
-    question_index: number;
-    audio_base64: string;
-    mime_type?: string;
-    audio_duration_seconds?: number;
-  }) =>
-    request<{ success: boolean; question_index: number; transcript_length: number }>(
+  transcribeStore: (sessionId: string, audio: Blob, questionIndex: number, audioDurationSeconds: number) => {
+    const formData = new FormData();
+    const ext = audio.type.includes('ogg') ? 'ogg'
+      : audio.type.includes('mp4') ? 'mp4'
+      : audio.type.includes('wav') ? 'wav'
+      : 'webm';
+    formData.append('audio', audio, `recording.${ext}`);
+    formData.append('question_index', String(questionIndex));
+    formData.append('mime_type', audio.type || 'audio/webm');
+    formData.append('audio_duration_seconds', String(audioDurationSeconds));
+    return uploadFile<{ success: boolean; question_index: number; transcript_length: number }>(
       `/ai-interview/${encodeURIComponent(sessionId)}/transcribe-store`,
-      {
-        method: 'POST',
-        body,
-        timeoutMs: 90000,
-        skipAuth: true,
-      },
-    ),
+      formData,
+      true,
+      { timeoutMs: 90000 },
+    );
+  },
 
   submitResponse: (sessionId: string, body: {
     question_index: number;
