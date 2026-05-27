@@ -1,9 +1,12 @@
 import io
+import logging
 from typing import Optional
 
 from openai import AsyncOpenAI
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _EXT_MAP = {
     "audio/webm": "webm",
@@ -19,6 +22,13 @@ _EXT_MAP = {
 }
 
 
+class _NamedBytesIO(io.BytesIO):
+    """BytesIO subclass with a .name attribute for OpenAI SDK multipart upload."""
+    def __init__(self, data: bytes, name: str) -> None:
+        super().__init__(data)
+        self.name = name
+
+
 class WhisperService:
     MODEL = "whisper-1"
 
@@ -30,29 +40,34 @@ class WhisperService:
 
     async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
         if not audio_bytes:
+            logger.warning("[Whisper] Empty audio bytes, returning empty transcript")
             return ""
 
         client = self._get_client()
 
         base_mime = mime_type.split(";")[0].strip().lower() if mime_type else "audio/webm"
         ext = _EXT_MAP.get(base_mime, "webm")
-
-        audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = f"audio.{ext}"
+        audio_file = _NamedBytesIO(audio_bytes, f"audio.{ext}")
 
         try:
+            # Use default response_format (json) which returns Transcription(text=...)
+            # Do NOT use response_format="text" — SDK version behaviour differs
             result = await client.audio.transcriptions.create(
                 model=self.MODEL,
                 file=audio_file,
-                response_format="text",
                 timeout=60.0,
             )
-            return str(result).strip() if result else ""
+            text = result.text if hasattr(result, "text") else str(result)
+            logger.info("[Whisper] Transcription ok, chars=%d", len(text or ""))
+            return (text or "").strip()
         except Exception as e:
             err_lower = str(e).lower()
-            if any(k in err_lower for k in ("no speech", "audio_too_short", "too short", "duration")):
-                return ""
-            raise RuntimeError(f"Whisper transcription failed: {str(e)}")
+            logger.error("[Whisper] Transcription error (mime=%s, bytes=%d): %s", mime_type, len(audio_bytes), str(e))
+            # Auth/config errors should propagate so ops can detect them
+            if "api key" in err_lower or "authentication" in err_lower or "unauthorized" in err_lower:
+                raise RuntimeError(f"Whisper auth error: {str(e)}")
+            # All other errors (bad audio, no speech, network) → return empty transcript
+            return ""
 
 
 _service: Optional[WhisperService] = None

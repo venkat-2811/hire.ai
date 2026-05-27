@@ -772,14 +772,19 @@ async def get_interview_details(
             for r in raw_responses:
                 if not isinstance(r, dict):
                     continue
-                if not isinstance(r.get("question_index"), int):
+                q_idx_raw = r.get("question_index")
+                if q_idx_raw is None:
+                    continue
+                try:
+                    q_idx = int(q_idx_raw)
+                except (TypeError, ValueError):
                     continue
                 transcript = r.get("transcript")
                 if transcript is None:
                     transcript = r.get("answer") or r.get("text")
                 responses_out.append(
                     {
-                        "question_index": int(r.get("question_index")),
+                        "question_index": q_idx,
                         "transcript": "" if transcript is None else str(transcript),
                         "audio_duration_seconds": r.get("audio_duration_seconds") or 0,
                         "confidence": r.get("confidence") or 0,
