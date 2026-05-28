@@ -40,6 +40,7 @@ export default function EditJobPage() {
   const [interviewCutoff, setInterviewCutoff] = useState('0');
   const [location, setLocation] = useState('');
   const [endCustomer, setEndCustomer] = useState<'your_own_company' | 'end_customer' | ''>('');
+  const [endCustomerName, setEndCustomerName] = useState('');
   const [saving, setSaving] = useState(false);
   const [extractingSkills, setExtractingSkills] = useState(false);
 
@@ -56,7 +57,8 @@ export default function EditJobPage() {
       setAssessmentCutoff(String(job.assessment_cutoff || 0));
       setInterviewCutoff(String(job.interview_cutoff || 0));
       setLocation(job.location || '');
-      setEndCustomer(job.endCustomer as any || '');
+      setEndCustomer((job.endCustomer || job.end_customer) as any || '');
+      setEndCustomerName(job.end_customer_name || '');
     }
   }, [job]);
 
@@ -64,6 +66,11 @@ export default function EditJobPage() {
     e.preventDefault();
     if (!title || !role || !level) {
       toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (endCustomer === 'end_customer' && !endCustomerName.trim()) {
+      toast.error('Name of Customer/Client is required when hiring for End Customer');
       return;
     }
 
@@ -82,7 +89,8 @@ export default function EditJobPage() {
         interview_cutoff: parseInt(interviewCutoff) || 0,
         location: location || undefined,
         endCustomer: endCustomer || undefined,
-      });
+        end_customer_name: endCustomer === 'end_customer' ? endCustomerName.trim() : null,
+      } as any);
 
       toast.success('Job updated successfully');
       navigate(`/jobs/${jobId}`);
@@ -266,17 +274,32 @@ export default function EditJobPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Hiring For</Label>
-                <Select value={endCustomer} onValueChange={(v: any) => setEndCustomer(v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="your_own_company">Your Own Company</SelectItem>
-                    <SelectItem value="end_customer">End Customer</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Hiring For</Label>
+                  <Select value={endCustomer} onValueChange={(v: any) => setEndCustomer(v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="your_own_company">Your Own Company</SelectItem>
+                      <SelectItem value="end_customer">End Customer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {endCustomer === 'end_customer' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="end_customer_name">Name of Customer/Client *</Label>
+                    <Input
+                      id="end_customer_name"
+                      placeholder="e.g., Acme Corp"
+                      value={endCustomerName}
+                      onChange={(e) => setEndCustomerName(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

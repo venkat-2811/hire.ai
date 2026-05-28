@@ -18,6 +18,8 @@ export interface JobDescription {
   interview_cutoff: number;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
+  end_customer?: 'your_own_company' | 'end_customer';
+  end_customer_name?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -36,6 +38,7 @@ export interface JobDescriptionCreate {
   interview_cutoff?: number;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
+  end_customer_name?: string | null;
 }
 
 export function useJobs(params?: { role?: string; level?: string; is_active?: boolean }) {

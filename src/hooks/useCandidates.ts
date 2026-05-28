@@ -93,7 +93,13 @@ export function useDeleteCandidate() {
   return useMutation({
     mutationFn: ({ id, jobId }: { id: string; jobId?: string }) => candidatesApi.delete(id, jobId),
     onSuccess: () => {
+      // Invalidate ALL related caches to prevent stale data from reappearing
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['interviews'] });
+      queryClient.invalidateQueries({ queryKey: ['screenings'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['results'] });
+      queryClient.invalidateQueries({ queryKey: ['assessments'] });
       toast.success('Candidate deleted successfully');
     },
     onError: (error: Error) => {

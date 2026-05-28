@@ -650,45 +650,109 @@ async def delete_candidate(
 ):
     """DELETE /api/v2/candidates/{candidate_id}[?job_id=...]
 
-    If job_id is provided, removes only the job_application row.
-    Otherwise removes the candidate entirely (all applications included).
+    If job_id is provided, removes the candidate from that specific job
+    including ALL related interview/assessment/screening data for that job.
+    Otherwise removes the candidate entirely with all associated data.
     """
     db = get_db_admin_service()
 
     if job_id:
-        # Remove just the application link
-        def _del_app():
-            return (
-                db.client.from_("job_applications")
-                .delete()
-                .eq("candidate_id", candidate_id)
-                .eq("job_id", job_id)
+        # --- Remove candidate from a specific job (full cleanup) ---
+        logger.info(
+            "[delete_candidate] Removing candidate=%s from job=%s with full data cleanup",
+            candidate_id, job_id
+        )
+
+        def _del_job_specific():
+            # Delete AI interview sessions (questions/responses stored as JSONB inside)
+            db.client.from_("ai_interview_sessions") \
+                .delete() \
+                .eq("candidate_id", candidate_id) \
+                .eq("job_id", job_id) \
                 .execute()
+            # Delete assessment sessions
+            db.client.from_("assessment_sessions") \
+                .delete() \
+                .eq("candidate_id", candidate_id) \
+                .eq("job_id", job_id) \
+                .execute()
+            # Delete ATS screenings
+            db.client.from_("ats_screenings") \
+                .delete() \
+                .eq("candidate_id", candidate_id) \
+                .eq("job_id", job_id) \
+                .execute()
+            # Delete interview sessions (cascades to interview_questions,
+            # candidate_responses, practical_assessments, practical_submissions,
+            # interview_evaluations via FK ON DELETE CASCADE)
+            db.client.from_("interview_sessions") \
+                .delete() \
+                .eq("candidate_id", candidate_id) \
+                .eq("job_id", job_id) \
+                .execute()
+            # Finally delete the job application link
+            db.client.from_("job_applications") \
+                .delete() \
+                .eq("candidate_id", candidate_id) \
+                .eq("job_id", job_id) \
+                .execute()
+
+        try:
+            await db.run(_del_job_specific)
+        except Exception as exc:
+            logger.error(
+                "[delete_candidate] Failed to delete candidate=%s from job=%s: %s",
+                candidate_id, job_id, exc
             )
+            return api_error(message="Failed to remove candidate from job", status_code=500)
 
-        await db.run(_del_app)
-        return ok({"success": True, "message": "Candidate removed from job"})
+        return ok({"success": True, "message": "Candidate removed from job with all related data"})
 
-    # Full delete: applications first, then candidate row
-    def _del_apps():
-        return (
-            db.client.from_("job_applications")
-            .delete()
-            .eq("candidate_id", candidate_id)
+    # --- Full delete: remove ALL data for this candidate across all jobs ---
+    logger.info("[delete_candidate] Full deletion of candidate=%s", candidate_id)
+
+    def _del_all():
+        # Delete AI interview sessions
+        db.client.from_("ai_interview_sessions") \
+            .delete() \
+            .eq("candidate_id", candidate_id) \
             .execute()
-        )
-
-    def _del_candidate():
-        return (
-            db.client.from_("candidates")
-            .delete()
-            .eq("id", candidate_id)
+        # Delete assessment sessions
+        db.client.from_("assessment_sessions") \
+            .delete() \
+            .eq("candidate_id", candidate_id) \
             .execute()
-        )
+        # Delete ATS screenings
+        db.client.from_("ats_screenings") \
+            .delete() \
+            .eq("candidate_id", candidate_id) \
+            .execute()
+        # Delete interview sessions (cascades to questions, responses, evaluations)
+        db.client.from_("interview_sessions") \
+            .delete() \
+            .eq("candidate_id", candidate_id) \
+            .execute()
+        # Delete all job applications
+        db.client.from_("job_applications") \
+            .delete() \
+            .eq("candidate_id", candidate_id) \
+            .execute()
+        # Finally delete the candidate record itself
+        db.client.from_("candidates") \
+            .delete() \
+            .eq("id", candidate_id) \
+            .execute()
 
-    await db.run(_del_apps)
-    await db.run(_del_candidate)
-    return ok({"success": True, "message": "Candidate deleted"})
+    try:
+        await db.run(_del_all)
+    except Exception as exc:
+        logger.error(
+            "[delete_candidate] Failed to fully delete candidate=%s: %s",
+            candidate_id, exc
+        )
+        return api_error(message="Failed to delete candidate", status_code=500)
+
+    return ok({"success": True, "message": "Candidate and all related data permanently deleted"})
 
 
 @router.get("/{candidate_id}/parsed-resume")

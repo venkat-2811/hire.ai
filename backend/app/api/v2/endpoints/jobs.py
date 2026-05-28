@@ -123,6 +123,12 @@ async def create_job(payload: Dict[str, Any], user: ClerkUser = Depends(require_
     # Billing check bypassed locally for create_job if no RPC exists
     pass
 
+    # Validate end_customer_name is required when endCustomer is 'end_customer'
+    end_customer_val = payload.get("endCustomer") or payload.get("end_customer")
+    end_customer_name_val = (payload.get("end_customer_name") or "").strip() or None
+    if end_customer_val == "end_customer" and not end_customer_name_val:
+        return api_error(message="Name of Customer/Client is required when hiring for End Customer", status_code=400)
+
     job_data = {
         "title": payload.get("title"),
         "role": payload.get("role"),
@@ -135,6 +141,8 @@ async def create_job(payload: Dict[str, Any], user: ClerkUser = Depends(require_
         "assessment_cutoff": payload.get("assessment_cutoff", 40),
         "interview_cutoff": payload.get("interview_cutoff", 40),
         "location": payload.get("location"),
+        "end_customer": end_customer_val,
+        "end_customer_name": end_customer_name_val if end_customer_val == "end_customer" else None,
         "is_active": True,
         "created_by": user.id,
     }
@@ -167,10 +175,24 @@ async def update_job(job_id: str, payload: Dict[str, Any], user: ClerkUser = Dep
         "title", "role", "level", "description",
         "must_have_skills", "good_to_have_skills", "min_experience_years",
         "is_active", "resume_cutoff", "assessment_cutoff", "interview_cutoff",
-        "location"
+        "location", "end_customer", "end_customer_name"
     ]
     
     update_data = {k: v for k, v in payload.items() if k in allowed_keys}
+
+    # Normalise: accept endCustomer as alias
+    if "endCustomer" in payload and "end_customer" not in update_data:
+        update_data["end_customer"] = payload["endCustomer"]
+
+    # Validate end_customer_name required when end_customer is 'end_customer'
+    ec = update_data.get("end_customer")
+    if ec == "end_customer":
+        ecn = (update_data.get("end_customer_name") or "").strip() or None
+        if not ecn:
+            return api_error(message="Name of Customer/Client is required when hiring for End Customer", status_code=400)
+        update_data["end_customer_name"] = ecn
+    elif ec and ec != "end_customer":
+        update_data["end_customer_name"] = None
     if not update_data:
         return api_error(message="No valid fields to update", status_code=400)
 

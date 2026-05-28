@@ -33,6 +33,7 @@ export default function NewJobPage() {
   const [interviewCutOff, setInterviewCutOff] = useState(40);
   const [location, setLocation] = useState('');
   const [endCustomer, setEndCustomer] = useState<'your_own_company' | 'end_customer' | ''>('');
+  const [endCustomerName, setEndCustomerName] = useState('');
   const [mustHaveSkills, setMustHaveSkills] = useState<string[]>([]);
   const [goodToHaveSkills, setGoodToHaveSkills] = useState<string[]>([]);
   const [newMustHave, setNewMustHave] = useState('');
@@ -95,6 +96,11 @@ export default function NewJobPage() {
       return;
     }
 
+    if (endCustomer === 'end_customer' && !endCustomerName.trim()) {
+      toast.error('Name of Customer/Client is required when hiring for End Customer');
+      return;
+    }
+
     createJob.mutate({
       title,
       role: role,
@@ -108,6 +114,7 @@ export default function NewJobPage() {
       interview_cutoff: interviewCutOff,
       location: location || undefined,
       endCustomer: (endCustomer as any) || undefined,
+      end_customer_name: endCustomer === 'end_customer' ? endCustomerName.trim() : null,
     }, {
       onSuccess: () => {
         navigate('/jobs');
@@ -223,6 +230,19 @@ export default function NewJobPage() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {endCustomer === 'end_customer' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="end_customer_name">Name of Customer/Client *</Label>
+                      <Input
+                        id="end_customer_name"
+                        placeholder="e.g., Acme Corp"
+                        value={endCustomerName}
+                        onChange={(e) => setEndCustomerName(e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
