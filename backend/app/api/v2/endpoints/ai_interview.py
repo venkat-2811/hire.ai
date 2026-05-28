@@ -278,13 +278,109 @@ def _deduplicate_questions(questions: List[dict]) -> List[dict]:
 #  Core question generation
 # ---------------------------------------------------------------------------
 
-async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium") -> List[dict]:
-    """Generate personalized, professional interview questions.
+def _get_role_technology_hints(role: str, skills: str) -> str:
+    """Return role-specific technology focus areas to guide the LLM."""
+    role_lower = (role or "").lower().replace("_", " ").replace("-", " ")
+    skills_lower = (skills or "").lower()
 
-    Uses GPT-4.1-mini via the shared OpenAI service. Each candidate gets
-    unique questions based on their individual resume and the common JD.
-    Questions are non-adaptive and difficulty-calibrated. Post-generation
-    semantic deduplication ensures no repeated or near-duplicate questions.
+    if any(k in role_lower or k in skills_lower for k in ["ai", "ml", "machine learning", "data scientist", "deep learning", "nlp"]):
+        return """ROLE-SPECIFIC FOCUS (AI/ML Engineer):
+- RAG pipelines, vector databases (FAISS, Pinecone, Weaviate, ChromaDB)
+- Embedding models, chunking strategies, retrieval optimization
+- LLM fine-tuning, prompt engineering, inference optimization
+- LangChain, LlamaIndex, agentic workflows, tool calling
+- Model deployment (TensorFlow Serving, TorchServe, vLLM, Triton)
+- Hallucination reduction, evaluation metrics, guardrails
+- Data preprocessing, feature engineering, model versioning (MLflow, W&B)
+- GPU optimization, quantization, distillation"""
+
+    if any(k in role_lower or k in skills_lower for k in ["backend", "server", "api", "microservice"]):
+        return """ROLE-SPECIFIC FOCUS (Backend Engineer):
+- API design (REST, GraphQL, gRPC), authentication (JWT, OAuth2)
+- Database optimization (indexing, query planning, sharding, replication)
+- Caching strategies (Redis, Memcached, CDN, cache invalidation)
+- Message queues (Kafka, RabbitMQ, SQS), event-driven architecture
+- Scalability patterns (horizontal scaling, load balancing, rate limiting)
+- Microservices communication, service discovery, circuit breakers
+- Containerization (Docker, Kubernetes), CI/CD pipelines
+- Monitoring, logging, distributed tracing (Prometheus, Grafana, Jaeger)"""
+
+    if any(k in role_lower or k in skills_lower for k in ["frontend", "react", "angular", "vue", "ui", "ux"]):
+        return """ROLE-SPECIFIC FOCUS (Frontend Engineer):
+- Component architecture, state management (Redux, Zustand, Context)
+- Performance optimization (code splitting, lazy loading, memoization)
+- Browser rendering pipeline, reflows, repaints, virtual DOM
+- API integration patterns, error handling, caching strategies
+- Testing (unit, integration, E2E with Jest, Playwright, Cypress)
+- Accessibility (WCAG), responsive design, cross-browser compatibility
+- Build tools (Webpack, Vite, Turbopack), module bundling
+- SSR vs CSR vs ISR, hydration strategies"""
+
+    if any(k in role_lower or k in skills_lower for k in ["fullstack", "full stack", "full-stack"]):
+        return """ROLE-SPECIFIC FOCUS (Full-Stack Engineer):
+- End-to-end architecture decisions, monolith vs microservices
+- Frontend-backend communication patterns, API contracts
+- Database design, ORM usage, migration strategies
+- Authentication/authorization flows across stack
+- Deployment strategies, environment management, infrastructure as code
+- Performance optimization across the full stack
+- Testing strategies spanning frontend and backend"""
+
+    if any(k in role_lower or k in skills_lower for k in ["devops", "sre", "infrastructure", "cloud", "platform"]):
+        return """ROLE-SPECIFIC FOCUS (DevOps/SRE/Cloud Engineer):
+- Infrastructure as code (Terraform, Pulumi, CloudFormation)
+- Container orchestration (Kubernetes, ECS), service mesh (Istio)
+- CI/CD pipeline design, deployment strategies (blue-green, canary)
+- Monitoring, alerting, SLO/SLI definition, incident response
+- Cloud architecture (AWS, GCP, Azure), cost optimization
+- Security hardening, secrets management, compliance
+- Disaster recovery, backup strategies, chaos engineering"""
+
+    if any(k in role_lower or k in skills_lower for k in ["data engineer", "etl", "data pipeline", "analytics"]):
+        return """ROLE-SPECIFIC FOCUS (Data Engineer):
+- ETL/ELT pipeline design, data modeling (star schema, snowflake)
+- Stream processing (Kafka, Spark Streaming, Flink)
+- Data warehousing (Snowflake, BigQuery, Redshift)
+- Data quality, validation, lineage tracking
+- Orchestration (Airflow, Dagster, Prefect)
+- Lake architecture (Delta Lake, Iceberg), partitioning strategies
+- Performance optimization for large-scale data processing"""
+
+    if any(k in role_lower or k in skills_lower for k in ["mobile", "android", "ios", "flutter", "react native"]):
+        return """ROLE-SPECIFIC FOCUS (Mobile Engineer):
+- App architecture (MVVM, Clean Architecture, BLoC)
+- Performance optimization (memory, battery, network)
+- Offline-first design, local storage, sync strategies
+- Push notifications, deep linking, app lifecycle
+- Native vs cross-platform trade-offs
+- App store deployment, versioning, A/B testing
+- Security (certificate pinning, secure storage, obfuscation)"""
+
+    if any(k in role_lower or k in skills_lower for k in ["salesforce", "apex", "lwc", "crm"]):
+        return """ROLE-SPECIFIC FOCUS (Salesforce Developer):
+- Apex triggers (before/after), governor limits, bulkification
+- LWC lifecycle, component communication, wire service
+- SOQL/SOSL optimization, relationship queries
+- Integration patterns (REST/SOAP callouts, platform events)
+- Flows vs Apex, declarative vs programmatic
+- Security model (profiles, permission sets, sharing rules)
+- Deployment (change sets, SFDX, CI/CD for Salesforce)"""
+
+    # Generic technical role
+    return f"""ROLE-SPECIFIC FOCUS ({role}):
+- Focus on the specific technologies and frameworks mentioned in the JD and resume.
+- Ask about architecture decisions, implementation challenges, and optimization.
+- Probe into debugging experience, production issues, and scalability.
+- Cover tool/framework expertise relevant to the role."""
+
+
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium") -> List[dict]:
+    """Generate personalized, technically-focused interview questions.
+
+    Uses GPT-4.1-mini. Questions are generated per-candidate at invite time,
+    based on 80%+ technical content derived from the candidate's actual resume
+    (projects, skills, technologies) cross-referenced with JD requirements.
+    Semantic deduplication prevents any repeated questions within a session.
     """
     role = job.get("role", "developer")
     level = job.get("level", "mid")
@@ -298,132 +394,144 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
     default_duration = _DIFFICULTY_DURATION.get(difficulty, 120)
     session_seed = uuid.uuid4().hex[:8]
 
-    # Ask for extra questions so we have headroom after dedup
-    request_count = question_count + 3
+    # Request extra to allow dedup headroom
+    request_count = question_count + 4
 
     resume_context = _extract_resume_context(resume_data, job)
+    role_hints = _get_role_technology_hints(role, jd_skills)
 
-    # ── Difficulty-specific interviewer guidance ──────────────────────────
+    # ── Difficulty calibration ───────────────────────────────────────
     if difficulty == "easy":
-        difficulty_guidance = """EASY DIFFICULTY — Junior / Entry-Level / Fresher:
-- Focus on fundamental concepts, definitions, and basic understanding.
-- Ask about academic projects, internships, personal projects, and learning experiences.
-- Keep the technical depth moderate — verify the candidate understands core principles.
-- Example angles: 'What is...', 'How does X work?', 'Explain the concept of...', 'In your project, how did you...?'"""
+        diff_guidance = """DIFFICULTY: EASY (Junior/Fresher)
+- Ask about fundamental technical concepts and their application.
+- Probe into academic/personal projects — what they built, why, how.
+- Test understanding of tools and technologies listed on resume.
+- Keep questions implementation-focused but at an introductory depth.
+- Example: 'In your project [X], you used [Technology]. Explain how you set it up and what challenges you faced getting it to work.'"""
     elif difficulty == "hard":
-        difficulty_guidance = """HARD DIFFICULTY — Senior / Lead / Architect:
-- Focus on system design, architecture decisions, scalability, and production-grade problem solving.
-- Ask about performance optimization, debugging complex systems, technical leadership, and engineering trade-offs.
-- Expect the candidate to discuss real-world constraints: latency, throughput, cost, consistency vs availability.
-- Include scenario-based questions: "If you had to design...", "How would you handle a situation where..."
-- Ask about decision-making under ambiguity, cross-team influence, and mentoring."""
+        diff_guidance = """DIFFICULTY: HARD (Senior/Lead/Architect)
+- Ask about system design, architecture trade-offs, and production-scale challenges.
+- Probe into performance optimization, debugging complex distributed systems.
+- Test deep expertise: scalability decisions, failure modes, capacity planning.
+- Ask about technical leadership, mentoring, and cross-team decision-making.
+- Example: 'In your work at [Company], you built [System]. Walk me through how you designed it for scale — what were the critical architecture decisions, failure modes you planned for, and what would you redesign today?'"""
     else:
-        difficulty_guidance = """MEDIUM DIFFICULTY — Mid-Level / Experienced:
-- Focus on practical implementation, real-world debugging, trade-offs, and hands-on project experience.
-- Ask about specific technologies the candidate has used, challenges they faced, and how they resolved them.
-- Include scenario questions around production issues, code quality, API design, and collaboration.
-- Expect the candidate to explain their reasoning and the impact of their decisions."""
+        diff_guidance = """DIFFICULTY: MEDIUM (Mid-Level/Experienced)
+- Ask about real implementation details, debugging, and trade-offs from actual experience.
+- Probe into specific technical decisions made in projects and their outcomes.
+- Test problem-solving with practical scenarios tied to the role.
+- Example: 'You used [Framework] in your [Project]. Describe a specific technical challenge you hit during implementation and how you resolved it.'"""
 
-    prompt = f"""You are a highly experienced technical interviewer conducting a professional interview for a {level} {title} position. Your goal is to generate {request_count} high-quality, realistic interview questions that an experienced interviewer would ask in a real interview setting.
+    prompt = f"""You are a senior technical interviewer with 15+ years of industry experience. Generate {request_count} highly technical, personalized interview questions for a {level} {title} candidate.
 
-UNIQUENESS SEED: {session_seed}
+SESSION SEED: {session_seed}
 
-==============================
+======================================================================
 JOB DESCRIPTION
-==============================
-Title: {title}
-Role: {role}
-Seniority Level: {level}
-Must-Have Skills: {jd_skills or 'General ' + role + ' skills'}
+======================================================================
+Title: {title} | Role: {role} | Level: {level}
+Must-Have Skills: {jd_skills or 'N/A'}
 Good-to-Have Skills: {jd_nice or 'N/A'}
-Job Description:
-{jd_desc or 'N/A'}
+Description: {jd_desc or 'N/A'}
 
-==============================
-CANDIDATE RESUME
-==============================
+======================================================================
+CANDIDATE RESUME DATA
+======================================================================
 {resume_context}
 
-==============================
-DIFFICULTY LEVEL: {difficulty.upper()}
-==============================
-{difficulty_guidance}
+======================================================================
+{diff_guidance}
+======================================================================
 
-==============================
-QUESTION GENERATION STRATEGY
-==============================
-Generate a balanced mix of the following question categories:
+{role_hints}
 
-1. RESUME-BASED QUESTIONS (~30%)
-   Reference the candidate's specific work experience, companies, projects, and technologies from their resume.
-   Examples:
-   - "You worked on [Project Name] using [Technology]. Explain the architecture you implemented and the challenges you faced."
-   - "At [Company], you were a [Role]. Describe a significant technical decision you made there and its impact."
-   - "Your resume mentions experience with [Framework]. How did you use it in production, and what limitations did you encounter?"
+======================================================================
+QUESTION GENERATION REQUIREMENTS (STRICTLY FOLLOW)
+======================================================================
 
-2. JD/ROLE-BASED QUESTIONS (~25%)
-   Based on the job requirements — must-have and good-to-have skills, role responsibilities.
-   Examples:
-   - "This role requires [Skill from JD]. Describe your hands-on experience with it, including any production use cases."
-   - "The job involves [Responsibility]. How have you handled similar responsibilities in your previous roles?"
+You MUST generate questions in this distribution:
 
-3. SKILL-GAP & OVERLAP QUESTIONS (~20%)
-   For skills that MATCH between resume and JD: ask deeper, experience-based questions.
-   For skills that are MISSING from the resume but required by JD: ask foundational understanding questions.
-   Examples:
-   - (Matched) "You have experience with [Matched Skill] and this role heavily uses it. Describe the most complex problem you solved with it."
-   - (Missing) "This role requires [Missing Skill]. While it is not listed on your resume, what is your understanding of it and how would you approach ramping up?"
+1. RESUME-PROJECT TECHNICAL QUESTIONS (40% — approximately {int(request_count * 0.4)} questions)
+   Directly reference specific projects, companies, tools, or technologies from the candidate's resume.
+   These must be deeply technical and implementation-focused.
+   
+   GOOD examples:
+   - "In your RAG-based chatbot project, what chunking strategy did you use? How did you optimize retrieval latency and handle cases where the retrieved context was irrelevant?"
+   - "You mentioned using FAISS for vector search. How did you handle index updates when new documents were added? Did you use IVF or HNSW, and why?"
+   - "At [Company], you worked on API optimization. What specific bottlenecks did you identify, and what measurable improvements did you achieve?"
+   - "Your resume shows experience with Kubernetes. Describe how you handled rolling deployments and what strategy you used for zero-downtime releases."
 
-4. SCENARIO & PRACTICAL QUESTIONS (~15%)
-   Real-world problem-solving scenarios relevant to the role.
-   Examples:
-   - "Imagine you discover a critical performance bottleneck in production during peak traffic. Walk me through your diagnostic and resolution process."
-   - "If you were tasked with migrating a legacy monolith to microservices, what would be your phased approach?"
+2. JD SKILLS TECHNICAL QUESTIONS (30% — approximately {int(request_count * 0.3)} questions)
+   Based on must-have and good-to-have skills from the JD. Ask about implementation details,
+   architecture decisions, and real-world usage of these specific technologies.
+   
+   GOOD examples:
+   - "This role requires expertise in FastAPI. Describe how you structure a production FastAPI application — dependency injection, middleware, error handling, and async patterns you follow."
+   - "The JD mentions distributed systems. Explain how you would handle data consistency across microservices when network partitions occur."
+   - "Event-driven architecture is key for this role. Describe a system you built or worked on that used message queues — what technology did you use, how did you handle failures and ordering?"
 
-5. BEHAVIORAL & PROFESSIONAL QUESTIONS (~10%)
-   Leadership, teamwork, communication, handling pressure.
-   Examples:
-   - "Tell me about a time you had to push back on a technical decision made by a senior colleague. How did you handle it?"
-   - "Describe a project where requirements changed significantly mid-development. How did you adapt?"
+3. TECHNICAL SCENARIO QUESTIONS (20% — approximately {int(request_count * 0.2)} questions)
+   Real-world technical problems the candidate would face in this specific role.
+   These should test problem-solving, debugging, and architectural thinking.
+   
+   GOOD examples:
+   - "Your production API starts returning 5xx errors at 2 AM with a 10x traffic spike. Walk me through your complete debugging and resolution process from alert to fix."
+   - "You need to migrate a 500GB PostgreSQL database to a new schema with zero downtime. What is your step-by-step approach?"
+   - "A machine learning model in production starts showing degraded accuracy over 3 weeks. How do you diagnose whether it is data drift, concept drift, or a pipeline issue?"
 
-==============================
-CRITICAL RULES
-==============================
-1. QUESTION QUALITY: Questions must sound like they come from an experienced interviewer. They should be detailed, specific, and professional. Do NOT generate trivially short or generic questions.
-2. NO LENGTH RESTRICTIONS: Questions can be as detailed as needed. A well-framed question may be 2-4 sentences that set up context before asking. Do not force artificial brevity.
-3. ABSOLUTE UNIQUENESS: Every single question MUST be completely different in topic, angle, and phrasing. No two questions should test the same concept or skill from the same angle. If you generate {request_count} questions, all {request_count} must be distinct.
-4. NO FOLLOW-UPS: Every question is independent and standalone. NEVER reference other questions or the candidate's answers to other questions.
-5. NO CONVERSATIONAL PHRASES: Never use "Since you mentioned...", "Based on your earlier answer...", "You previously said...", "Following up on...", "As discussed earlier...".
-6. VERBAL ONLY: This is a spoken interview. No coding tasks, no whiteboard exercises, no "write a function" or "implement an algorithm" questions.
-7. NO GENERIC OPENERS: No "Tell me about yourself", "Walk me through your background", "Why do you want this job?".
-8. DIVERSITY: Vary the question structure — mix direct questions, scenario setups, experience probes, and conceptual discussions. Avoid repetitive phrasing patterns like starting every question with "Describe..." or "Explain...".
-9. USE THE SEED: Use the uniqueness seed {session_seed} to vary your topic selection, ordering, and phrasing. Every generation must feel fresh.
+4. SKILL-GAP PROBING QUESTIONS (10% — approximately {int(request_count * 0.1)} questions)
+   For skills required by the JD but NOT found on the resume — test foundational understanding.
+   For skills that MATCH between resume and JD — go deeper than surface level.
+   
+   GOOD examples:
+   - "The role requires [Missing Skill]. What is your current understanding of it, and how would you approach getting production-ready with it?"
+   - "You have [Matched Skill] experience and this role uses it heavily. Describe the most complex production issue you debugged involving it."
 
-Return ONLY a JSON array of EXACTLY {request_count} objects. Each object must have:
-- "text": the full question text (professional, detailed, no artificial length limits)
-- "type": one of "technical", "behavioral", or "situational"
-- "duration": {default_duration}
+======================================================================
+ABSOLUTE RULES (VIOLATIONS = REJECTED QUESTIONS)
+======================================================================
+1. TECHNICAL FOCUS: At least 80% of questions MUST be technical/implementation-focused. Do NOT pad with generic behavioral questions like 'What approaches do you take to produce project architecture?' or 'How do you handle teamwork?'
+2. NO GENERIC QUESTIONS: Every question must reference SPECIFIC technologies, projects, companies, or skills from the resume or JD. A question that could be asked to any random developer is WRONG.
+3. EVERY QUESTION IS INDEPENDENT: Never reference other questions or candidate answers. No 'Following up on...', 'Since you mentioned...', 'Based on your earlier answer...'.
+4. NO REPETITION: All {request_count} questions must cover completely different topics/technologies. No two questions about the same tool or concept.
+5. VERBAL ONLY: No coding tasks, no 'write a function', no whiteboard problems.
+6. NO FILLER: No 'Tell me about yourself', no 'Why this role?', no generic HR questions.
+7. NATURAL LENGTH: Questions should be as long as needed to set proper context. A good technical question is typically 2-4 sentences.
+8. USE SESSION SEED: Vary topics and phrasing using seed {session_seed}. Each generation must produce different questions.
 
-[{{"text": "...", "type": "technical|behavioral|situational", "duration": {default_duration}}}]
+======================================================================
+OUTPUT FORMAT
+======================================================================
+Return ONLY a JSON array of EXACTLY {request_count} objects:
+[{{{{
+  "text": "<detailed technical question referencing specific resume/JD content>",
+  "type": "technical",
+  "duration": {default_duration}
+}}}}]
+
+type must be one of: "technical", "situational", "behavioral" (use "behavioral" sparingly, max 1 question)
 """
 
-    logger.info("[generate_questions] job=%s role=%s difficulty=%s count=%s has_resume=%s",
-                title, role, difficulty, question_count, resume_data is not None)
+    logger.info("[generate_questions] job=%s role=%s difficulty=%s count=%s has_resume=%s seed=%s",
+                title, role, difficulty, question_count, resume_data is not None, session_seed)
 
     try:
         result = await openai.generate_json(prompt)
         questions = result if isinstance(result, list) else (result.get("questions") if isinstance(result, dict) else [])
 
-        questions = [q for q in questions if isinstance(q, dict) and isinstance(q.get("text"), str) and len(q["text"].strip()) > 20]
+        # Filter out empty/tiny questions
+        questions = [q for q in questions if isinstance(q, dict) and isinstance(q.get("text"), str) and len(q["text"].strip()) > 30]
 
         # Semantic deduplication
         questions = _deduplicate_questions(questions)
 
+        # Trim to requested count
         if len(questions) > question_count:
             questions = questions[:question_count]
         elif len(questions) < question_count:
             questions += get_fallback_questions(question_count - len(questions), role, difficulty)
 
+        # Normalize fields
         for q in questions:
             q["text"] = q["text"].strip()
             if not isinstance(q.get("duration"), int) or q["duration"] <= 0:
@@ -431,7 +539,7 @@ Return ONLY a JSON array of EXACTLY {request_count} objects. Each object must ha
             if q.get("type") not in ("technical", "behavioral", "situational"):
                 q["type"] = "technical"
 
-        logger.info("[generate_questions] generated %d questions (after dedup) for job=%s", len(questions), title)
+        logger.info("[generate_questions] generated %d questions (after dedup) for job=%s seed=%s", len(questions), title, session_seed)
         return questions
     except Exception as e:
         logger.error("[generate_questions] LLM failed, using fallbacks: %s", str(e))
@@ -476,7 +584,7 @@ async def invite_ai_interviews(
     def _fetch_job():
         return (
             db.client.from_("job_descriptions")
-            .select("id, title, role, level, must_have_skills, description")
+            .select("id, title, role, level, must_have_skills, good_to_have_skills, description")
             .eq("id", body.job_id)
             .eq("created_by", user.id)
             .single()
