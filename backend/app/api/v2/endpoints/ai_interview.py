@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re as _re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -56,37 +57,45 @@ def _normalize_questions(raw: Any) -> List[Dict[str, Any]]:
 
 
 def get_fallback_questions(question_count: int, role: str = "developer", difficulty: str = "medium") -> List[dict]:
-    """Role-appropriate fallback questions calibrated by difficulty (concise, max 2 statements)."""
+    """Professional fallback questions calibrated by difficulty."""
     dur = _DIFFICULTY_DURATION.get(difficulty, 120)
     easy = [
-        {"text": f"What core concepts of {role} development do you use most often? Explain one in detail.", "type": "technical", "duration": dur},
-        {"text": "Describe a recent project you worked on. What was your specific contribution?", "type": "situational", "duration": dur},
-        {"text": "How do you approach learning a new technology or framework?", "type": "behavioral", "duration": dur},
-        {"text": f"What tools and technologies do you use daily as a {role}?", "type": "technical", "duration": dur},
-        {"text": "Tell me about a challenge you faced in a team project and how you resolved it.", "type": "behavioral", "duration": dur},
-        {"text": "How do you ensure the quality of your code before submitting it?", "type": "technical", "duration": dur},
-        {"text": "Describe a time you had to meet a tight deadline. What did you prioritize?", "type": "situational", "duration": dur},
+        {"text": f"As a {role}, what fundamental concepts do you rely on most in your day-to-day work? Pick one and explain how it applies to a real project you have worked on.", "type": "technical", "duration": dur},
+        {"text": "Walk me through a recent project you contributed to. What was your role, what technologies were involved, and what was the outcome?", "type": "situational", "duration": dur},
+        {"text": "When you encounter a technology or framework you have never used before, what is your process for getting productive with it? Give a specific example.", "type": "behavioral", "duration": dur},
+        {"text": f"What development tools, IDEs, and workflows do you use as a {role}? How do they help you maintain productivity and code quality?", "type": "technical", "duration": dur},
+        {"text": "Describe a situation where you faced a blocker in a team project. How did you identify the issue and work with your team to resolve it?", "type": "behavioral", "duration": dur},
+        {"text": "Before submitting your code for review, what steps do you take to ensure quality? How do you handle testing and edge cases?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a time you had to deliver work under a tight deadline. What trade-offs did you make, and how did you ensure the most critical requirements were met?", "type": "situational", "duration": dur},
+        {"text": "Explain the difference between synchronous and asynchronous programming. In what scenarios would you choose one over the other?", "type": "technical", "duration": dur},
+        {"text": "How do you approach debugging when something breaks in your application? Walk me through your thought process with a real example.", "type": "technical", "duration": dur},
+        {"text": "Describe how version control fits into your development workflow. How do you handle branching, merging, and resolving conflicts?", "type": "technical", "duration": dur},
     ]
     medium = [
-        {"text": f"What is the most complex technical problem you solved as a {role}? Walk me through your approach.", "type": "technical", "duration": dur},
-        {"text": "Describe a production issue you debugged. How did you identify and fix the root cause?", "type": "situational", "duration": dur},
-        {"text": "How do you decide between different architectural approaches for a new feature?", "type": "technical", "duration": dur},
-        {"text": "Tell me about a trade-off you made between delivery speed and code quality.", "type": "situational", "duration": dur},
-        {"text": "How do you handle disagreements about technical decisions within your team?", "type": "behavioral", "duration": dur},
-        {"text": f"What performance optimization techniques have you applied in your {role} work?", "type": "technical", "duration": dur},
-        {"text": "Describe how you approach code reviews, both giving and receiving feedback.", "type": "behavioral", "duration": dur},
+        {"text": f"What is the most technically challenging problem you have solved as a {role}? Walk me through how you diagnosed the issue, what alternatives you considered, and why you chose the approach you did.", "type": "technical", "duration": dur},
+        {"text": "Describe a production incident you were involved in. How did you triage the issue, identify the root cause, and implement a fix under pressure?", "type": "situational", "duration": dur},
+        {"text": "When designing a new feature or service, how do you evaluate different architectural approaches? What factors influence your decision — scalability, maintainability, time-to-market?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a real situation where you had to make a trade-off between shipping fast and maintaining code quality. What did you decide, and what were the consequences?", "type": "situational", "duration": dur},
+        {"text": "How do you handle technical disagreements within your team? Give an example where you and a colleague had different approaches and explain how you resolved it.", "type": "behavioral", "duration": dur},
+        {"text": f"What performance optimization techniques have you applied in your {role} work? Describe a specific bottleneck you identified and how you measured and improved it.", "type": "technical", "duration": dur},
+        {"text": "Describe your approach to code reviews — both when reviewing others' code and when receiving feedback on your own. How do you ensure reviews are constructive and thorough?", "type": "behavioral", "duration": dur},
+        {"text": "How do you design APIs that are both performant and easy for other developers to consume? What principles guide your API design decisions?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a time you had to refactor a significant piece of legacy code. What was your strategy for ensuring nothing broke during the process?", "type": "situational", "duration": dur},
+        {"text": "How do you approach database schema design for a new feature? What considerations do you keep in mind regarding indexing, normalization, and query performance?", "type": "technical", "duration": dur},
     ]
     hard = [
-        {"text": f"Describe how you would design a scalable system for a high-traffic {role} application. What are the key architectural decisions?", "type": "technical", "duration": dur},
-        {"text": "Tell me about a time you led a major technical migration or refactor. What strategy did you use?", "type": "situational", "duration": dur},
-        {"text": "How do you ensure reliability and fault tolerance in distributed systems?", "type": "technical", "duration": dur},
-        {"text": "Describe a scenario where you had to mentor engineers on complex technical concepts.", "type": "behavioral", "duration": dur},
-        {"text": "What is your approach to capacity planning and performance bottleneck analysis?", "type": "technical", "duration": dur},
-        {"text": "Tell me about an engineering trade-off that had significant business impact. How did you evaluate the options?", "type": "situational", "duration": dur},
-        {"text": "How do you drive technical decisions across multiple teams with competing priorities?", "type": "behavioral", "duration": dur},
+        {"text": f"If you were asked to design a scalable, fault-tolerant system for a high-traffic {role} application from scratch, what architectural patterns would you choose? Walk me through your decisions on load balancing, caching, data partitioning, and failure recovery.", "type": "technical", "duration": dur},
+        {"text": "Tell me about a time you led or drove a major technical migration — for example, moving from a monolith to microservices, or migrating databases. What was your strategy, how did you manage risk, and what would you do differently?", "type": "situational", "duration": dur},
+        {"text": "How do you design systems for high availability and fault tolerance? Discuss the trade-offs between consistency and availability, and how you would apply them in a real-world distributed system.", "type": "technical", "duration": dur},
+        {"text": "Describe a scenario where you had to mentor or upskill other engineers on a complex technical topic. How did you structure your approach, and how did you measure whether the knowledge transfer was effective?", "type": "behavioral", "duration": dur},
+        {"text": "What is your approach to capacity planning for a rapidly growing system? How do you identify bottlenecks before they become incidents, and what monitoring and alerting strategies do you rely on?", "type": "technical", "duration": dur},
+        {"text": "Tell me about an engineering trade-off you made that had significant business impact. How did you evaluate the options, present them to stakeholders, and justify your recommendation?", "type": "situational", "duration": dur},
+        {"text": "How do you drive alignment on technical decisions across multiple teams with competing priorities and different tech stacks? Give a concrete example.", "type": "behavioral", "duration": dur},
+        {"text": "Describe how you would design a real-time data pipeline that needs to process millions of events per second with low latency. What technologies and architectural patterns would you use, and how would you handle backpressure and failures?", "type": "technical", "duration": dur},
+        {"text": "When optimizing a slow-performing system, what is your systematic approach? Walk me through how you profile, identify hotspots, and validate that your optimizations actually improved things without introducing regressions.", "type": "technical", "duration": dur},
+        {"text": "How do you approach security in system design? Discuss authentication, authorization, data encryption, and how you protect against common attack vectors in production systems.", "type": "technical", "duration": dur},
     ]
     pool = {"easy": easy, "medium": medium, "hard": hard}.get(difficulty, medium)
-    # Cycle through pool if more questions requested than available
     result = []
     for i in range(question_count):
         result.append(pool[i % len(pool)])
@@ -97,114 +106,305 @@ def get_fallback_questions(question_count: int, role: str = "developer", difficu
 _DIFFICULTY_DURATION = {"easy": 90, "medium": 120, "hard": 150}
 
 
-def _extract_resume_context(resume_data: Optional[dict]) -> str:
-    """Build a concise resume summary for the LLM prompt (skills, experience, education)."""
+# ---------------------------------------------------------------------------
+#  Resume + JD analysis helpers
+# ---------------------------------------------------------------------------
+
+def _extract_resume_context(resume_data: Optional[dict], job: Optional[dict] = None) -> str:
+    """Build a rich resume summary for the LLM prompt.
+
+    Includes skills, experience with descriptions, education, projects with
+    tech stacks, and — when a job dict is provided — an explicit breakdown of
+    matched vs missing skills so the LLM can target both.
+    """
     if not resume_data or not isinstance(resume_data, dict):
         return "No resume data available."
 
     parts: List[str] = []
 
-    # Skills
-    skills = resume_data.get("skills")
-    if isinstance(skills, list) and skills:
-        parts.append(f"Skills: {', '.join(str(s) for s in skills[:20])}")
+    # --- Skills ---------------------------------------------------------------
+    skills_raw = resume_data.get("skills")
+    candidate_skills: List[str] = []
+    if isinstance(skills_raw, list):
+        candidate_skills = [str(s).strip() for s in skills_raw if str(s).strip()][:25]
+    if candidate_skills:
+        parts.append(f"Skills: {', '.join(candidate_skills)}")
 
-    # Experience
+    # --- Matched / Missing skill analysis (when JD is available) -------------
+    if job and isinstance(job, dict):
+        jd_must = [str(s).strip().lower() for s in (job.get("must_have_skills") or []) if isinstance(s, str)]
+        jd_nice = [str(s).strip().lower() for s in (job.get("good_to_have_skills") or []) if isinstance(s, str)]
+        cand_lower = {s.lower() for s in candidate_skills}
+
+        matched_must = [s for s in jd_must if s in cand_lower]
+        missing_must = [s for s in jd_must if s not in cand_lower]
+        matched_nice = [s for s in jd_nice if s in cand_lower]
+        missing_nice = [s for s in jd_nice if s not in cand_lower]
+
+        skill_analysis: List[str] = []
+        if matched_must:
+            skill_analysis.append(f"  Matched must-have: {', '.join(matched_must)}")
+        if missing_must:
+            skill_analysis.append(f"  Missing must-have: {', '.join(missing_must)}")
+        if matched_nice:
+            skill_analysis.append(f"  Matched nice-to-have: {', '.join(matched_nice)}")
+        if missing_nice:
+            skill_analysis.append(f"  Missing nice-to-have: {', '.join(missing_nice)}")
+        if skill_analysis:
+            parts.append("Skill-Match Analysis:\n" + "\n".join(skill_analysis))
+
+    # --- Experience -----------------------------------------------------------
     exp = resume_data.get("experience")
     if isinstance(exp, list):
         exp_lines = []
-        for e in exp[:4]:
+        for e in exp[:5]:
             if not isinstance(e, dict):
                 continue
             title = e.get("title") or e.get("role") or ""
             company = e.get("company") or e.get("organization") or ""
             desc = e.get("description") or e.get("summary") or ""
+            duration = e.get("duration") or e.get("period") or ""
             line = f"{title} at {company}".strip()
+            if duration:
+                line += f" ({str(duration).strip()})"
             if desc:
-                line += f" — {str(desc)[:150]}"
+                line += f" — {str(desc)[:250]}"
             if line.strip():
                 exp_lines.append(line)
         if exp_lines:
-            parts.append("Experience:\n" + "\n".join(f"  • {l}" for l in exp_lines))
+            parts.append("Work Experience:\n" + "\n".join(f"  • {l}" for l in exp_lines))
     elif isinstance(exp, str) and exp.strip():
-        parts.append(f"Experience: {exp[:400]}")
+        parts.append(f"Work Experience: {exp[:500]}")
 
-    # Education
+    # --- Total experience -----------------------------------------------------
+    total_yrs = resume_data.get("total_experience_years")
+    if total_yrs is not None:
+        try:
+            parts.append(f"Total Experience: {float(total_yrs):.1f} years")
+        except (TypeError, ValueError):
+            pass
+
+    # --- Education ------------------------------------------------------------
     edu = resume_data.get("education")
     if isinstance(edu, list):
         edu_lines = []
-        for e in edu[:2]:
+        for e in edu[:3]:
             if not isinstance(e, dict):
                 continue
             degree = e.get("degree") or ""
             inst = e.get("institution") or e.get("university") or ""
-            line = f"{degree} from {inst}".strip()
-            if line.strip():
+            field = e.get("field") or e.get("major") or ""
+            line = f"{degree}"
+            if field:
+                line += f" in {field}"
+            if inst:
+                line += f" from {inst}"
+            line = line.strip()
+            if line:
                 edu_lines.append(line)
         if edu_lines:
             parts.append("Education: " + "; ".join(edu_lines))
 
-    # Projects
+    # --- Projects with details ------------------------------------------------
     projects = resume_data.get("projects")
     if isinstance(projects, list):
-        proj_names = [str(p.get("name") or p.get("title") or "") for p in projects[:3] if isinstance(p, dict)]
-        proj_names = [n for n in proj_names if n.strip()]
-        if proj_names:
-            parts.append(f"Projects: {', '.join(proj_names)}")
+        proj_lines = []
+        for p in projects[:4]:
+            if not isinstance(p, dict):
+                continue
+            name = str(p.get("name") or p.get("title") or "").strip()
+            tech = p.get("technologies") or p.get("tech_stack") or p.get("tools") or []
+            desc = str(p.get("description") or "")[:200]
+            if not name:
+                continue
+            line = name
+            if isinstance(tech, list) and tech:
+                line += f" [{', '.join(str(t) for t in tech[:6])}]"
+            if desc:
+                line += f" — {desc}"
+            proj_lines.append(line)
+        if proj_lines:
+            parts.append("Projects:\n" + "\n".join(f"  • {l}" for l in proj_lines))
+
+    # --- Certifications -------------------------------------------------------
+    certs = resume_data.get("certifications") or resume_data.get("certificates")
+    if isinstance(certs, list) and certs:
+        cert_names = [str(c.get("name") or c) for c in certs[:5] if c]
+        cert_names = [n for n in cert_names if n.strip()]
+        if cert_names:
+            parts.append(f"Certifications: {', '.join(cert_names)}")
 
     return "\n".join(parts) if parts else "No resume data available."
 
 
-async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium") -> List[dict]:
-    """Generate personalized interview questions using 50% JD + 50% candidate resume.
+# ---------------------------------------------------------------------------
+#  Semantic deduplication
+# ---------------------------------------------------------------------------
 
-    Uses GPT-4.1-mini via the shared OpenAI service. Each candidate gets unique
-    questions based on their individual resume and the common job description.
-    Questions are concise (max 2 statements), non-adaptive, and difficulty-calibrated.
+_STOP_WORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "must", "can", "to", "of", "in", "for",
+    "on", "with", "at", "by", "from", "as", "into", "about", "your",
+    "this", "that", "which", "what", "when", "where", "how", "why",
+    "if", "or", "and", "but", "not", "no", "so", "than", "then",
+    "its", "it", "you", "me", "my", "we", "our", "they", "them",
+    "tell", "describe", "explain", "walk", "through", "give", "example",
+}
+
+
+def _question_fingerprint(text: str) -> str:
+    """Return a normalised keyword string for near-duplicate detection."""
+    words = _re.sub(r"[^a-z0-9\s]", " ", text.lower()).split()
+    keywords = sorted(set(w for w in words if len(w) > 2 and w not in _STOP_WORDS))[:10]
+    return " ".join(keywords)
+
+
+def _deduplicate_questions(questions: List[dict]) -> List[dict]:
+    """Remove near-duplicate questions by keyword fingerprint."""
+    seen: set = set()
+    unique: List[dict] = []
+    for q in questions:
+        fp = _question_fingerprint(q.get("text", ""))
+        if fp in seen:
+            logger.info("[generate_questions] dedup: dropping duplicate fingerprint=%s", fp)
+            continue
+        seen.add(fp)
+        unique.append(q)
+    return unique
+
+
+# ---------------------------------------------------------------------------
+#  Core question generation
+# ---------------------------------------------------------------------------
+
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium") -> List[dict]:
+    """Generate personalized, professional interview questions.
+
+    Uses GPT-4.1-mini via the shared OpenAI service. Each candidate gets
+    unique questions based on their individual resume and the common JD.
+    Questions are non-adaptive and difficulty-calibrated. Post-generation
+    semantic deduplication ensures no repeated or near-duplicate questions.
     """
     role = job.get("role", "developer")
     level = job.get("level", "mid")
     title = job.get("title", "Software Developer")
-    jd_skills = ", ".join(job.get("must_have_skills") or []) if isinstance(job.get("must_have_skills"), list) else ""
-    jd_nice = ", ".join(job.get("good_to_have_skills") or []) if isinstance(job.get("good_to_have_skills"), list) else ""
-    jd_desc = str(job.get("description") or "")[:600]
+    jd_must_raw = job.get("must_have_skills") or []
+    jd_nice_raw = job.get("good_to_have_skills") or []
+    jd_skills = ", ".join(jd_must_raw) if isinstance(jd_must_raw, list) else str(jd_must_raw)
+    jd_nice = ", ".join(jd_nice_raw) if isinstance(jd_nice_raw, list) else str(jd_nice_raw)
+    jd_desc = str(job.get("description") or "")[:800]
     difficulty = (difficulty or "medium").strip().lower()
     default_duration = _DIFFICULTY_DURATION.get(difficulty, 120)
     session_seed = uuid.uuid4().hex[:8]
 
-    resume_context = _extract_resume_context(resume_data)
+    # Ask for extra questions so we have headroom after dedup
+    request_count = question_count + 3
 
-    prompt = f"""You are an expert technical interviewer. Generate EXACTLY {question_count} interview questions for a {level} {title} role.
+    resume_context = _extract_resume_context(resume_data, job)
 
-SEED: {session_seed}
+    # ── Difficulty-specific interviewer guidance ──────────────────────────
+    if difficulty == "easy":
+        difficulty_guidance = """EASY DIFFICULTY — Junior / Entry-Level / Fresher:
+- Focus on fundamental concepts, definitions, and basic understanding.
+- Ask about academic projects, internships, personal projects, and learning experiences.
+- Keep the technical depth moderate — verify the candidate understands core principles.
+- Example angles: 'What is...', 'How does X work?', 'Explain the concept of...', 'In your project, how did you...?'"""
+    elif difficulty == "hard":
+        difficulty_guidance = """HARD DIFFICULTY — Senior / Lead / Architect:
+- Focus on system design, architecture decisions, scalability, and production-grade problem solving.
+- Ask about performance optimization, debugging complex systems, technical leadership, and engineering trade-offs.
+- Expect the candidate to discuss real-world constraints: latency, throughput, cost, consistency vs availability.
+- Include scenario-based questions: "If you had to design...", "How would you handle a situation where..."
+- Ask about decision-making under ambiguity, cross-team influence, and mentoring."""
+    else:
+        difficulty_guidance = """MEDIUM DIFFICULTY — Mid-Level / Experienced:
+- Focus on practical implementation, real-world debugging, trade-offs, and hands-on project experience.
+- Ask about specific technologies the candidate has used, challenges they faced, and how they resolved them.
+- Include scenario questions around production issues, code quality, API design, and collaboration.
+- Expect the candidate to explain their reasoning and the impact of their decisions."""
 
-=== JOB DESCRIPTION (50% weight) ===
-Title: {title} | Role: {role} | Level: {level}
+    prompt = f"""You are a highly experienced technical interviewer conducting a professional interview for a {level} {title} position. Your goal is to generate {request_count} high-quality, realistic interview questions that an experienced interviewer would ask in a real interview setting.
+
+UNIQUENESS SEED: {session_seed}
+
+==============================
+JOB DESCRIPTION
+==============================
+Title: {title}
+Role: {role}
+Seniority Level: {level}
 Must-Have Skills: {jd_skills or 'General ' + role + ' skills'}
-Nice-to-Have Skills: {jd_nice or 'N/A'}
-Description: {jd_desc or 'N/A'}
+Good-to-Have Skills: {jd_nice or 'N/A'}
+Job Description:
+{jd_desc or 'N/A'}
 
-=== CANDIDATE RESUME (50% weight) ===
+==============================
+CANDIDATE RESUME
+==============================
 {resume_context}
 
-=== DIFFICULTY: {difficulty.upper()} ===
-{'EASY: Ask about fundamentals, basic concepts, definitions, and simple project experiences. Suitable for freshers or junior candidates.' if difficulty == 'easy' else 'MEDIUM: Ask about implementation details, practical scenarios, debugging, trade-offs, and real-world project challenges. Suitable for mid-level candidates.' if difficulty == 'medium' else 'HARD: Ask about system design, advanced architecture, scalability, performance optimization, and complex problem solving. Suitable for senior/lead candidates.'}
+==============================
+DIFFICULTY LEVEL: {difficulty.upper()}
+==============================
+{difficulty_guidance}
 
-=== STRICT RULES ===
-1. CONCISENESS: Each question must be maximum 2 sentences. No lengthy paragraphs.
-2. 50/50 BALANCE: Half the questions based on the candidate resume, half on JD requirements. Focus on OVERLAPPING skills and technologies.
-3. LINKING QUESTIONS: Where the resume matches the JD (e.g., same technology, similar role), generate direct linking questions that reference the candidate's actual experience. Examples:
-   - "Explain your experience at [Company] working on [Technology]."
-   - "Describe your role while building [Project Name] mentioned in your resume."
-4. NO FOLLOW-UPS: Every question is independent. NEVER reference previous questions or candidate answers.
-5. NO CONVERSATIONAL PHRASES: Do not use "Since you mentioned...", "Based on your earlier answer...", "You previously said...", "Following up on...".
-6. VERBAL ONLY: No coding tasks, no whiteboard problems, no "write a function" questions.
-7. NO GENERIC OPENERS: No "Tell me about yourself" or "Walk me through your background".
-8. PRACTICAL: Questions should be interview-style — direct, professional, and technically relevant.
-9. DIVERSITY: Vary question types across technical, behavioral, and situational.
+==============================
+QUESTION GENERATION STRATEGY
+==============================
+Generate a balanced mix of the following question categories:
 
-Return ONLY a JSON array of EXACTLY {question_count} objects:
-[{{"text": "<concise question, max 2 sentences>", "type": "technical|behavioral|situational", "duration": {default_duration}}}]
+1. RESUME-BASED QUESTIONS (~30%)
+   Reference the candidate's specific work experience, companies, projects, and technologies from their resume.
+   Examples:
+   - "You worked on [Project Name] using [Technology]. Explain the architecture you implemented and the challenges you faced."
+   - "At [Company], you were a [Role]. Describe a significant technical decision you made there and its impact."
+   - "Your resume mentions experience with [Framework]. How did you use it in production, and what limitations did you encounter?"
+
+2. JD/ROLE-BASED QUESTIONS (~25%)
+   Based on the job requirements — must-have and good-to-have skills, role responsibilities.
+   Examples:
+   - "This role requires [Skill from JD]. Describe your hands-on experience with it, including any production use cases."
+   - "The job involves [Responsibility]. How have you handled similar responsibilities in your previous roles?"
+
+3. SKILL-GAP & OVERLAP QUESTIONS (~20%)
+   For skills that MATCH between resume and JD: ask deeper, experience-based questions.
+   For skills that are MISSING from the resume but required by JD: ask foundational understanding questions.
+   Examples:
+   - (Matched) "You have experience with [Matched Skill] and this role heavily uses it. Describe the most complex problem you solved with it."
+   - (Missing) "This role requires [Missing Skill]. While it is not listed on your resume, what is your understanding of it and how would you approach ramping up?"
+
+4. SCENARIO & PRACTICAL QUESTIONS (~15%)
+   Real-world problem-solving scenarios relevant to the role.
+   Examples:
+   - "Imagine you discover a critical performance bottleneck in production during peak traffic. Walk me through your diagnostic and resolution process."
+   - "If you were tasked with migrating a legacy monolith to microservices, what would be your phased approach?"
+
+5. BEHAVIORAL & PROFESSIONAL QUESTIONS (~10%)
+   Leadership, teamwork, communication, handling pressure.
+   Examples:
+   - "Tell me about a time you had to push back on a technical decision made by a senior colleague. How did you handle it?"
+   - "Describe a project where requirements changed significantly mid-development. How did you adapt?"
+
+==============================
+CRITICAL RULES
+==============================
+1. QUESTION QUALITY: Questions must sound like they come from an experienced interviewer. They should be detailed, specific, and professional. Do NOT generate trivially short or generic questions.
+2. NO LENGTH RESTRICTIONS: Questions can be as detailed as needed. A well-framed question may be 2-4 sentences that set up context before asking. Do not force artificial brevity.
+3. ABSOLUTE UNIQUENESS: Every single question MUST be completely different in topic, angle, and phrasing. No two questions should test the same concept or skill from the same angle. If you generate {request_count} questions, all {request_count} must be distinct.
+4. NO FOLLOW-UPS: Every question is independent and standalone. NEVER reference other questions or the candidate's answers to other questions.
+5. NO CONVERSATIONAL PHRASES: Never use "Since you mentioned...", "Based on your earlier answer...", "You previously said...", "Following up on...", "As discussed earlier...".
+6. VERBAL ONLY: This is a spoken interview. No coding tasks, no whiteboard exercises, no "write a function" or "implement an algorithm" questions.
+7. NO GENERIC OPENERS: No "Tell me about yourself", "Walk me through your background", "Why do you want this job?".
+8. DIVERSITY: Vary the question structure — mix direct questions, scenario setups, experience probes, and conceptual discussions. Avoid repetitive phrasing patterns like starting every question with "Describe..." or "Explain...".
+9. USE THE SEED: Use the uniqueness seed {session_seed} to vary your topic selection, ordering, and phrasing. Every generation must feel fresh.
+
+Return ONLY a JSON array of EXACTLY {request_count} objects. Each object must have:
+- "text": the full question text (professional, detailed, no artificial length limits)
+- "type": one of "technical", "behavioral", or "situational"
+- "duration": {default_duration}
+
+[{{"text": "...", "type": "technical|behavioral|situational", "duration": {default_duration}}}]
 """
 
     logger.info("[generate_questions] job=%s role=%s difficulty=%s count=%s has_resume=%s",
@@ -214,17 +414,24 @@ Return ONLY a JSON array of EXACTLY {question_count} objects:
         result = await openai.generate_json(prompt)
         questions = result if isinstance(result, list) else (result.get("questions") if isinstance(result, dict) else [])
 
-        questions = [q for q in questions if isinstance(q, dict) and q.get("text")]
+        questions = [q for q in questions if isinstance(q, dict) and isinstance(q.get("text"), str) and len(q["text"].strip()) > 20]
+
+        # Semantic deduplication
+        questions = _deduplicate_questions(questions)
+
         if len(questions) > question_count:
             questions = questions[:question_count]
         elif len(questions) < question_count:
             questions += get_fallback_questions(question_count - len(questions), role, difficulty)
 
         for q in questions:
+            q["text"] = q["text"].strip()
             if not isinstance(q.get("duration"), int) or q["duration"] <= 0:
                 q["duration"] = default_duration
+            if q.get("type") not in ("technical", "behavioral", "situational"):
+                q["type"] = "technical"
 
-        logger.info("[generate_questions] generated %d questions for job=%s", len(questions), title)
+        logger.info("[generate_questions] generated %d questions (after dedup) for job=%s", len(questions), title)
         return questions
     except Exception as e:
         logger.error("[generate_questions] LLM failed, using fallbacks: %s", str(e))
