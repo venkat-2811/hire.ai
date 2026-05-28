@@ -56,118 +56,178 @@ def _normalize_questions(raw: Any) -> List[Dict[str, Any]]:
 
 
 def get_fallback_questions(question_count: int, role: str = "developer", difficulty: str = "medium") -> List[dict]:
-    """Role-appropriate fallback questions calibrated by difficulty."""
+    """Role-appropriate fallback questions calibrated by difficulty (concise, max 2 statements)."""
     dur = _DIFFICULTY_DURATION.get(difficulty, 120)
-    base_questions = [
-        {"text": f"What is the most technically complex challenge you have solved in your {role} work, and how did you approach it?", "type": "technical", "duration": dur},
-        {"text": "Describe a project where you had to balance quality with a tight deadline — what trade-offs did you make?", "type": "situational", "duration": dur},
-        {"text": "How do you keep your technical skills sharp, and what have you learned in the last three months?", "type": "behavioral", "duration": dur},
-        {"text": f"What does good code quality mean to you in a {role} context, and how do you enforce it?", "type": "technical", "duration": dur},
-        {"text": "Tell me about a time you disagreed with a technical decision made by your team — how did you handle it?", "type": "behavioral", "duration": dur},
-        {"text": "Describe a production issue you dealt with. How did you diagnose and resolve it under pressure?", "type": "situational", "duration": dur},
-        {"text": "How do you approach onboarding onto an unfamiliar codebase or technology stack?", "type": "situational", "duration": dur},
-        {"text": f"Which aspect of {role} development do you find most interesting and why?", "type": "behavioral", "duration": dur},
-        {"text": "Walk me through how you would design a system to handle 10x the current load.", "type": "technical", "duration": dur},
-        {"text": "Describe a situation where you had to influence a technical direction without direct authority.", "type": "behavioral", "duration": dur},
-        {"text": "How do you approach writing automated tests, and what is your philosophy around test coverage?", "type": "technical", "duration": dur},
-        {"text": "Tell me about a time a project did not go as planned — what did you learn from it?", "type": "situational", "duration": dur},
-        {"text": "How do you prioritize competing tasks when multiple stakeholders have urgent requests?", "type": "situational", "duration": dur},
-        {"text": "What is your approach to code reviews — both giving and receiving feedback?", "type": "behavioral", "duration": dur},
-        {"text": f"Where do you want to grow professionally in the next two years as a {role}?", "type": "behavioral", "duration": dur},
-        {"text": "Describe a time you refactored legacy code. What was your strategy and what were the outcomes?", "type": "technical", "duration": dur},
-        {"text": "How do you handle ambiguity when requirements are unclear or changing frequently?", "type": "situational", "duration": dur},
-        {"text": "Tell me about a collaboration with a non-technical stakeholder — how did you bridge the gap?", "type": "behavioral", "duration": dur},
-        {"text": "What observability or monitoring practices do you apply to systems you own?", "type": "technical", "duration": dur},
-        {"text": "Describe a technical decision you made that you later regretted — what would you do differently?", "type": "situational", "duration": dur},
+    easy = [
+        {"text": f"What core concepts of {role} development do you use most often? Explain one in detail.", "type": "technical", "duration": dur},
+        {"text": "Describe a recent project you worked on. What was your specific contribution?", "type": "situational", "duration": dur},
+        {"text": "How do you approach learning a new technology or framework?", "type": "behavioral", "duration": dur},
+        {"text": f"What tools and technologies do you use daily as a {role}?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a challenge you faced in a team project and how you resolved it.", "type": "behavioral", "duration": dur},
+        {"text": "How do you ensure the quality of your code before submitting it?", "type": "technical", "duration": dur},
+        {"text": "Describe a time you had to meet a tight deadline. What did you prioritize?", "type": "situational", "duration": dur},
     ]
-    return base_questions[:question_count]
+    medium = [
+        {"text": f"What is the most complex technical problem you solved as a {role}? Walk me through your approach.", "type": "technical", "duration": dur},
+        {"text": "Describe a production issue you debugged. How did you identify and fix the root cause?", "type": "situational", "duration": dur},
+        {"text": "How do you decide between different architectural approaches for a new feature?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a trade-off you made between delivery speed and code quality.", "type": "situational", "duration": dur},
+        {"text": "How do you handle disagreements about technical decisions within your team?", "type": "behavioral", "duration": dur},
+        {"text": f"What performance optimization techniques have you applied in your {role} work?", "type": "technical", "duration": dur},
+        {"text": "Describe how you approach code reviews, both giving and receiving feedback.", "type": "behavioral", "duration": dur},
+    ]
+    hard = [
+        {"text": f"Describe how you would design a scalable system for a high-traffic {role} application. What are the key architectural decisions?", "type": "technical", "duration": dur},
+        {"text": "Tell me about a time you led a major technical migration or refactor. What strategy did you use?", "type": "situational", "duration": dur},
+        {"text": "How do you ensure reliability and fault tolerance in distributed systems?", "type": "technical", "duration": dur},
+        {"text": "Describe a scenario where you had to mentor engineers on complex technical concepts.", "type": "behavioral", "duration": dur},
+        {"text": "What is your approach to capacity planning and performance bottleneck analysis?", "type": "technical", "duration": dur},
+        {"text": "Tell me about an engineering trade-off that had significant business impact. How did you evaluate the options?", "type": "situational", "duration": dur},
+        {"text": "How do you drive technical decisions across multiple teams with competing priorities?", "type": "behavioral", "duration": dur},
+    ]
+    pool = {"easy": easy, "medium": medium, "hard": hard}.get(difficulty, medium)
+    # Cycle through pool if more questions requested than available
+    result = []
+    for i in range(question_count):
+        result.append(pool[i % len(pool)])
+    return result
 
 
 # Duration in seconds per difficulty level
 _DIFFICULTY_DURATION = {"easy": 90, "medium": 120, "hard": 150}
 
 
+def _extract_resume_context(resume_data: Optional[dict]) -> str:
+    """Build a concise resume summary for the LLM prompt (skills, experience, education)."""
+    if not resume_data or not isinstance(resume_data, dict):
+        return "No resume data available."
+
+    parts: List[str] = []
+
+    # Skills
+    skills = resume_data.get("skills")
+    if isinstance(skills, list) and skills:
+        parts.append(f"Skills: {', '.join(str(s) for s in skills[:20])}")
+
+    # Experience
+    exp = resume_data.get("experience")
+    if isinstance(exp, list):
+        exp_lines = []
+        for e in exp[:4]:
+            if not isinstance(e, dict):
+                continue
+            title = e.get("title") or e.get("role") or ""
+            company = e.get("company") or e.get("organization") or ""
+            desc = e.get("description") or e.get("summary") or ""
+            line = f"{title} at {company}".strip()
+            if desc:
+                line += f" — {str(desc)[:150]}"
+            if line.strip():
+                exp_lines.append(line)
+        if exp_lines:
+            parts.append("Experience:\n" + "\n".join(f"  • {l}" for l in exp_lines))
+    elif isinstance(exp, str) and exp.strip():
+        parts.append(f"Experience: {exp[:400]}")
+
+    # Education
+    edu = resume_data.get("education")
+    if isinstance(edu, list):
+        edu_lines = []
+        for e in edu[:2]:
+            if not isinstance(e, dict):
+                continue
+            degree = e.get("degree") or ""
+            inst = e.get("institution") or e.get("university") or ""
+            line = f"{degree} from {inst}".strip()
+            if line.strip():
+                edu_lines.append(line)
+        if edu_lines:
+            parts.append("Education: " + "; ".join(edu_lines))
+
+    # Projects
+    projects = resume_data.get("projects")
+    if isinstance(projects, list):
+        proj_names = [str(p.get("name") or p.get("title") or "") for p in projects[:3] if isinstance(p, dict)]
+        proj_names = [n for n in proj_names if n.strip()]
+        if proj_names:
+            parts.append(f"Projects: {', '.join(proj_names)}")
+
+    return "\n".join(parts) if parts else "No resume data available."
+
+
 async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium") -> List[dict]:
-    """Generate personalized, difficulty-calibrated interview questions using AI."""
+    """Generate personalized interview questions using 50% JD + 50% candidate resume.
+
+    Uses GPT-4.1-mini via the shared OpenAI service. Each candidate gets unique
+    questions based on their individual resume and the common job description.
+    Questions are concise (max 2 statements), non-adaptive, and difficulty-calibrated.
+    """
     role = job.get("role", "developer")
     level = job.get("level", "mid")
     title = job.get("title", "Software Developer")
-    skills = ", ".join(job.get("must_have_skills") or []) if isinstance(job.get("must_have_skills"), list) else ""
+    jd_skills = ", ".join(job.get("must_have_skills") or []) if isinstance(job.get("must_have_skills"), list) else ""
+    jd_nice = ", ".join(job.get("good_to_have_skills") or []) if isinstance(job.get("good_to_have_skills"), list) else ""
+    jd_desc = str(job.get("description") or "")[:600]
     difficulty = (difficulty or "medium").strip().lower()
     default_duration = _DIFFICULTY_DURATION.get(difficulty, 120)
-
-    technical_count = max(1, int(question_count * 0.4))
-    behavioral_count = max(1, int(question_count * 0.3))
-    situational_count = max(1, int(question_count * 0.2))
-    motivation_count = max(0, question_count - technical_count - behavioral_count - situational_count)
-
-    difficulty_config = {
-        "easy": {
-            "desc": "fundamental concepts and straightforward scenarios for junior/entry-level candidates",
-            "tech_style": "Ask about core concepts, basic usage, and simple implementations. Avoid architecture or production-scale problems.",
-            "behavioral_style": "Focus on learning experiences, academic projects, internships, and team collaboration.",
-        },
-        "medium": {
-            "desc": "intermediate concepts and practical real-world scenarios for mid-level candidates",
-            "tech_style": "Ask about real projects, trade-offs, debugging experience, and practical optimizations.",
-            "behavioral_style": "Focus on cross-team work, ownership of deliverables, handling complexity, and growth.",
-        },
-        "hard": {
-            "desc": "advanced concepts, system design, and complex production scenarios for senior candidates",
-            "tech_style": "Ask about architecture decisions, scalability, reliability, performance bottlenecks, and engineering trade-offs.",
-            "behavioral_style": "Focus on leadership, mentoring, influencing decisions, managing ambiguity, and organizational impact.",
-        },
-    }
-    cfg = difficulty_config.get(difficulty, difficulty_config["medium"])
     session_seed = uuid.uuid4().hex[:8]
 
-    prompt = f"""You are an expert technical interviewer. Generate EXACTLY {question_count} independent, verbal interview questions for a {level} {title} role.
+    resume_context = _extract_resume_context(resume_data)
 
-SESSION SEED: {session_seed}  ← use this to vary phrasing and topic order uniquely each time.
+    prompt = f"""You are an expert technical interviewer. Generate EXACTLY {question_count} interview questions for a {level} {title} role.
 
-ROLE: {title} ({level})
-KEY SKILLS: {skills or role}
-DIFFICULTY: {difficulty.upper()} — {cfg['desc']}
+SEED: {session_seed}
 
-QUESTION DISTRIBUTION:
-- {technical_count} Technical: {cfg['tech_style']}
-- {behavioral_count} Behavioral: {cfg['behavioral_style']}
-- {situational_count} Situational/problem-solving
-- {motivation_count} Career goals/motivation
+=== JOB DESCRIPTION (50% weight) ===
+Title: {title} | Role: {role} | Level: {level}
+Must-Have Skills: {jd_skills or 'General ' + role + ' skills'}
+Nice-to-Have Skills: {jd_nice or 'N/A'}
+Description: {jd_desc or 'N/A'}
 
-CANDIDATE BACKGROUND (use to personalise questions):
-{str(resume_data)[:1200] if resume_data else 'No resume data — use role-specific domain questions.'}
+=== CANDIDATE RESUME (50% weight) ===
+{resume_context}
 
-RULES:
-1. NO generic openers like "Tell me about yourself" or "Walk me through your background".
-2. Start each question with a direct, specific angle tied to the role or candidate background.
-3. Every question must stand completely alone — no follow-up or referencing a previous question.
-4. VERBAL ONLY — no live coding, whiteboard algorithms, or syntax writing.
-5. Calibrate depth strictly to {difficulty.upper()}: {'straightforward, conceptual' if difficulty == 'easy' else 'practical, trade-off oriented' if difficulty == 'medium' else 'architectural, production-scale, nuanced'}.
-6. Maximum diversity — vary structure, topic, and phrasing across all {question_count} questions.
+=== DIFFICULTY: {difficulty.upper()} ===
+{'EASY: Ask about fundamentals, basic concepts, definitions, and simple project experiences. Suitable for freshers or junior candidates.' if difficulty == 'easy' else 'MEDIUM: Ask about implementation details, practical scenarios, debugging, trade-offs, and real-world project challenges. Suitable for mid-level candidates.' if difficulty == 'medium' else 'HARD: Ask about system design, advanced architecture, scalability, performance optimization, and complex problem solving. Suitable for senior/lead candidates.'}
+
+=== STRICT RULES ===
+1. CONCISENESS: Each question must be maximum 2 sentences. No lengthy paragraphs.
+2. 50/50 BALANCE: Half the questions based on the candidate resume, half on JD requirements. Focus on OVERLAPPING skills and technologies.
+3. LINKING QUESTIONS: Where the resume matches the JD (e.g., same technology, similar role), generate direct linking questions that reference the candidate's actual experience. Examples:
+   - "Explain your experience at [Company] working on [Technology]."
+   - "Describe your role while building [Project Name] mentioned in your resume."
+4. NO FOLLOW-UPS: Every question is independent. NEVER reference previous questions or candidate answers.
+5. NO CONVERSATIONAL PHRASES: Do not use "Since you mentioned...", "Based on your earlier answer...", "You previously said...", "Following up on...".
+6. VERBAL ONLY: No coding tasks, no whiteboard problems, no "write a function" questions.
+7. NO GENERIC OPENERS: No "Tell me about yourself" or "Walk me through your background".
+8. PRACTICAL: Questions should be interview-style — direct, professional, and technically relevant.
+9. DIVERSITY: Vary question types across technical, behavioral, and situational.
 
 Return ONLY a JSON array of EXACTLY {question_count} objects:
-[{{"text": "<question>", "type": "technical|behavioral|situational", "duration": {default_duration}}}]
+[{{"text": "<concise question, max 2 sentences>", "type": "technical|behavioral|situational", "duration": {default_duration}}}]
 """
+
+    logger.info("[generate_questions] job=%s role=%s difficulty=%s count=%s has_resume=%s",
+                title, role, difficulty, question_count, resume_data is not None)
 
     try:
         result = await openai.generate_json(prompt)
         questions = result if isinstance(result, list) else (result.get("questions") if isinstance(result, dict) else [])
 
-        # Normalize and enforce count
         questions = [q for q in questions if isinstance(q, dict) and q.get("text")]
         if len(questions) > question_count:
             questions = questions[:question_count]
         elif len(questions) < question_count:
             questions += get_fallback_questions(question_count - len(questions), role, difficulty)
 
-        # Enforce correct duration per difficulty
         for q in questions:
             if not isinstance(q.get("duration"), int) or q["duration"] <= 0:
                 q["duration"] = default_duration
 
+        logger.info("[generate_questions] generated %d questions for job=%s", len(questions), title)
         return questions
-    except Exception:
+    except Exception as e:
+        logger.error("[generate_questions] LLM failed, using fallbacks: %s", str(e))
         return get_fallback_questions(question_count, role, difficulty)
 
 
@@ -461,110 +521,37 @@ class AdaptQuestionRequest(BaseModel):
 
 @router.post("/{session_id}/adapt-question")
 async def adapt_question(session_id: str, body: AdaptQuestionRequest):
+    """Return the pre-planned question at the requested index.
+
+    Adaptive/follow-up generation is disabled — questions are generated once
+    at invite time and served as-is, irrespective of candidate responses.
+    """
     db = get_db_admin_service()
-    ai = get_openai_service()
 
-    def _fetch():
-        return (
-            db.client.from_("ai_interview_sessions")
-            .select("*, job_descriptions(title, role, level, must_have_skills, description)")
-            .eq("id", session_id)
-            .single()
-            .execute()
-        )
-
-    res = await db.run(_fetch)
-    session = getattr(res, "data", None)
-    if not isinstance(session, dict):
+    sessions = await db.select(
+        "ai_interview_sessions",
+        columns="id,status,current_question_index,questions",
+        filters={"id": session_id},
+        limit=1,
+    )
+    session = sessions[0] if sessions else None
+    if not session:
         return api_error(message="Session not found", status_code=404)
     if session.get("status") != "in_progress":
         return api_error(message="Interview not in progress", status_code=400)
 
     questions = _normalize_questions(session.get("questions"))
-    responses = session.get("responses") if isinstance(session.get("responses"), list) else []
     idx = body.next_index if isinstance(body.next_index, int) else int(session.get("current_question_index") or 0)
     if idx >= len(questions):
         return ok({"completed": True})
 
-    if not responses:
-        q = questions[idx]
-        return ok(
-            {
-                "index": idx,
-                "question_text": q.get("text"),
-                "question_type": q.get("type"),
-                "expected_duration_seconds": q.get("duration") or 120,
-                "adaptive": False,
-            }
-        )
-
-    job = session.get("job_descriptions") or {}
-    resume_insights = (session.get("proctoring_data") or {}).get("resume_insights") or {}
-
-    prior_pairs: List[str] = []
-    for r in sorted(
-        [rr for rr in responses if isinstance(rr, dict) and rr.get("question_index") is not None],
-        key=lambda x: int(x.get("question_index") or 0),
-    )[-3:]:
-        qi = int(r.get("question_index"))
-        if qi < 0 or qi >= len(questions):
-            continue
-        qq = questions[qi]
-        prior_pairs.append(f"Q ({qq.get('type')}): {qq.get('text')}\nA: {r.get('transcript') or '[No response provided]'}")
-    prior_qa = "\n\n".join(prior_pairs)
-
-    next_pre = questions[idx]
-    skills = ", ".join(job.get("must_have_skills") or []) if isinstance(job.get("must_have_skills"), list) else "General"
-    cand_skills = ", ".join(resume_insights.get("skills") or []) if isinstance(resume_insights.get("skills"), list) else ""
-
-    prompt = (
-        f"You are an expert technical interviewer conducting a live {job.get('level')} {job.get('role')} interview for {job.get('title')}.\n\n"
-        f"Required Skills: {skills}\n"
-        f"{('Candidate Skills: ' + cand_skills) if cand_skills else ''}\n"
-        f"{('Candidate Experience: ' + str(resume_insights.get('experience_summary'))) if resume_insights.get('experience_summary') else ''}\n\n"
-        f"## Interview Progress So Far (last {min(len(prior_pairs), 3)} Q&A pairs):\n{prior_qa}\n\n"
-        f"## Pre-planned next question (question {idx + 1} of {len(questions)}):\n\"{next_pre.get('text')}\" (type: {next_pre.get('type')})\n\n"
-        "## Your Task:\n"
-        "Based on the candidate's answers above, generate a BETTER adaptive follow-up question for the next question.\n"
-        "Return ONLY this JSON:\n"
-        '{"text": "<the adaptive question>", "type": "technical|behavioral|situational", "duration": <seconds 90-180>}'
-    )
-
-    adapted: Optional[Dict[str, Any]] = None
-    try:
-        adapted = await ai.generate_json(prompt)
-    except Exception:
-        adapted = None
-
-    if isinstance(adapted, dict) and adapted.get("text"):
-        updated = list(questions)
-        updated[idx] = {
-            "text": str(adapted.get("text")),
-            "type": str(adapted.get("type") or next_pre.get("type") or "technical"),
-            "duration": int(adapted.get("duration") or next_pre.get("duration") or 120),
-        }
-        await db.run(
-            lambda: db.client.from_("ai_interview_sessions")
-            .update({"questions": updated, "updated_at": _utc_now_iso()})
-            .eq("id", session_id)
-            .execute()
-        )
-        return ok(
-            {
-                "index": idx,
-                "question_text": updated[idx]["text"],
-                "question_type": updated[idx]["type"],
-                "expected_duration_seconds": updated[idx]["duration"],
-                "adaptive": True,
-            }
-        )
-
+    q = questions[idx]
     return ok(
         {
             "index": idx,
-            "question_text": next_pre.get("text"),
-            "question_type": next_pre.get("type"),
-            "expected_duration_seconds": next_pre.get("duration") or 120,
+            "question_text": q.get("text"),
+            "question_type": q.get("type"),
+            "expected_duration_seconds": q.get("duration") or 120,
             "adaptive": False,
         }
     )

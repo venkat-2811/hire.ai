@@ -257,25 +257,12 @@ export default function AIInterviewPage() {
     setIsRecording(true);
   }, [micEnabled]);
 
-  // Load current question (with optional adaptive mode for follow-up questions)
-  const loadCurrentQuestion = useCallback(async (nextIndex?: number) => {
+  // Load current question (pre-generated at invite time, no adaptive follow-ups)
+  const loadCurrentQuestion = useCallback(async (_nextIndex?: number) => {
     if (!interviewData) return;
 
     try {
-      // For follow-up questions (index > 0), call adapt-question to get context-aware question
-      let data: any;
-      if (typeof nextIndex === 'number' && nextIndex > 0) {
-        try {
-          data = await aiInterviewApi.adaptQuestion(interviewData.session_id, nextIndex);
-          if (data?.adaptive) console.log('[AIInterviewPage] Adaptive question generated for index', nextIndex);
-        } catch {
-          // fall through to standard question endpoint
-        }
-      }
-
-      if (!data) {
-        data = await aiInterviewApi.question(interviewData.session_id);
-      }
+      const data = await aiInterviewApi.question(interviewData.session_id);
 
       if (data.completed) {
         setIsCompleted(true);
