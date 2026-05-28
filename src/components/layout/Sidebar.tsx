@@ -22,8 +22,8 @@ import { useProfile } from "@/hooks/useProfile";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
+  { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Results', href: '/results', icon: Trophy },
   { name: 'Billing', href: '/billing', icon: Wallet },
   { name: 'Profile', href: '/profile', icon: UserCircle },

@@ -848,9 +848,8 @@ async def get_manual_interview(
             db.client.from_("job_applications")
             .select(
                 "candidate_id, job_id, interview_mode, interview_status, "
-                "manual_interview_score, manual_interview_notes, manual_interview_feedback, "
-                "manual_interview_date, manual_interview_at, interview_completed_at, "
-                "manual_interview_entered_by"
+                "manual_interview_score, manual_interview_notes, "
+                "manual_interview_date, interview_completed_at"
             )
             .eq("candidate_id", candidate_id)
             .eq("job_id", job_id)
@@ -858,24 +857,28 @@ async def get_manual_interview(
             .execute()
         )
 
-    res = await db.run(_fetch)
-    row = getattr(res, "data", None)
+    try:
+        res = await db.run(_fetch)
+        row = getattr(res, "data", None)
+    except Exception as exc:
+        logger.error("[get_manual_interview] DB error candidate=%s job=%s error=%s", candidate_id, job_id, exc)
+        return api_error(message="Failed to fetch manual interview data", status_code=500)
+
     if not isinstance(row, dict):
         return ok(None)
-    # Normalise: return consistent field names regardless of which DB column exists
-    feedback = row.get("manual_interview_feedback") or row.get("manual_interview_notes")
-    at_val = row.get("manual_interview_at") or row.get("manual_interview_date")
+    notes = row.get("manual_interview_notes") or ""
+    at_val = row.get("manual_interview_date")
     return ok({
         "candidate_id": row.get("candidate_id", candidate_id),
         "job_id": row.get("job_id", job_id),
         "interview_mode": row.get("interview_mode"),
         "interview_status": row.get("interview_status"),
         "manual_interview_score": row.get("manual_interview_score"),
-        "manual_interview_feedback": feedback,
-        "manual_interview_notes": row.get("manual_interview_notes"),
+        "manual_interview_feedback": notes,
+        "manual_interview_notes": notes,
         "manual_interview_at": at_val,
         "interview_completed_at": row.get("interview_completed_at"),
-        "manual_interview_entered_by": row.get("manual_interview_entered_by"),
+        "manual_interview_entered_by": None,
     })
 
 
@@ -888,41 +891,60 @@ async def update_manual_interview(
 ):
     """PATCH /api/v2/candidates/{candidate_id}/manual-interview?job_id=..."""
     db = get_db_admin_service()
+    now_iso = datetime.now(timezone.utc).isoformat()
 
-    # Accept both feedback/notes field names for compatibility
-    allowed = {
-        "manual_interview_score", "manual_interview_notes", "manual_interview_feedback",
-        "manual_interview_date", "manual_interview_at", "interview_mode",
-        "interview_status", "interview_completed_at",
+    # --- Validate inputs -------------------------------------------------------
+    if not candidate_id or not job_id:
+        return api_error(message="candidate_id and job_id are required", status_code=400)
+
+    # Backend score validation
+    raw_score = payload.get("manual_interview_score")
+    if raw_score is not None:
+        try:
+            score_val = float(raw_score)
+        except (TypeError, ValueError):
+            return api_error(message="Score must be a number between 0 and 100", status_code=400)
+        if not (0.0 <= score_val <= 100.0):
+            return api_error(message="Score must be between 0 and 100", status_code=400)
+    else:
+        score_val = None
+
+    # --- Build update payload (only confirmed DB columns) ----------------------
+    notes = payload.get("manual_interview_notes") or payload.get("manual_interview_feedback") or None
+    if notes is not None:
+        notes = str(notes).strip() or None
+
+    db_update: Dict[str, Any] = {
+        "updated_at": now_iso,
     }
-    update_data: Dict[str, Any] = {k: v for k, v in payload.items() if k in allowed}
+    if "interview_mode" in payload:
+        db_update["interview_mode"] = payload["interview_mode"]
+    else:
+        db_update["interview_mode"] = "manual"
 
-    # Normalise: store feedback in both columns if either is provided
-    if "manual_interview_feedback" in update_data and "manual_interview_notes" not in update_data:
-        update_data["manual_interview_notes"] = update_data["manual_interview_feedback"]
-    elif "manual_interview_notes" in update_data and "manual_interview_feedback" not in update_data:
-        update_data["manual_interview_feedback"] = update_data["manual_interview_notes"]
+    if score_val is not None:
+        db_update["manual_interview_score"] = score_val
+        # Auto-complete interview when a score is submitted
+        db_update["interview_status"] = "completed"
+        db_update["interview_completed_at"] = now_iso
+    elif "manual_interview_score" in payload and raw_score is None:
+        # Explicitly clearing the score
+        db_update["manual_interview_score"] = None
 
-    # Normalise date field names
-    if "manual_interview_at" in update_data and "manual_interview_date" not in update_data:
-        update_data["manual_interview_date"] = update_data["manual_interview_at"]
+    if notes is not None:
+        db_update["manual_interview_notes"] = notes
+    elif "manual_interview_notes" in payload or "manual_interview_feedback" in payload:
+        db_update["manual_interview_notes"] = None
 
-    if not {k for k in update_data if k not in ("manual_interview_feedback", "manual_interview_at")}:
-        if not update_data:
-            return api_error(message="No valid fields to update", status_code=400)
+    if "interview_status" in payload and "interview_status" not in db_update:
+        db_update["interview_status"] = payload["interview_status"]
 
-    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    logger.info(
+        "[update_manual_interview] candidate=%s job=%s update_keys=%s",
+        candidate_id, job_id, list(db_update.keys())
+    )
 
-    # Filter to only columns that actually exist in job_applications (safe subset)
-    db_allowed = {
-        "manual_interview_score", "manual_interview_notes", "manual_interview_date",
-        "interview_mode", "interview_status", "interview_completed_at", "updated_at",
-    }
-    db_update = {k: v for k, v in update_data.items() if k in db_allowed}
-
-    if not db_update:
-        return api_error(message="No valid fields to update", status_code=400)
-
+    # --- DB update -------------------------------------------------------------
     def _update():
         return (
             db.client.from_("job_applications")
@@ -932,17 +954,23 @@ async def update_manual_interview(
             .execute()
         )
 
-    await db.run(_update)
+    try:
+        await db.run(_update)
+    except Exception as exc:
+        logger.error(
+            "[update_manual_interview] DB update failed candidate=%s job=%s error=%s",
+            candidate_id, job_id, exc
+        )
+        return api_error(message="Failed to save manual interview data", status_code=500)
 
-    # Re-fetch using the same normalised shape as get_manual_interview
+    # --- Re-fetch --------------------------------------------------------------
     def _fetch():
         return (
             db.client.from_("job_applications")
             .select(
                 "candidate_id, job_id, interview_mode, interview_status, "
-                "manual_interview_score, manual_interview_notes, manual_interview_feedback, "
-                "manual_interview_date, manual_interview_at, interview_completed_at, "
-                "manual_interview_entered_by"
+                "manual_interview_score, manual_interview_notes, "
+                "manual_interview_date, interview_completed_at"
             )
             .eq("candidate_id", candidate_id)
             .eq("job_id", job_id)
@@ -950,23 +978,30 @@ async def update_manual_interview(
             .execute()
         )
 
-    res = await db.run(_fetch)
-    row = getattr(res, "data", None)
+    try:
+        res = await db.run(_fetch)
+        row = getattr(res, "data", None)
+    except Exception as exc:
+        logger.error(
+            "[update_manual_interview] DB re-fetch failed candidate=%s job=%s error=%s",
+            candidate_id, job_id, exc
+        )
+        return api_error(message="Saved but failed to retrieve updated data", status_code=500)
+
     if not isinstance(row, dict):
         return ok(None)
-    feedback = row.get("manual_interview_feedback") or row.get("manual_interview_notes")
-    at_val = row.get("manual_interview_at") or row.get("manual_interview_date")
+    fetched_notes = row.get("manual_interview_notes") or ""
     return ok({
         "candidate_id": row.get("candidate_id", candidate_id),
         "job_id": row.get("job_id", job_id),
         "interview_mode": row.get("interview_mode"),
         "interview_status": row.get("interview_status"),
         "manual_interview_score": row.get("manual_interview_score"),
-        "manual_interview_feedback": feedback,
-        "manual_interview_notes": row.get("manual_interview_notes"),
-        "manual_interview_at": at_val,
+        "manual_interview_feedback": fetched_notes,
+        "manual_interview_notes": fetched_notes,
+        "manual_interview_at": row.get("manual_interview_date"),
         "interview_completed_at": row.get("interview_completed_at"),
-        "manual_interview_entered_by": row.get("manual_interview_entered_by"),
+        "manual_interview_entered_by": None,
     })
 
 
