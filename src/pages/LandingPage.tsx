@@ -151,6 +151,12 @@ export default function LandingPage() {
                 )}
               </button>
             ))}
+            <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors py-1">
+              Pricing
+            </Link>
+            <Link to="/contact" className="text-muted-foreground hover:text-foreground transition-colors py-1">
+              Contact
+            </Link>
           </div>
 
           <div className="flex items-center gap-3">

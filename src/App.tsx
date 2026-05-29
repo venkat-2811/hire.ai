@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
+import ContactPage from "./pages/ContactPage";
+import PricingPage from "./pages/PricingPage";
 import DashboardPage from "./pages/DashboardPage";
 import CandidatesPage from "./pages/CandidatesPage";
 import NewCandidatePage from "./pages/NewCandidatePage";
@@ -57,6 +59,8 @@ const App = () => (
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/sign-in/*" element={<AuthPage />} />
             <Route path="/sign-up/*" element={<AuthPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/pricing" element={<PricingPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/candidates" element={<CandidatesPage />} />
             <Route path="/candidates/new" element={<NewCandidatePage />} />
