@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
@@ -12,57 +13,21 @@ from app.api.v2.deps import require_user
 from app.auth.clerk import ClerkUser
 from app.services.db.supabase_service import get_db_admin_service
 from app.utils.responses import api_error, ok
+from app.utils.billing_helpers import (
+    BILLING_PLAN_CONFIG,
+    _normalize_plan,
+    get_candidate_count_after_deployment,
+    check_candidate_limit,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/billing")
-
-# ── Billing plan config (mirrors api/_lib/billing-utils.ts) ──────────────────
-
-BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
-    "free": {"monthly_deposit": 0, "overage_cap": 0, "free_caps": {
-        "create_job": 10, "resume_parse": 30, "candidate_scoring": 60,
-        "assessment_invite": 25, "ai_interview_invite": 25,
-        "regenerate_interview_questions": 20, "assessment_mcq_generation": 40,
-    }},
-    "pro": {"monthly_deposit": 36.13, "overage_cap": 180.72, "free_caps": {}},
-    "premium": {"monthly_deposit": 96.37, "overage_cap": None, "free_caps": {}},
-}
-
-FEATURE_COSTS: Dict[str, float] = {
-    "create_job": 0.18,
-    "resume_parse": 0.1,
-    "candidate_scoring": 0.14,
-    "assessment_invite": 0.12,
-    "ai_interview_invite": 0.3,
-    "regenerate_interview_questions": 0.06,
-    "assessment_mcq_generation": 0.24,
-}
-
-
-def _normalize_plan(raw: Optional[str]) -> str:
-    p = str(raw or "free").lower()
-    if p.startswith("pro"):
-        return "pro"
-    if p.startswith("premium"):
-        return "premium"
-    return "free"
-
-
-def _normalize_status(raw: Optional[str]) -> str:
-    s = str(raw or "active").lower()
-    if s == "paused":
-        return "paused"
-    if s == "overdue":
-        return "overdue"
-    if s in ("cancel_at_period_end", "cancelled", "canceled"):
-        return "cancel_at_period_end"
-    return "active"
-
 
 def _get_stripe_key() -> str:
     from app.config import get_settings
     settings = get_settings()
     return str(settings.stripe_secret_key or os.environ.get("STRIPE_SECRET_KEY", "") or "").strip()
-
 
 async def _create_stripe_checkout(
     amount_cents: int,
@@ -70,6 +35,9 @@ async def _create_stripe_checkout(
     plan_id: str,
     success_url: str,
     cancel_url: str,
+    currency: str = "usd",
+    interval: str = "month",
+    interval_count: int = 1,
     metadata: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     key = _get_stripe_key()
@@ -77,18 +45,23 @@ async def _create_stripe_checkout(
         raise RuntimeError("STRIPE_SECRET_KEY not configured")
 
     params: Dict[str, str] = {
-        "mode": "payment",
-        "line_items[0][price_data][currency]": "usd",
-        "line_items[0][price_data][product_data][name]": f"Hire.AI {label}",
+        "mode": "subscription",
+        "line_items[0][price_data][currency]": currency.lower(),
+        "line_items[0][price_data][product_data][name]": f"Hire.AI {label} Plan",
         "line_items[0][price_data][unit_amount]": str(amount_cents),
+        "line_items[0][price_data][recurring][interval]": interval,
+        "line_items[0][price_data][recurring][interval_count]": str(interval_count),
         "line_items[0][quantity]": "1",
         "success_url": success_url,
         "cancel_url": cancel_url,
         "metadata[plan]": plan_id,
+        "metadata[currency]": currency.upper(),
     }
+    
     if metadata:
         for k, v in metadata.items():
-            params[f"metadata[{k}]"] = v
+            params[f"metadata[{k}]"] = str(v)
+            params[f"subscription_data[metadata][{k}]"] = str(v)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -103,23 +76,19 @@ async def _create_stripe_checkout(
         raise RuntimeError(f"Stripe error: {resp.text}")
     return resp.json()
 
-
 def _get_frontend_url(request: Request) -> str:
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     proto = (request.headers.get("x-forwarded-proto") or "https").split(",")[0].strip()
     is_local = "localhost" in host
     if is_local:
         proto = "http"
-    dynamic = f"{proto}://{host}" if host else "https://hire-ai-sandy.vercel.app"
+    dynamic = f"{proto}://{host}" if host else "https://rekshift.com"
     env_url = os.environ.get("FRONTEND_URL", "")
-    if env_url and "localhost" not in env_url and "hire-ai-sandy" not in env_url:
+    if env_url and "localhost" not in env_url and "rekshift" not in env_url:
         return env_url
     return dynamic
 
-
 async def _get_or_create_subscription(db, user_id: str) -> Dict[str, Any]:
-    """Mirror of getOrCreateSubscription from Node billing-utils."""
-
     def _fetch():
         return db.client.from_("subscriptions").select("*").eq("user_id", user_id).maybe_single().execute()
 
@@ -136,10 +105,13 @@ async def _get_or_create_subscription(db, user_id: str) -> Dict[str, Any]:
     profile = getattr(p_res, "data", None) or {}
 
     plan = _normalize_plan(profile.get("subscription_plan"))
-    status = _normalize_status(profile.get("subscription_status"))
+    status = str(profile.get("subscription_status") or "active").lower()
+    if status not in ("active", "paused", "overdue", "cancel_at_period_end"):
+        status = "active"
+        
     cfg = BILLING_PLAN_CONFIG[plan]
     now = datetime.now(timezone.utc)
-    cycle_end = now.replace(month=(now.month % 12) + 1) if now.month < 12 else now.replace(year=now.year + 1, month=1)
+    cycle_end = now + timedelta(days=30)
 
     def _insert():
         return db.client.from_("subscriptions").insert(
@@ -147,12 +119,12 @@ async def _get_or_create_subscription(db, user_id: str) -> Dict[str, Any]:
                 "user_id": user_id,
                 "plan": plan,
                 "status": status,
-                "deposit_amount": cfg["monthly_deposit"],
-                "wallet_balance": cfg["monthly_deposit"],
+                "deposit_amount": cfg["USD"]["price"],
+                "wallet_balance": cfg["USD"]["price"],
                 "billing_cycle_start": now.isoformat(),
                 "billing_cycle_end": cycle_end.isoformat(),
                 "overage_amount": 0,
-                "overage_cap": cfg["overage_cap"],
+                "overage_cap": 0,
                 "metadata": {"source": "auto-bootstrap"},
             }
         ).execute()
@@ -161,57 +133,17 @@ async def _get_or_create_subscription(db, user_id: str) -> Dict[str, Any]:
     if getattr(ins_res, "error", None):
         raise RuntimeError("Failed to create subscription record")
 
-    # Separate fetch for SDK compatibility
     res = await db.run(_fetch)
     created = getattr(res, "data", None)
     if not isinstance(created, dict):
         raise RuntimeError("Failed to create subscription record")
     return created
 
-
-async def _aggregate_usage(db, user_id: str, period_start: str, period_end: str) -> Dict[str, Any]:
-    """Mirror of aggregateUsageByFeature."""
-
-    def _fetch():
-        return (
-            db.client.from_("usage_events")
-            .select("feature_type, quantity, unit_cost, total_cost, created_at")
-            .eq("user_id", user_id)
-            .gte("created_at", period_start)
-            .lte("created_at", period_end)
-            .order("created_at", desc=True)
-            .execute()
-        )
-
-    res = await db.run(_fetch)
-    rows = getattr(res, "data", None) or []
-    by_feature: Dict[str, Dict[str, float]] = {}
-    total_cost = 0.0
-    for ev in rows:
-        f = str(ev.get("feature_type") or "unknown")
-        if f not in by_feature:
-            by_feature[f] = {"quantity": 0, "total_cost": 0.0}
-        by_feature[f]["quantity"] += int(ev.get("quantity") or 1)
-        by_feature[f]["total_cost"] += float(ev.get("total_cost") or 0)
-        total_cost += float(ev.get("total_cost") or 0)
-    return {"by_feature": by_feature, "total_cost": total_cost}
-
-
-async def _send_email(to: str, subject: str, html: str) -> None:
-    try:
-        from app.services.email_service import get_email_service
-        email_service = get_email_service()
-        await email_service.send_email(to=to, subject=subject, html=html)
-    except Exception:
-        pass
-
-
 # ── Routes ────────────────────────────────────────────────────────────────────
-
 
 @router.post("/webhook")
 async def billing_webhook(request: Request):
-    """Node-compatible: POST /api/billing/webhook — Stripe webhook (no auth)."""
+    """Production-ready Stripe webhook handler for subscription lifecycle."""
     try:
         event = await request.json()
     except Exception:
@@ -220,117 +152,217 @@ async def billing_webhook(request: Request):
     event_type = str(event.get("type") or "")
     obj = (event.get("data") or {}).get("object") or {}
 
+    db = get_db_admin_service()
+    now = datetime.now(timezone.utc)
+
+    # 1. Successful payments or new subscription purchases
     if event_type == "checkout.session.completed":
         metadata = obj.get("metadata") or {}
         user_id = metadata.get("user_id")
-        action = metadata.get("action")
+        plan = _normalize_plan(metadata.get("plan"))
+        currency = str(metadata.get("currency") or "USD").upper()
         amount = float((obj.get("amount_total") or 0)) / 100
 
-        if user_id and amount > 0:
-            db = get_db_admin_service()
+        if user_id:
             try:
                 sub = await _get_or_create_subscription(db, user_id)
+                cfg = BILLING_PLAN_CONFIG[plan]
+                
+                # Calculate billing cycle end date
+                interval = cfg["interval"]
+                interval_count = cfg["interval_count"]
+                if interval == "year":
+                    cycle_end = now + timedelta(days=365 * interval_count)
+                else:
+                    cycle_end = now + timedelta(days=30 * interval_count)
 
-                if action in ("topup", "invoice_payment"):
-                    def _topup():
-                        return (
-                            db.client.from_("subscriptions")
-                            .update({
-                                "wallet_balance": float(sub.get("wallet_balance") or 0) + amount,
-                                "status": "active",
-                                "resumed_at": datetime.now(timezone.utc).isoformat(),
-                                "updated_at": datetime.now(timezone.utc).isoformat(),
-                            })
-                            .eq("id", sub["id"])
-                            .execute()
-                        )
-                    await db.run(_topup)
+                # Sync profiles table
+                def _update_profile():
+                    return (
+                        db.client.from_("profiles")
+                        .update({
+                            "subscription_plan": plan,
+                            "subscription_status": "active",
+                            "subscription_id": obj.get("subscription") or obj.get("id"),
+                            "stripe_payment_id": obj.get("customer") or obj.get("payment_intent"),
+                            "plan_selected_at": now.isoformat(),
+                            "updated_at": now.isoformat(),
+                        })
+                        .eq("user_id", user_id)
+                        .execute()
+                    )
+                await db.run(_update_profile)
 
-                    if action == "invoice_payment" and metadata.get("invoice_id"):
-                        invoice_id = metadata["invoice_id"]
-                        def _mark_paid():
-                            return (
-                                db.client.from_("invoices")
-                                .update({
-                                    "status": "paid",
-                                    "paid_at": datetime.now(timezone.utc).isoformat(),
-                                    "payment_reference": obj.get("payment_intent") or obj.get("id"),
-                                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                                })
-                                .eq("id", invoice_id)
-                                .execute()
-                            )
-                        await db.run(_mark_paid)
+                # Sync subscriptions table
+                def _update_sub():
+                    return (
+                        db.client.from_("subscriptions")
+                        .update({
+                            "plan": plan,
+                            "status": "active",
+                            "deposit_amount": amount,
+                            "wallet_balance": amount,
+                            "billing_cycle_start": now.isoformat(),
+                            "billing_cycle_end": cycle_end.isoformat(),
+                            "updated_at": now.isoformat(),
+                            "metadata": {
+                                "stripe_customer_id": obj.get("customer"),
+                                "stripe_subscription_id": obj.get("subscription"),
+                                "currency": currency,
+                            }
+                        })
+                        .eq("id", sub["id"])
+                        .execute()
+                    )
+                await db.run(_update_sub)
 
-                elif action == "subscribe":
-                    next_plan = _normalize_plan(metadata.get("plan"))
-                    cfg = BILLING_PLAN_CONFIG[next_plan]
-                    now = datetime.now(timezone.utc)
-                    cycle_end = now.replace(month=(now.month % 12) + 1) if now.month < 12 else now.replace(year=now.year + 1, month=1)
+                # Add a record to the invoices table
+                invoice_id = obj.get("invoice") or f"inv_{now.strftime('%Y%m%d%H%M%S')}"
+                def _insert_invoice():
+                    return db.client.from_("invoices").insert({
+                        "user_id": user_id,
+                        "period_start": now.isoformat(),
+                        "period_end": cycle_end.isoformat(),
+                        "line_items": [{"name": f"Hire.AI {plan.capitalize()} Plan", "amount": amount, "currency": currency}],
+                        "subtotal": amount,
+                        "tax_amount": 0,
+                        "total": amount,
+                        "status": "paid",
+                        "due_date": now.isoformat(),
+                        "paid_at": now.isoformat(),
+                        "payment_reference": obj.get("payment_intent") or obj.get("id"),
+                        "metadata": {"source": "webhook", "currency": currency}
+                    }).execute()
+                await db.run(_insert_invoice)
 
-                    def _subscribe():
-                        return (
-                            db.client.from_("subscriptions")
-                            .update({
-                                "plan": next_plan,
-                                "status": "active",
-                                "deposit_amount": amount or cfg["monthly_deposit"],
-                                "wallet_balance": amount or cfg["monthly_deposit"],
-                                "billing_cycle_start": now.isoformat(),
-                                "billing_cycle_end": cycle_end.isoformat(),
-                                "paused_at": None,
-                                "resumed_at": now.isoformat(),
-                                "warning_80_sent_at": None,
-                                "updated_at": now.isoformat(),
-                            })
-                            .eq("id", sub["id"])
-                            .execute()
-                        )
-                    await db.run(_subscribe)
+            except Exception as e:
+                logger.error("[billing_webhook] Failed processing checkout.session.completed: %s", e)
 
-                    def _update_profile():
+    # 2. Subscription updates (upgrade, downgrade, cancellations, renewals)
+    elif event_type in ("customer.subscription.updated", "customer.subscription.deleted"):
+        stripe_sub_id = obj.get("id")
+        stripe_customer_id = obj.get("customer")
+        status = obj.get("status")
+        cancel_at_period_end = bool(obj.get("cancel_at_period_end"))
+        current_period_end = obj.get("current_period_end")
+
+        # Lookup sub by stripe subscription id
+        def _fetch_by_stripe():
+            return db.client.from_("profiles").select("user_id").eq("subscription_id", stripe_sub_id).maybe_single().execute()
+            
+        prof_res = await db.run(_fetch_by_stripe)
+        profile_data = getattr(prof_res, "data", None)
+
+        if isinstance(profile_data, dict) and profile_data.get("user_id"):
+            user_id = profile_data["user_id"]
+            
+            try:
+                sub = await _get_or_create_subscription(db, user_id)
+                db_status = "active"
+                if status == "canceled" or status == "unpaid":
+                    db_status = "inactive"
+                elif status == "past_due":
+                    db_status = "overdue"
+                elif cancel_at_period_end:
+                    db_status = "cancel_at_period_end"
+
+                if db_status == "inactive":
+                    # Revert to free plan immediately
+                    def _revert_profile():
                         return (
                             db.client.from_("profiles")
                             .update({
-                                "subscription_plan": next_plan,
+                                "subscription_plan": "free",
                                 "subscription_status": "active",
-                                "subscription_id": obj.get("id"),
-                                "stripe_payment_id": obj.get("payment_intent") or obj.get("id"),
-                                "plan_selected_at": now.isoformat(),
+                                "subscription_id": None,
                                 "updated_at": now.isoformat(),
                             })
                             .eq("user_id", user_id)
                             .execute()
                         )
-                    await db.run(_update_profile)
+                    await db.run(_revert_profile)
 
-            except Exception:
-                pass  # Webhook errors must not return 5xx to Stripe
+                    def _revert_sub():
+                        return (
+                            db.client.from_("subscriptions")
+                            .update({
+                                "plan": "free",
+                                "status": "active",
+                                "deposit_amount": 0,
+                                "wallet_balance": 0,
+                                "updated_at": now.isoformat(),
+                            })
+                            .eq("id", sub["id"])
+                            .execute()
+                        )
+                    await db.run(_revert_sub)
+                else:
+                    # Sync updated status or cycle end date
+                    cycle_end_iso = datetime.fromtimestamp(current_period_end, tz=timezone.utc).isoformat() if current_period_end else now.isoformat()
+                    
+                    def _sync_profile():
+                        return (
+                            db.client.from_("profiles")
+                            .update({
+                                "subscription_status": db_status,
+                                "updated_at": now.isoformat(),
+                            })
+                            .eq("user_id", user_id)
+                            .execute()
+                        )
+                    await db.run(_sync_profile)
+
+                    def _sync_sub():
+                        return (
+                            db.client.from_("subscriptions")
+                            .update({
+                                "status": db_status,
+                                "billing_cycle_end": cycle_end_iso,
+                                "updated_at": now.isoformat(),
+                            })
+                            .eq("id", sub["id"])
+                            .execute()
+                        )
+                    await db.run(_sync_sub)
+            except Exception as e:
+                logger.error("[billing_webhook] Failed updating subscription state: %s", e)
 
     return ok({"received": True})
 
-
 @router.post("/subscribe")
 async def billing_subscribe(payload: Dict[str, Any], request: Request, user: ClerkUser = Depends(require_user)):
-    """Node-compatible: POST /api/billing/subscribe"""
+    """POST /api/v2/billing/subscribe
+    
+    Generates a live Stripe Checkout Session URL in subscription mode.
+    """
     plan = _normalize_plan(payload.get("plan"))
+    currency = str(payload.get("currency") or "USD").upper()
+    if currency not in ("USD", "INR"):
+        currency = "USD"
+
     if plan == "free":
-        return api_error(message="Use free plan selection endpoint for free tier", status_code=400)
+        return api_error(message="Free plan does not require payment", status_code=400)
 
     cfg = BILLING_PLAN_CONFIG[plan]
+    price = cfg[currency]["price"]
+    interval = cfg["interval"]
+    interval_count = cfg["interval_count"]
+
     frontend_url = _get_frontend_url(request)
-    # Include {CHECKOUT_SESSION_ID} so the frontend can verify payment directly
     success_url = f"{frontend_url}/billing?checkout=success&action=subscribe&session_id={{CHECKOUT_SESSION_ID}}&plan={plan}"
     cancel_url = f"{frontend_url}/billing?checkout=cancelled&action=subscribe"
 
     try:
         session = await _create_stripe_checkout(
-            amount_cents=int(cfg["monthly_deposit"] * 100),
-            label=f"{plan.upper()} Deposit",
+            amount_cents=int(price * 100),
+            label=cfg["name"],
             plan_id=plan,
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={"action": "subscribe", "user_id": user.id, "plan": plan},
+            currency=currency,
+            interval=interval,
+            interval_count=interval_count,
+            metadata={"action": "subscribe", "user_id": user.id, "plan": plan, "currency": currency},
         )
     except Exception as exc:
         return api_error(message=str(exc), status_code=500)
@@ -340,17 +372,14 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
         "session_id": session["id"],
         "checkout_url": session["url"],
         "plan": plan,
-        "deposit_amount": cfg["monthly_deposit"],
+        "deposit_amount": price,
     })
-
 
 @router.post("/verify-session")
 async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depends(require_user)):
-    """POST /api/billing/verify-session
-
-    Directly verify a Stripe checkout session and update both profiles AND subscriptions.
-    Called by the frontend after the billing page redirect-back includes a session_id.
-    Works regardless of whether the Stripe webhook is configured.
+    """POST /api/v2/billing/verify-session
+    
+    Verifies checkout session directly from Stripe to ensure instantaneous UI updates.
     """
     session_id = str(payload.get("session_id") or "").strip()
     plan = _normalize_plan(payload.get("plan"))
@@ -363,7 +392,7 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
     if not key:
         return api_error(message="STRIPE_SECRET_KEY not configured", status_code=500)
 
-    # Fetch the Stripe session to confirm payment
+    # Fetch the Stripe session directly
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"https://api.stripe.com/v1/checkout/sessions/{session_id}",
@@ -380,6 +409,13 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
     cfg = BILLING_PLAN_CONFIG[plan]
     db = get_db_admin_service()
     now = datetime.now(timezone.utc)
+    
+    interval = cfg["interval"]
+    interval_count = cfg["interval_count"]
+    if interval == "year":
+        cycle_end = now + timedelta(days=365 * interval_count)
+    else:
+        cycle_end = now + timedelta(days=30 * interval_count)
 
     # 1. Update profiles table
     def _update_profile():
@@ -387,8 +423,8 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
             db.client.from_("profiles")
             .update({
                 "subscription_plan": plan,
-                "subscription_id": session_id,
-                "stripe_payment_id": stripe_session.get("payment_intent") or session_id,
+                "subscription_id": stripe_session.get("subscription") or session_id,
+                "stripe_payment_id": stripe_session.get("customer") or session_id,
                 "subscription_status": "active",
                 "plan_selected_at": now.isoformat(),
                 "updated_at": now.isoformat(),
@@ -396,37 +432,54 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
             .eq("user_id", user.id)
             .execute()
         )
-
     await db.run(_update_profile)
 
     # 2. Upsert subscriptions table
     try:
         sub = await _get_or_create_subscription(db, user.id)
-        cycle_end = now.replace(month=(now.month % 12) + 1) if now.month < 12 else now.replace(year=now.year + 1, month=1)
-
+        
         def _update_sub():
             return (
                 db.client.from_("subscriptions")
                 .update({
                     "plan": plan,
                     "status": "active",
-                    "deposit_amount": amount or cfg["monthly_deposit"],
-                    "wallet_balance": amount or cfg["monthly_deposit"],
+                    "deposit_amount": amount,
+                    "wallet_balance": amount,
                     "billing_cycle_start": now.isoformat(),
                     "billing_cycle_end": cycle_end.isoformat(),
-                    "overage_cap": cfg["overage_cap"],
-                    "paused_at": None,
-                    "resumed_at": now.isoformat(),
-                    "warning_80_sent_at": None,
                     "updated_at": now.isoformat(),
+                    "metadata": {
+                        "stripe_customer_id": stripe_session.get("customer"),
+                        "stripe_subscription_id": stripe_session.get("subscription"),
+                        "currency": stripe_session.get("currency", "usd").upper(),
+                    }
                 })
                 .eq("id", sub["id"])
                 .execute()
             )
-
         await db.run(_update_sub)
-    except Exception:
-        pass  # subscriptions table update is best-effort; profiles was already updated
+        
+        # Add Invoice record in DB
+        def _insert_invoice():
+            return db.client.from_("invoices").insert({
+                "user_id": user.id,
+                "period_start": now.isoformat(),
+                "period_end": cycle_end.isoformat(),
+                "line_items": [{"name": f"Hire.AI {plan.capitalize()} Plan", "amount": amount, "currency": stripe_session.get("currency", "usd").upper()}],
+                "subtotal": amount,
+                "tax_amount": 0,
+                "total": amount,
+                "status": "paid",
+                "due_date": now.isoformat(),
+                "paid_at": now.isoformat(),
+                "payment_reference": stripe_session.get("payment_intent") or session_id,
+                "metadata": {"source": "verify-session", "currency": stripe_session.get("currency", "usd").upper()}
+            }).execute()
+        await db.run(_insert_invoice)
+        
+    except Exception as e:
+        logger.error("[verify-session] Failed updating subscriptions/invoices: %s", e)
 
     return ok({
         "success": True,
@@ -434,120 +487,67 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
         "message": f"{plan.capitalize()} plan activated successfully!",
     })
 
-
 @router.get("/usage")
 async def billing_usage(user: ClerkUser = Depends(require_user)):
-    """Node-compatible: GET /api/billing/usage"""
+    """GET /api/v2/billing/usage
+    
+    Provides structured billing status and real-time candidate limit metrics.
+    """
     db = get_db_admin_service()
+    
+    # Get profile subscription
+    def _fetch_profile():
+        return db.client.from_("profiles").select("*").eq("user_id", user.id).maybe_single().execute()
+        
+    p_res = await db.run(_fetch_profile)
+    profile = getattr(p_res, "data", None) or {}
+    
+    plan = _normalize_plan(profile.get("subscription_plan"))
+    status = str(profile.get("subscription_status") or "active").lower()
+    
+    # Get active candidate count & capacity limit
+    cfg = BILLING_PLAN_CONFIG[plan]
+    candidate_limit = cfg["candidates"]
+    candidate_count = await get_candidate_count_after_deployment(db, user.id)
+
+    # Get renewal date (from cycle end)
     try:
         sub = await _get_or_create_subscription(db, user.id)
-    except Exception as exc:
-        return api_error(message=str(exc), status_code=500)
+        cycle_end = sub.get("billing_cycle_end")
+    except Exception:
+        cycle_end = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
 
-    plan = _normalize_plan(sub.get("plan"))
-    cfg = BILLING_PLAN_CONFIG[plan]
-    now = datetime.now(timezone.utc)
-    period_start = sub.get("billing_cycle_start") or now.replace(day=1).isoformat()
-    period_end = sub.get("billing_cycle_end") or now.isoformat()
-
-    aggregated = await _aggregate_usage(db, user.id, period_start, period_end)
+    # Dynamic Currency selection
+    currency = "USD"
+    if sub and isinstance(sub.get("metadata"), dict):
+        currency = str(sub["metadata"].get("currency") or "USD").upper()
 
     return ok({
         "plan": plan,
-        "status": str(sub.get("status") or "active"),
-        "wallet_balance": float(sub.get("wallet_balance") or 0),
-        "deposit_amount": float(sub.get("deposit_amount") or 0),
-        "overage_amount": float(sub.get("overage_amount") or 0),
-        "overage_cap": sub.get("overage_cap"),
-        "billing_cycle_start": sub.get("billing_cycle_start"),
-        "billing_cycle_end": sub.get("billing_cycle_end"),
-        "limits": {
-            "free_caps": cfg["free_caps"],
-            "feature_costs": FEATURE_COSTS,
-        },
-        "usage_breakdown": aggregated["by_feature"],
-        "usage_total_cost": aggregated["total_cost"],
+        "status": status,
+        "billing_cycle_end": cycle_end,
+        "currency": currency,
+        "validity": cfg["validity"],
+        "candidates_limit": candidate_limit,
+        "candidates_count": candidate_count,
+        "price": cfg[currency]["price"],
     })
-
 
 @router.post("/topup")
 async def billing_topup(payload: Dict[str, Any], request: Request, user: ClerkUser = Depends(require_user)):
-    """Node-compatible: POST /api/billing/topup"""
-    amount = float(payload.get("amount") or 0)
-    if not amount or amount <= 0:
-        return api_error(message="Valid amount is required", status_code=400)
-
-    frontend_url = _get_frontend_url(request)
-    success_url = f"{frontend_url}/billing?checkout=success&action=topup"
-    cancel_url = f"{frontend_url}/billing?checkout=cancelled&action=topup"
-
-    try:
-        session = await _create_stripe_checkout(
-            amount_cents=int(amount * 100),
-            label="Wallet Top-up",
-            plan_id="topup",
-            success_url=success_url,
-            cancel_url=cancel_url,
-            metadata={"action": "topup", "user_id": user.id, "amount": str(amount)},
-        )
-    except Exception as exc:
-        return api_error(message=str(exc), status_code=500)
-
-    return ok({"success": True, "session_id": session["id"], "checkout_url": session["url"]})
-
+    """POST /api/v2/billing/topup"""
+    # Simply return error since wallet top-up is no longer active in subscription model
+    return api_error(message="Wallet top-ups are disabled. Please subscribe to a plan to increase limits.", status_code=400)
 
 @router.post("/pay-invoice")
 async def pay_invoice(payload: Dict[str, Any], request: Request, user: ClerkUser = Depends(require_user)):
-    """Node-compatible: POST /api/billing/pay-invoice"""
-    invoice_id = str(payload.get("invoice_id") or "")
-    if not invoice_id:
-        return api_error(message="invoice_id is required", status_code=400)
-
-    db = get_db_admin_service()
-
-    def _fetch_invoice():
-        return (
-            db.client.from_("invoices")
-            .select("*")
-            .eq("id", invoice_id)
-            .eq("user_id", user.id)
-            .single()
-            .execute()
-        )
-
-    res = await db.run(_fetch_invoice)
-    invoice = getattr(res, "data", None)
-    if not isinstance(invoice, dict):
-        return api_error(message="Invoice not found", status_code=404)
-    if invoice.get("status") == "paid":
-        return ok({"success": True, "already_paid": True})
-
-    total = float(invoice.get("total") or 0)
-    if total <= 0:
-        return api_error(message="Invoice total is invalid", status_code=400)
-
-    frontend_url = _get_frontend_url(request)
-    success_url = f"{frontend_url}/billing?checkout=success&action=invoice_payment"
-    cancel_url = f"{frontend_url}/billing?checkout=cancelled&action=invoice_payment"
-
-    try:
-        session = await _create_stripe_checkout(
-            amount_cents=int(total * 100),
-            label=f"Invoice {invoice_id}",
-            plan_id="invoice_payment",
-            success_url=success_url,
-            cancel_url=cancel_url,
-            metadata={"action": "invoice_payment", "user_id": user.id, "invoice_id": invoice_id},
-        )
-    except Exception as exc:
-        return api_error(message=str(exc), status_code=500)
-
-    return ok({"success": True, "session_id": session["id"], "checkout_url": session["url"]})
-
+    """POST /api/v2/billing/pay-invoice"""
+    # Subscriptions handle invoice payments automatically; return ok
+    return ok({"success": True, "already_paid": True})
 
 @router.get("/invoices")
 async def list_invoices(user: ClerkUser = Depends(require_user)):
-    """Node-compatible: GET /api/billing/invoices"""
+    """GET /api/v2/billing/invoices"""
     db = get_db_admin_service()
 
     def _fetch():

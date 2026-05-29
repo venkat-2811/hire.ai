@@ -1343,7 +1343,7 @@ export const analyticsApi = {
 // ============== Subscription API ==============
 
 export interface SubscriptionInfo {
-  plan: 'free' | 'pro' | 'premium';
+  plan: 'free' | 'starter' | 'growth' | 'enterprise';
   status: string;
   subscription_id: string | null;
   plan_selected_at: string | null;
@@ -1376,10 +1376,10 @@ export const subscriptionApi = {
     request<SubscriptionInfo>('/subscription', {
     }),
 
-  createOrder: (plan: string) =>
+  createOrder: (plan: string, currency?: string) =>
     request<{ session_id: string; url: string; plan: string }>(
       '/subscription/create-order',
-      { method: 'POST', body: { plan } },
+      { method: 'POST', body: { plan, currency } },
     ),
 
   verify: (data: {
@@ -1411,20 +1411,14 @@ export const usageApi = {
 // ============== Billing API ==============
 
 export interface BillingUsageResponse {
-  plan: 'free' | 'pro' | 'premium';
-  status: 'active' | 'paused' | 'overdue' | 'cancel_at_period_end';
-  wallet_balance: number;
-  deposit_amount: number;
-  overage_amount: number;
-  overage_cap: number | null;
-  billing_cycle_start: string;
+  plan: 'free' | 'starter' | 'growth' | 'enterprise';
+  status: string;
   billing_cycle_end: string;
-  limits: {
-    free_caps: Record<string, number>;
-    feature_costs: Record<string, number>;
-  };
-  usage_breakdown: Record<string, { quantity: number; total_cost: number }>;
-  usage_total_cost: number;
+  currency: string;
+  validity: string;
+  candidates_limit: number;
+  candidates_count: number;
+  price: number;
 }
 
 export interface BillingInvoice {
@@ -1445,10 +1439,10 @@ export interface BillingInvoice {
 }
 
 export const billingApi = {
-  subscribe: (plan: 'pro' | 'premium') =>
+  subscribe: (plan: 'starter' | 'growth' | 'enterprise', currency?: string) =>
     request<{ success: boolean; session_id: string; checkout_url: string; plan: string; deposit_amount: number }>(
       '/billing/subscribe',
-      { method: 'POST', body: { plan } },
+      { method: 'POST', body: { plan, currency } },
     ),
 
   usage: () =>

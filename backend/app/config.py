@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = Field(default=True, alias="SMTP_USE_SSL")
 
     stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
+    deployment_date: str = Field(default="2026-05-29T22:35:00+05:30", alias="DEPLOYMENT_DATE")
 
 
 def _format_settings_validation_error(exc: ValidationError) -> str:

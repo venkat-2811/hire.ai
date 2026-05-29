@@ -389,6 +389,11 @@ async def invite_assessments(
 ):
     db = get_db_admin_service()
 
+    from app.utils.billing_helpers import check_candidate_limit
+    err_msg = await check_candidate_limit(db, user.id)
+    if err_msg:
+        return api_error(message=err_msg, status_code=403)
+
     if not body.job_id:
         return api_error(message="Missing job_id", status_code=400)
     if not isinstance(body.candidate_ids, list) or len(body.candidate_ids) == 0:

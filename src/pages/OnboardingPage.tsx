@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown } from 'lucide-react';
+import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown, Globe } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -22,63 +22,73 @@ const TIMEZONES = [
   'Europe/London', 'Europe/Berlin', 'Asia/Singapore', 'Australia/Sydney',
 ];
 
-const BASE_PLANS = [
+// Geolocation-based currency detection
+const asianTimezones = ['Asia/Kolkata', 'Asia/Karachi', 'Asia/Dhaka', 'Asia/Colombo', 'Asia/Kathmandu', 'Asia/Kabul'];
+const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const isAsiaRegion = asianTimezones.includes(userTimezone) || userTimezone === 'Asia/Kolkata';
+const detectedCurrency = isAsiaRegion ? 'INR' : 'USD';
+
+const ONBOARDING_PLANS = [
   {
     id: 'free',
     name: 'Free',
-    priceMonthly: '$0',
-    priceYearly: '$0',
-    periodMonthly: 'forever',
-    periodYearly: 'forever',
+    priceUSD: 0,
+    priceINR: 0,
+    validity: '1 Month',
     icon: Sparkles,
     gradient: 'from-slate-500 to-slate-600',
     cardBg: 'bg-slate-500/5 border-slate-500/20',
     features: [
-      { text: 'Up to 10 job roles', highlight: false },
-      { text: '25 technical assessments', highlight: false },
-      { text: '25 AI interviews', highlight: false },
-      { text: 'Basic analytics', highlight: false },
+      { text: '5 Candidate Assessments', highlight: false },
+      { text: 'Dynamic AI Interview Prep', highlight: false },
+      { text: 'Robust Resume Text Parsing', highlight: false },
+      { text: 'Tailored MCQ Generation', highlight: false },
     ],
     cta: 'Start Free',
   },
   {
-    id: 'pro',
-    name: 'Pro',
-    priceMonthly: '$36.13',
-    priceYearly: '$361.33',
-    periodMonthly: '/mo',
-    periodYearly: '/yr',
+    id: 'starter',
+    name: 'Starter',
+    priceUSD: 300,
+    priceINR: 27000,
+    validity: '6 Months',
     icon: Zap,
     gradient: 'from-blue-500 to-cyan-500',
     cardBg: 'bg-blue-500/5 border-blue-500/20',
     features: [
-      { text: 'Up to 15 job roles', highlight: true },
-      { text: '100+ technical assessments', highlight: true },
-      { text: '100+ AI interviews', highlight: true },
-      { text: 'Priority support', highlight: false },
+      { text: '100 Candidate Assessments', highlight: true },
+      { text: 'AI Assessment MCQ + Coding', highlight: true },
+      { text: 'Priority Customer Support', highlight: false },
+      { text: 'Valid for 6 Full Months', highlight: false },
     ],
-    cta: 'Subscribe',
+    cta: 'Choose Starter',
   },
   {
-    id: 'premium',
-    name: 'Premium',
-    priceMonthly: '$96.37',
-    priceYearly: '$963.73',
-    periodMonthly: '/mo',
-    periodYearly: '/yr',
+    id: 'growth',
+    name: 'Growth',
+    priceUSD: 1100,
+    priceINR: 99000,
+    validity: '1 Year',
     icon: Crown,
     gradient: 'from-purple-500 to-pink-500',
     cardBg: 'bg-purple-500/5 border-purple-500/30',
     popular: true,
     features: [
-      { text: '50+ job roles (unlimited)', highlight: true },
-      { text: 'Unlimited assessments', highlight: true },
-      { text: 'Unlimited interviews', highlight: true },
-      { text: 'Dedicated support', highlight: false },
+      { text: '500 Candidate Assessments', highlight: true },
+      { text: 'Premium Multi-role Hiring', highlight: true },
+      { text: 'Dedicated Priority Support', highlight: false },
+      { text: 'Valid for 1 Full Year', highlight: false },
     ],
-    cta: 'Subscribe',
+    cta: 'Choose Growth',
   },
 ];
+
+const formatCurrency = (amount: number, currency: string) => {
+  if (amount === 0) return currency === 'INR' ? '₹0' : '$0';
+  return currency === 'INR'
+    ? `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+    : `$${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+};
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -89,7 +99,6 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
 
   const initial = useMemo(() => ({
     organization_email: profile?.organization_email ?? '',
@@ -116,9 +125,9 @@ export default function OnboardingPage() {
 
   const verifyingRef = useRef(false);
 
-  // Handle Stripe redirect back — wait for auth/profile to be ready
+  // Handle Stripe redirect back
   useEffect(() => {
-    if (isLoading) return; // Auth not ready yet, wait
+    if (isLoading) return;
 
     const sessionId = searchParams.get('session_id');
     const plan = searchParams.get('plan');
@@ -136,13 +145,12 @@ export default function OnboardingPage() {
       setProcessingPlan(true);
       setSelectedPlan(plan);
 
-      // Clean URL immediately to prevent re-triggering
+      // Clean URL immediately
       window.history.replaceState({}, '', '/onboarding');
 
       subscriptionApi.verify({ session_id: sessionId, plan })
         .then(() => {
-          toast.success(`${plan === 'pro' ? 'Pro' : 'Premium'} plan activated! 🎉`);
-          // Invalidate billing queries so the plan shows correctly on first dashboard load
+          toast.success(`${plan.toUpperCase()} plan activated successfully! 🎉`);
           void queryClient.invalidateQueries({ queryKey: ['billing-usage'] });
           void queryClient.invalidateQueries({ queryKey: ['layout-billing-usage'] });
           void queryClient.invalidateQueries({ queryKey: ['profile'] });
@@ -169,7 +177,6 @@ export default function OnboardingPage() {
     if (!form.organization_email.trim()) return;
     if (!form.company_name.trim()) return;
 
-    // Save company details but don't mark onboarding complete yet
     updateProfile.mutate(
       {
         organization_email: form.organization_email.trim(),
@@ -202,7 +209,6 @@ export default function OnboardingPage() {
     try {
       if (planId === 'free') {
         await subscriptionApi.selectFree();
-        // Mark onboarding complete
         updateProfile.mutate(
           { onboarding_completed: true } as any,
           { onSuccess: () => navigate('/dashboard', { replace: true }) },
@@ -211,11 +217,10 @@ export default function OnboardingPage() {
       }
 
       // Create Stripe Checkout session and redirect
-      const session = await subscriptionApi.createOrder(planId);
-      // Redirect to Stripe Checkout
+      const session = await subscriptionApi.createOrder(planId, detectedCurrency);
       window.location.href = session.url;
     } catch (err: any) {
-      toast.error(err.message || 'Something went wrong');
+      toast.error(err.message || 'Failed to initialize subscription purchase.');
       setProcessingPlan(false);
       setSelectedPlan(null);
     }
@@ -234,7 +239,6 @@ export default function OnboardingPage() {
   return (
     <DashboardLayout>
       <div className="p-6 lg:p-8 max-w-4xl mx-auto">
-        {/* Step indicator */}
         <div className="flex items-center gap-3 mb-8">
           <div className={`flex items-center gap-2 ${step >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
@@ -349,87 +353,70 @@ export default function OnboardingPage() {
             >
               <div className="mb-6 text-center">
                 <h1 className="text-2xl lg:text-3xl font-bold">Choose Your Plan</h1>
-                <p className="text-muted-foreground mt-1">Select a plan that fits your hiring needs. You can upgrade or downgrade anytime.</p>
-                
-                <div className="flex items-center justify-center gap-3 mt-6">
-                  <span className={`text-sm font-medium ${billingCycle === 'monthly' ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
-                  <button
-                    type="button"
-                    className="relative inline-flex h-6 w-11 items-center rounded-full bg-primary/20 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                    onClick={() => setBillingCycle(c => c === 'monthly' ? 'yearly' : 'monthly')}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-primary transition-transform ${
-                        billingCycle === 'yearly' ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                  <span className={`text-sm font-medium flex items-center gap-1.5 ${billingCycle === 'yearly' ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    Yearly <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Save ~17%</Badge>
-                  </span>
+                <p className="text-muted-foreground mt-1">Select an onboard plan to active candidate assessment capacities.</p>
+                <div className="flex items-center justify-center gap-1.5 mt-3 text-xs text-muted-foreground font-semibold">
+                  <Globe className="h-3.5 w-3.5" />
+                  <span>Currency Auto-Detected: <span className="text-primary font-bold">{detectedCurrency}</span></span>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {BASE_PLANS.map((plan) => {
-                  const isYearly = billingCycle === 'yearly';
-                  const actualPlanId = plan.id === 'free' ? 'free' : `${plan.id}${isYearly ? '_yearly' : ''}`;
-                  const price = isYearly ? plan.priceYearly : plan.priceMonthly;
-                  const period = isYearly ? plan.periodYearly : plan.periodMonthly;
+                {ONBOARDING_PLANS.map((plan) => {
+                  const price = detectedCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
                   
                   return (
-                  <motion.div
-                    key={plan.id}
-                    whileHover={{ scale: 1.02 }}
-                    className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all cursor-pointer ${
-                      selectedPlan === actualPlanId
-                        ? 'border-primary shadow-lg shadow-primary/10'
-                        : plan.cardBg
-                    } ${plan.popular ? 'ring-2 ring-purple-500/30' : ''}`}
-                    onClick={() => !processingPlan && setSelectedPlan(actualPlanId)}
-                  >
-                    {plan.popular && (
-                      <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-3">
-                        MOST POPULAR
-                      </Badge>
-                    )}
-
-                    <div className="text-center mb-4">
-                      <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${plan.gradient} mb-3`}>
-                        <plan.icon className="h-6 w-6 text-white" />
-                      </div>
-                      <h3 className="text-lg font-bold">{plan.name}</h3>
-                      <div className="mt-1 flex items-baseline justify-center gap-1">
-                        <span className="text-3xl font-extrabold">{price}</span>
-                        <span className="text-sm text-muted-foreground">{period}</span>
-                      </div>
-                    </div>
-
-                    <ul className="space-y-2.5 mb-6 flex-grow">
-                      {plan.features.map((f) => (
-                        <li key={f.text} className="flex items-center gap-2 text-sm">
-                          <Check className={`h-4 w-4 flex-shrink-0 ${f.highlight ? 'text-green-500' : 'text-muted-foreground'}`} />
-                          <span className={f.highlight ? 'font-medium' : 'text-muted-foreground'}>{f.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    <Button
-                      className="w-full mt-auto"
-                      variant={plan.id === 'premium' ? 'default' : plan.id === 'pro' ? 'default' : 'outline'}
-                      disabled={processingPlan}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePlanSelect(actualPlanId);
-                      }}
+                    <motion.div
+                      key={plan.id}
+                      whileHover={{ scale: 1.02 }}
+                      className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all cursor-pointer bg-card ${
+                        selectedPlan === plan.id
+                          ? 'border-primary shadow-lg shadow-primary/10'
+                          : plan.cardBg
+                      } ${plan.popular ? 'ring-2 ring-purple-500/30' : ''}`}
+                      onClick={() => !processingPlan && setSelectedPlan(plan.id)}
                     >
-                      {processingPlan && selectedPlan === actualPlanId ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : null}
-                      {plan.id === 'free' ? plan.cta : `${plan.cta} — ${price}${period}`}
-                    </Button>
-                  </motion.div>
-                );
+                      {plan.popular && (
+                        <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-3">
+                          MOST POPULAR
+                        </Badge>
+                      )}
+
+                      <div className="text-center mb-4">
+                        <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${plan.gradient} mb-3`}>
+                          <plan.icon className="h-6 w-6 text-white" />
+                        </div>
+                        <h3 className="text-lg font-bold">{plan.name}</h3>
+                        <div className="mt-1 flex items-baseline justify-center gap-1">
+                          <span className="text-3xl font-extrabold">{formatCurrency(price, detectedCurrency)}</span>
+                          <span className="text-sm text-muted-foreground font-semibold">/ {plan.validity}</span>
+                        </div>
+                      </div>
+
+                      <ul className="space-y-2.5 mb-6 flex-grow">
+                        {plan.features.map((f, idx) => (
+                          <li key={idx} className="flex items-center gap-2 text-sm">
+                            <Check className={`h-4 w-4 flex-shrink-0 ${f.highlight ? 'text-green-500' : 'text-muted-foreground'}`} />
+                            <span className={f.highlight ? 'font-medium' : 'text-muted-foreground'}>{f.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <Button
+                        className="w-full mt-auto font-bold"
+                        variant={plan.id === 'growth' ? 'default' : 'outline'}
+                        disabled={processingPlan}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePlanSelect(plan.id);
+                        }}
+                      >
+                        {processingPlan && selectedPlan === plan.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : null}
+                        {plan.id === 'free' ? plan.cta : `${plan.cta} — ${formatCurrency(price, detectedCurrency)}`}
+                      </Button>
+                    </motion.div>
+                  );
                 })}
               </div>
 
