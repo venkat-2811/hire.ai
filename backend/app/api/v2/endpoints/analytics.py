@@ -329,7 +329,8 @@ async def get_candidate_analytics(
     except Exception:
         pass
 
-    # ai_interview_sessions
+    # ai_interview_sessions — keep the most recent COMPLETED session with evaluation;
+    # fall back to the most recent session of any status if none are completed.
     interviews_map: Dict[str, Dict[str, Any]] = {}
     try:
         def _fetch_interviews():
@@ -343,21 +344,37 @@ async def get_candidate_analytics(
 
         interviews_res = await db.run(_fetch_interviews)
         interviews = getattr(interviews_res, "data", None) or []
+        # Build two maps: best completed-with-eval, and best overall (fallback)
+        interviews_completed_map: Dict[str, Dict[str, Any]] = {}
+        interviews_any_map: Dict[str, Dict[str, Any]] = {}
         for i in interviews:
             if not isinstance(i, dict) or not i.get("candidate_id") or not i.get("job_id"):
                 continue
             k = _make_key(str(i.get("candidate_id")), str(i.get("job_id")))
-            existing = interviews_map.get(k)
             i_ts = _to_millis(i.get("completed_at")) or _to_millis(i.get("updated_at")) or _to_millis(i.get("created_at"))
-            e_ts = (
-                _to_millis(existing.get("completed_at"))
-                or _to_millis(existing.get("updated_at"))
-                or _to_millis(existing.get("created_at"))
-                if existing
-                else 0
+            # Track best completed session (has evaluation data)
+            has_eval = isinstance(i.get("final_evaluation"), dict) and bool(i.get("final_evaluation"))
+            is_completed = i.get("status") in ("completed", "terminated")
+            if is_completed or has_eval:
+                existing_c = interviews_completed_map.get(k)
+                e_ts_c = (
+                    _to_millis(existing_c.get("completed_at")) or _to_millis(existing_c.get("updated_at")) or _to_millis(existing_c.get("created_at"))
+                    if existing_c else 0
+                )
+                if not existing_c or i_ts >= e_ts_c:
+                    interviews_completed_map[k] = i
+            # Track best overall session
+            existing_a = interviews_any_map.get(k)
+            e_ts_a = (
+                _to_millis(existing_a.get("completed_at")) or _to_millis(existing_a.get("updated_at")) or _to_millis(existing_a.get("created_at"))
+                if existing_a else 0
             )
-            if not existing or i_ts >= e_ts:
-                interviews_map[k] = i
+            if not existing_a or i_ts >= e_ts_a:
+                interviews_any_map[k] = i
+        # Prefer completed-with-eval, fall back to any
+        all_keys = set(interviews_completed_map.keys()) | set(interviews_any_map.keys())
+        for k in all_keys:
+            interviews_map[k] = interviews_completed_map.get(k) or interviews_any_map[k]
     except Exception:
         pass
 
@@ -390,7 +407,8 @@ async def get_candidate_analytics(
         if not isinstance(final_eval, dict):
             final_eval = {}
 
-        if interview_mode == "manual" and manual_interview_score is not None:
+        # Manual score always takes priority over AI interview score when present
+        if manual_interview_score is not None:
             try:
                 interview_score = float(manual_interview_score)
             except Exception:
@@ -407,6 +425,9 @@ async def get_candidate_analytics(
                 else:
                     recommendation = "no_hire"
             interview_status = str(application_interview_status or "completed")
+        elif interview_mode == "manual":
+            # Manual mode but no score yet
+            interview_status = str(application_interview_status or "pending")
         else:
             if interview_terminated:
                 interview_score = 0

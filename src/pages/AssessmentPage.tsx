@@ -1951,14 +1951,13 @@ public class CandidateSolution {
                           >
                             Next Section →
                           </Button>
-                        ) : (
+                        ) : currentMcqIndex < mcqQuestions.length - 1 ? (
                           <Button
-                            onClick={() => setCurrentMcqIndex((prev) => Math.min(mcqQuestions.length - 1, prev + 1))}
-                            disabled={currentMcqIndex === mcqQuestions.length - 1}
+                            onClick={() => setCurrentMcqIndex((prev) => prev + 1)}
                           >
                             Next
                           </Button>
-                        )}
+                        ) : null}
                       </div>
                     </CardContent>
                   </Card>

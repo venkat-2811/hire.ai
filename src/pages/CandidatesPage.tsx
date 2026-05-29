@@ -1052,10 +1052,18 @@ export default function CandidatesPage() {
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the candidate
-                and remove their data from our servers, including any assessment or interview records.
+              <AlertDialogTitle>Permanently Delete Candidate?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>This action <strong className="text-foreground">cannot be undone</strong>. All data for this candidate will be permanently removed, including:</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Assessment sessions, scores &amp; responses</li>
+                    <li>AI &amp; manual interview records &amp; evaluations</li>
+                    <li>ATS screening results &amp; recommendations</li>
+                    <li>All job application mappings &amp; statuses</li>
+                  </ul>
+                  <p>If this candidate is re-onboarded for the same role, they will be treated as a completely fresh candidate with no prior history.</p>
+                </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1069,7 +1077,7 @@ export default function CandidatesPage() {
                   }
                 }}
               >
-                Delete
+                Delete Permanently
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
