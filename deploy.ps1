@@ -1,9 +1,9 @@
 param(
-    [string]$Host = "root@147.93.27.101",
+    [string]$RemoteHost = "root@147.93.27.101",
     [string]$Key  = "$env:USERPROFILE\.ssh\id_ed25519_rekshift"
 )
 
-$SSH = "ssh -i `"$Key`" -o StrictHostKeyChecking=no $Host"
+$SSH = "ssh -i `"$Key`" -o StrictHostKeyChecking=no $RemoteHost"
 
 Write-Host "==> Pulling latest code on VPS..." -ForegroundColor Cyan
 Invoke-Expression "$SSH 'cd /root/hire.ai && git pull origin main'"
