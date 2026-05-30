@@ -146,16 +146,12 @@ export default function CandidatesPage() {
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
   const selectedJob = useMemo(() => allJobs.find((j) => j.id === selectedJobId) || null, [allJobs, selectedJobId]);
+  // Determine Apex mode based ONLY on the Job Title (case-insensitive).
+  // Keywords: Salesforce, Apex, SF
   const selectedJobLooksSalesforce = useMemo(() => {
     if (!selectedJob) return false;
-    const text = [
-      selectedJob.role,
-      selectedJob.title,
-      ...(selectedJob.must_have_skills || []),
-      ...(selectedJob.good_to_have_skills || []),
-      selectedJob.description,
-    ].join(' ');
-    return isSalesforceRoleText(text);
+    const title = selectedJob.title || '';
+    return /(salesforce|apex|\bSF\b)/i.test(title);
   }, [selectedJob]);
 
   // Auto-determine assessment mode based on job role
