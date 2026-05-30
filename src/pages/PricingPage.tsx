@@ -194,13 +194,15 @@ const PricingPage = () => {
             <img
               src={logoFull}
               alt="Rekshift"
-              className="h-9 w-auto object-contain"
+              className="h-11 w-auto object-contain"
               draggable={false}
             />
           </Link>
 
-          <div className="hidden md:flex items-center gap-6 text-sm font-medium">
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium">
             <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Home</Link>
+            <Link to="/#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</Link>
+            <Link to="/#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">How it Works</Link>
             <Link to="/pricing" className="text-primary">Pricing</Link>
             <Link to="/contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
           </div>

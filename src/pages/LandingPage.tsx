@@ -45,14 +45,37 @@ const features = [
   },
 ];
 
-const roles = [
-  { name: 'Frontend Developer', image: '/frontend.png' },
-  { name: 'Backend Engineer', image: '/backend.png' },
-  { name: 'Data Scientist', image: '/data-scientist.png' },
-  { name: 'DevOps Engineer', image: '/devops.png' },
-  { name: 'Product Manager', image: '/product-manager.png' },
-  { name: 'UX Designer', image: '/ux-design.webp' },
-  { name: 'QA Engineer', image: '/QA-Engineer.png' },
+const clientLogos = [
+  {
+    name: 'Mudra Systems',
+    url: 'https://www.mudrasys.com',
+    initials: 'MS',
+    caption: 'Enterprise IT services',
+  },
+  {
+    name: 'Compile Infy',
+    url: 'https://www.compileinfy.com',
+    initials: 'CI',
+    caption: 'Digital engineering partners',
+  },
+  {
+    name: 'DBAce Technologies',
+    url: 'https://www.dbacetech.com',
+    initials: 'DB',
+    caption: 'Business automation experts',
+  },
+  {
+    name: 'Mellowsoft',
+    url: 'https://mellowsoftinc.com',
+    initials: 'MS',
+    caption: 'Software consultancy',
+  },
+  {
+    name: 'BVIT Solutions',
+    url: 'https://bvitsolutions.com',
+    initials: 'BV',
+    caption: 'Technology staffing',
+  },
 ];
 
 export default function LandingPage() {
@@ -73,7 +96,7 @@ export default function LandingPage() {
   const { scrollY } = useScroll();
 
   useMotionValueEvent(scrollY, "change", (latest) => {
-    const sections = ['hero', 'roles', 'features', 'how-it-works'];
+    const sections = ['hero', 'features', 'how-it-works'];
     for (const section of [...sections].reverse()) {
       const element = document.getElementById(section);
       if (element) {
@@ -124,16 +147,15 @@ export default function LandingPage() {
             <img
               src={logoFull}
               alt="Rekshift"
-              className="h-9 w-auto object-contain"
+              className="h-11 w-auto object-contain"
               draggable={false}
             />
           </div>
 
-          {/* ScrollSpy Links (Desktop) */}
-          <div className="hidden md:flex items-center gap-6 text-sm font-medium">
+          {/* ScrollSpy Links */}
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium">
             {[
               { id: 'hero', label: 'Home' },
-              { id: 'roles', label: 'Roles' },
               { id: 'features', label: 'Features' },
               { id: 'how-it-works', label: 'How it Works' },
             ].map((link) => (
@@ -238,40 +260,40 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Roles Section */}
-      <section id="roles" className="py-20 bg-muted/30 overflow-hidden">
-        <div className="container mx-auto px-4 text-center mb-12">
-          <h2 className="text-3xl font-bold mb-4">Supported Roles</h2>
-          <p className="text-muted-foreground">
-            Role-specific evaluation criteria and practical assessments
-          </p>
-        </div>
+      {/* Client Logos Section */}
+      <section id="clients" className="py-20 px-4">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4">Trusted by Hiring Teams</h2>
+            <p className="text-muted-foreground">
+              Leading employers rely on Rekshift for smarter, fairer hiring decisions.
+            </p>
+          </div>
 
-        <div className="relative w-full flex overflow-x-hidden">
-          {/* Fading Edges */}
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-muted/30 to-transparent z-10" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-muted/30 to-transparent z-10" />
-
-          <motion.div
-            className="flex gap-6 px-4 py-4 w-max"
-            animate={{ x: ["0%", "-50%"] }}
-            transition={{ repeat: Infinity, ease: "linear", duration: 40 }}
-          >
-            {[...roles, ...roles].map((role, index) => (
-              <div
-                key={index}
-                className="w-[300px] flex-shrink-0 p-6 rounded-2xl bg-card border hover:shadow-lg transition-shadow flex flex-col items-center text-center"
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {clientLogos.map((client) => (
+              <a
+                key={client.name}
+                href={client.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group rounded-3xl border bg-card p-6 transition-shadow hover:shadow-xl"
               >
-                <div className="w-24 h-24 mb-4 relative overflow-hidden rounded-full border-4 border-muted/50">
-                  <img src={role.image} alt={role.name} className="object-cover w-full h-full" />
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary text-lg font-semibold">
+                    {client.initials}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
+                      {client.name}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">{client.url.replace(/^https?:\/\//, '')}</p>
+                  </div>
                 </div>
-                <h3 className="text-lg font-semibold mb-2">{role.name}</h3>
-                <p className="text-sm text-muted-foreground">
-                  Custom assessments, role-specific questions, and tailored evaluation criteria.
-                </p>
-              </div>
+                <p className="mt-4 text-sm text-muted-foreground">{client.caption}</p>
+              </a>
             ))}
-          </motion.div>
+          </div>
         </div>
       </section>
 
@@ -437,7 +459,7 @@ export default function LandingPage() {
             <span className="font-semibold">Rekshift</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            © 2024 Rekshift. Built with Lovable.
+            © 2024 Rekshift.
           </p>
         </div>
       </footer>

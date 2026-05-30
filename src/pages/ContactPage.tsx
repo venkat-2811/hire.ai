@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import logoFull from '@/assets/LOGO_full.png';
-import { Phone, Mail, MapPin, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Mail, Send, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const ContactPage = () => {
@@ -74,7 +74,9 @@ const ContactPage = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send message');
+        const errorBody = await response.json().catch(() => null);
+        const errorMessage = errorBody?.detail || 'Failed to send message';
+        throw new Error(errorMessage);
       }
 
       setSubmitted(true);
@@ -115,13 +117,15 @@ const ContactPage = () => {
             <img
               src={logoFull}
               alt="Rekshift"
-              className="h-9 w-auto object-contain"
+              className="h-11 w-auto object-contain"
               draggable={false}
             />
           </Link>
 
-          <div className="hidden md:flex items-center gap-6 text-sm font-medium">
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium">
             <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Home</Link>
+            <Link to="/#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</Link>
+            <Link to="/#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">How it Works</Link>
             <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
             <Link to="/contact" className="text-primary">Contact</Link>
           </div>
@@ -153,52 +157,12 @@ const ContactPage = () => {
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8 mb-16">
-            {/* Contact Info Cards */}
+          <div className="grid md:grid-cols-1 gap-8 mb-16">
+            {/* Contact Info Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="bg-card border rounded-2xl p-8 hover:shadow-lg transition-shadow"
-            >
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Phone className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">US Contact</h3>
-                  <p className="text-sm text-muted-foreground">Call us during business hours</p>
-                </div>
-              </div>
-              <a href="tel:+13093619111" className="text-lg font-semibold text-primary hover:text-primary/80 transition-colors">
-                +1 309-361-9111
-              </a>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="bg-card border rounded-2xl p-8 hover:shadow-lg transition-shadow"
-            >
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Phone className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">India Contact</h3>
-                  <p className="text-sm text-muted-foreground">Call us during business hours</p>
-                </div>
-              </div>
-              <a href="tel:+918121642777" className="text-lg font-semibold text-primary hover:text-primary/80 transition-colors">
-                +91 8121642777
-              </a>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
               className="bg-card border rounded-2xl p-8 hover:shadow-lg transition-shadow"
             >
               <div className="flex items-center gap-4 mb-4">
@@ -210,8 +174,8 @@ const ContactPage = () => {
                   <p className="text-sm text-muted-foreground">We'll respond within 24 hours</p>
                 </div>
               </div>
-              <a href="mailto:vamsi@bvitsolutions.com" className="text-lg font-semibold text-primary hover:text-primary/80 transition-colors break-all">
-                vamsi@bvitsolutions.com
+              <a href="mailto:admin@rekshift.com" className="text-lg font-semibold text-primary hover:text-primary/80 transition-colors break-all">
+                admin@rekshift.com
               </a>
             </motion.div>
           </div>

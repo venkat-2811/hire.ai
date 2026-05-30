@@ -45,8 +45,6 @@ class ContactRequest(BaseModel):
     @classmethod
     def validate_full_name(cls, v: str) -> str:
         """Validate full name."""
-        if not re.match(r'^[a-zA-Z\s\-\'\.]+$', v.strip()):
-            raise ValueError('Name contains invalid characters')
         return v.strip()
 
 
@@ -71,7 +69,7 @@ async def submit_contact(request: ContactRequest) -> ContactResponse:
         email_service = EmailService()
         
         # Recipient email address
-        recipient_email = "vamsi@bvitsolutions.com"
+        recipient_email = "admin@rekshift.com"
         
         # Build email content
         subject = f"New Contact Inquiry: {request.subject or 'General Inquiry'}"

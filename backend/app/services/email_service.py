@@ -2,6 +2,7 @@
 Email service using SMTP (aiosmtplib) for sending transactional emails.
 Configured for Hostinger (smtp.hostinger.com:465 SSL) by default.
 """
+import asyncio
 import re
 import logging
 import uuid
@@ -69,20 +70,29 @@ class EmailService:
         msg.attach(MIMEText(plain_text, "plain", "utf-8"))
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-        try:
-            await aiosmtplib.send(
-                msg,
-                hostname=self.smtp_host,
-                port=self.smtp_port,
-                username=self.smtp_user,
-                password=self.smtp_password,
-                use_tls=self.use_ssl,
-                start_tls=not self.use_ssl,
-                timeout=30,
-            )
-        except Exception as e:
-            logger.error("[email] SMTP FAILED to=%s subject=%s error=%s", recipients, subject, str(e))
-            raise
+        last_exception = None
+        for attempt in range(1, 3):
+            try:
+                await aiosmtplib.send(
+                    msg,
+                    hostname=self.smtp_host,
+                    port=self.smtp_port,
+                    username=self.smtp_user,
+                    password=self.smtp_password,
+                    use_tls=self.use_ssl,
+                    start_tls=not self.use_ssl,
+                    timeout=30,
+                )
+                last_exception = None
+                break
+            except Exception as e:
+                last_exception = e
+                logger.error("[email] SMTP FAILED attempt=%s to=%s subject=%s error=%s", attempt, recipients, subject, str(e))
+                if attempt < 3:
+                    await asyncio.sleep(1)
+
+        if last_exception is not None:
+            raise last_exception
 
         logger.info("[email] sent to=%s subject=%s", recipients, subject)
         return {"status": "sent", "to": recipients}
