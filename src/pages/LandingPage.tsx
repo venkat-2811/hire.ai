@@ -86,11 +86,11 @@ export default function LandingPage() {
   const [isFirstVisit, setIsFirstVisit] = useState(true);
 
   useEffect(() => {
-    const visited = sessionStorage.getItem('rekshift_visited');
+    const visited = sessionStorage.getItem('rekshift_visited_home');
     if (visited) {
       setIsFirstVisit(false);
     } else {
-      sessionStorage.setItem('rekshift_visited', 'true');
+      sessionStorage.setItem('rekshift_visited_home', 'true');
     }
   }, []);
 
