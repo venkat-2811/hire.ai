@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,17 @@ import { useToast } from '@/hooks/use-toast';
 
 const ContactPage = () => {
   const { toast } = useToast();
+  const [isFirstVisit, setIsFirstVisit] = useState(true);
+
+  useEffect(() => {
+    const visited = sessionStorage.getItem('rekshift_visited');
+    if (visited) {
+      setIsFirstVisit(false);
+    } else {
+      sessionStorage.setItem('rekshift_visited', 'true');
+    }
+  }, []);
+
   const [formData, setFormData] = useState({
     fullName: '',
     companyName: '',
@@ -146,23 +157,31 @@ const ContactPage = () => {
         <div className="container mx-auto max-w-6xl">
           {/* Header */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="text-center mb-16"
           >
-            <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4">Get in Touch</h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Have a question or need assistance? Our team is here to help. We typically respond within 24 business hours.. E-mail us at admin@rekshift.com
-            </p>
+            <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-6">Get in Touch</h1>
+            <div className="text-lg text-muted-foreground max-w-2xl mx-auto space-y-4 leading-relaxed">
+              <p>Have a question or need assistance?</p>
+              <p>Our team is here to help.</p>
+              <p>We typically respond within 24 business hours.</p>
+              <p>
+                E-mail us at{" "}
+                <a href="mailto:admin@rekshift.com" className="text-primary hover:underline font-medium">
+                  admin@rekshift.com
+                </a>
+              </p>
+            </div>
           </motion.div>
 
           <div className="grid md:grid-cols-1 gap-8 mb-16">
             {/* Contact Info Card */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
+              transition={{ duration: 0.5, delay: isFirstVisit ? 0.1 : 0 }}
               className="bg-card border rounded-2xl p-8 hover:shadow-lg transition-shadow"
             >
               <div className="flex items-center gap-4 mb-4">
@@ -182,9 +201,9 @@ const ContactPage = () => {
 
           {/* Contact Form */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
+            transition={{ duration: 0.5, delay: isFirstVisit ? 0.4 : 0 }}
             className="bg-card border rounded-3xl p-8 md:p-12 max-w-3xl mx-auto"
           >
             <h2 className="text-2xl font-bold text-foreground mb-8">Send us a Message</h2>
@@ -321,9 +340,9 @@ const ContactPage = () => {
 
           {/* Additional Info */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
+            transition={{ duration: 0.5, delay: isFirstVisit ? 0.5 : 0 }}
             className="mt-16 grid md:grid-cols-4 gap-6"
           >
             {[

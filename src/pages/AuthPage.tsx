@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import logoFull from '@/assets/LOGO_full.png';
 import logoIcon from '@/assets/logo.png';
+import { ArrowLeft } from 'lucide-react';
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -32,11 +33,11 @@ export default function AuthPage() {
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary/90 to-info/80 p-12 flex-col justify-between">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3.5">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur p-2">
               <img src={logoIcon} alt="Rekshift" className="h-full w-full object-contain" draggable={false} />
             </div>
-            <span className="text-2xl font-bold text-white tracking-wide">Rekshift</span>
+            <span className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/90">Rekshift</span>
           </div>
         </div>
 
@@ -90,13 +91,22 @@ export default function AuthPage() {
           transition={{ duration: 0.3 }}
           className="w-full max-w-md"
         >
-          <div className="lg:hidden flex items-center justify-center mb-8">
-            <img
-              src={logoFull}
-              alt="Rekshift"
-              className="h-12 w-auto object-contain"
-              draggable={false}
-            />
+          <div className="flex flex-col items-center gap-4 mb-6">
+            <Link to="/" className="flex items-center justify-center transition-transform hover:scale-105">
+              <img
+                src={logoFull}
+                alt="Rekshift"
+                className="h-16 w-auto object-contain filter drop-shadow-sm"
+                draggable={false}
+              />
+            </Link>
+            
+            <Button variant="ghost" size="sm" asChild className="rounded-full text-muted-foreground hover:text-foreground">
+              <Link to="/" className="inline-flex items-center gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                Back to Home
+              </Link>
+            </Button>
           </div>
 
           <div className="flex justify-center w-full">

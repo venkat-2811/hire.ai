@@ -154,6 +154,16 @@ const formatPrice = (price: number): string => {
 const PricingPage = () => {
   const [currency, setCurrency] = useState<Currency>('USD');
   const [autoDetected, setAutoDetected] = useState(true);
+  const [isFirstVisit, setIsFirstVisit] = useState(true);
+
+  useEffect(() => {
+    const visited = sessionStorage.getItem('rekshift_visited');
+    if (visited) {
+      setIsFirstVisit(false);
+    } else {
+      sessionStorage.setItem('rekshift_visited', 'true');
+    }
+  }, []);
 
   useEffect(() => {
     // Try to detect user's location
@@ -223,7 +233,7 @@ const PricingPage = () => {
         <div className="container mx-auto max-w-7xl">
           {/* Header */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="text-center mb-12"
@@ -235,9 +245,9 @@ const PricingPage = () => {
 
             {/* Currency Toggle */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={isFirstVisit ? { opacity: 0, scale: 0.9 } : false}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
+              transition={{ delay: isFirstVisit ? 0.2 : 0 }}
               className="inline-flex items-center gap-4 bg-card border rounded-full p-1"
             >
               <button
@@ -274,9 +284,9 @@ const PricingPage = () => {
             {plans.map((plan, index) => (
               <motion.div
                 key={plan.name}
-                initial={{ opacity: 0, y: 20 }}
+                initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
+                transition={{ duration: 0.5, delay: isFirstVisit ? index * 0.1 : 0 }}
                 className={`relative rounded-3xl overflow-hidden transition-all duration-300 ${
                   plan.highlighted
                     ? 'ring-2 ring-primary shadow-2xl md:scale-105'
@@ -362,9 +372,9 @@ const PricingPage = () => {
 
           {/* Features Comparison */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
+            transition={{ duration: 0.5, delay: isFirstVisit ? 0.5 : 0 }}
             className="bg-card border rounded-3xl p-8 md:p-12"
           >
             <h2 className="text-3xl font-bold text-foreground mb-8">What's Included in All Plans</h2>
@@ -407,9 +417,9 @@ const PricingPage = () => {
 
           {/* FAQ Section */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.6 }}
+            transition={{ duration: 0.5, delay: isFirstVisit ? 0.6 : 0 }}
             className="mt-16"
           >
             <h2 className="text-3xl font-bold text-foreground mb-8 text-center">Frequently Asked Questions</h2>

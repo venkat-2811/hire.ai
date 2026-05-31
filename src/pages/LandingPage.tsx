@@ -83,6 +83,16 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const [activeFeature, setActiveFeature] = useState(0);
   const [activeSection, setActiveSection] = useState('hero');
+  const [isFirstVisit, setIsFirstVisit] = useState(true);
+
+  useEffect(() => {
+    const visited = sessionStorage.getItem('rekshift_visited');
+    if (visited) {
+      setIsFirstVisit(false);
+    } else {
+      sessionStorage.setItem('rekshift_visited', 'true');
+    }
+  }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -196,7 +206,7 @@ export default function LandingPage() {
       <section id="hero" className="pt-32 pb-20 px-4 min-h-[90vh] flex items-center">
         <div className="container mx-auto grid md:grid-cols-2 gap-12 items-center">
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
+            initial={isFirstVisit ? { opacity: 0, x: -20 } : false}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
           >
@@ -226,9 +236,9 @@ export default function LandingPage() {
 
             {/* Stats */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
+              transition={{ delay: isFirstVisit ? 0.3 : 0 }}
               className="mt-12 grid grid-cols-3 gap-6"
             >
               {[
@@ -245,9 +255,9 @@ export default function LandingPage() {
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
+            initial={isFirstVisit ? { opacity: 0, scale: 0.9 } : false}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
+            transition={{ duration: 0.5, delay: isFirstVisit ? 0.2 : 0 }}
             className="relative"
           >
             <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 rounded-[3rem] to-transparent blur-3xl -z-10" />
@@ -454,12 +464,12 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="py-8 px-4 border-t">
         <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <img src={logoIcon} alt="Rekshift" className="h-5 w-5 object-contain" draggable={false} />
-            <span className="font-semibold">Rekshift</span>
+          <div className="flex items-center gap-2.5">
+            <img src={logoIcon} alt="Rekshift" className="h-6 w-6 object-contain filter drop-shadow" draggable={false} />
+            <span className="font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/80 text-lg">Rekshift</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            © 2024 Rekshift.
+            © 2026 Rekshift.
           </p>
         </div>
       </footer>
