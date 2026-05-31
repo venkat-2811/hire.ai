@@ -74,7 +74,7 @@ const clientLogos = [
     name: 'BVIT Solutions',
     url: 'https://bvitsolutions.com',
     initials: 'BV',
-    caption: 'Technology staffing',
+    caption: 'IT Implementation',
   },
 ];
 

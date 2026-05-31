@@ -153,7 +153,7 @@ const ContactPage = () => {
           >
             <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4">Get in Touch</h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Have questions about our platform? We're here to help. Reach out to us for product demos, enterprise plans, technical support, partnerships, and general enquiries.
+              Have a question or need assistance? Our team is here to help. We typically respond within 24 business hours.. E-mail us at admin@rekshift.com
             </p>
           </motion.div>
 
