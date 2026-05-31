@@ -33,6 +33,25 @@ class EmailService:
         self.from_email = settings.smtp_from_email or settings.smtp_user
         self.use_ssl = settings.smtp_use_ssl
 
+    def _smtp_security(self) -> tuple[bool, bool]:
+        """Return (use_tls, start_tls).
+
+        Hostinger commonly uses:
+        - 465: implicit TLS (use_tls=True, start_tls=False)
+        - 587: STARTTLS (use_tls=False, start_tls=True)
+        """
+        port = int(self.smtp_port or 0)
+        use_ssl = bool(self.use_ssl)
+
+        # Auto-correct common misconfigs.
+        if port == 465:
+            return True, False
+        if port in (587, 25):
+            return False, True
+
+        # Fallback to env flag.
+        return (use_ssl, not use_ssl)
+
     async def send_email(
         self,
         to: str | List[str],
@@ -71,25 +90,44 @@ class EmailService:
         msg.attach(MIMEText(html, "html", "utf-8"))
 
         last_exception = None
-        for attempt in range(1, 3):
+        use_tls, start_tls = self._smtp_security()
+
+        for attempt in range(1, 4):
             try:
+                logger.info(
+                    "[email] sending attempt=%s host=%s port=%s use_tls=%s start_tls=%s to=%s subject=%s",
+                    str(attempt),
+                    str(self.smtp_host),
+                    str(self.smtp_port),
+                    str(use_tls),
+                    str(start_tls),
+                    str(recipients),
+                    str(subject),
+                )
                 await aiosmtplib.send(
                     msg,
                     hostname=self.smtp_host,
                     port=self.smtp_port,
                     username=self.smtp_user,
                     password=self.smtp_password,
-                    use_tls=self.use_ssl,
-                    start_tls=not self.use_ssl,
+                    use_tls=use_tls,
+                    start_tls=start_tls,
                     timeout=30,
                 )
                 last_exception = None
                 break
             except Exception as e:
                 last_exception = e
-                logger.error("[email] SMTP FAILED attempt=%s to=%s subject=%s error=%s", attempt, recipients, subject, str(e))
+                logger.error(
+                    "[email] SMTP FAILED attempt=%s to=%s subject=%s err_type=%s error=%s",
+                    str(attempt),
+                    str(recipients),
+                    str(subject),
+                    type(e).__name__,
+                    str(e),
+                )
                 if attempt < 3:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1.5 * attempt)
 
         if last_exception is not None:
             raise last_exception
@@ -283,16 +321,48 @@ class EmailService:
         )
         msg.attach(attachment_part)
 
-        await aiosmtplib.send(
-            msg,
-            hostname=self.smtp_host,
-            port=self.smtp_port,
-            username=self.smtp_user,
-            password=self.smtp_password,
-            use_tls=self.use_ssl,
-            start_tls=not self.use_ssl,
-            timeout=60,
-        )
+        last_exception = None
+        use_tls, start_tls = self._smtp_security()
+
+        for attempt in range(1, 4):
+            try:
+                logger.info(
+                    "[email] sending_attachment attempt=%s host=%s port=%s use_tls=%s start_tls=%s to=%s subject=%s",
+                    str(attempt),
+                    str(self.smtp_host),
+                    str(self.smtp_port),
+                    str(use_tls),
+                    str(start_tls),
+                    str(recipients),
+                    str(subject),
+                )
+                await aiosmtplib.send(
+                    msg,
+                    hostname=self.smtp_host,
+                    port=self.smtp_port,
+                    username=self.smtp_user,
+                    password=self.smtp_password,
+                    use_tls=use_tls,
+                    start_tls=start_tls,
+                    timeout=60,
+                )
+                last_exception = None
+                break
+            except Exception as e:
+                last_exception = e
+                logger.error(
+                    "[email] SMTP FAILED (attachment) attempt=%s to=%s subject=%s err_type=%s error=%s",
+                    str(attempt),
+                    str(recipients),
+                    str(subject),
+                    type(e).__name__,
+                    str(e),
+                )
+                if attempt < 3:
+                    await asyncio.sleep(1.5 * attempt)
+
+        if last_exception is not None:
+            raise last_exception
 
         logger.info("[email] sent (with attachment) to=%s subject=%s", recipients, subject)
         return {"status": "sent", "to": recipients}

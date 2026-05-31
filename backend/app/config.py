@@ -3,12 +3,16 @@ from functools import lru_cache
 from typing import Any, Dict, List
 
 from pydantic import Field, ValidationError, field_validator
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    _backend_env_file = str(Path(__file__).resolve().parent.parent / ".env")
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_backend_env_file,
         env_file_encoding="utf-8",
         extra="ignore",
     )

@@ -37,7 +37,9 @@ MAX_POLL_ATTEMPTS = 40
 POLL_INTERVAL_SECONDS = 1.5
 
 # Map frontend language names to HackerEarth language identifiers
+# Reference: https://api.hackerearth.com/v4/partner/code-evaluation/
 LANGUAGE_MAP = {
+    # Primary supported languages (8 required)
     "python3": "PYTHON3",
     "python": "PYTHON3",
     "javascript": "JAVASCRIPT_NODE",
@@ -46,8 +48,12 @@ LANGUAGE_MAP = {
     "cpp17": "CPP17",
     "c++": "CPP17",
     "c": "C",
-    "typescript": "TYPESCRIPT",
     "csharp": "CSHARP",
+    "c#": "CSHARP",
+    "apex": "JAVA14",  # Apex compiles to Java-like bytecode; use Java runtime
+    "sql": "MYSQL",    # SQL uses MySQL for evaluation
+    # Additional languages
+    "typescript": "TYPESCRIPT",
     "go": "GO",
     "golang": "GO",
     "rust": "RUST",
@@ -58,7 +64,10 @@ LANGUAGE_MAP = {
 }
 
 # Languages that need a compiled harness (not pure interpreter)
-COMPILED_LANGS = {"java", "cpp", "cpp17", "c++", "go", "golang", "rust"}
+COMPILED_LANGS = {"java", "cpp", "cpp17", "c++", "c", "csharp", "c#", "go", "golang", "rust", "apex"}
+
+# Languages with special evaluation (not standard code execution)
+SPECIAL_EVAL_LANGS = {"sql"}
 
 
 @dataclass
@@ -641,11 +650,20 @@ const CLASS_NAME = {cls_js};
 
 function getArgs(inputData) {{
   if (inputData !== null && typeof inputData === 'object' && !Array.isArray(inputData)) {{
+    // Unwrap {{input: ...}} wrapper
+    if (Object.keys(inputData).length === 1 && 'input' in inputData) {{
+      const inner = inputData.input;
+      if (inner !== null && typeof inner === 'object' && !Array.isArray(inner)) {{
+        if (Array.isArray(PARAM_SCHEMA) && PARAM_SCHEMA.length > 0) {{
+          return PARAM_SCHEMA.map((p) => inner[p.name]);
+        }}
+        return Object.values(inner);
+      }}
+      return [inner];
+    }}
     if (Array.isArray(PARAM_SCHEMA) && PARAM_SCHEMA.length > 0) {{
       return PARAM_SCHEMA.map((p) => inputData[p.name]);
     }}
-    const keys = Object.keys(inputData);
-    if (keys.length === 1 && keys[0] === 'input') return [inputData.input];
     return Object.values(inputData);
   }}
   if (Array.isArray(inputData)) return inputData;
@@ -656,28 +674,28 @@ function _nv(v, d) {{
   d = d || 0;
   if (d > 8) return v;
   if (typeof v === 'string') {{
-    let cur = v;
-    for (let i = 0; i < 4; i++) {{
-      const t = String(cur).trim();
+    var cur = v;
+    for (var i = 0; i < 4; i++) {{
+      var t = String(cur).trim();
       if (!t) break;
       if (!((t[0] === '{{' && t[t.length-1] === '}}') || (t[0]==='[' && t[t.length-1]===']') || (t[0]==='"' && t[t.length-1]==='"'))) break;
-      try {{ const p = JSON.parse(t); if (typeof p === 'string') {{ cur = p; continue; }} return _nv(p, d+1); }} catch {{ break; }}
+      try {{ var p = JSON.parse(t); if (typeof p === 'string') {{ cur = p; continue; }} return _nv(p, d+1); }} catch (e) {{ break; }}
     }}
-    const s = String(cur).trim();
-    const sl = s.toLowerCase();
+    var s = String(cur).trim();
+    var sl = s.toLowerCase();
     if (sl === 'true') return true;
     if (sl === 'false') return false;
     if (sl === 'null' || sl === 'none') return null;
-    if (/^[+-]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][+-]?\\d+)?$/.test(s)) {{ const n = Number(s); if (Number.isFinite(n)) return n; }}
+    if (/^[+-]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][+-]?\\d+)?$/.test(s)) {{ var n = Number(s); if (Number.isFinite(n)) return n; }}
     return s;
   }}
   if (v === null || typeof v === 'undefined') return null;
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v;
-  if (Array.isArray(v)) return v.map((x) => _nv(x, d+1));
+  if (Array.isArray(v)) return v.map(function(x) {{ return _nv(x, d+1); }});
   if (typeof v === 'object') {{
-    const out = {{}};
-    Object.keys(v).sort().forEach((k) => {{ out[k] = _nv(v[k], d+1); }});
+    var out = {{}};
+    Object.keys(v).sort().forEach(function(k) {{ out[k] = _nv(v[k], d+1); }});
     return out;
   }}
   return v;
@@ -690,54 +708,95 @@ function _eq(a, b) {{
   }}
   if (Array.isArray(a) && Array.isArray(b)) {{
     if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (!_eq(a[i], b[i])) return false;
+    for (var i = 0; i < a.length; i++) if (!_eq(a[i], b[i])) return false;
     return true;
   }}
-  return JSON.stringify(a) === JSON.stringify(b);
+  if (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null) {{
+    return JSON.stringify(a) === JSON.stringify(b);
+  }}
+  return a === b;
 }}
 
 function _cmp(actual, expected) {{ return _eq(_nv(actual), _nv(expected)); }}
 
-const report = {{ success: true, status: 'accepted', score: 0, testcases: [] }};
+var report = {{ success: true, status: 'accepted', score: 0, testcases: [] }};
 
 function resolveTarget() {{
+  // Check for class-based execution
   if (EXECUTION_MODE === 'class') {{
-    const Klass = typeof globalThis[CLASS_NAME] !== 'undefined' ? globalThis[CLASS_NAME] : null;
-    if (!Klass) throw new Error(`Class '${{CLASS_NAME}}' not found`);
-    const inst = new Klass();
-    if (typeof inst[FUNCTION_NAME] !== 'function') throw new Error(`Method '${{FUNCTION_NAME}}' not found`);
-    return inst[FUNCTION_NAME].bind(inst);
+    var Klass = (typeof Solution !== 'undefined') ? Solution : 
+                (typeof global !== 'undefined' && global[CLASS_NAME]) ? global[CLASS_NAME] :
+                (typeof globalThis !== 'undefined' && globalThis[CLASS_NAME]) ? globalThis[CLASS_NAME] : null;
+    if (!Klass) throw new Error("Class '" + CLASS_NAME + "' not found");
+    var inst = new Klass();
+    if (FUNCTION_NAME && typeof inst[FUNCTION_NAME] === 'function') {{
+      return inst[FUNCTION_NAME].bind(inst);
+    }}
+    // Auto-detect first method
+    var methods = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).filter(function(k) {{
+      return k !== 'constructor' && typeof inst[k] === 'function';
+    }});
+    if (methods.length > 0) return inst[methods[0]].bind(inst);
+    throw new Error("No callable method found on class '" + CLASS_NAME + "'");
   }}
+  
+  // Check for named function
   if (FUNCTION_NAME) {{
-    if (typeof globalThis[FUNCTION_NAME] === 'function') return globalThis[FUNCTION_NAME];
-    // Try class Solution fallback
-    if (typeof globalThis.Solution !== 'undefined') {{
-      const inst = new globalThis.Solution();
+    // Direct function in scope
+    try {{
+      var fn = eval(FUNCTION_NAME);
+      if (typeof fn === 'function') return fn;
+    }} catch (e) {{}}
+    
+    // Check globalThis/global
+    if (typeof globalThis !== 'undefined' && typeof globalThis[FUNCTION_NAME] === 'function') {{
+      return globalThis[FUNCTION_NAME];
+    }}
+    if (typeof global !== 'undefined' && typeof global[FUNCTION_NAME] === 'function') {{
+      return global[FUNCTION_NAME];
+    }}
+    
+    // Try Solution class fallback
+    if (typeof Solution !== 'undefined') {{
+      var inst = new Solution();
       if (typeof inst[FUNCTION_NAME] === 'function') return inst[FUNCTION_NAME].bind(inst);
     }}
-    throw new Error(`Function '${{FUNCTION_NAME}}' not found`);
+    throw new Error("Function '" + FUNCTION_NAME + "' not found");
   }}
-  // Auto-detect
-  if (typeof globalThis.Solution !== 'undefined') {{
-    const inst = new globalThis.Solution();
-    const m = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).find((k) => k !== 'constructor' && typeof inst[k] === 'function');
-    if (m) return inst[m].bind(inst);
+  
+  // Auto-detect: try Solution class first
+  if (typeof Solution !== 'undefined') {{
+    var inst = new Solution();
+    var methods = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).filter(function(k) {{
+      return k !== 'constructor' && typeof inst[k] === 'function';
+    }});
+    if (methods.length > 0) return inst[methods[0]].bind(inst);
   }}
-  throw new Error('No callable function found in submitted code');
+  
+  // Last resort: find any function in global scope
+  var candidates = ['solve', 'solution', 'main', 'run', 'execute', 'process'];
+  for (var i = 0; i < candidates.length; i++) {{
+    try {{
+      var fn = eval(candidates[i]);
+      if (typeof fn === 'function') return fn;
+    }} catch (e) {{}}
+  }}
+  
+  throw new Error('No callable function found in submitted code. Define a Solution class or a named function.');
 }}
 
 try {{
-  const target = resolveTarget();
-  let passed = 0;
-  for (let i = 0; i < TEST_CASES.length; i++) {{
-    const tc = TEST_CASES[i] || {{}};
-    const inputData = tc.input;
-    const expected = tc.expected;
-    const tr = {{ index: i, input: inputData, expected, actual: null, passed: false, status: 'NA', stdout: '', stderr: '', error: null }};
+  var target = resolveTarget();
+  var passed = 0;
+  for (var i = 0; i < TEST_CASES.length; i++) {{
+    var tc = TEST_CASES[i] || {{}};
+    var inputData = tc.input;
+    var expected = tc.expected;
+    var tr = {{ index: i, input: inputData, expected: expected, actual: null, passed: false, status: 'NA', stdout: '', stderr: '', error: null }};
     try {{
       if (inputData === null || inputData === undefined) throw new Error('Testcase input is null');
-      const args = getArgs(inputData);
-      const result = target(...args);
+      var args = getArgs(inputData);
+      var result = target.apply(null, args);
       tr.actual = result;
       tr.passed = _cmp(result, expected);
       tr.status = tr.passed ? 'AC' : 'WA';
@@ -750,7 +809,7 @@ try {{
     }}
     report.testcases.push(tr);
   }}
-  const total = TEST_CASES.length;
+  var total = TEST_CASES.length;
   report.score = total ? Math.round(passed / total * 10000) / 100 : 0;
   report.success = passed === total && total > 0;
   report.status = report.success ? 'accepted' : 'wrong_answer';
@@ -1335,6 +1394,189 @@ public class Main {{
             cpp_src += ''.join(_ml)
             return cpp_src
 
+        if language == "c":
+            # C language harness - simpler than C++, uses standard C libraries
+            def _c_str_escape(s: str) -> str:
+                return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "")
+            tc_c = _c_str_escape(tc_json)
+            
+            c_src = f'''#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <math.h>
+
+{code}
+
+// Minimal JSON string escape for output
+void print_json_str(const char* s) {{
+    putchar('"');
+    while (*s) {{
+        if (*s == '"') printf("\\\\\\"");
+        else if (*s == '\\\\') printf("\\\\\\\\");
+        else if (*s == '\\n') printf("\\\\n");
+        else putchar(*s);
+        s++;
+    }}
+    putchar('"');
+}}
+
+int main() {{
+    // For C, we use a simplified approach: parse basic test cases
+    // The test harness expects the candidate to implement a 'solve' or similar function
+    char tc_json[] = "{tc_c}";
+    
+    // Since C lacks reflection, we emit a minimal report
+    // The actual function call must be explicitly coded or use a wrapper_template
+    printf("---RESULT_SEPARATOR---\\n");
+    printf("{{\\"success\\":false,\\"status\\":\\"compile_error\\",");
+    printf("\\"stderr\\":\\"C language requires explicit wrapper_template with function call. ");
+    printf("Please provide solution_wrappers.c in the problem definition.\\",");
+    printf("\\"score\\":0,\\"testcases\\":[]}}\\n");
+    return 0;
+}}
+'''
+            return c_src
+
+        if language in ("csharp", "c#"):
+            # C# language harness
+            def _cs_str_escape(s: str) -> str:
+                return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "")
+            tc_cs = _cs_str_escape(tc_json)
+            
+            cs_src = f'''using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Reflection;
+
+{code}
+
+public class Program {{
+    static string TC_JSON = @"{tc_cs}";
+    
+    public static void Main(string[] args) {{
+        var report = new Dictionary<string, object> {{
+            {{"success", true}},
+            {{"status", "accepted"}},
+            {{"score", 0.0}},
+            {{"testcases", new List<object>()}}
+        }};
+        
+        try {{
+            var testCases = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(TC_JSON);
+            var solType = typeof(Solution);
+            var methods = solType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => m.DeclaringType == solType && m.Name != "ToString" && m.Name != "GetHashCode" && m.Name != "Equals")
+                .ToList();
+            
+            if (methods.Count == 0) {{
+                report["success"] = false;
+                report["status"] = "compile_error";
+                report["stderr"] = "No public methods found in Solution class";
+                Console.WriteLine("---RESULT_SEPARATOR---");
+                Console.WriteLine(JsonSerializer.Serialize(report));
+                return;
+            }}
+            
+            var method = methods[0];
+            var sol = Activator.CreateInstance(solType);
+            var tcResults = new List<object>();
+            int passed = 0;
+            
+            foreach (var (tc, idx) in testCases.Select((t, i) => (t, i))) {{
+                var tr = new Dictionary<string, object> {{
+                    {{"index", idx}},
+                    {{"passed", false}},
+                    {{"status", "NA"}},
+                    {{"actual", null}},
+                    {{"error", null}}
+                }};
+                
+                try {{
+                    var inputEl = tc.ContainsKey("input") ? tc["input"] : default;
+                    var expectedEl = tc.ContainsKey("expected") ? tc["expected"] : default;
+                    
+                    var parameters = method.GetParameters();
+                    var callArgs = new object[parameters.Length];
+                    
+                    if (inputEl.ValueKind == JsonValueKind.Object) {{
+                        var inputDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(inputEl.GetRawText());
+                        for (int i = 0; i < parameters.Length; i++) {{
+                            var pName = parameters[i].Name;
+                            if (inputDict.ContainsKey(pName)) {{
+                                callArgs[i] = ConvertJsonElement(inputDict[pName], parameters[i].ParameterType);
+                            }}
+                        }}
+                    }} else if (inputEl.ValueKind == JsonValueKind.Array && parameters.Length == 1) {{
+                        callArgs[0] = ConvertJsonElement(inputEl, parameters[0].ParameterType);
+                    }} else if (parameters.Length == 1) {{
+                        callArgs[0] = ConvertJsonElement(inputEl, parameters[0].ParameterType);
+                    }}
+                    
+                    var result = method.Invoke(sol, callArgs);
+                    tr["actual"] = result;
+                    
+                    var actualJson = JsonSerializer.Serialize(result);
+                    var expectedJson = expectedEl.GetRawText();
+                    
+                    bool isEqual = NormalizeAndCompare(actualJson, expectedJson);
+                    tr["passed"] = isEqual;
+                    tr["status"] = isEqual ? "AC" : "WA";
+                    if (isEqual) passed++;
+                }} catch (Exception ex) {{
+                    tr["status"] = "RE";
+                    tr["error"] = ex.InnerException?.Message ?? ex.Message;
+                }}
+                
+                tcResults.Add(tr);
+            }}
+            
+            int total = testCases.Count;
+            double score = total > 0 ? Math.Round(passed * 10000.0 / total) / 100.0 : 0;
+            report["testcases"] = tcResults;
+            report["score"] = score;
+            report["success"] = passed == total && total > 0;
+            report["status"] = (bool)report["success"] ? "accepted" : "wrong_answer";
+            
+        }} catch (Exception ex) {{
+            report["success"] = false;
+            report["status"] = "compile_error";
+            report["stderr"] = ex.Message;
+        }}
+        
+        Console.WriteLine("---RESULT_SEPARATOR---");
+        Console.WriteLine(JsonSerializer.Serialize(report));
+    }}
+    
+    static object ConvertJsonElement(JsonElement el, Type targetType) {{
+        if (targetType == typeof(int) || targetType == typeof(Int32)) return el.GetInt32();
+        if (targetType == typeof(long) || targetType == typeof(Int64)) return el.GetInt64();
+        if (targetType == typeof(double) || targetType == typeof(Double)) return el.GetDouble();
+        if (targetType == typeof(bool) || targetType == typeof(Boolean)) return el.GetBoolean();
+        if (targetType == typeof(string) || targetType == typeof(String)) return el.GetString();
+        if (targetType == typeof(int[])) return el.EnumerateArray().Select(x => x.GetInt32()).ToArray();
+        if (targetType == typeof(string[])) return el.EnumerateArray().Select(x => x.GetString()).ToArray();
+        if (targetType == typeof(int[][])) return el.EnumerateArray().Select(row => row.EnumerateArray().Select(x => x.GetInt32()).ToArray()).ToArray();
+        if (targetType == typeof(List<int>)) return el.EnumerateArray().Select(x => x.GetInt32()).ToList();
+        if (targetType == typeof(List<string>)) return el.EnumerateArray().Select(x => x.GetString()).ToList();
+        return JsonSerializer.Deserialize(el.GetRawText(), targetType);
+    }}
+    
+    static bool NormalizeAndCompare(string actual, string expected) {{
+        actual = actual.Trim();
+        expected = expected.Trim();
+        if (actual == expected) return true;
+        // Try numeric comparison
+        if (double.TryParse(actual, out double a) && double.TryParse(expected, out double e)) {{
+            return Math.Abs(a - e) <= 1e-6;
+        }}
+        return false;
+    }}
+}}
+'''
+            return cs_src
+
         if language in ("go", "golang"):
             tc_go = tc_json.replace("`", "`+\"`\"+`")
             ps_go = ps_json.replace("`", "`+\"`\"+`")
@@ -1478,9 +1720,71 @@ fn main() {{
 
         raise ValueError(
             f"No built-in harness for language '{language}'. "
-            "Supported: python3, javascript, typescript, java, cpp, go, rust. "
-            "For other languages, provide a wrapper_template in problem.solution_wrappers[lang]."
+            "Supported: python3, javascript, typescript, java, cpp, c, csharp, go, rust. "
+            "For Apex/SQL or other languages, provide a wrapper_template in problem.solution_wrappers[lang]."
         )
+
+    def _format_error_with_line_numbers(self, error_text: str, language: str = "") -> str:
+        """Parse and format compilation/runtime errors with line numbers.
+        
+        Extracts line numbers from various compiler error formats and provides
+        clean, readable error messages for candidates.
+        """
+        if not error_text:
+            return error_text
+        
+        # Patterns for extracting line numbers from different compilers
+        patterns = [
+            # Python: File "...", line X
+            r'File "[^"]*", line (\d+)',
+            # Java/C++/C: filename:line:col: error
+            r'[\w./\\]+:(\d+):\d*:?\s*(?:error|warning)',
+            # JavaScript/Node: at line X, filename:X:Y
+            r'at line (\d+)|:(\d+):\d+',
+            # C#: (line,col): error
+            r'\((\d+),\d+\):\s*error',
+            # Generic: line X, Line X
+            r'[Ll]ine\s*(\d+)',
+        ]
+        
+        lines = error_text.split('\n')
+        formatted_lines = []
+        seen_line_refs = set()
+        
+        for line in lines[:50]:  # Limit to first 50 lines
+            # Clean up the line
+            clean_line = line.strip()
+            if not clean_line:
+                continue
+            
+            # Skip internal harness references (adjust line numbers for candidate code)
+            if '// ---- Candidate code ----' in clean_line or '// ---- End candidate code ----' in clean_line:
+                continue
+            
+            # Extract line numbers for highlighting
+            for pattern in patterns:
+                matches = re.findall(pattern, clean_line)
+                for match in matches:
+                    if isinstance(match, tuple):
+                        line_num = next((m for m in match if m), None)
+                    else:
+                        line_num = match
+                    if line_num and line_num.isdigit():
+                        seen_line_refs.add(int(line_num))
+            
+            formatted_lines.append(clean_line)
+        
+        result = '\n'.join(formatted_lines)
+        
+        # Add summary if we found line numbers
+        if seen_line_refs:
+            sorted_lines = sorted(seen_line_refs)[:5]  # Top 5 line references
+            if len(sorted_lines) == 1:
+                result = f"Error at line {sorted_lines[0]}:\n{result}"
+            elif len(sorted_lines) > 1:
+                result = f"Errors at lines {', '.join(map(str, sorted_lines))}:\n{result}"
+        
+        return result[:3000]  # Limit total length
 
     def _parse_he_bundle_result(
         self, data: Dict, original_test_cases: List[Dict[str, Any]]
@@ -1492,11 +1796,12 @@ fn main() {{
 
         # Compilation error
         if compile_status and compile_status != "OK":
+            formatted_error = self._format_error_with_line_numbers(compile_status)
             logger.warning("[HE] compilation_error: %s", compile_status[:200])
             return ExecutionResult(
                 success=False, test_results=[], passed_count=0,
                 total_count=len(original_test_cases), score_percentage=0,
-                compilation_error=compile_status,
+                compilation_error=formatted_error,
             )
 
         run_stat = run_status.get("status", "NA")
@@ -1602,36 +1907,146 @@ fn main() {{
         test_results: List[TestResult] = []
         passed_count = 0
 
-        def _py_cmp_normalize(v: Any) -> Any:
-            """Strip one level of JSON string encoding for comparison."""
+        def _py_cmp_normalize(v: Any, depth: int = 0) -> Any:
+            """Robust normalization for return-type validation.
+            
+            Handles:
+            - JSON string decoding (nested)
+            - Boolean normalization (true/True/TRUE/false/False/FALSE)
+            - Numeric string parsing
+            - Whitespace normalization
+            - Array/list normalization
+            - Dict/object normalization with sorted keys
+            """
+            if depth > 10:
+                return v
+            
+            # Handle None/null
+            if v is None:
+                return None
+            
+            # Handle strings - may contain JSON or special values
             if isinstance(v, str):
                 s = v.strip()
-                if s.startswith('"') and s.endswith('"') and len(s) >= 2:
+                if not s:
+                    return s
+                
+                # Try to parse as JSON (handles nested JSON strings)
+                if (s.startswith('{') and s.endswith('}')) or \
+                   (s.startswith('[') and s.endswith(']')) or \
+                   (s.startswith('"') and s.endswith('"')):
                     try:
                         parsed = json.loads(s)
-                        if isinstance(parsed, str):
-                            return parsed
-                        return parsed
+                        return _py_cmp_normalize(parsed, depth + 1)
                     except Exception:
                         pass
+                
+                # Boolean normalization
+                sl = s.lower()
+                if sl in ('true', '1'):
+                    return True
+                if sl in ('false', '0'):
+                    return False
+                if sl in ('null', 'none', 'nil'):
+                    return None
+                
+                # Numeric parsing
                 try:
                     f = float(s)
-                    return int(f) if f == int(f) else f
+                    # Return int if it's a whole number
+                    if f == int(f) and 'e' not in s.lower() and '.' not in s:
+                        return int(f)
+                    return f
                 except Exception:
                     pass
+                
+                return s
+            
+            # Handle booleans
+            if isinstance(v, bool):
+                return v
+            
+            # Handle numbers
+            if isinstance(v, (int, float)):
+                # Convert float to int if it's a whole number
+                if isinstance(v, float) and v == int(v):
+                    return int(v)
+                return v
+            
+            # Handle lists/arrays - normalize each element
+            if isinstance(v, (list, tuple)):
+                return [_py_cmp_normalize(x, depth + 1) for x in v]
+            
+            # Handle dicts - normalize values and sort keys
+            if isinstance(v, dict):
+                return {str(k): _py_cmp_normalize(val, depth + 1) for k, val in sorted(v.items(), key=lambda x: str(x[0]))}
+            
             return v
 
         def _py_values_match(actual: Any, expected: Any) -> bool:
-            """Python-side equality check as safety net for compiled-language runner bugs."""
-            if actual is None or expected is None:
-                return actual is expected
-            a, b = _py_cmp_normalize(actual), _py_cmp_normalize(expected)
+            """Robust Python-side equality check for return-type validation.
+            
+            Handles:
+            - Direct equality
+            - Numeric tolerance (1e-6)
+            - Array/list comparison with element-wise tolerance
+            - Boolean equivalence
+            - Nested structure comparison
+            """
+            # Normalize both values
+            a = _py_cmp_normalize(actual)
+            b = _py_cmp_normalize(expected)
+            
+            # Direct equality
             if a == b:
                 return True
+            
+            # Both None
+            if a is None and b is None:
+                return True
+            if a is None or b is None:
+                return False
+            
+            # Boolean comparison
+            if isinstance(a, bool) or isinstance(b, bool):
+                return a == b
+            
+            # Numeric comparison with tolerance
+            if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+                try:
+                    return abs(float(a) - float(b)) <= 1e-6
+                except Exception:
+                    return False
+            
+            # Array/list comparison
+            if isinstance(a, list) and isinstance(b, list):
+                if len(a) != len(b):
+                    return False
+                return all(_py_values_match(x, y) for x, y in zip(a, b))
+            
+            # Dict comparison
+            if isinstance(a, dict) and isinstance(b, dict):
+                if set(a.keys()) != set(b.keys()):
+                    return False
+                return all(_py_values_match(a[k], b[k]) for k in a.keys())
+            
+            # String comparison (case-insensitive for certain values)
+            if isinstance(a, str) and isinstance(b, str):
+                # Whitespace-normalized comparison
+                if a.strip() == b.strip():
+                    return True
+                # Try numeric comparison for string numbers
+                try:
+                    return abs(float(a) - float(b)) <= 1e-6
+                except Exception:
+                    pass
+            
+            # Final JSON serialization comparison
             try:
-                return abs(float(a) - float(b)) <= 1e-6  # type: ignore[arg-type]
+                return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
             except Exception:
                 pass
+            
             return False
 
         for tc in tc_out:

@@ -2381,7 +2381,7 @@ public class CandidateSolution {
                               <SelectContent>
                                 {(currentCoding.supported_languages || []).map((lang) => (
                                   <SelectItem key={lang} value={lang}>
-                                    {{ python3: 'Python 3', javascript: 'JavaScript', java: 'Java', cpp: 'C++', typescript: 'TypeScript', csharp: 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex' }[lang] || lang}
+                                    {{ python3: 'Python 3', python: 'Python', javascript: 'JavaScript', java: 'Java', cpp: 'C++', c: 'C', typescript: 'TypeScript', csharp: 'C#', 'c#': 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex', sql: 'SQL' }[lang] || lang}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -2426,7 +2426,7 @@ public class CandidateSolution {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={isApexMode ? 'java' : ({ python3: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', typescript: 'typescript', csharp: 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'apex' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
+                          language={isApexMode ? 'java' : ({ python3: 'python', python: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', c: 'c', typescript: 'typescript', csharp: 'csharp', 'c#': 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'java', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
                           theme="vs-dark"
                           value={codingSolutions[currentCoding.id] || ''}
                           onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
