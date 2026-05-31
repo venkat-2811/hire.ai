@@ -638,190 +638,233 @@ class HackerEarthExecutor:
             fn_js = json.dumps(fn)
             mode_js = json.dumps(mode)
             cls_js = json.dumps(cls)
-            return f'''// ---- Candidate code ----
-{code}
+
+            _JS_TEMPLATE = r'''// ---- Candidate code ----
+__CANDIDATE_CODE__
 // ---- End candidate code ----
 
-const TEST_CASES = JSON.parse({tc_js});
-const PARAM_SCHEMA = JSON.parse({ps_js});
-const FUNCTION_NAME = {fn_js};
-const EXECUTION_MODE = {mode_js};
-const CLASS_NAME = {cls_js};
+var TEST_CASES = JSON.parse(__TC_JSON__);
+var PARAM_SCHEMA = JSON.parse(__PS_JSON__);
+var FUNCTION_NAME = __FN_JSON__;
+var EXECUTION_MODE = __MODE_JSON__;
+var CLASS_NAME = __CLS_JSON__;
 
-function getArgs(inputData) {{
-  if (inputData !== null && typeof inputData === 'object' && !Array.isArray(inputData)) {{
-    // Unwrap {{input: ...}} wrapper
-    if (Object.keys(inputData).length === 1 && 'input' in inputData) {{
-      const inner = inputData.input;
-      if (inner !== null && typeof inner === 'object' && !Array.isArray(inner)) {{
-        if (Array.isArray(PARAM_SCHEMA) && PARAM_SCHEMA.length > 0) {{
-          return PARAM_SCHEMA.map((p) => inner[p.name]);
-        }}
-        return Object.values(inner);
-      }}
-      return [inner];
-    }}
-    if (Array.isArray(PARAM_SCHEMA) && PARAM_SCHEMA.length > 0) {{
-      return PARAM_SCHEMA.map((p) => inputData[p.name]);
-    }}
-    return Object.values(inputData);
-  }}
-  if (Array.isArray(inputData)) return inputData;
-  return [inputData];
-}}
-
-function _nv(v, d) {{
+function _nv(v, d) {
   d = d || 0;
   if (d > 8) return v;
-  if (typeof v === 'string') {{
+  if (typeof v === 'string') {
     var cur = v;
-    for (var i = 0; i < 4; i++) {{
+    for (var i = 0; i < 4; i++) {
       var t = String(cur).trim();
       if (!t) break;
-      if (!((t[0] === '{{' && t[t.length-1] === '}}') || (t[0]==='[' && t[t.length-1]===']') || (t[0]==='"' && t[t.length-1]==='"'))) break;
-      try {{ var p = JSON.parse(t); if (typeof p === 'string') {{ cur = p; continue; }} return _nv(p, d+1); }} catch (e) {{ break; }}
-    }}
+      if (!((t[0] === '{' && t[t.length - 1] === '}') || (t[0] === '[' && t[t.length - 1] === ']') || (t[0] === '"' && t[t.length - 1] === '"'))) break;
+      try { var p = JSON.parse(t); if (typeof p === 'string') { cur = p; continue; } return _nv(p, d + 1); } catch (e) { break; }
+    }
     var s = String(cur).trim();
     var sl = s.toLowerCase();
     if (sl === 'true') return true;
     if (sl === 'false') return false;
     if (sl === 'null' || sl === 'none') return null;
-    if (/^[+-]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][+-]?\\d+)?$/.test(s)) {{ var n = Number(s); if (Number.isFinite(n)) return n; }}
+    if (/^[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?$/.test(s)) { var n = Number(s); if (Number.isFinite(n)) return n; }
     return s;
-  }}
+  }
   if (v === null || typeof v === 'undefined') return null;
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v;
-  if (Array.isArray(v)) return v.map(function(x) {{ return _nv(x, d+1); }});
-  if (typeof v === 'object') {{
-    var out = {{}};
-    Object.keys(v).sort().forEach(function(k) {{ out[k] = _nv(v[k], d+1); }});
+  if (Array.isArray(v)) return v.map(function(x) { return _nv(x, d + 1); });
+  if (typeof v === 'object') {
+    var out = {};
+    Object.keys(v).sort().forEach(function(k) { out[k] = _nv(v[k], d + 1); });
     return out;
-  }}
+  }
   return v;
-}}
+}
 
-function _eq(a, b) {{
-  if (typeof a === 'number' && typeof b === 'number') {{
+function _eq(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') {
     if (!Number.isFinite(a) || !Number.isFinite(b)) return String(a) === String(b);
     return Math.abs(a - b) <= 1e-6;
-  }}
-  if (Array.isArray(a) && Array.isArray(b)) {{
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
     for (var i = 0; i < a.length; i++) if (!_eq(a[i], b[i])) return false;
     return true;
-  }}
-  if (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null) {{
+  }
+  if (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null) {
     return JSON.stringify(a) === JSON.stringify(b);
-  }}
+  }
   return a === b;
-}}
+}
 
-function _cmp(actual, expected) {{ return _eq(_nv(actual), _nv(expected)); }}
+function _cmp(actual, expected) { return _eq(_nv(actual), _nv(expected)); }
 
-var report = {{ success: true, status: 'accepted', score: 0, testcases: [] }};
+function getArgs(inputData, target) {
+  var paramCount = -1;
+  if (typeof target === 'function') {
+    try { paramCount = target.length; } catch (e) {}
+  }
+  if (inputData !== null && typeof inputData === 'object' && !Array.isArray(inputData)) {
+    // Unwrap {input: ...} wrapper
+    if (Object.keys(inputData).length === 1 && 'input' in inputData) {
+      var inner = inputData.input;
+      if (inner !== null && typeof inner === 'object' && !Array.isArray(inner)) {
+        if (paramCount === 1) return [inner];
+        if (Array.isArray(PARAM_SCHEMA) && PARAM_SCHEMA.length > 0) {
+          return PARAM_SCHEMA.map(function(p) { return inner[p.name]; });
+        }
+        return Object.values(inner);
+      }
+      return [inner];
+    }
+    // Direct object input
+    if (paramCount === 1) return [inputData];
+    if (Array.isArray(PARAM_SCHEMA) && PARAM_SCHEMA.length > 0) {
+      return PARAM_SCHEMA.map(function(p) { return inputData[p.name]; });
+    }
+    return Object.values(inputData);
+  }
+  if (Array.isArray(inputData)) {
+    if (paramCount === 1) return [inputData];
+    return inputData;
+  }
+  return [inputData];
+}
 
-function resolveTarget() {{
-  // Check for class-based execution
-  if (EXECUTION_MODE === 'class') {{
-    var Klass = (typeof Solution !== 'undefined') ? Solution : 
-                (typeof global !== 'undefined' && global[CLASS_NAME]) ? global[CLASS_NAME] :
-                (typeof globalThis !== 'undefined' && globalThis[CLASS_NAME]) ? globalThis[CLASS_NAME] : null;
+function resolveTarget() {
+  // 1. Class-based execution
+  if (EXECUTION_MODE === 'class') {
+    var Klass = null;
+    try { if (typeof Solution !== 'undefined') Klass = Solution; } catch (e) {}
+    if (!Klass) { try { Klass = (typeof globalThis !== 'undefined' && globalThis[CLASS_NAME]) || (typeof global !== 'undefined' && global[CLASS_NAME]) || null; } catch (e) {} }
     if (!Klass) throw new Error("Class '" + CLASS_NAME + "' not found");
     var inst = new Klass();
-    if (FUNCTION_NAME && typeof inst[FUNCTION_NAME] === 'function') {{
+    if (FUNCTION_NAME && typeof inst[FUNCTION_NAME] === 'function') {
       return inst[FUNCTION_NAME].bind(inst);
-    }}
+    }
     // Auto-detect first method
-    var methods = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).filter(function(k) {{
+    var methods = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).filter(function(k) {
       return k !== 'constructor' && typeof inst[k] === 'function';
-    }});
+    });
     if (methods.length > 0) return inst[methods[0]].bind(inst);
     throw new Error("No callable method found on class '" + CLASS_NAME + "'");
-  }}
-  
-  // Check for named function
-  if (FUNCTION_NAME) {{
-    // Direct function in scope
-    try {{
-      var fn = eval(FUNCTION_NAME);
-      if (typeof fn === 'function') return fn;
-    }} catch (e) {{}}
-    
-    // Check globalThis/global
-    if (typeof globalThis !== 'undefined' && typeof globalThis[FUNCTION_NAME] === 'function') {{
-      return globalThis[FUNCTION_NAME];
-    }}
-    if (typeof global !== 'undefined' && typeof global[FUNCTION_NAME] === 'function') {{
-      return global[FUNCTION_NAME];
-    }}
-    
-    // Try Solution class fallback
-    if (typeof Solution !== 'undefined') {{
-      var inst = new Solution();
-      if (typeof inst[FUNCTION_NAME] === 'function') return inst[FUNCTION_NAME].bind(inst);
-    }}
-    throw new Error("Function '" + FUNCTION_NAME + "' not found");
-  }}
-  
-  // Auto-detect: try Solution class first
-  if (typeof Solution !== 'undefined') {{
-    var inst = new Solution();
-    var methods = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).filter(function(k) {{
-      return k !== 'constructor' && typeof inst[k] === 'function';
-    }});
-    if (methods.length > 0) return inst[methods[0]].bind(inst);
-  }}
-  
-  // Last resort: find any function in global scope
-  var candidates = ['solve', 'solution', 'main', 'run', 'execute', 'process'];
-  for (var i = 0; i < candidates.length; i++) {{
-    try {{
-      var fn = eval(candidates[i]);
-      if (typeof fn === 'function') return fn;
-    }} catch (e) {{}}
-  }}
-  
-  throw new Error('No callable function found in submitted code. Define a Solution class or a named function.');
-}}
+  }
 
-try {{
+  // 2. Named function lookup (safe — no eval)
+  if (FUNCTION_NAME) {
+    var found = null;
+    try { found = (typeof globalThis !== 'undefined') ? globalThis[FUNCTION_NAME] : undefined; } catch (e) {}
+    if (typeof found !== 'function') { try { found = (typeof global !== 'undefined') ? global[FUNCTION_NAME] : undefined; } catch (e) {} }
+    if (typeof found === 'function') return found;
+
+    // Try Solution class fallback
+    try {
+      if (typeof Solution !== 'undefined') {
+        var si = new Solution();
+        if (typeof si[FUNCTION_NAME] === 'function') return si[FUNCTION_NAME].bind(si);
+      }
+    } catch (e) {}
+    throw new Error("Function '" + FUNCTION_NAME + "' not found. Make sure your function is declared at the top level.");
+  }
+
+  // 3. Auto-detect: Solution class first
+  try {
+    if (typeof Solution !== 'undefined') {
+      var si2 = new Solution();
+      var m2 = Object.getOwnPropertyNames(Object.getPrototypeOf(si2)).filter(function(k) {
+        return k !== 'constructor' && typeof si2[k] === 'function';
+      });
+      if (m2.length > 0) return si2[m2[0]].bind(si2);
+    }
+  } catch (e) {}
+
+  // 4. Find any named function in global scope
+  var candidates = ['solve', 'solution', 'main', 'run', 'execute', 'process',
+    'twoSum', 'threeSum', 'maxSubArray', 'maxProfit', 'isValid', 'hasCycle',
+    'reverseList', 'mergeTwoLists', 'levelOrder', 'maxDepth', 'invertTree',
+    'search', 'findMedian', 'longestPalindrome', 'climbStairs', 'coinChange',
+    'lengthOfLongestSubstring', 'productExceptSelf', 'groupAnagrams',
+    'numIslands', 'canFinish', 'rob', 'trap', 'merge', 'insert'];
+  for (var i = 0; i < candidates.length; i++) {
+    try {
+      var c = (typeof globalThis !== 'undefined') ? globalThis[candidates[i]] : undefined;
+      if (typeof c === 'function') return c;
+    } catch (e) {}
+  }
+
+  throw new Error('No callable function found in submitted code. Define a function or a Solution class with a method.');
+}
+
+// --- Per-test stdout capture ---
+var _origLog = console.log;
+var _origWarn = console.warn;
+var _origError = console.error;
+var _capturedLogs = [];
+
+function _startCapture() {
+  _capturedLogs = [];
+  console.log = function() { _capturedLogs.push(Array.prototype.slice.call(arguments).map(String).join(' ')); };
+  console.warn = function() { _capturedLogs.push('[WARN] ' + Array.prototype.slice.call(arguments).map(String).join(' ')); };
+  console.error = function() { _capturedLogs.push('[ERROR] ' + Array.prototype.slice.call(arguments).map(String).join(' ')); };
+}
+
+function _stopCapture() {
+  console.log = _origLog;
+  console.warn = _origWarn;
+  console.error = _origError;
+  return _capturedLogs.join('\n');
+}
+
+var report = { success: true, status: 'accepted', score: 0, testcases: [] };
+
+try {
   var target = resolveTarget();
   var passed = 0;
-  for (var i = 0; i < TEST_CASES.length; i++) {{
-    var tc = TEST_CASES[i] || {{}};
+  for (var i = 0; i < TEST_CASES.length; i++) {
+    var tc = TEST_CASES[i] || {};
     var inputData = tc.input;
     var expected = tc.expected;
-    var tr = {{ index: i, input: inputData, expected: expected, actual: null, passed: false, status: 'NA', stdout: '', stderr: '', error: null }};
-    try {{
+    var tr = { index: i, input: inputData, expected: expected, actual: null, passed: false, status: 'NA', stdout: '', stderr: '', error: null };
+    try {
       if (inputData === null || inputData === undefined) throw new Error('Testcase input is null');
-      var args = getArgs(inputData);
+      _startCapture();
+      var args = getArgs(inputData, target);
       var result = target.apply(null, args);
+      tr.stdout = _stopCapture();
       tr.actual = result;
       tr.passed = _cmp(result, expected);
       tr.status = tr.passed ? 'AC' : 'WA';
-      if (!tr.passed) tr.stderr = JSON.stringify({{ norm_actual: _nv(result), norm_expected: _nv(expected) }});
+      if (!tr.passed) tr.stderr = JSON.stringify({ norm_actual: _nv(result), norm_expected: _nv(expected) });
       if (tr.passed) passed++;
-    }} catch (e) {{
+    } catch (e) {
+      try { _stopCapture(); } catch (e2) {}
       tr.status = 'RE';
       tr.error = e && e.message ? e.message : String(e);
       tr.stderr = e && e.stack ? e.stack : String(e);
-    }}
+    }
     report.testcases.push(tr);
-  }}
+  }
   var total = TEST_CASES.length;
   report.score = total ? Math.round(passed / total * 10000) / 100 : 0;
   report.success = passed === total && total > 0;
   report.status = report.success ? 'accepted' : 'wrong_answer';
-}} catch (e) {{
+} catch (e) {
   report.success = false;
   report.status = 'compile_error';
   report.stderr = e && e.stack ? e.stack : (e && e.message ? e.message : String(e));
-}}
+}
 
-console.log('---RESULT_SEPARATOR---');
-console.log(JSON.stringify(report));
+_origLog('---RESULT_SEPARATOR---');
+_origLog(JSON.stringify(report));
 '''
+            return (
+                _JS_TEMPLATE
+                .replace('__CANDIDATE_CODE__', code)
+                .replace('__TC_JSON__', tc_js)
+                .replace('__PS_JSON__', ps_js)
+                .replace('__FN_JSON__', fn_js)
+                .replace('__MODE_JSON__', mode_js)
+                .replace('__CLS_JSON__', cls_js)
+            )
 
         if language == "java":
             def _java_str_escape(s: str) -> str:

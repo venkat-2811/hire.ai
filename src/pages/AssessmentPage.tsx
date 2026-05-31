@@ -949,7 +949,7 @@ public class CandidateSolution {
     try {
       const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
 
-      const data = await assessmentsRuntimeApi.runCode(assessmentData.session_id, {
+      const data = await assessmentsRuntimeApi.codingRun(assessmentData.session_id, {
         challenge_id: challengeId,
         code,
         language: selectedLanguage,
@@ -1049,7 +1049,7 @@ public class CandidateSolution {
     try {
       const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
 
-      const data = await assessmentsRuntimeApi.submitCode(assessmentData.session_id, {
+      const data = await assessmentsRuntimeApi.codingSubmit(assessmentData.session_id, {
         challenge_id: challengeId,
         code,
         language: selectedLanguage,
@@ -1138,14 +1138,23 @@ public class CandidateSolution {
   };
 
   const resetCode = (challengeId: string) => {
+    const currentCode = codingSolutions[challengeId] || '';
     const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
     const challenge = codingChallenges.find(c => c.id === challengeId);
     if (challenge) {
-      if (lang === 'apex') {
-        setCodingSolutions(prev => ({ ...prev, [challengeId]: challenge.starter_code?.apex || apexStarterTemplate }));
-      } else {
-        setCodingSolutions(prev => ({ ...prev, [challengeId]: challenge.starter_code?.[lang] || '' }));
+      const starter = lang === 'apex'
+        ? (challenge.starter_code?.apex || apexStarterTemplate)
+        : (challenge.starter_code?.[lang] || '');
+      
+      const hasUserEdits = currentCode.trim() !== '' && currentCode.trim() !== starter.trim();
+      
+      if (hasUserEdits) {
+        if (!window.confirm('Are you sure you want to reset your code? This will delete all your edits.')) {
+          return;
+        }
       }
+      
+      setCodingSolutions(prev => ({ ...prev, [challengeId]: starter }));
       toast.info('Code reset to starter template');
     }
   };
@@ -1170,7 +1179,7 @@ public class CandidateSolution {
           time_taken_seconds: 0, // TODO: Track per-question time
         }));
 
-        await assessmentsRuntimeApi.submitMcq(assessmentData.session_id, mcqSubmissions);
+        await assessmentsRuntimeApi.mcqSubmit(assessmentData.session_id, mcqSubmissions);
       }
 
       if (codingChallenges.length > 0) {
@@ -1179,7 +1188,7 @@ public class CandidateSolution {
           const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
           const starter = challenge?.starter_code?.[lang] || '';
           if (!code?.trim() || code === starter) continue;
-          await assessmentsRuntimeApi.submitCode(assessmentData.session_id, {
+          await assessmentsRuntimeApi.codingSubmit(assessmentData.session_id, {
             challenge_id: challengeId,
             code,
             language: lang,
@@ -1223,7 +1232,7 @@ public class CandidateSolution {
           time_taken_seconds: 0, // TODO: Track per-question time
         }));
 
-        await assessmentsRuntimeApi.submitMcq(assessmentData.session_id, mcqSubmissions);
+        await assessmentsRuntimeApi.mcqSubmit(assessmentData.session_id, mcqSubmissions);
       }
 
       // Submit coding solutions (if coding section exists)
@@ -2371,8 +2380,25 @@ public class CandidateSolution {
                             <Select
                               value={codingLanguages[currentCoding.id] || 'python3'}
                               onValueChange={(lang) => {
+                                const currentLang = codingLanguages[currentCoding.id] || 'python3';
+                                const currentCode = codingSolutions[currentCoding.id] || '';
+                                const currentStarter = currentCoding.starter_code?.[currentLang] || '';
+                                const newStarter = currentCoding.starter_code?.[lang] || '';
+                                const hasUserEdits = currentCode.trim() !== '' && currentCode.trim() !== currentStarter.trim();
+                                
                                 setCodingLanguages(prev => ({ ...prev, [currentCoding.id]: lang }));
-                                setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: currentCoding.starter_code?.[lang] || '' }));
+                                
+                                if (!hasUserEdits) {
+                                  // User hasn't modified code — safe to reset to new language starter
+                                  setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: newStarter }));
+                                } else if (newStarter) {
+                                  // User has edits — confirm before replacing
+                                  if (window.confirm(`Switching to ${lang} will replace your current code with the ${lang} starter code. Continue?`)) {
+                                    setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: newStarter }));
+                                  }
+                                  // If declined, keep their current code — language changes but code stays
+                                }
+                                // If no starter for new language, keep current code
                               }}
                             >
                               <SelectTrigger className="w-[140px] h-7 text-xs">
