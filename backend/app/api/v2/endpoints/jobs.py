@@ -140,6 +140,7 @@ async def create_job(payload: Dict[str, Any], user: ClerkUser = Depends(require_
         "resume_cutoff": payload.get("resume_cutoff", 35),
         "assessment_cutoff": payload.get("assessment_cutoff", 40),
         "interview_cutoff": payload.get("interview_cutoff", 40),
+        "include_sql_assessment": payload.get("include_sql_assessment", False),
         "location": payload.get("location"),
         "end_customer": end_customer_val,
         "end_customer_name": end_customer_name_val if end_customer_val == "end_customer" else None,
@@ -175,6 +176,7 @@ async def update_job(job_id: str, payload: Dict[str, Any], user: ClerkUser = Dep
         "title", "role", "level", "description",
         "must_have_skills", "good_to_have_skills", "min_experience_years",
         "is_active", "resume_cutoff", "assessment_cutoff", "interview_cutoff",
+        "include_sql_assessment",
         "location", "end_customer", "end_customer_name"
     ]
     

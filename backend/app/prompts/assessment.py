@@ -260,3 +260,59 @@ Return JSON format:
 }}"""
     user_prompt = "Generate 2 practical assessments."
     return system_prompt, user_prompt
+
+
+def get_sql_challenges_prompt(
+    role: str, level: str, description: str, count: int, difficulty: str = "medium"
+) -> tuple[str, str]:
+    
+    difficulty_guidelines = {
+        "easy": {
+            "complexity": "Basic SELECT, WHERE, GROUP BY, and simple JOINs",
+        },
+        "medium": {
+            "complexity": "Multiple JOINs, Subqueries, Aggregate functions with HAVING, Date functions",
+        },
+        "hard": {
+            "complexity": "Window functions, CTEs, Self JOINs, complex Subqueries and aggregations",
+        }
+    }
+
+    guidelines = difficulty_guidelines.get(difficulty.lower(), difficulty_guidelines["medium"])
+
+    system_prompt = f"""You are an expert Database Engineer creating LeetCode-style SQL assessment challenges.
+
+JOB CONTEXT:
+- Role: {role}
+- Level: {level}
+- Description: {description[:1000]}
+- Target Difficulty: {difficulty.upper()} ({guidelines['complexity']})
+- Challenge Count: {count}
+
+CHALLENGE QUALITY STANDARDS:
+1. LEETCODE STYLE: Each challenge must have a clear problem statement, a defined table schema, sample data, and an expected output.
+2. ISOLATED ENVIRONMENT: The SQL will be run in an SQLite in-memory database that simulates MySQL.
+3. VALID SQL: Ensure the schema setup (CREATE TABLE) and sample data (INSERT INTO) are valid SQLite syntax. Use standard SQL types (INTEGER, TEXT, DATE, DATETIME, BOOLEAN, FLOAT).
+4. VERIFIABLE: The expected query MUST return the exact expected output when run against the sample data.
+
+STRUCTURE REQUIREMENTS:
+Generate exactly {count} SQL challenges in the following JSON format:
+{{
+    "challenges": [
+        {{
+            "title": "Problem Title",
+            "description": "Clear problem statement explaining what the candidate needs to query.",
+            "db_schema": "CREATE TABLE employees (id INTEGER, name TEXT, salary INTEGER, department_id INTEGER); CREATE TABLE departments (id INTEGER, name TEXT);",
+            "sample_data": "INSERT INTO departments VALUES (1, 'IT'), (2, 'Sales'); INSERT INTO employees VALUES (1, 'Alice', 90000, 1), (2, 'Bob', 80000, 2);",
+            "expected_query": "SELECT d.name AS Department, e.name AS Employee, e.salary AS Salary FROM employees e JOIN departments d ON e.department_id = d.id WHERE e.salary > 85000;",
+            "difficulty": "easy|medium|hard",
+            "time_limit_minutes": 20,
+            "points": 25
+        }}
+    ]
+}}"""
+
+    user_prompt = f"Generate {count} unique {difficulty.upper()} SQL challenges suitable for a {level} {role}."
+    
+    return system_prompt, user_prompt
+

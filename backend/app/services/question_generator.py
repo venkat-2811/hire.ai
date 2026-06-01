@@ -11,8 +11,10 @@ from app.services.openai_client import get_openai_service
 from app.prompts import (
     get_technical_questions_prompt,
     get_behavioral_questions_prompt,
+    get_behavioral_questions_prompt,
     get_mcq_generation_prompt,
-    get_coding_challenges_prompt
+    get_coding_challenges_prompt,
+    get_sql_challenges_prompt
 )
 
 
@@ -453,6 +455,85 @@ class QuestionGeneratorService:
             },
         ]
         
+        return fallbacks[:count]
+    
+    async def generate_sql_challenges(
+        self,
+        job: JobDescription,
+        count: int = 1,
+        difficulty: str = "medium"
+    ) -> List[dict]:
+        """Generate SQL DB challenges for practical assessment."""
+        
+        system_prompt, user_prompt = get_sql_challenges_prompt(
+            role=job.role,
+            level=job.level,
+            description=job.description,
+            count=count,
+            difficulty=difficulty
+        )
+
+        try:
+            result = await self.openai.generate_json(
+                prompt=user_prompt,
+                system_instruction=system_prompt,
+                temperature=0.7,
+                max_tokens=4096,
+                raise_on_error=True,
+            )
+            
+            challenges = []
+            for c in result.get("challenges", [])[:count]:
+                challenges.append({
+                    "id": str(uuid.uuid4()),
+                    "title": c.get("title", ""),
+                    "description": c.get("description", ""),
+                    "starter_code": {"sql": "-- Write your MySQL query here\n"},
+                    "supported_languages": ["sql"],
+                    "expected_output": c.get("expected_query", ""),
+                    "evaluation_criteria": [
+                        {"name": "Correctness", "description": "Query returns expected rows", "max_points": 25}
+                    ],
+                    "metadata": {
+                        "is_sql": True,
+                        "db_schema": c.get("db_schema", ""),
+                        "sample_data": c.get("sample_data", ""),
+                        "expected_query": c.get("expected_query", "")
+                    },
+                    "difficulty": c.get("difficulty", "medium"),
+                    "time_limit_minutes": c.get("time_limit_minutes", 20),
+                    "points": c.get("points", 25),
+                })
+            
+            if not challenges:
+                raise RuntimeError("OpenAI returned no SQL challenges")
+
+            return challenges
+            
+        except Exception as e:
+            print(f"Error generating SQL challenges: {e}")
+            return self._get_fallback_sql_challenges(count)
+            
+    def _get_fallback_sql_challenges(self, count: int) -> List[dict]:
+        fallbacks = [
+            {
+                "id": str(uuid.uuid4()),
+                "title": "High Earners",
+                "description": "Write a SQL query to find employees who earn more than their managers.",
+                "starter_code": "",
+                "expected_output": "SELECT e.name AS Employee FROM Employee e JOIN Employee m ON e.managerId = m.id WHERE e.salary > m.salary;",
+                "evaluation_criteria": [{"name": "Correctness", "description": "Query returns expected rows", "max_points": 25}],
+                "metadata": {
+                    "is_sql": True,
+                    "db_schema": "CREATE TABLE Employee (id INTEGER PRIMARY KEY, name TEXT, salary INTEGER, managerId INTEGER);",
+                    "sample_data": "INSERT INTO Employee VALUES (1, 'Joe', 70000, 3), (2, 'Henry', 80000, 4), (3, 'Sam', 60000, NULL), (4, 'Max', 90000, NULL);",
+                    "expected_query": "SELECT e.name AS Employee FROM Employee e JOIN Employee m ON e.managerId = m.id WHERE e.salary > m.salary;"
+                },
+                "difficulty": "medium",
+                "time_limit_minutes": 20,
+                "points": 25,
+            }
+        ]
         return fallbacks[:count]
     
     def _get_fallback_technical_questions(

@@ -4,7 +4,8 @@ from .assessment import (
     get_mcq_generation_prompt,
     get_coding_challenges_prompt,
     get_generate_practical_assessment_prompt,
-    get_generate_tasks_with_ai_prompt
+    get_generate_tasks_with_ai_prompt,
+    get_sql_challenges_prompt
 )
 from .interview import (
     get_technical_questions_prompt,
@@ -29,6 +30,7 @@ __all__ = [
     "get_coding_challenges_prompt",
     "get_generate_practical_assessment_prompt",
     "get_generate_tasks_with_ai_prompt",
+    "get_sql_challenges_prompt",
     "get_technical_questions_prompt",
     "get_behavioral_questions_prompt",
     "get_interview_questions_general_prompt",

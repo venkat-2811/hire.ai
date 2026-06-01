@@ -353,7 +353,7 @@ async def _fetch_job_for_user(
     def _fetch():
         return (
             db.client.from_("job_descriptions")
-            .select("id, title, role, level, description, must_have_skills, good_to_have_skills")
+            .select("id, title, role, level, description, must_have_skills, good_to_have_skills, include_sql_assessment")
             .eq("id", job_id)
             .eq("created_by", user_id)
             .single()
@@ -591,6 +591,27 @@ async def invite_assessments(
                     )
             elif include_coding and coding_count > 0:
                 generated_coding = await _select_dsa_coding_challenges(db=bg_db, difficulty=difficulty, count=coding_count)
+
+            if job.get("include_sql_assessment"):
+                sql_challenges = await qgen.generate_sql_challenges(
+                    job=JobDescriptionModel(
+                        id=str(job.get("id")),
+                        title=str(job.get("title")),
+                        role=job.get("role"),
+                        level=job.get("level"),
+                        description=str(job.get("description") or ""),
+                        must_have_skills=job.get("must_have_skills") or [],
+                        good_to_have_skills=job.get("good_to_have_skills") or [],
+                        min_experience_years=int(job.get("min_experience_years") or 0),
+                        is_active=True,
+                    ),
+                    count=1,
+                    difficulty=difficulty
+                )
+                if isinstance(generated_coding, list):
+                    generated_coding.extend(sql_challenges)
+                else:
+                    generated_coding = sql_challenges
 
             gen_ok = True
         except Exception as e:
@@ -1182,7 +1203,7 @@ async def coding_run(session_id: str, body: Dict[str, Any] = Body(...)):
     db = get_db_admin_service()
     sessions, db_err = await db.select_safe(
         "assessment_sessions",
-        columns="id,status,proctoring_data",
+        columns="id,status,proctoring_data,coding_challenges",
         filters={"id": session_id},
         limit=1,
         context={"endpoint": "coding_run", "session_id": str(session_id)},
@@ -1216,15 +1237,63 @@ async def coding_run(session_id: str, body: Dict[str, Any] = Body(...)):
         str(len(code)),
     )
 
-    # Fetch the full problem from DSA bank (with all test cases + solution wrappers)
-    def _fetch_problem():
-        return db.client.from_("dsa_problems").select("*").eq("id", challenge_id).single().execute()
+    problem = None
+    is_sql_challenge = False
+    
+    coding_challenges = session.get("coding_challenges") or []
+    for ch in coding_challenges:
+        if ch.get("id") == challenge_id and ch.get("metadata", {}).get("is_sql"):
+            problem = ch
+            is_sql_challenge = True
+            break
+            
+    if not problem:
+        def _fetch_problem():
+            return db.client.from_("dsa_problems").select("*").eq("id", challenge_id).single().execute()
 
-    prob_res = await db.run(_fetch_problem)
-    problem = getattr(prob_res, "data", None)
+        prob_res = await db.run(_fetch_problem)
+        problem = getattr(prob_res, "data", None)
+
     if not isinstance(problem, dict):
         logger.error("[assessments.coding_run] problem_not_found session_id=%s challenge_id=%s", str(session_id), str(challenge_id))
         return api_error(message="Problem not found", status_code=400)
+
+    if is_sql_challenge:
+        from app.services.sql_executor import SQLExecutor
+        meta = problem.get("metadata", {})
+        db_schema = meta.get("db_schema", "")
+        sample_data = meta.get("sample_data", "")
+        expected_query = meta.get("expected_query", "")
+        
+        # For 'run', we just evaluate the query
+        candidate_result, cand_err, exec_time = SQLExecutor.execute_query(db_schema, sample_data, code)
+        eval_result = SQLExecutor.evaluate_submission(db_schema, sample_data, code, expected_query)
+        is_success = eval_result.get("score", 0) == 100
+        stdout_str = json.dumps(candidate_result, indent=2) if candidate_result else ""
+        
+        results_out = [{
+            "test_case_id": "sql_test",
+            "input": "Database Schema + Sample Data",
+            "expected_output": "Expected Query Results",
+            "actual_output": stdout_str if not cand_err else "Error",
+            "passed": is_success,
+            "status": "Accepted" if is_success else "Wrong Answer",
+            "time_used": eval_result.get("time_taken_seconds", 0),
+            "memory_used": 0,
+            "error": cand_err or eval_result.get("feedback", ""),
+            "stdout": stdout_str,
+            "stderr": cand_err
+        }]
+        
+        return ok({
+            "success": is_success,
+            "compilation_error": None,
+            "runtime_error": cand_err if cand_err else None,
+            "results": results_out,
+            "passed": 1 if is_success else 0,
+            "total": 1,
+            "score_percentage": eval_result.get("score", 0)
+        })
 
     problem = await _ensure_problem_execution_metadata(db=db, problem=problem, language=str(language))
 
@@ -1387,7 +1456,7 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
     db = get_db_admin_service()
     sessions, db_err = await db.select_safe(
         "assessment_sessions",
-        columns="id,status,coding_submissions,coding_score",
+        columns="id,status,coding_submissions,coding_score,coding_challenges",
         filters={"id": session_id},
         limit=1,
         context={"endpoint": "coding_submit", "session_id": str(session_id)},
@@ -1421,13 +1490,99 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
         str(len(code)),
     )
 
-    def _fetch_problem():
-        return db.client.from_("dsa_problems").select("*").eq("id", challenge_id).single().execute()
+    problem = None
+    is_sql_challenge = False
+    
+    coding_challenges = session.get("coding_challenges") or []
+    for ch in coding_challenges:
+        if ch.get("id") == challenge_id and ch.get("metadata", {}).get("is_sql"):
+            problem = ch
+            is_sql_challenge = True
+            break
+            
+    if not problem:
+        def _fetch_problem():
+            return db.client.from_("dsa_problems").select("*").eq("id", challenge_id).single().execute()
 
-    prob_res = await db.run(_fetch_problem)
-    problem = getattr(prob_res, "data", None)
+        prob_res = await db.run(_fetch_problem)
+        problem = getattr(prob_res, "data", None)
+
     if not isinstance(problem, dict):
         return api_error(message="Problem not found", status_code=400)
+
+    if is_sql_challenge:
+        from app.services.sql_executor import SQLExecutor
+        meta = problem.get("metadata", {})
+        db_schema = meta.get("db_schema", "")
+        sample_data = meta.get("sample_data", "")
+        expected_query = meta.get("expected_query", "")
+        
+        candidate_result, cand_err, exec_time = SQLExecutor.execute_query(db_schema, sample_data, code)
+        eval_result = SQLExecutor.evaluate_submission(db_schema, sample_data, code, expected_query)
+        is_success = eval_result.get("score", 0) == 100
+        stdout_str = json.dumps(candidate_result, indent=2) if candidate_result else ""
+        
+        submission = {
+            "challenge_id": challenge_id,
+            "problem_slug": "sql-challenge",
+            "code": code,
+            "language": "sql",
+            "test_results": [{
+                "test_case_id": "sql_test",
+                "is_hidden": False,
+                "input": "Database Schema + Sample Data",
+                "expected_output": "Expected Query Results",
+                "actual_output": stdout_str if not cand_err else "Error",
+                "passed": is_success,
+                "status": "Accepted" if is_success else "Wrong Answer",
+                "time_used": eval_result.get("time_taken_seconds", 0),
+                "memory_used": 0,
+                "error": cand_err or eval_result.get("feedback", ""),
+                "stdout": stdout_str,
+                "stderr": cand_err
+            }],
+            "passed_count": 1 if is_success else 0,
+            "total_tests": 1,
+            "score_percentage": eval_result.get("score", 0),
+            "submitted_at": _utc_now_iso(),
+            "compilation_error": None,
+            "runtime_error": cand_err if cand_err else None,
+        }
+        
+        existing = session.get("coding_submissions")
+        existing_list = existing if isinstance(existing, list) else []
+        existing_list = list(existing_list)
+        idx = next((i for i, s in enumerate(existing_list) if isinstance(s, dict) and s.get("challenge_id") == challenge_id), -1)
+        if idx >= 0:
+            existing_list[idx] = submission
+        else:
+            existing_list.append(submission)
+
+        scores = [float(s.get("score_percentage") or 0) for s in existing_list if isinstance(s, dict)]
+        coding_score = sum(scores) / len(scores) if scores else float(eval_result.get("score", 0))
+
+        updated_rows, db_err = await db.update_safe(
+            "assessment_sessions",
+            {"coding_submissions": existing_list, "coding_score": coding_score, "updated_at": _utc_now_iso()},
+            filters={"id": session_id},
+            context={"endpoint": "coding_submit", "session_id": str(session_id), "challenge_id": str(challenge_id)},
+        )
+        if db_err:
+            logger.error("[assessments.coding_submit] db_update_error session_id=%s error=%s", str(session_id), str(db_err.message))
+            return api_error(message="Failed to save code submission. Please try again.", status_code=500)
+
+        return ok({
+            "success": True,
+            "challenge_id": challenge_id,
+            "test_results": submission["test_results"],
+            "passed_count": submission["passed_count"],
+            "total_tests": submission["total_tests"],
+            "score_percentage": submission["score_percentage"],
+            "hidden_tests_passed": 0,
+            "hidden_tests_total": 0,
+            "compilation_error": None,
+            "runtime_error": cand_err if cand_err else None,
+        })
 
     problem = await _ensure_problem_execution_metadata(db=db, problem=problem, language=str(language))
 

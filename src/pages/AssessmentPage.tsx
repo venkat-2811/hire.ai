@@ -99,6 +99,7 @@ interface CodingChallenge {
   points: number;
   time_limit_seconds: number;
   supported_languages: string[];
+  metadata?: any;
 }
 
 interface ApexBlankItem {
@@ -752,7 +753,9 @@ public class CandidateSolution {
           const initialSolutions: Record<string, Record<string, string>> = {};
           const initialLanguages: Record<string, string> = {};
           codingList.forEach((c: CodingChallenge) => {
-            const defaultLang = (data?.is_apex_mode || false)
+            const defaultLang = c.metadata?.is_sql
+              ? 'sql'
+              : (data?.is_apex_mode || false)
               ? 'apex'
               : (c.supported_languages?.includes('python3') ? 'python3' : (c.supported_languages?.[0] || 'python3'));
             initialLanguages[c.id] = defaultLang;
@@ -969,7 +972,10 @@ public class CandidateSolution {
   const runCode = async (challengeId: string) => {
     if (!assessmentData || runningCode) return;
 
-    const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+    const challenge = codingChallenges.find(c => c.id === challengeId);
+    if (!challenge) return;
+
+    const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
     const code = codingSolutions[challengeId]?.[lang];
     if (!code) {
       toast.error('Please write some code first');
@@ -1070,7 +1076,10 @@ public class CandidateSolution {
   const submitCodingSolution = async (challengeId: string) => {
     if (!assessmentData || submittingCode) return;
 
-    const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+    const challenge = codingChallenges.find(c => c.id === challengeId);
+    if (!challenge) return;
+
+    const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
     const code = codingSolutions[challengeId]?.[lang];
     if (!code) {
       toast.error('Please write some code first');
@@ -1172,8 +1181,10 @@ public class CandidateSolution {
   };
 
   const resetCode = (challengeId: string) => {
-    const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
     const challenge = codingChallenges.find(c => c.id === challengeId);
+    if (!challenge) return;
+
+    const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
     if (challenge) {
       const starter = lang === 'apex'
         ? (challenge.starter_code?.apex || apexStarterTemplate)
@@ -1216,7 +1227,7 @@ public class CandidateSolution {
       if (codingChallenges.length > 0) {
         for (const challenge of codingChallenges) {
           const challengeId = challenge.id;
-          const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+          const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
           const code = codingSolutions[challengeId]?.[lang] || '';
           const starter = challenge?.starter_code?.[lang] || '';
           if (!code?.trim() || code === starter) continue;
@@ -1271,7 +1282,7 @@ public class CandidateSolution {
       if (codingChallenges.length > 0) {
         for (const challenge of codingChallenges) {
           const challengeId = challenge.id;
-          const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+          const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
           const code = codingSolutions[challengeId]?.[lang] || '';
           const starter = challenge?.starter_code?.[lang] || '';
           // Only submit if candidate actually changed starter code.
@@ -1591,13 +1602,13 @@ public class CandidateSolution {
   const currentCoding = codingChallenges[currentCodingIndex];
   const mcqProgress = mcqQuestions.length === 0 ? 0 : (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
   const attemptedCodingCount = codingChallenges.filter((challenge) => {
-    const lang = codingLanguages[challenge.id] || 'python3';
+    const lang = challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challenge.id] || 'python3');
     const code = (codingSolutions[challenge.id] || {})[lang] || '';
     const starter = challenge?.starter_code?.[lang] || '';
     return code.trim() !== '' && code.trim() !== starter.trim();
   }).length;
   const codingProgress = codingChallenges.length === 0 ? 0 : (codingChallenges.filter(challenge => {
-    const lang = codingLanguages[challenge.id] || 'python3';
+    const lang = challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challenge.id] || 'python3');
     const code = (codingSolutions[challenge.id] || {})[lang] || '';
     return code !== (challenge.starter_code?.[lang] || '');
   }).length / codingChallenges.length) * 100;
@@ -2233,6 +2244,24 @@ public class CandidateSolution {
                               </div>
                             )}
 
+                            {/* SQL Specific Fields */}
+                            {currentCoding.metadata?.is_sql && (
+                              <>
+                                {currentCoding.metadata.db_schema && (
+                                  <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                                    <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Database Schema</div>
+                                    <pre className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{renderSafe(currentCoding.metadata.db_schema)}</pre>
+                                  </div>
+                                )}
+                                {currentCoding.metadata.sample_data && (
+                                  <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                                    <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Sample Data</div>
+                                    <pre className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground overflow-auto max-h-64">{renderSafe(currentCoding.metadata.sample_data)}</pre>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
                             {currentCoding.test_cases && currentCoding.test_cases.length > 0 && (
                               <div className="space-y-2">
                                 <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide">Sample Test Cases</h4>
@@ -2409,6 +2438,15 @@ public class CandidateSolution {
                                 AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)
                               </div>
                             </div>
+                          ) : currentCoding.metadata?.is_sql ? (
+                            <div className="flex flex-col leading-tight">
+                              <div className="text-xs font-semibold flex items-center gap-1">
+                                <Code className="h-3 w-3" /> MySQL Database Engine
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                Read-only query execution
+                              </div>
+                            </div>
                           ) : (
                           <Select
                               value={codingLanguages[currentCoding.id] || 'python3'}
@@ -2439,7 +2477,7 @@ public class CandidateSolution {
                               <SelectContent>
                                 {(currentCoding.supported_languages || []).map((lang) => (
                                   <SelectItem key={lang} value={lang}>
-                                    {{ python3: 'Python 3', python: 'Python', javascript: 'JavaScript', java: 'Java', cpp: 'C++', c: 'C', typescript: 'TypeScript', csharp: 'C#', 'c#': 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex', sql: 'SQL' }[lang] || lang}
+                                    {{ python3: 'Python 3', python: 'Python', javascript: 'JavaScript', java: 'Java', cpp: 'C++', c: 'C', typescript: 'TypeScript', csharp: 'C#', 'c#': 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -2484,11 +2522,11 @@ public class CandidateSolution {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={isApexMode ? 'java' : ({ python3: 'python', python: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', c: 'c', typescript: 'typescript', csharp: 'csharp', 'c#': 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'java', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
+                          language={isApexMode ? 'java' : currentCoding.metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', c: 'c', typescript: 'typescript', csharp: 'csharp', 'c#': 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'java', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
                           theme="vs-dark"
-                          value={(codingSolutions[currentCoding.id] || {})[isApexMode ? 'apex' : (codingLanguages[currentCoding.id] || 'python3')] || ''}
+                          value={(codingSolutions[currentCoding.id] || {})[isApexMode ? 'apex' : currentCoding.metadata?.is_sql ? 'sql' : (codingLanguages[currentCoding.id] || 'python3')] || ''}
                           onChange={(value) => {
-                            const lang = isApexMode ? 'apex' : (codingLanguages[currentCoding.id] || 'python3');
+                            const lang = isApexMode ? 'apex' : currentCoding.metadata?.is_sql ? 'sql' : (codingLanguages[currentCoding.id] || 'python3');
                             handleCodingSolution(currentCoding.id, lang, value || '');
                           }}
                           options={{

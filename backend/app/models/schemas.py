@@ -24,6 +24,7 @@ class JobDescriptionCreate(BaseModel):
     must_have_skills: List[str] = Field(default_factory=list)
     good_to_have_skills: List[str] = Field(default_factory=list)
     min_experience_years: int = 0
+    include_sql_assessment: bool = False
     resume_cutoff: int = 0
     assessment_cutoff: int = 0
     interview_cutoff: int = 0
@@ -37,6 +38,7 @@ class JobDescriptionUpdate(BaseModel):
     must_have_skills: Optional[List[str]] = None
     good_to_have_skills: Optional[List[str]] = None
     min_experience_years: Optional[int] = None
+    include_sql_assessment: Optional[bool] = None
     resume_cutoff: Optional[int] = None
     assessment_cutoff: Optional[int] = None
     interview_cutoff: Optional[int] = None
@@ -279,6 +281,7 @@ class PracticalAssessmentCreate(BaseModel):
     starter_code: Optional[str] = None
     expected_output: Optional[str] = None
     evaluation_criteria: List[EvaluationCriterion] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     time_limit_minutes: int = 30
 
 
@@ -306,6 +309,7 @@ class PracticalSubmissionCreate(BaseModel):
     session_id: str
     submitted_code: Optional[str] = None
     submitted_answer: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     time_taken_seconds: Optional[int] = None
 
 

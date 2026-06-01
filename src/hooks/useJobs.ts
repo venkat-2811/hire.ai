@@ -16,6 +16,7 @@ export interface JobDescription {
   resume_cutoff: number;
   assessment_cutoff: number;
   interview_cutoff: number;
+  include_sql_assessment: boolean;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
   end_customer?: 'your_own_company' | 'end_customer';
@@ -36,6 +37,7 @@ export interface JobDescriptionCreate {
   resume_cutoff?: number;
   assessment_cutoff?: number;
   interview_cutoff?: number;
+  include_sql_assessment?: boolean;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
   end_customer_name?: string | null;

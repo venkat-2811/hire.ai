@@ -21,6 +21,7 @@ import {
   Award,
   Shield,
 } from 'lucide-react';
+import Editor from '@monaco-editor/react';
 import { 
   useInterview, 
   useInterviewQuestions, 
@@ -338,7 +339,7 @@ export default function InterviewSessionPage() {
                 </p>
               </div>
 
-              {phase === 'practicals' && currentPractical?.starter_code && (
+              {phase === 'practicals' && currentPractical?.starter_code && !currentPractical?.metadata?.is_sql && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Starter Code:</p>
                   <pre className="p-4 rounded-lg bg-slate-900 text-slate-100 text-sm overflow-x-auto">
@@ -347,18 +348,57 @@ export default function InterviewSessionPage() {
                 </div>
               )}
 
+              {phase === 'practicals' && currentPractical?.metadata?.is_sql && (
+                <div className="space-y-4">
+                  {currentPractical.metadata.db_schema && (
+                    <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                      <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground flex items-center gap-2">
+                        <Code className="h-4 w-4" /> Database Schema
+                      </div>
+                      <pre className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{currentPractical.metadata.db_schema}</pre>
+                    </div>
+                  )}
+                  {currentPractical.metadata.sample_data && (
+                    <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                      <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Sample Data</div>
+                      <pre className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground overflow-auto max-h-48">{currentPractical.metadata.sample_data}</pre>
+                    </div>
+                  )}
+                  {currentPractical.expected_output && (
+                    <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                      <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Expected Output Format</div>
+                      <pre className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{currentPractical.expected_output}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
-                <p className="text-sm font-medium">Your Response:</p>
-                <Textarea
-                  placeholder={phase === 'questions' 
-                    ? "Type your answer here..."
-                    : "Write your code/solution here..."
-                  }
-                  value={response}
-                  onChange={(e) => setResponse(e.target.value)}
-                  rows={phase === 'practicals' ? 15 : 8}
-                  className={phase === 'practicals' ? 'font-mono' : ''}
-                />
+                <p className="text-sm font-medium">{phase === 'practicals' && currentPractical?.metadata?.is_sql ? "Your SQL Query:" : "Your Response:"}</p>
+                {phase === 'practicals' ? (
+                  <div className="border rounded-md overflow-hidden" style={{ height: 400 }}>
+                    <Editor
+                      height="100%"
+                      language={currentPractical?.metadata?.is_sql ? 'sql' : 'javascript'}
+                      theme="vs-dark"
+                      value={response}
+                      onChange={(value) => setResponse(value || '')}
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 14,
+                        lineNumbers: 'on',
+                        wordWrap: 'on',
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <Textarea
+                    placeholder="Type your answer here..."
+                    value={response}
+                    onChange={(e) => setResponse(e.target.value)}
+                    rows={8}
+                  />
+                )}
               </div>
 
               <div className="flex justify-end">

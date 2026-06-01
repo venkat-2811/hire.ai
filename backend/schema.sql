@@ -28,6 +28,7 @@ create table if not exists public.job_descriptions (
   must_have_skills text[] not null default '{}'::text[],
   good_to_have_skills text[] not null default '{}'::text[],
   min_experience_years int not null default 0,
+  include_sql_assessment boolean not null default false,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz null
@@ -217,6 +218,7 @@ create table if not exists public.practical_assessments (
   expected_output text null,
 
   evaluation_criteria jsonb not null default '[]'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
   time_limit_minutes int not null default 30,
   order_index int not null default 0,
 
@@ -241,6 +243,7 @@ create table if not exists public.practical_submissions (
   execution_result text null,
 
   ai_evaluation jsonb null,
+  metadata jsonb not null default '{}'::jsonb,
   score int null,
   feedback text null,
 

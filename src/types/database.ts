@@ -21,6 +21,7 @@ export interface JobDescription {
   resume_cutoff: number;
   assessment_cutoff: number;
   interview_cutoff: number;
+  include_sql_assessment: boolean;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
   is_active: boolean;
@@ -190,6 +191,7 @@ export interface PracticalAssessment {
   starter_code: string | null;
   expected_output: string | null;
   evaluation_criteria: EvaluationCriterion[];
+  metadata: Record<string, any>;
   time_limit_minutes: number;
   order_index: number;
   created_at: string;
@@ -209,6 +211,7 @@ export interface PracticalSubmission {
   submitted_answer: string | null;
   execution_result: string | null;
   ai_evaluation: AIEvaluation | null;
+  metadata: Record<string, any>;
   score: number | null;
   feedback: string | null;
   time_taken_seconds: number | null;
