@@ -725,6 +725,53 @@ function _eq(a, b) {
 
 function _cmp(actual, expected) { return _eq(_nv(actual), _nv(expected)); }
 
+function _lookupGlobal(name) {
+  if (!name) return undefined;
+  try {
+    if (typeof globalThis !== 'undefined' && typeof globalThis[name] !== 'undefined') return globalThis[name];
+  } catch (e) {}
+  try {
+    if (typeof global !== 'undefined' && typeof global[name] !== 'undefined') return global[name];
+  } catch (e) {}
+  try {
+    if (typeof module !== 'undefined' && module && module.exports) {
+      if (typeof module.exports === 'function' && (module.exports.name === name || name === CLASS_NAME)) return module.exports;
+      if (typeof module.exports === 'object' && typeof module.exports[name] !== 'undefined') return module.exports[name];
+    }
+  } catch (e) {}
+  return undefined;
+}
+
+function _resolveNamedFunction(name) {
+  var found = _lookupGlobal(name);
+  if (typeof found === 'function') return found;
+  return null;
+}
+
+function _resolveClass(name) {
+  var found = _lookupGlobal(name);
+  if (typeof found === 'function') return found;
+  return null;
+}
+
+function _bindFirstMethod(inst) {
+  var methods = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).filter(function(k) {
+    return k !== 'constructor' && typeof inst[k] === 'function';
+  });
+  if (methods.length > 0) return inst[methods[0]].bind(inst);
+  return null;
+}
+
+function _resolveFromClass(name, methodName) {
+  var Klass = _resolveClass(name);
+  if (!Klass) return null;
+  var inst = new Klass();
+  if (methodName && typeof inst[methodName] === 'function') {
+    return inst[methodName].bind(inst);
+  }
+  return _bindFirstMethod(inst);
+}
+
 function getArgs(inputData, target) {
   var paramCount = -1;
   if (typeof target === 'function') {
@@ -760,50 +807,27 @@ function getArgs(inputData, target) {
 function resolveTarget() {
   // 1. Class-based execution
   if (EXECUTION_MODE === 'class') {
-    var Klass = null;
-    try { if (typeof Solution !== 'undefined') Klass = Solution; } catch (e) {}
-    if (!Klass) { try { Klass = (typeof globalThis !== 'undefined' && globalThis[CLASS_NAME]) || (typeof global !== 'undefined' && global[CLASS_NAME]) || null; } catch (e) {} }
-    if (!Klass) throw new Error("Class '" + CLASS_NAME + "' not found");
-    var inst = new Klass();
-    if (FUNCTION_NAME && typeof inst[FUNCTION_NAME] === 'function') {
-      return inst[FUNCTION_NAME].bind(inst);
-    }
-    // Auto-detect first method
-    var methods = Object.getOwnPropertyNames(Object.getPrototypeOf(inst)).filter(function(k) {
-      return k !== 'constructor' && typeof inst[k] === 'function';
-    });
-    if (methods.length > 0) return inst[methods[0]].bind(inst);
-    throw new Error("No callable method found on class '" + CLASS_NAME + "'");
+    var classTarget = _resolveFromClass(CLASS_NAME, FUNCTION_NAME);
+    if (!classTarget && CLASS_NAME !== 'Solution') classTarget = _resolveFromClass('Solution', FUNCTION_NAME);
+    if (classTarget) return classTarget;
   }
 
   // 2. Named function lookup
   if (FUNCTION_NAME) {
-    var found = null;
-    try { found = (typeof globalThis !== 'undefined') ? globalThis[FUNCTION_NAME] : undefined; } catch (e) {}
-    if (typeof found !== 'function') { try { found = (typeof global !== 'undefined') ? global[FUNCTION_NAME] : undefined; } catch (e) {} }
-    if (typeof found !== 'function') { try { found = eval(FUNCTION_NAME); } catch (e) {} }
+    var found = _resolveNamedFunction(FUNCTION_NAME);
     if (typeof found === 'function') return found;
 
     // Try Solution class fallback
-    try {
-      if (typeof Solution !== 'undefined') {
-        var si = new Solution();
-        if (typeof si[FUNCTION_NAME] === 'function') return si[FUNCTION_NAME].bind(si);
-      }
-    } catch (e) {}
+    var fallbackClassTarget = _resolveFromClass(CLASS_NAME, FUNCTION_NAME);
+    if (!fallbackClassTarget && CLASS_NAME !== 'Solution') fallbackClassTarget = _resolveFromClass('Solution', FUNCTION_NAME);
+    if (fallbackClassTarget) return fallbackClassTarget;
     throw new Error("Function '" + FUNCTION_NAME + "' not found. Make sure your function is declared at the top level.");
   }
 
   // 3. Auto-detect: Solution class first
-  try {
-    if (typeof Solution !== 'undefined') {
-      var si2 = new Solution();
-      var m2 = Object.getOwnPropertyNames(Object.getPrototypeOf(si2)).filter(function(k) {
-        return k !== 'constructor' && typeof si2[k] === 'function';
-      });
-      if (m2.length > 0) return si2[m2[0]].bind(si2);
-    }
-  } catch (e) {}
+  var autoClassTarget = _resolveFromClass(CLASS_NAME, '');
+  if (!autoClassTarget && CLASS_NAME !== 'Solution') autoClassTarget = _resolveFromClass('Solution', '');
+  if (autoClassTarget) return autoClassTarget;
 
   // 4. Find any named function in global scope
   var candidates = ['solve', 'solution', 'main', 'run', 'execute', 'process',
@@ -813,12 +837,8 @@ function resolveTarget() {
     'lengthOfLongestSubstring', 'productExceptSelf', 'groupAnagrams',
     'numIslands', 'canFinish', 'rob', 'trap', 'merge', 'insert'];
   for (var i = 0; i < candidates.length; i++) {
-    try {
-      var c = (typeof globalThis !== 'undefined') ? globalThis[candidates[i]] : undefined;
-      if (typeof c !== 'function') { try { c = (typeof global !== 'undefined') ? global[candidates[i]] : undefined; } catch(e){} }
-      if (typeof c !== 'function') { try { c = eval(candidates[i]); } catch(e){} }
-      if (typeof c === 'function') return c;
-    } catch (e) {}
+    var c = _resolveNamedFunction(candidates[i]);
+    if (typeof c === 'function') return c;
   }
 
   throw new Error('No callable function found in submitted code. Define a function or a Solution class with a method.');
