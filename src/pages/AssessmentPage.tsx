@@ -151,6 +151,7 @@ interface AssessmentData {
   mcq_questions?: MCQQuestion[];
   coding_challenges?: CodingChallenge[];
   apex_blanks?: ApexFillInBlankQuestion[];
+  sql_challenges?: CodingChallenge[];
 }
 
 // ── React Error Boundary for Assessment Runtime ──
@@ -225,17 +226,20 @@ export default function AssessmentPage() {
   const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
   const [codingChallenges, setCodingChallenges] = useState<CodingChallenge[]>([]);
   const [apexBlanks, setApexBlanks] = useState<ApexFillInBlankQuestion[]>([]);
+  const [sqlChallenges, setSqlChallenges] = useState<CodingChallenge[]>([]);
   const hasCoding = codingChallenges.length > 0;
   const hasApexBlanks = apexBlanks.length > 0;
-  const [currentTab, setCurrentTab] = useState<'mcq' | 'coding' | 'apex_blanks'>('mcq');
+  const hasSql = sqlChallenges.length > 0;
+  const [currentTab, setCurrentTab] = useState<'mcq' | 'coding' | 'apex_blanks' | 'sql'>('mcq');
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [currentCodingIndex, setCurrentCodingIndex] = useState(0);
   const [currentApexBlankIndex, setCurrentApexBlankIndex] = useState(0);
+  const [currentSqlIndex, setCurrentSqlIndex] = useState(0);
   
   // Reset to description tab when switching coding questions
   useEffect(() => {
     setProblemTab('description');
-  }, [currentCodingIndex]);
+  }, [currentCodingIndex, currentSqlIndex]);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   // Per-language code storage: { [challengeId]: { [language]: code } }
   // Matches LeetCode behavior — each language keeps its own independent buffer.
@@ -731,21 +735,26 @@ public class CandidateSolution {
         const mcqList = Array.isArray(data.mcq_questions) ? data.mcq_questions : [];
         const codingList = Array.isArray(data.coding_challenges) ? data.coding_challenges : [];
         const apexBlankList = Array.isArray(data.apex_blanks) ? data.apex_blanks : [];
+        const sqlList = Array.isArray(data.sql_challenges) ? data.sql_challenges : [];
 
         setMcqQuestions(mcqList);
         setCodingChallenges(codingList);
         setApexBlanks(apexBlankList);
+        setSqlChallenges(sqlList);
 
         const hasMcq = mcqList.length > 0;
         const hasCoding = codingList.length > 0;
         const hasApexBlanks = apexBlankList.length > 0;
+        const hasSql = sqlList.length > 0;
 
-        if (hasMcq && !hasCoding && !hasApexBlanks) {
+        if (hasMcq && !hasCoding && !hasApexBlanks && !hasSql) {
           setCurrentTab('mcq');
         } else if (!hasMcq && hasCoding) {
           setCurrentTab('coding');
         } else if (!hasMcq && hasApexBlanks) {
           setCurrentTab('apex_blanks');
+        } else if (!hasMcq && !hasCoding && !hasApexBlanks && hasSql) {
+          setCurrentTab('sql');
         }
 
         if (hasCoding) {
@@ -1615,8 +1624,8 @@ public class CandidateSolution {
   }).length / codingChallenges.length) * 100;
   const hasMcq = mcqQuestions.length > 0;
   const activeTab = hasMcq
-    ? ((hasCoding || hasApexBlanks) ? currentTab : 'mcq')
-    : (hasApexBlanks ? 'apex_blanks' : 'coding');
+    ? ((hasCoding || hasApexBlanks || hasSql) ? currentTab : 'mcq')
+    : (hasApexBlanks ? 'apex_blanks' : (hasCoding ? 'coding' : 'sql'));
 
   return (
     <AssessmentErrorBoundary>
@@ -1914,26 +1923,33 @@ public class CandidateSolution {
             )}
           </Button>
         </div>
-        <Tabs value={activeTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding' | 'apex_blanks')}>
-          {hasMcq && (hasCoding || hasApexBlanks) && (
-            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
-              <TabsTrigger value="mcq" className="flex items-center gap-2">
+        <Tabs value={activeTab} onValueChange={(v) => setCurrentTab(v as 'mcq' | 'coding' | 'apex_blanks' | 'sql')}>
+          <TabsList className="flex flex-wrap w-full max-w-3xl mx-auto mb-6">
+            {hasMcq && (
+              <TabsTrigger value="mcq" className="flex-1 min-w-32 flex justify-center items-center gap-2">
                 <FileQuestion className="h-4 w-4" />
                 MCQ ({Object.keys(mcqAnswers).length}/{mcqQuestions.length})
               </TabsTrigger>
-              {hasCoding ? (
-                <TabsTrigger value="coding" className="flex items-center gap-2">
-                  <Code className="h-4 w-4" />
-                  Coding ({currentCodingIndex + 1}/{codingChallenges.length})
-                </TabsTrigger>
-              ) : (
-                <TabsTrigger value="apex_blanks" className="flex items-center gap-2">
-                  <Code className="h-4 w-4" />
-                  Apex Syntax ({currentApexBlankIndex + 1}/{apexBlanks.length})
-                </TabsTrigger>
-              )}
-            </TabsList>
-          )}
+            )}
+            {hasCoding && (
+              <TabsTrigger value="coding" className="flex-1 min-w-32 flex justify-center items-center gap-2">
+                <Code className="h-4 w-4" />
+                Coding ({currentCodingIndex + 1}/{codingChallenges.length})
+              </TabsTrigger>
+            )}
+            {hasApexBlanks && (
+              <TabsTrigger value="apex_blanks" className="flex-1 min-w-32 flex justify-center items-center gap-2">
+                <Code className="h-4 w-4" />
+                Apex ({currentApexBlankIndex + 1}/{apexBlanks.length})
+              </TabsTrigger>
+            )}
+            {hasSql && (
+              <TabsTrigger value="sql" className="flex-1 min-w-32 flex justify-center items-center gap-2">
+                <Code className="h-4 w-4" />
+                SQL ({currentSqlIndex + 1}/{sqlChallenges.length})
+              </TabsTrigger>
+            )}
+          </TabsList>
 
           {/* MCQ Section */}
           {hasMcq && (
@@ -2717,6 +2733,579 @@ public class CandidateSolution {
                   <Button
                     onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
                     disabled={currentCodingIndex === codingChallenges.length - 1}
+                  >
+                    Next Challenge
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+          )}
+
+          {/* SQL Section */}
+          {hasSql && (
+            <TabsContent value="sql">
+              <div className="max-w-7xl mx-auto space-y-4">
+                {/* Problem Navigator Chips */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {sqlChallenges.map((c, idx) => {
+                    const result = codingResults[c.id];
+                    const isActive = currentSqlIndex === idx;
+                    const isAccepted = result && result.passed === result.total && result.total > 0;
+                    const hasResult = !!result;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setCurrentSqlIndex(idx)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                          isActive ? 'ring-2 ring-primary border-primary bg-primary/10' :
+                          isAccepted ? 'border-green-500/50 bg-green-500/10 text-green-600' :
+                          hasResult ? 'border-orange-500/50 bg-orange-500/10 text-orange-600' :
+                          'border-border bg-card hover:bg-muted/50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {isAccepted && <CheckCircle2 className="h-3 w-3" />}
+                          {hasResult && !isAccepted && <AlertCircle className="h-3 w-3" />}
+                          Q{idx + 1}: {renderSafe(c.title)}
+                          <span className="text-[10px] opacity-70">({renderSafe(c.points)}pts)</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <div className="ml-auto">
+                    <Progress value={((currentSqlIndex + 1) / sqlChallenges.length) * 100} className="h-1.5 w-32" />
+                  </div>
+                </div>
+
+                {sqlChallenges[currentSqlIndex] && (
+                  <div className="grid lg:grid-cols-2 gap-4 h-[74vh] min-h-[620px]">
+                    {/* LEFT: Problem Description Panel */}
+                    <div className="flex flex-col h-full min-h-0 border rounded-lg overflow-hidden bg-card">
+                      {/* Problem Header */}
+                      <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-sm">{renderSafe(sqlChallenges[currentSqlIndex].title)}</h3>
+                          <Badge variant="outline" className="text-[10px]">{renderSafe(sqlChallenges[currentSqlIndex].points)} pts</Badge>
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => setProblemTab('description')}
+                            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${problemTab === 'description' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            Description
+                          </button>
+                          <button
+                            onClick={() => setProblemTab('submissions')}
+                            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${problemTab === 'submissions' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            Results {codingResults[sqlChallenges[currentSqlIndex].id] ? `(${codingResults[sqlChallenges[currentSqlIndex].id].passed}/${codingResults[sqlChallenges[currentSqlIndex].id].total})` : ''}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 overflow-auto p-4 space-y-4">
+                        {problemTab === 'description' ? (
+                          <>
+                            <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:bg-muted/50 prose-pre:border">
+                              <ReactMarkdown>{sqlChallenges[currentSqlIndex].description}</ReactMarkdown>
+                            </div>
+
+                            {sqlChallenges[currentSqlIndex].examples && sqlChallenges[currentSqlIndex].examples.length > 0 && (
+                              <div className="space-y-3">
+                                {sqlChallenges[currentSqlIndex].examples.map((ex, idx) => (
+                                  <div key={idx} className="rounded-lg border bg-muted/20 overflow-hidden">
+                                    <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Example {idx + 1}</div>
+                                    <div className="p-3 text-xs font-mono space-y-1">
+                                      <div><span className="text-muted-foreground">Input:</span> {renderSafe(ex.input)}</div>
+                                      <div><span className="text-muted-foreground">Output:</span> {renderSafe(ex.output)}</div>
+                                      {ex.explanation && (
+                                        <div><span className="text-muted-foreground">Explanation:</span> {renderSafe(ex.explanation)}</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {sqlChallenges[currentSqlIndex].constraints && (
+                              <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                                <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Constraints</div>
+                                <div className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{renderSafe(sqlChallenges[currentSqlIndex].constraints)}</div>
+                              </div>
+                            )}
+
+                            {/* SQL Specific Fields */}
+                            {sqlChallenges[currentSqlIndex].metadata?.is_sql && (
+                              <>
+                                {sqlChallenges[currentSqlIndex].metadata.db_schema && (
+                                  <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                                    <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Database Schema</div>
+                                    <pre className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground">{renderSafe(sqlChallenges[currentSqlIndex].metadata.db_schema)}</pre>
+                                  </div>
+                                )}
+                                {sqlChallenges[currentSqlIndex].metadata.sample_data && (
+                                  <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                                    <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground">Sample Data</div>
+                                    <pre className="p-3 text-xs font-mono whitespace-pre-wrap text-muted-foreground overflow-auto max-h-64">{renderSafe(sqlChallenges[currentSqlIndex].metadata.sample_data)}</pre>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {sqlChallenges[currentSqlIndex].test_cases && sqlChallenges[currentSqlIndex].test_cases.length > 0 && (
+                              <div className="space-y-2">
+                                <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wide">Sample Test Cases</h4>
+                                {sqlChallenges[currentSqlIndex].test_cases.map((tc, idx) => (
+                                  <div key={tc.id || idx} className="bg-muted/30 rounded-lg p-2.5 text-xs font-mono border">
+                                    <div><span className="text-muted-foreground">Input:</span> {renderSafe(tc.input)}</div>
+                                    <div><span className="text-muted-foreground">Expected:</span> {renderSafe(tc.expected_output)}</div>
+                                  </div>
+                                ))}
+                                <p className="text-[10px] text-muted-foreground italic">Hidden test cases will be evaluated on submission.</p>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          /* Submissions/Results Tab */
+                          codingResults[sqlChallenges[currentSqlIndex].id] ? (
+                            <div className="space-y-3">
+                              {/* Compilation / Runtime Error Banner */}
+                              {(codingResults[sqlChallenges[currentSqlIndex].id].compilation_error || codingResults[sqlChallenges[currentSqlIndex].id].runtime_error) && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-4"
+                                >
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <AlertCircle className="h-5 w-5 text-orange-500" />
+                                    <span className="font-bold text-sm text-orange-600">
+                                      {codingResults[sqlChallenges[currentSqlIndex].id].compilation_error ? 'Compilation Error' : 'Runtime Error'}
+                                    </span>
+                                  </div>
+                                  <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-black/30 rounded p-3 overflow-auto max-h-40">
+                                    {renderSafe(codingResults[sqlChallenges[currentSqlIndex].id].compilation_error || codingResults[sqlChallenges[currentSqlIndex].id].runtime_error)}
+                                  </pre>
+                                </motion.div>
+                              )}
+
+                              {/* Verdict Banner */}
+                              {!(codingResults[sqlChallenges[currentSqlIndex].id].compilation_error || codingResults[sqlChallenges[currentSqlIndex].id].runtime_error) && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className={`rounded-lg p-4 border ${
+                                    codingResults[sqlChallenges[currentSqlIndex].id].passed === codingResults[sqlChallenges[currentSqlIndex].id].total && codingResults[sqlChallenges[currentSqlIndex].id].total > 0
+                                      ? 'bg-green-500/10 border-green-500/30'
+                                      : 'bg-red-500/10 border-red-500/30'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      {codingResults[sqlChallenges[currentSqlIndex].id].passed === codingResults[sqlChallenges[currentSqlIndex].id].total && codingResults[sqlChallenges[currentSqlIndex].id].total > 0 ? (
+                                        <CheckCircle className="h-5 w-5 text-green-500" />
+                                      ) : (
+                                        <XCircle className="h-5 w-5 text-red-500" />
+                                      )}
+                                      <span className="font-bold text-sm">
+                                        {codingResults[sqlChallenges[currentSqlIndex].id].passed === codingResults[sqlChallenges[currentSqlIndex].id].total && codingResults[sqlChallenges[currentSqlIndex].id].total > 0 ? 'Accepted' : 'Not Accepted'}
+                                      </span>
+                                    </div>
+                                    <span className="text-2xl font-bold">{safeNumber(codingResults[sqlChallenges[currentSqlIndex].id].score).toFixed(0)}%</span>
+                                  </div>
+                                  <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                    <span>{codingResults[sqlChallenges[currentSqlIndex].id].passed}/{codingResults[sqlChallenges[currentSqlIndex].id].total} tests passed</span>
+                                    {codingResults[sqlChallenges[currentSqlIndex].id].hidden_total != null && codingResults[sqlChallenges[currentSqlIndex].id].hidden_total! > 0 && (
+                                      <span>({codingResults[sqlChallenges[currentSqlIndex].id].hidden_passed}/{codingResults[sqlChallenges[currentSqlIndex].id].hidden_total} hidden)</span>
+                                    )}
+                                    {codingResults[sqlChallenges[currentSqlIndex].id].performance?.avg_time_ms && (
+                                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {safeString(codingResults[sqlChallenges[currentSqlIndex].id].performance?.avg_time_ms)}ms avg</span>
+                                    )}
+                                    {codingResults[sqlChallenges[currentSqlIndex].id].performance?.avg_memory_kb && (
+                                      <span>{safeString(codingResults[sqlChallenges[currentSqlIndex].id].performance?.avg_memory_kb)}KB avg</span>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              )}
+
+                              {/* Individual Test Results */}
+                              <div className="space-y-1.5">
+                                {codingResults[sqlChallenges[currentSqlIndex].id].results.map((result, idx) => (
+                                  <motion.div
+                                    key={result.test_case_id || idx}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className={`p-2.5 rounded-lg text-xs font-mono border ${
+                                      result.passed ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        {result.passed ? (
+                                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                                        ) : (
+                                          <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                                        )}
+                                        <span className="font-semibold font-sans">Test {idx + 1}</span>
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-[10px] px-1.5 py-0 ${
+                                            result.status === 'AC' ? 'border-green-500/50 text-green-600' :
+                                            result.status === 'WA' ? 'border-red-500/50 text-red-600' :
+                                            result.status === 'TLE' ? 'border-yellow-500/50 text-yellow-600' :
+                                            result.status === 'MLE' ? 'border-purple-500/50 text-purple-600' :
+                                            result.status === 'CE' ? 'border-orange-500/50 text-orange-600' :
+                                            'border-red-500/50 text-red-600'
+                                          }`}
+                                        >
+                                          {renderSafe(result.status)}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-sans">
+                                        {result.time_used && <span>{safeNumber(result.time_used) ? (safeNumber(result.time_used) * 1000).toFixed(0) : '0'} ms</span>}
+                                        {result.memory_used && <span>{renderSafe(result.memory_used)} KB</span>}
+                                      </div>
+                                    </div>
+                                    <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
+                                      {result.is_hidden ? (
+                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground italic">
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400">🔒 Hidden test — input &amp; expected not shown</span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div><span className="text-muted-foreground/70">Input:</span> {renderSafe(result.input)}</div>
+                                          <div><span className="text-muted-foreground/70">Expected:</span> {renderSafe(result.expected_output)}</div>
+                                        </>
+                                      )}
+                                      <div className={result.passed ? 'text-green-400' : 'text-red-400'}>
+                                        {result.error ? (
+                                          <><span className="text-muted-foreground/70">Error:</span> {renderSafe(result.error)}</>
+                                        ) : (
+                                          <><span className="text-muted-foreground/70">Output:</span> {renderSafe(result.actual_output) || 'N/A'}</>
+                                        )}
+                                      </div>
+                                      {result.stdout && (
+                                        <div className="mt-1 pt-1 border-t border-dotted border-zinc-700">
+                                          <span className="text-muted-foreground/70 text-[10px] uppercase">Stdout:</span>
+                                          <pre className="text-[11px] font-mono text-zinc-100 whitespace-pre-wrap bg-black/30 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{renderSafe(result.stdout)}</pre>
+                                        </div>
+                                      )}
+                                      {result.stderr && (
+                                        <div className="mt-1 pt-1 border-t border-dotted border-zinc-700">
+                                          <span className="text-muted-foreground/70 text-[10px] uppercase">Stderr:</span>
+                                          <pre className="text-[11px] font-mono text-red-400/90 whitespace-pre-wrap bg-red-950/20 rounded px-2 py-1 mt-0.5 max-h-20 overflow-auto">{renderSafe(result.stderr)}</pre>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm">
+                              <Code className="h-8 w-8 mb-2 opacity-40" />
+                              <p>No results yet. Run or submit your code.</p>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT: Code Editor Panel */}
+                    <div className="flex flex-col h-full min-h-0 border rounded-lg overflow-hidden bg-card">
+                      {/* Editor Toolbar */}
+                      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+                        <div className="flex items-center gap-2">
+                          {isApexMode ? (
+                            <div className="flex flex-col leading-tight">
+                              <div className="text-xs font-semibold">
+                                {assessmentData?.coding_environment_label || 'Apex Coding Environment (AI-Evaluated - Phase 1)'}
+                              </div>
+                              <div
+                                className="text-[10px] text-muted-foreground"
+                                title="This coding test is evaluated using AI approximation and not actual Apex execution."
+                              >
+                                AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)
+                              </div>
+                            </div>
+                          ) : sqlChallenges[currentSqlIndex].metadata?.is_sql ? (
+                            <div className="flex flex-col leading-tight">
+                              <div className="text-xs font-semibold flex items-center gap-1">
+                                <Code className="h-3 w-3" /> MySQL Database Engine
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                Read-only query execution
+                              </div>
+                            </div>
+                          ) : (
+                          <Select
+                              value={codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3'}
+                              onValueChange={(lang) => {
+                                // LeetCode-style: silently switch language.
+                                // Save current code to the outgoing language buffer (already done via onChange),
+                                // then switch to the new language. Each language has its own independent buffer.
+                                setCodingLanguages(prev => ({ ...prev, [sqlChallenges[currentSqlIndex].id]: lang }));
+                                // If this language has no buffer yet, initialize it with starter code
+                                setCodingSolutions(prev => {
+                                  const existing = prev[sqlChallenges[currentSqlIndex].id]?.[lang];
+                                  if (existing !== undefined) return prev; // already has content
+                                  const starter = sqlChallenges[currentSqlIndex].starter_code?.[lang] || '';
+                                  return {
+                                    ...prev,
+                                    [sqlChallenges[currentSqlIndex].id]: {
+                                      ...(prev[sqlChallenges[currentSqlIndex].id] || {}),
+                                      [lang]: starter,
+                                    },
+                                  };
+                                });
+                                // No alerts. No confirms. No disruptions.
+                              }}
+                            >
+                              <SelectTrigger className="w-[140px] h-7 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(sqlChallenges[currentSqlIndex].supported_languages || []).map((lang) => (
+                                  <SelectItem key={lang} value={lang}>
+                                    {{ python3: 'Python 3', python: 'Python', javascript: 'JavaScript', java: 'Java', cpp: 'C++', c: 'C', typescript: 'TypeScript', csharp: 'C#', 'c#': 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                          <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => resetCode(sqlChallenges[currentSqlIndex].id)}>
+                            Reset
+                          </Button>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => runCode(sqlChallenges[currentSqlIndex].id)}
+                            disabled={runningCode === sqlChallenges[currentSqlIndex].id || submittingCode === sqlChallenges[currentSqlIndex].id}
+                          >
+                            {runningCode === sqlChallenges[currentSqlIndex].id ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Play className="mr-1 h-3 w-3" />
+                            )}
+                            Run
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => submitCodingSolution(sqlChallenges[currentSqlIndex].id)}
+                            disabled={runningCode === sqlChallenges[currentSqlIndex].id || submittingCode === sqlChallenges[currentSqlIndex].id}
+                          >
+                            {submittingCode === sqlChallenges[currentSqlIndex].id ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="mr-1 h-3 w-3" />
+                            )}
+                            Submit
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Monaco Editor */}
+                      <div className="flex-none border-b border-border" style={{ height: 350 }}>
+                        <Editor
+                          height="100%"
+                          language={isApexMode ? 'java' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', c: 'c', typescript: 'typescript', csharp: 'csharp', 'c#': 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'java', sql: 'sql' }[(codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3')] || 'python')}
+                          theme="vs-dark"
+                          value={(codingSolutions[sqlChallenges[currentSqlIndex].id] || {})[isApexMode ? 'apex' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : (codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3')] || ''}
+                          onChange={(value) => {
+                            const lang = isApexMode ? 'apex' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : (codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3');
+                            handleCodingSolution(sqlChallenges[currentSqlIndex].id, lang, value || '');
+                          }}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 14,
+                            lineNumbers: 'on',
+                            automaticLayout: true,
+                            scrollBeyondLastLine: false,
+                            wordWrap: 'on',
+                            tabSize: 4,
+                            padding: { top: 8 },
+                            renderLineHighlight: 'gutter',
+                            bracketPairColorization: { enabled: true },
+                            suggestOnTriggerCharacters: true,
+                          }}
+                        />
+                      </div>
+
+                      {/* Quick Result Bar (when running/submitting) */}
+                      <AnimatePresence>
+                        {(runningCode === sqlChallenges[currentSqlIndex].id || submittingCode === sqlChallenges[currentSqlIndex].id) && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="border-t bg-muted/50 px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground"
+                          >
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            {submittingCode ? 'Evaluating against all test cases...' : 'Running public test cases...'}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* User Output Panel — always shown once code has been run */}
+                      {codingResults[sqlChallenges[currentSqlIndex].id] && !runningCode && !submittingCode && (() => {
+                        const result = codingResults[sqlChallenges[currentSqlIndex].id];
+                        const compilationError = result.compilation_error;
+                        const results = result.results;
+
+                        // Get the active test case
+                        const activeIndex = activeTestCaseTab < results.length ? activeTestCaseTab : 0;
+                        const activeResult = results[activeIndex];
+
+                        const outputMatchesExpectedText = (() => {
+                          if (!activeResult || !activeResult.stdout) return false;
+                          const actual = activeResult.stdout.trim();
+                          const expected = (activeResult.expected_output || "").trim();
+                          return actual === expected;
+                        })();
+
+                        return (
+                          <div className="flex flex-col flex-1 bg-zinc-950 overflow-hidden" style={{ minHeight: 250 }}>
+                            {/* Header */}
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 sticky top-0">
+                              <Terminal className="h-3 w-3 text-zinc-400" />
+                              <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Testcase &gt;_ Test Result</span>
+                            </div>
+
+                            <div className="flex-1 overflow-auto p-3 space-y-3">
+                              {/* ── Compilation Error ── */}
+                              {compilationError && (
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-400 mb-1 flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3" /> Compilation Error
+                                  </p>
+                                  <pre className="text-xs font-mono text-orange-300 whitespace-pre-wrap bg-orange-950/30 border border-orange-500/20 rounded px-2.5 py-2">
+                                    {safeString(compilationError)}
+                                  </pre>
+                                </div>
+                              )}
+
+                              {!compilationError && result.apex_logs && (
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1">Apex Execution Logs</p>
+                                  <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap bg-zinc-900 border border-zinc-800 rounded px-2.5 py-2 max-h-48 overflow-auto">
+                                    {safeString(result.apex_logs)}
+                                  </pre>
+                                </div>
+                              )}
+
+                              {!compilationError && results.length > 0 && (
+                                <>
+                                  {/* Verdict & Runtime */}
+                                  <div className="flex items-center gap-3">
+                                    <span className={`text-lg font-bold ${result.passed === result.total ? 'text-green-500' : 'text-red-500'}`}>
+                                      {result.passed === result.total ? 'Accepted' : 'Wrong Answer'}
+                                    </span>
+                                    {result.performance?.avg_time_ms && (
+                                      <span className="text-xs text-zinc-400 font-medium tracking-tight">Runtime: {safeString(result.performance.avg_time_ms)} ms</span>
+                                    )}
+                                  </div>
+
+                                  {/* Testcase Tabs */}
+                                  <div className="flex flex-wrap gap-2 pt-1 pb-2">
+                                    {results.map((r, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={() => setActiveTestCaseTab(idx)}
+                                        className={`px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                                          activeTestCaseTab === idx
+                                            ? 'bg-zinc-800 text-zinc-100'
+                                            : 'bg-zinc-900/40 text-zinc-400 hover:bg-zinc-800/60'
+                                        }`}
+                                      >
+                                        <div className={`h-1.5 w-1.5 rounded-full ${r.status !== 'CE' && r.passed ? 'bg-green-500' : 'bg-red-500'}`} />
+                                        Case {idx + 1}
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  {/* Active Testcase Details */}
+                                  {activeResult && (
+                                    <div className="space-y-3">
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-zinc-500 mb-1">Input</p>
+                                        <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
+                                          <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">
+                                            {renderSafe(activeResult.input) || 'No input'}
+                                          </pre>
+                                        </div>
+                                      </div>
+                                      
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-zinc-500 mb-1">Output</p>
+                                        <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
+                                          <pre className={`text-xs font-mono whitespace-pre-wrap ${(!activeResult.passed && !activeResult.stderr) ? 'text-red-400' : 'text-zinc-300'}`}>
+                                            {renderSafe(activeResult.actual_output || activeResult.stdout)}
+                                          </pre>
+                                          {(!activeResult.actual_output && !activeResult.stdout && !activeResult.stderr) && (
+                                            <span className="text-xs italic text-zinc-600">No output</span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <p className="text-[10px] font-semibold text-zinc-500 mb-1">Expected</p>
+                                        <div className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2">
+                                          <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">
+                                            {renderSafe(activeResult.expected_output) || 'No expected output'}
+                                          </pre>
+                                        </div>
+                                      </div>
+
+                                      {activeResult.stderr && (
+                                        <div>
+                                          <p className="text-[10px] font-semibold text-red-500 mb-1 flex items-center gap-1.5">
+                                            <XCircleIcon className="h-3 w-3" /> Runtime Error / Stderr
+                                          </p>
+                                          <pre className="text-xs font-mono text-red-400 bg-red-950/20 border border-red-500/20 rounded px-3 py-2 whitespace-pre-wrap">
+                                            {safeString(activeResult.stderr)}
+                                          </pre>
+                                        </div>
+                                      )}
+
+                                      {outputMatchesExpectedText && (
+                                        <div className="mt-1 flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 rounded px-2.5 py-1.5 w-fit">
+                                          <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                                          <span className="text-[10px] text-green-400 font-medium">
+                                            Output matches expected — looks correct!
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                              
+                              {!compilationError && results.length === 0 && (
+                                <p className="text-xs text-zinc-500 italic">No output generated.</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentSqlIndex((prev) => Math.max(0, prev - 1))}
+                    disabled={currentSqlIndex === 0}
+                  >
+                    Previous Challenge
+                  </Button>
+                  <Button
+                    onClick={() => setCurrentSqlIndex((prev) => Math.min(sqlChallenges.length - 1, prev + 1))}
+                    disabled={currentSqlIndex === sqlChallenges.length - 1}
                   >
                     Next Challenge
                   </Button>

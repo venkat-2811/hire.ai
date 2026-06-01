@@ -20,6 +20,9 @@ class SQLExecutor:
         cleaned_query = re.sub(r'/\*.*?\*/', '', query, flags=re.DOTALL)
         # Strip line comments (-- ...)
         cleaned_query = re.sub(r'--.*', '', cleaned_query)
+        # Strip string literals ('...' and "...") so we don't flag words inside them
+        cleaned_query = re.sub(r"'[^']*'", "''", cleaned_query)
+        cleaned_query = re.sub(r'"[^"]*"', '""', cleaned_query)
         
         query_upper = cleaned_query.strip().upper()
         
@@ -33,7 +36,7 @@ class SQLExecutor:
         # Prevent destructive operations
         forbidden = [
             'DROP', 'DELETE', 'ALTER', 'TRUNCATE', 'UPDATE', 'INSERT', 
-            'CREATE', 'GRANT', 'REVOKE', 'REPLACE', 'ATTACH', 'DETACH', 'PRAGMA'
+            'CREATE', 'GRANT', 'REVOKE', 'ATTACH', 'DETACH', 'PRAGMA'
         ]
         
         # Check for forbidden keywords (simplified word boundary check)

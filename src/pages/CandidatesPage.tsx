@@ -194,11 +194,12 @@ export default function CandidatesPage() {
     return selectedJobLooksSalesforce ? 'apex' : 'dsa';
   }, [selectedJobLooksSalesforce]);
 
-  // Auto-configure sections based on assessment mode
+  // Auto-configure sections based on assessment mode initially
+  // We no longer lock these for apex mode, allowing the user to explicitly toggle them.
   useEffect(() => {
     if (assessmentMode === 'apex') {
       setIncludeMcq(true);
-      setIncludeCoding(false);
+      setIncludeCoding(true); // Default to true, but allow toggling
     }
   }, [assessmentMode]);
 
@@ -843,7 +844,7 @@ export default function CandidatesPage() {
 
         {/* Assessment Invite Dialog */}
         <Dialog open={assessmentDialogOpen} onOpenChange={setAssessmentDialogOpen}>
-          <DialogContent className="sm:max-w-3xl">
+          <DialogContent className="sm:max-w-5xl">
             <DialogHeader>
               <DialogTitle>Send Assessment Invites</DialogTitle>
               <DialogDescription>
@@ -889,7 +890,7 @@ export default function CandidatesPage() {
                       onCheckedChange={(v) => setIncludeCoding(!!v)}
                     />
                     <span className="text-sm text-muted-foreground">
-                      {assessmentMode === 'apex' ? 'Enabled automatically' : 'Enable coding section'}
+                      {assessmentMode === 'apex' ? 'Enable apex syntax section' : 'Enable coding section'}
                     </span>
                   </div>
                   <Input
@@ -921,54 +922,56 @@ export default function CandidatesPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Overall Difficulty</Label>
-                <Select value={assessmentDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setAssessmentDifficulty(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="easy">Easy</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="hard">Hard</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Time Limit (Minutes)</Label>
-                <Input
-                  type="number"
-                  min={15}
-                  max={300}
-                  placeholder="Auto-calculate based on questions and difficulty"
-                  value={totalTimeMinutes}
-                  onChange={(e) => setTotalTimeMinutes(e.target.value ? Number(e.target.value) : '')}
-                />
-                <div className="text-xs text-muted-foreground">
-                  Leave empty to auto-calculate based on difficulty:
-                  <br />
-                  • Easy: 1 min/MCQ + 15 min/Coding
-                  <br />
-                  • Medium: 1.5 min/MCQ + 20 min/Coding
-                  <br />
-                  • Hard: 2 min/MCQ + 30 min/Coding
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Overall Difficulty</Label>
+                  <Select value={assessmentDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setAssessmentDifficulty(v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label>Deadline (Required)</Label>
-                <Input
-                  type="datetime-local"
-                  required
-                  step={600}
-                  value={assessmentDeadline}
-                  onChange={(e) => handleStrictDeadlineChange(e.target.value, setAssessmentDeadline)}
-                  min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
-                />
-                <div className="text-xs text-muted-foreground">
-                  Default: 48 hours from now, rounded to the next 10 minutes. The assessment link will automatically expire after this deadline.
-                  Candidates who miss the deadline will receive a score of 0. Allowed minutes: 00, 10, 20, 30, 40, 50.
+                <div className="space-y-2">
+                  <Label>Time Limit (Minutes)</Label>
+                  <Input
+                    type="number"
+                    min={15}
+                    max={300}
+                    placeholder="Auto-calculate"
+                    value={totalTimeMinutes}
+                    onChange={(e) => setTotalTimeMinutes(e.target.value ? Number(e.target.value) : '')}
+                  />
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    Leave empty to auto-calculate:
+                    <br />
+                    • Easy: 1m/MCQ + 15m/Code
+                    <br />
+                    • Med: 1.5m/MCQ + 20m/Code
+                    <br />
+                    • Hard: 2m/MCQ + 30m/Code
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Deadline (Required)</Label>
+                  <Input
+                    type="datetime-local"
+                    required
+                    step={600}
+                    value={assessmentDeadline}
+                    onChange={(e) => handleStrictDeadlineChange(e.target.value, setAssessmentDeadline)}
+                    min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                  />
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    Default: 48h from now. The link will expire after this deadline.
+                    Candidates who miss it get 0. Allowed minutes: 00, 10, 20...
+                  </div>
                 </div>
               </div>
 

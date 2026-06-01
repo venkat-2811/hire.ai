@@ -616,10 +616,6 @@ async def invite_assessments(
                     count=sql_count,
                     difficulty=difficulty
                 )
-                if isinstance(generated_coding, list):
-                    generated_coding.extend(sql_challenges)
-                else:
-                    generated_coding = sql_challenges
 
             gen_ok = True
         except Exception as e:
@@ -654,6 +650,11 @@ async def invite_assessments(
                 }
                 if gen_ok and is_apex_mode:
                     new_pd["assessment_content"] = {"apex_blanks": generated_apex_blanks}
+                
+                if gen_ok and include_sql and sql_count > 0:
+                    if "assessment_content" not in new_pd:
+                        new_pd["assessment_content"] = {}
+                    new_pd["assessment_content"]["sql_challenges"] = sql_challenges
 
                 def _update_session():
                     return (
@@ -1217,7 +1218,7 @@ async def coding_run(session_id: str, body: Dict[str, Any] = Body(...)):
     db = get_db_admin_service()
     sessions, db_err = await db.select_safe(
         "assessment_sessions",
-        columns="id,status,proctoring_data,coding_challenges",
+        columns="id,status,coding_challenges,proctoring_data",
         filters={"id": session_id},
         limit=1,
         context={"endpoint": "coding_run", "session_id": str(session_id)},
@@ -1255,11 +1256,21 @@ async def coding_run(session_id: str, body: Dict[str, Any] = Body(...)):
     is_sql_challenge = False
     
     coding_challenges = session.get("coding_challenges") or []
-    for ch in coding_challenges:
-        if ch.get("id") == challenge_id and ch.get("metadata", {}).get("is_sql"):
+    proctoring_data = session.get("proctoring_data") if isinstance(session.get("proctoring_data"), dict) else {}
+    assessment_content = proctoring_data.get("assessment_content") if isinstance(proctoring_data.get("assessment_content"), dict) else {}
+    sql_challenges = assessment_content.get("sql_challenges") or []
+    
+    for ch in sql_challenges:
+        if ch.get("id") == challenge_id:
             problem = ch
             is_sql_challenge = True
             break
+            
+    if not problem:
+        for ch in coding_challenges:
+            if ch.get("id") == challenge_id:
+                problem = ch
+                break
             
     if not problem:
         def _fetch_problem():
@@ -1470,7 +1481,7 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
     db = get_db_admin_service()
     sessions, db_err = await db.select_safe(
         "assessment_sessions",
-        columns="id,status,coding_submissions,coding_score,coding_challenges",
+        columns="id,status,coding_submissions,coding_score,coding_challenges,proctoring_data",
         filters={"id": session_id},
         limit=1,
         context={"endpoint": "coding_submit", "session_id": str(session_id)},
@@ -1508,11 +1519,21 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
     is_sql_challenge = False
     
     coding_challenges = session.get("coding_challenges") or []
-    for ch in coding_challenges:
-        if ch.get("id") == challenge_id and ch.get("metadata", {}).get("is_sql"):
+    proctoring_data = session.get("proctoring_data") if isinstance(session.get("proctoring_data"), dict) else {}
+    assessment_content = proctoring_data.get("assessment_content") if isinstance(proctoring_data.get("assessment_content"), dict) else {}
+    sql_challenges = assessment_content.get("sql_challenges") or []
+    
+    for ch in sql_challenges:
+        if ch.get("id") == challenge_id:
             problem = ch
             is_sql_challenge = True
             break
+            
+    if not problem:
+        for ch in coding_challenges:
+            if ch.get("id") == challenge_id:
+                problem = ch
+                break
             
     if not problem:
         def _fetch_problem():
@@ -1563,7 +1584,7 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
             "runtime_error": cand_err if cand_err else None,
         }
         
-        existing = session.get("coding_submissions")
+        existing = proctoring_data.get("sql_submissions")
         existing_list = existing if isinstance(existing, list) else []
         existing_list = list(existing_list)
         idx = next((i for i, s in enumerate(existing_list) if isinstance(s, dict) and s.get("challenge_id") == challenge_id), -1)
@@ -1573,11 +1594,15 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
             existing_list.append(submission)
 
         scores = [float(s.get("score_percentage") or 0) for s in existing_list if isinstance(s, dict)]
-        coding_score = sum(scores) / len(scores) if scores else float(eval_result.get("score", 0))
+        sql_score = sum(scores) / len(scores) if scores else float(eval_result.get("score", 0))
+        
+        new_pd = dict(proctoring_data)
+        new_pd["sql_submissions"] = existing_list
+        new_pd["sql_score"] = sql_score
 
         updated_rows, db_err = await db.update_safe(
             "assessment_sessions",
-            {"coding_submissions": existing_list, "coding_score": coding_score, "updated_at": _utc_now_iso()},
+            {"proctoring_data": new_pd, "updated_at": _utc_now_iso()},
             filters={"id": session_id},
             context={"endpoint": "coding_submit", "session_id": str(session_id), "challenge_id": str(challenge_id)},
         )
@@ -2057,15 +2082,13 @@ async def start_assessment(token: str):
             session.get("is_apex_mode") or assessment_config.get("is_apex_mode")
         )
 
-        mcq_count_expected = int(session.get("mcq_question_count") or 20)
-        coding_count_expected = int(session.get("coding_challenge_count") or 2)
+        mcq_val = session.get("mcq_question_count")
+        mcq_count_expected = int(mcq_val) if mcq_val is not None else 20
+        coding_val = session.get("coding_challenge_count")
+        coding_count_expected = int(coding_val) if coding_val is not None else 2
 
-        include_mcq = True if assessment_mode == "apex" else (
-            assessment_config.get("include_mcq") is not False
-        )
-        include_coding = False if assessment_mode == "apex" else (
-            assessment_config.get("include_coding") is not False
-        )
+        include_mcq = assessment_config.get("include_mcq") is not False
+        include_coding = assessment_config.get("include_coding") is not False
 
         include_mcq = bool(include_mcq and mcq_count_expected > 0)
         include_coding = bool(include_coding and coding_count_expected > 0)
@@ -2076,6 +2099,12 @@ async def start_assessment(token: str):
             else {}
         )
         apex_blanks: List[Dict[str, Any]] = []
+        sql_challenges: List[Dict[str, Any]] = []
+        
+        stored_sql = content.get("sql_challenges") if isinstance(content, dict) else None
+        if isinstance(stored_sql, list):
+            sql_challenges = stored_sql
+
         if assessment_mode == "apex":
             stored = content.get("apex_blanks") if isinstance(content, dict) else None
             if isinstance(stored, list):
@@ -2150,6 +2179,7 @@ async def start_assessment(token: str):
                 "mcq_questions": safe_mcq,
                 "coding_challenges": coding_challenges,
                 "apex_blanks": apex_blanks,
+                "sql_challenges": sql_challenges,
                 "difficulty": assessment_config.get("difficulty")
                 or session.get("difficulty")
                 or "medium",
