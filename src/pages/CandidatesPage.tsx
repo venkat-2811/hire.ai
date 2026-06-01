@@ -122,6 +122,8 @@ export default function CandidatesPage() {
   const [assessmentDifficulty, setAssessmentDifficulty] = useState<'easy' | 'medium' | 'hard'>('hard');
   const [includeMcq, setIncludeMcq] = useState(true);
   const [includeCoding, setIncludeCoding] = useState(true);
+  const [includeSql, setIncludeSql] = useState(false);
+  const [sqlCount, setSqlCount] = useState(1);
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
@@ -307,8 +309,8 @@ export default function CandidatesPage() {
       return;
     }
 
-    if (!includeMcq && !includeCoding) {
-      toast.error('Please enable at least one section (MCQ or Coding)');
+    if (!includeMcq && !includeCoding && !includeSql) {
+      toast.error('Please enable at least one section (MCQ, Coding, or SQL)');
       return;
     }
 
@@ -335,6 +337,8 @@ export default function CandidatesPage() {
         difficulty: assessmentDifficulty,
         include_mcq: includeMcq,
         include_coding: includeCoding,
+        include_sql: includeSql,
+        sql_question_count: includeSql ? sqlCount : 0,
         assessment_mode: assessmentMode,
         total_time_minutes: totalTimeMinutes || undefined,
       });
@@ -824,7 +828,7 @@ export default function CandidatesPage() {
 
         {/* Assessment Invite Dialog */}
         <Dialog open={assessmentDialogOpen} onOpenChange={setAssessmentDialogOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-3xl">
             <DialogHeader>
               <DialogTitle>Send Assessment Invites</DialogTitle>
               <DialogDescription>
@@ -843,7 +847,7 @@ export default function CandidatesPage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label>Include Technical MCQs</Label>
                   <div className="flex items-center gap-2">
@@ -882,6 +886,25 @@ export default function CandidatesPage() {
                     value={codingCount}
                     onChange={(e) => setCodingCount(Math.max(0, Number(e.target.value) || 0))}
                     disabled={assessmentMode === 'apex' ? false : !includeCoding}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Include SQL Assessment</Label>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={includeSql}
+                      onCheckedChange={(v) => setIncludeSql(!!v)}
+                      disabled={assessmentMode === 'apex'}
+                    />
+                    <span className="text-sm text-muted-foreground">Enable SQL section</span>
+                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={sqlCount}
+                    onChange={(e) => setSqlCount(Math.max(1, Number(e.target.value) || 1))}
+                    disabled={!includeSql || assessmentMode === 'apex'}
                   />
                 </div>
               </div>

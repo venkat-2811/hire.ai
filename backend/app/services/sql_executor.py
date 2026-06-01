@@ -16,9 +16,18 @@ class SQLExecutor:
     @staticmethod
     def _is_safe_query(query: str) -> bool:
         """Basic validation to prevent destructive operations."""
-        query_upper = query.upper()
-        # Ensure it's a SELECT or WITH statement
-        if not re.match(r'^\s*(SELECT|WITH)\b', query_upper, re.IGNORECASE):
+        # Strip block comments (/* ... */)
+        cleaned_query = re.sub(r'/\*.*?\*/', '', query, flags=re.DOTALL)
+        # Strip line comments (-- ...)
+        cleaned_query = re.sub(r'--.*', '', cleaned_query)
+        
+        query_upper = cleaned_query.strip().upper()
+        
+        if not query_upper:
+            return False
+            
+        # Ensure it starts with SELECT or WITH
+        if not query_upper.startswith('SELECT') and not query_upper.startswith('WITH'):
             return False
             
         # Prevent destructive operations

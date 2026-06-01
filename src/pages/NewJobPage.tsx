@@ -39,7 +39,6 @@ export default function NewJobPage() {
   const [goodToHaveSkills, setGoodToHaveSkills] = useState<string[]>([]);
   const [newMustHave, setNewMustHave] = useState('');
   const [newGoodToHave, setNewGoodToHave] = useState('');
-  const [includeSqlAssessment, setIncludeSqlAssessment] = useState(false);
 
   const handleAddMustHave = () => {
     if (newMustHave.trim() && !mustHaveSkills.includes(newMustHave.trim())) {
@@ -114,7 +113,6 @@ export default function NewJobPage() {
       resume_cutoff: resumeCutOff,
       assessment_cutoff: assessmentCutOff,
       interview_cutoff: interviewCutOff,
-      include_sql_assessment: includeSqlAssessment,
       location: location || undefined,
       endCustomer: (endCustomer as any) || undefined,
       end_customer_name: endCustomer === 'end_customer' ? endCustomerName.trim() : null,
@@ -310,21 +308,6 @@ export default function NewJobPage() {
                       onChange={(e) => setInterviewCutOff(parseInt(e.target.value) || 0)}
                     />
                   </div>
-                </div>
-
-                <div className="flex items-center space-x-2 pt-4 border-t mt-6">
-                  <Switch
-                    id="include-sql-assessment"
-                    checked={includeSqlAssessment}
-                    onCheckedChange={setIncludeSqlAssessment}
-                  />
-                  <Label htmlFor="include-sql-assessment" className="flex items-center gap-2 cursor-pointer">
-                    <Database className="h-4 w-4 text-primary" />
-                    Include SQL Assessment
-                  </Label>
-                  <p className="text-sm text-muted-foreground ml-2">
-                    Generates a LeetCode-style Database question with isolated execution environment.
-                  </p>
                 </div>
               </CardContent>
             </Card>

@@ -239,6 +239,8 @@ class AssessmentInviteRequest(BaseModel):
     include_coding: Optional[bool] = True
     assessment_mode: Optional[str] = None
     total_time_minutes: Optional[int] = None
+    include_sql: Optional[bool] = False
+    sql_question_count: Optional[int] = 0
 
 
 def _is_salesforce_role(job: Dict[str, Any]) -> bool:
@@ -592,7 +594,7 @@ async def invite_assessments(
             elif include_coding and coding_count > 0:
                 generated_coding = await _select_dsa_coding_challenges(db=bg_db, difficulty=difficulty, count=coding_count)
 
-            if job.get("include_sql_assessment"):
+            if body.include_sql and (body.sql_question_count or 0) > 0:
                 sql_challenges = await qgen.generate_sql_challenges(
                     job=JobDescriptionModel(
                         id=str(job.get("id")),
@@ -605,7 +607,7 @@ async def invite_assessments(
                         min_experience_years=int(job.get("min_experience_years") or 0),
                         is_active=True,
                     ),
-                    count=1,
+                    count=body.sql_question_count or 1,
                     difficulty=difficulty
                 )
                 if isinstance(generated_coding, list):

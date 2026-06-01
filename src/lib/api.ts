@@ -491,6 +491,8 @@ export interface AssessmentInviteRequest {
   include_coding: boolean;
   assessment_mode?: 'dsa' | 'apex' | string;
   total_time_minutes?: number;
+  include_sql?: boolean;
+  sql_question_count?: number;
 }
 
 export interface AssessmentInviteResponse {

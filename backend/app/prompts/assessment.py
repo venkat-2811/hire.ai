@@ -296,15 +296,16 @@ CHALLENGE QUALITY STANDARDS:
 4. VERIFIABLE: The expected query MUST return the exact expected output when run against the sample data.
 
 STRUCTURE REQUIREMENTS:
-Generate exactly {count} SQL challenges in the following JSON format:
+Generate exactly {count} SQL challenges in the following JSON format. For the description, use detailed markdown containing: Problem Statement, Database Schema, Table Definitions, Sample Data, Expected Output, Constraints, and Difficulty Level.
 {{
     "challenges": [
         {{
             "title": "Problem Title",
-            "description": "Clear problem statement explaining what the candidate needs to query.",
+            "description": "Full markdown description containing **Problem Statement**, **Database Schema**, **Table Definitions**, **Sample Data**, **Expected Output**, **Constraints**, and **Difficulty Level**.",
             "db_schema": "CREATE TABLE employees (id INTEGER, name TEXT, salary INTEGER, department_id INTEGER); CREATE TABLE departments (id INTEGER, name TEXT);",
             "sample_data": "INSERT INTO departments VALUES (1, 'IT'), (2, 'Sales'); INSERT INTO employees VALUES (1, 'Alice', 90000, 1), (2, 'Bob', 80000, 2);",
             "expected_query": "SELECT d.name AS Department, e.name AS Employee, e.salary AS Salary FROM employees e JOIN departments d ON e.department_id = d.id WHERE e.salary > 85000;",
+            "starter_code": "SELECT * FROM employees;",
             "difficulty": "easy|medium|hard",
             "time_limit_minutes": 20,
             "points": 25

@@ -488,7 +488,7 @@ class QuestionGeneratorService:
                     "id": str(uuid.uuid4()),
                     "title": c.get("title", ""),
                     "description": c.get("description", ""),
-                    "starter_code": {"sql": "-- Write your MySQL query here\n"},
+                    "starter_code": {"sql": c.get("starter_code", "-- Write your MySQL query here\nSELECT * FROM dual;")},
                     "supported_languages": ["sql"],
                     "expected_output": c.get("expected_query", ""),
                     "evaluation_criteria": [
