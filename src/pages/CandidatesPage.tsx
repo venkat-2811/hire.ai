@@ -127,13 +127,46 @@ export default function CandidatesPage() {
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [interviewMode, setInterviewMode] = useState<'ai' | 'manual'>('ai');
 
-  // Deadline defaults to 24 hours from now
-  const getDefault24hDeadline = () => {
-    const d = new Date(Date.now() + 24 * 3600000);
-    return d.toISOString().slice(0, 16);
+  // Deadline defaults to 48 hours from now, rounded UP to the next 10-minute interval.
+  // e.g. 01:13 → 48h later at 01:20 | 01:51 → 48h later at 02:00
+  const getDefault48hDeadline = () => {
+    const d = new Date(Date.now() + 48 * 3600000);
+    const minutes = d.getMinutes();
+    const remainder = minutes % 10;
+    if (remainder !== 0) {
+      d.setMinutes(minutes + (10 - remainder));
+    }
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    // Format as YYYY-MM-DDTHH:MM for datetime-local input
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
-  const [assessmentDeadline, setAssessmentDeadline] = useState(getDefault24hDeadline);
-  const [interviewDeadline, setInterviewDeadline] = useState(getDefault24hDeadline);
+  const [assessmentDeadline, setAssessmentDeadline] = useState(getDefault48hDeadline);
+  const [interviewDeadline, setInterviewDeadline] = useState(getDefault48hDeadline);
+
+  // Strict minute enforcer — even if the browser allows typing a non-10 multiple, snap it
+  const handleStrictDeadlineChange = (val: string, setter: (value: string) => void) => {
+    if (!val) {
+      setter(val);
+      return;
+    }
+    const d = new Date(val);
+    if (isNaN(d.getTime())) {
+      setter(val);
+      return;
+    }
+    const m = d.getMinutes();
+    const remainder = m % 10;
+    if (remainder !== 0) {
+      // Round to nearest 10
+      d.setMinutes(m + (remainder >= 5 ? 10 - remainder : -remainder));
+    }
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setter(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+  };
 
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -893,13 +926,14 @@ export default function CandidatesPage() {
                 <Input
                   type="datetime-local"
                   required
+                  step={600}
                   value={assessmentDeadline}
-                  onChange={(e) => setAssessmentDeadline(e.target.value)}
+                  onChange={(e) => handleStrictDeadlineChange(e.target.value, setAssessmentDeadline)}
                   min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
                 />
                 <div className="text-xs text-muted-foreground">
-                  Default: 24 hours from now. The assessment link will automatically expire after this deadline.
-                  Candidates who miss the deadline will receive a score of 0.
+                  Default: 48 hours from now, rounded to the next 10 minutes. The assessment link will automatically expire after this deadline.
+                  Candidates who miss the deadline will receive a score of 0. Allowed minutes: 00, 10, 20, 30, 40, 50.
                 </div>
               </div>
 
@@ -988,13 +1022,14 @@ export default function CandidatesPage() {
                     <Input
                       type="datetime-local"
                       required
+                      step={600}
                       value={interviewDeadline}
-                      onChange={(e) => setInterviewDeadline(e.target.value)}
+                      onChange={(e) => handleStrictDeadlineChange(e.target.value, setInterviewDeadline)}
                       min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
                     />
                     <div className="text-xs text-muted-foreground">
-                      Default: 24 hours from now. The interview link will automatically expire after this deadline.
-                      Candidates who miss the deadline will receive a score of 0.
+                      Default: 48 hours from now, rounded to the next 10 minutes. The interview link will automatically expire after this deadline.
+                      Candidates who miss the deadline will receive a score of 0. Allowed minutes: 00, 10, 20, 30, 40, 50.
                     </div>
                   </div>
                 </>

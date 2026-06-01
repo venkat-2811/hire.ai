@@ -643,6 +643,33 @@ class HackerEarthExecutor:
 __CANDIDATE_CODE__
 // ---- End candidate code ----
 
+// ── CommonJS export capture shim ──────────────────────────────────────────
+// ES6 `class Foo {}` declarations are block-scoped and NOT added to `global`
+// in Node.js. When candidates write `class Solution { ... }; module.exports = Solution;`
+// the class is invisible to code above via `globalThis[CLASS_NAME]`.
+// This shim captures the exported value back into a local `var` so that
+// `typeof Solution !== 'undefined'` and `globalThis[CLASS_NAME]` checks work.
+(function() {
+  try {
+    var _exp = (typeof module !== 'undefined' && module && module.exports) ? module.exports : null;
+    if (_exp && typeof _exp === 'function') {
+      // module.exports = MyClass  (direct class export)
+      var _name = (_exp.name && _exp.name.length > 0) ? _exp.name : 'Solution';
+      if (typeof globalThis !== 'undefined') { globalThis[_name] = _exp; }
+      if (typeof global !== 'undefined') { global[_name] = _exp; }
+    } else if (_exp && typeof _exp === 'object') {
+      // module.exports = { Solution: ... }  or  exports.Solution = ...
+      Object.keys(_exp).forEach(function(k) {
+        if (typeof _exp[k] === 'function') {
+          if (typeof globalThis !== 'undefined') { globalThis[k] = _exp[k]; }
+          if (typeof global !== 'undefined') { global[k] = _exp[k]; }
+        }
+      });
+    }
+  } catch (_e) {}
+})();
+// ──────────────────────────────────────────────────────────────────────────
+
 var TEST_CASES = JSON.parse(__TC_JSON__);
 var PARAM_SCHEMA = JSON.parse(__PS_JSON__);
 var FUNCTION_NAME = __FN_JSON__;

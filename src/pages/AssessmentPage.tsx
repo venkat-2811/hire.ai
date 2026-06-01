@@ -235,7 +235,9 @@ export default function AssessmentPage() {
     setProblemTab('description');
   }, [currentCodingIndex]);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
-  const [codingSolutions, setCodingSolutions] = useState<Record<string, string>>({});
+  // Per-language code storage: { [challengeId]: { [language]: code } }
+  // Matches LeetCode behavior — each language keeps its own independent buffer.
+  const [codingSolutions, setCodingSolutions] = useState<Record<string, Record<string, string>>>({});
   const [codingResults, setCodingResults] = useState<Record<string, { results: TestResult[]; passed: number; total: number; score: number; hidden_passed?: number; hidden_total?: number; compilation_error?: string; runtime_error?: string; apex_compiled?: boolean; apex_success?: boolean; apex_logs?: string; performance?: { avg_time_ms?: string | null; max_time_ms?: string | null; avg_memory_kb?: number | null; max_memory_kb?: number | null } }>>({});
   const [runningCode, setRunningCode] = useState<string | null>(null);
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
@@ -393,7 +395,7 @@ public class CandidateSolution {
     try {
       const state = {
         mcqAnswers,
-        codingSolutions,
+        codingSolutions,  // now Record<challengeId, Record<lang, code>>
         codingLanguages,
         currentTab,
         currentMcqIndex,
@@ -401,6 +403,7 @@ public class CandidateSolution {
         currentApexBlankIndex,
         apexBlankAnswers,
         timestamp: Date.now(),
+        version: 2, // bump version so we can detect old flat structure
       };
       localStorage.setItem(getStorageKey(sessionId, 'state'), JSON.stringify(state));
     } catch (e) {
@@ -419,6 +422,23 @@ public class CandidateSolution {
       if (age > 24 * 60 * 60 * 1000) {
         localStorage.removeItem(getStorageKey(sessionId, 'state'));
         return null;
+      }
+      // Migrate v1 flat structure (string values) → v2 nested structure (Record<lang, code>)
+      // This ensures backward-compat when a candidate refreshes after the upgrade.
+      if (state.version !== 2 && state.codingSolutions) {
+        const migrated: Record<string, Record<string, string>> = {};
+        for (const [challengeId, code] of Object.entries(state.codingSolutions)) {
+          if (typeof code === 'string') {
+            // v1: flat string — wrap under the stored language or python3
+            const lang = (state.codingLanguages?.[challengeId]) || 'python3';
+            migrated[challengeId] = { [lang]: code };
+          } else if (code && typeof code === 'object') {
+            // Already nested (v2)
+            migrated[challengeId] = code as Record<string, string>;
+          }
+        }
+        state.codingSolutions = migrated;
+        state.version = 2;
       }
       return state;
     } catch (e) {
@@ -727,17 +747,23 @@ public class CandidateSolution {
         }
 
         if (hasCoding) {
-          const initialSolutions: Record<string, string> = {};
+          // Initialize per-language code buffers for ALL supported languages up-front.
+          // This is what enables LeetCode-style switching — each language always has a buffer.
+          const initialSolutions: Record<string, Record<string, string>> = {};
           const initialLanguages: Record<string, string> = {};
           codingList.forEach((c: CodingChallenge) => {
             const defaultLang = (data?.is_apex_mode || false)
               ? 'apex'
               : (c.supported_languages?.includes('python3') ? 'python3' : (c.supported_languages?.[0] || 'python3'));
             initialLanguages[c.id] = defaultLang;
-            if (defaultLang === 'apex') {
-              initialSolutions[c.id] = c.starter_code?.apex || apexStarterTemplate;
+            // Pre-populate every language buffer with its starter code
+            initialSolutions[c.id] = {};
+            if (data?.is_apex_mode) {
+              initialSolutions[c.id]['apex'] = c.starter_code?.apex || apexStarterTemplate;
             } else {
-              initialSolutions[c.id] = c.starter_code?.[defaultLang] || '';
+              (c.supported_languages || [defaultLang]).forEach((lang: string) => {
+                initialSolutions[c.id][lang] = c.starter_code?.[lang] || '';
+              });
             }
           });
           setCodingSolutions(initialSolutions);
@@ -864,8 +890,14 @@ public class CandidateSolution {
     }
   };
 
-  const handleCodingSolution = (challengeId: string, code: string) => {
-    setCodingSolutions((prev) => ({ ...prev, [challengeId]: code }));
+  const handleCodingSolution = (challengeId: string, lang: string, code: string) => {
+    setCodingSolutions((prev) => ({
+      ...prev,
+      [challengeId]: {
+        ...(prev[challengeId] || {}),
+        [lang]: code,
+      },
+    }));
   };
 
   const handleApexBlankChange = (questionId: string, blankId: string, value: string) => {
@@ -937,7 +969,8 @@ public class CandidateSolution {
   const runCode = async (challengeId: string) => {
     if (!assessmentData || runningCode) return;
 
-    const code = codingSolutions[challengeId];
+    const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+    const code = codingSolutions[challengeId]?.[lang];
     if (!code) {
       toast.error('Please write some code first');
       return;
@@ -947,7 +980,7 @@ public class CandidateSolution {
     setActiveTestCaseTab(0);
 
     try {
-      const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+      const selectedLanguage = lang;
 
       const data = await assessmentsRuntimeApi.codingRun(assessmentData.session_id, {
         challenge_id: challengeId,
@@ -1037,7 +1070,8 @@ public class CandidateSolution {
   const submitCodingSolution = async (challengeId: string) => {
     if (!assessmentData || submittingCode) return;
 
-    const code = codingSolutions[challengeId];
+    const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+    const code = codingSolutions[challengeId]?.[lang];
     if (!code) {
       toast.error('Please write some code first');
       return;
@@ -1047,7 +1081,7 @@ public class CandidateSolution {
     setActiveTestCaseTab(0);
 
     try {
-      const selectedLanguage = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+      const selectedLanguage = lang;
 
       const data = await assessmentsRuntimeApi.codingSubmit(assessmentData.session_id, {
         challenge_id: challengeId,
@@ -1138,23 +1172,20 @@ public class CandidateSolution {
   };
 
   const resetCode = (challengeId: string) => {
-    const currentCode = codingSolutions[challengeId] || '';
     const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
     const challenge = codingChallenges.find(c => c.id === challengeId);
     if (challenge) {
       const starter = lang === 'apex'
         ? (challenge.starter_code?.apex || apexStarterTemplate)
         : (challenge.starter_code?.[lang] || '');
-      
-      const hasUserEdits = currentCode.trim() !== '' && currentCode.trim() !== starter.trim();
-      
-      if (hasUserEdits) {
-        if (!window.confirm('Are you sure you want to reset your code? This will delete all your edits.')) {
-          return;
-        }
-      }
-      
-      setCodingSolutions(prev => ({ ...prev, [challengeId]: starter }));
+      // Reset only the current language buffer — silently, no confirm popup
+      setCodingSolutions(prev => ({
+        ...prev,
+        [challengeId]: {
+          ...(prev[challengeId] || {}),
+          [lang]: starter,
+        },
+      }));
       toast.info('Code reset to starter template');
     }
   };
@@ -1176,16 +1207,17 @@ public class CandidateSolution {
         const mcqSubmissions = Object.entries(mcqAnswers).map(([questionId, selectedIndex]) => ({
           question_id: questionId,
           selected_index: selectedIndex,
-          time_taken_seconds: 0, // TODO: Track per-question time
+          time_taken_seconds: 0,
         }));
 
         await assessmentsRuntimeApi.mcqSubmit(assessmentData.session_id, mcqSubmissions);
       }
 
       if (codingChallenges.length > 0) {
-        for (const [challengeId, code] of Object.entries(codingSolutions)) {
-          const challenge = codingChallenges.find((c) => c.id === challengeId);
+        for (const challenge of codingChallenges) {
+          const challengeId = challenge.id;
           const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+          const code = codingSolutions[challengeId]?.[lang] || '';
           const starter = challenge?.starter_code?.[lang] || '';
           if (!code?.trim() || code === starter) continue;
           await assessmentsRuntimeApi.codingSubmit(assessmentData.session_id, {
@@ -1237,9 +1269,10 @@ public class CandidateSolution {
 
       // Submit coding solutions (if coding section exists)
       if (codingChallenges.length > 0) {
-        for (const [challengeId, code] of Object.entries(codingSolutions)) {
-          const challenge = codingChallenges.find((c) => c.id === challengeId);
+        for (const challenge of codingChallenges) {
+          const challengeId = challenge.id;
           const lang = isApexMode ? 'apex' : (codingLanguages[challengeId] || 'python3');
+          const code = codingSolutions[challengeId]?.[lang] || '';
           const starter = challenge?.starter_code?.[lang] || '';
           // Only submit if candidate actually changed starter code.
           if (!code?.trim() || code === starter) continue;
@@ -1557,16 +1590,16 @@ public class CandidateSolution {
   const currentMcq = mcqQuestions[currentMcqIndex];
   const currentCoding = codingChallenges[currentCodingIndex];
   const mcqProgress = mcqQuestions.length === 0 ? 0 : (Object.keys(mcqAnswers).length / mcqQuestions.length) * 100;
-  const attemptedCodingCount = Object.keys(codingSolutions).filter((id) => {
-    const challenge = codingChallenges.find((c) => c.id === id);
-    const lang = codingLanguages[id] || 'python3';
+  const attemptedCodingCount = codingChallenges.filter((challenge) => {
+    const lang = codingLanguages[challenge.id] || 'python3';
+    const code = (codingSolutions[challenge.id] || {})[lang] || '';
     const starter = challenge?.starter_code?.[lang] || '';
-    return !!challenge && (codingSolutions[id] || '').trim() !== '' && codingSolutions[id] !== starter;
+    return code.trim() !== '' && code.trim() !== starter.trim();
   }).length;
-  const codingProgress = codingChallenges.length === 0 ? 0 : (Object.keys(codingSolutions).filter(k => {
-    const challenge = codingChallenges.find(c => c.id === k);
-    const lang = codingLanguages[k] || 'python3';
-    return challenge && codingSolutions[k] !== (challenge.starter_code?.[lang] || '');
+  const codingProgress = codingChallenges.length === 0 ? 0 : (codingChallenges.filter(challenge => {
+    const lang = codingLanguages[challenge.id] || 'python3';
+    const code = (codingSolutions[challenge.id] || {})[lang] || '';
+    return code !== (challenge.starter_code?.[lang] || '');
   }).length / codingChallenges.length) * 100;
   const hasMcq = mcqQuestions.length > 0;
   const activeTab = hasMcq
@@ -2377,28 +2410,27 @@ public class CandidateSolution {
                               </div>
                             </div>
                           ) : (
-                            <Select
+                          <Select
                               value={codingLanguages[currentCoding.id] || 'python3'}
                               onValueChange={(lang) => {
-                                const currentLang = codingLanguages[currentCoding.id] || 'python3';
-                                const currentCode = codingSolutions[currentCoding.id] || '';
-                                const currentStarter = currentCoding.starter_code?.[currentLang] || '';
-                                const newStarter = currentCoding.starter_code?.[lang] || '';
-                                const hasUserEdits = currentCode.trim() !== '' && currentCode.trim() !== currentStarter.trim();
-                                
+                                // LeetCode-style: silently switch language.
+                                // Save current code to the outgoing language buffer (already done via onChange),
+                                // then switch to the new language. Each language has its own independent buffer.
                                 setCodingLanguages(prev => ({ ...prev, [currentCoding.id]: lang }));
-                                
-                                if (!hasUserEdits) {
-                                  // User hasn't modified code — safe to reset to new language starter
-                                  setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: newStarter }));
-                                } else if (newStarter) {
-                                  // User has edits — confirm before replacing
-                                  if (window.confirm(`Switching to ${lang} will replace your current code with the ${lang} starter code. Continue?`)) {
-                                    setCodingSolutions(prev => ({ ...prev, [currentCoding.id]: newStarter }));
-                                  }
-                                  // If declined, keep their current code — language changes but code stays
-                                }
-                                // If no starter for new language, keep current code
+                                // If this language has no buffer yet, initialize it with starter code
+                                setCodingSolutions(prev => {
+                                  const existing = prev[currentCoding.id]?.[lang];
+                                  if (existing !== undefined) return prev; // already has content
+                                  const starter = currentCoding.starter_code?.[lang] || '';
+                                  return {
+                                    ...prev,
+                                    [currentCoding.id]: {
+                                      ...(prev[currentCoding.id] || {}),
+                                      [lang]: starter,
+                                    },
+                                  };
+                                });
+                                // No alerts. No confirms. No disruptions.
                               }}
                             >
                               <SelectTrigger className="w-[140px] h-7 text-xs">
@@ -2454,8 +2486,11 @@ public class CandidateSolution {
                           height="100%"
                           language={isApexMode ? 'java' : ({ python3: 'python', python: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', c: 'c', typescript: 'typescript', csharp: 'csharp', 'c#': 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'java', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
                           theme="vs-dark"
-                          value={codingSolutions[currentCoding.id] || ''}
-                          onChange={(value) => handleCodingSolution(currentCoding.id, value || '')}
+                          value={(codingSolutions[currentCoding.id] || {})[isApexMode ? 'apex' : (codingLanguages[currentCoding.id] || 'python3')] || ''}
+                          onChange={(value) => {
+                            const lang = isApexMode ? 'apex' : (codingLanguages[currentCoding.id] || 'python3');
+                            handleCodingSolution(currentCoding.id, lang, value || '');
+                          }}
                           options={{
                             minimap: { enabled: false },
                             fontSize: 14,
