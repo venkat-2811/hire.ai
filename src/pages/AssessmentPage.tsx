@@ -7,6 +7,7 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -2216,8 +2217,8 @@ public class CandidateSolution {
                       <div className="flex-1 overflow-auto p-4 space-y-4">
                         {problemTab === 'description' ? (
                           <>
-                            <div className="prose prose-sm dark:prose-invert max-w-none">
-                              <p className="whitespace-pre-wrap text-sm leading-relaxed">{renderSafe(currentCoding.description)}</p>
+                            <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:bg-muted/50 prose-pre:border">
+                              <ReactMarkdown>{currentCoding.description}</ReactMarkdown>
                             </div>
 
                             {currentCoding.examples && currentCoding.examples.length > 0 && (

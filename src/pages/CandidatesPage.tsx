@@ -319,6 +319,21 @@ export default function CandidatesPage() {
       return;
     }
 
+    if (includeMcq && mcqCount < 1) {
+      toast.error('QUESTIONS SHOULD BE EQUAL TO OR GREATER THAN 1');
+      return;
+    }
+    
+    if (includeCoding && codingCount < 1) {
+      toast.error('QUESTIONS SHOULD BE EQUAL TO OR GREATER THAN 1');
+      return;
+    }
+    
+    if (includeSql && sqlCount < 1) {
+      toast.error('QUESTIONS SHOULD BE EQUAL TO OR GREATER THAN 1');
+      return;
+    }
+
     const deadlineDate = new Date(assessmentDeadline);
     if (deadlineDate <= new Date()) {
       toast.error('Deadline must be in the future');
@@ -854,7 +869,6 @@ export default function CandidatesPage() {
                     <Checkbox
                       checked={includeMcq}
                       onCheckedChange={(v) => setIncludeMcq(!!v)}
-                      disabled={assessmentMode === 'apex'}
                     />
                     <span className="text-sm text-muted-foreground">Enable MCQ section</span>
                   </div>
@@ -871,9 +885,8 @@ export default function CandidatesPage() {
                   <Label>{assessmentMode === 'apex' ? 'Apex Fill-in-the-Blanks Questions' : 'Include Coding Challenges'}</Label>
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      checked={assessmentMode === 'apex' ? false : includeCoding}
+                      checked={includeCoding}
                       onCheckedChange={(v) => setIncludeCoding(!!v)}
-                      disabled={assessmentMode === 'apex'}
                     />
                     <span className="text-sm text-muted-foreground">
                       {assessmentMode === 'apex' ? 'Enabled automatically' : 'Enable coding section'}
@@ -885,7 +898,7 @@ export default function CandidatesPage() {
                     max={10}
                     value={codingCount}
                     onChange={(e) => setCodingCount(Math.max(0, Number(e.target.value) || 0))}
-                    disabled={assessmentMode === 'apex' ? false : !includeCoding}
+                    disabled={!includeCoding}
                   />
                 </div>
                 <div className="space-y-2">
@@ -894,7 +907,6 @@ export default function CandidatesPage() {
                     <Checkbox
                       checked={includeSql}
                       onCheckedChange={(v) => setIncludeSql(!!v)}
-                      disabled={assessmentMode === 'apex'}
                     />
                     <span className="text-sm text-muted-foreground">Enable SQL section</span>
                   </div>
@@ -903,8 +915,8 @@ export default function CandidatesPage() {
                     min={1}
                     max={5}
                     value={sqlCount}
-                    onChange={(e) => setSqlCount(Math.max(1, Number(e.target.value) || 1))}
-                    disabled={!includeSql || assessmentMode === 'apex'}
+                    onChange={(e) => setSqlCount(Math.max(0, Number(e.target.value) || 0))}
+                    disabled={!includeSql}
                   />
                 </div>
               </div>

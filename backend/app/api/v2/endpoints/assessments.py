@@ -432,16 +432,23 @@ async def invite_assessments(
     assessment_mode = expected_mode
     is_apex_mode = assessment_mode == "apex"
 
-    include_mcq = True if is_apex_mode else (body.include_mcq is not False)
-    include_coding = False if is_apex_mode else (body.include_coding is not False)
+    include_mcq = body.include_mcq is not False
+    include_coding = body.include_coding is not False
+    include_sql = body.include_sql is True
 
     difficulty = (body.difficulty or "medium").strip().lower()
     if difficulty not in ("easy", "medium", "hard"):
         difficulty = "medium"
 
-    mcq_count = int(body.mcq_question_count or 20) if include_mcq else 0
-    coding_count = int(body.coding_challenge_count or 2) if include_coding else 0
-    apex_blanks_count = int(body.coding_challenge_count or 4) if is_apex_mode else 0
+    mcq_count_raw = body.mcq_question_count if body.mcq_question_count is not None else 20
+    mcq_count = int(mcq_count_raw) if include_mcq else 0
+
+    coding_count_raw = body.coding_challenge_count if body.coding_challenge_count is not None else (4 if is_apex_mode else 2)
+    coding_count = int(coding_count_raw) if include_coding else 0
+    apex_blanks_count = coding_count if is_apex_mode else 0
+
+    sql_count_raw = body.sql_question_count if body.sql_question_count is not None else 0
+    sql_count = int(sql_count_raw) if include_sql else 0
 
     if include_mcq and mcq_count < 1:
         return api_error(message="MCQ question count must be at least 1 when MCQ is enabled", status_code=400)
@@ -594,7 +601,7 @@ async def invite_assessments(
             elif include_coding and coding_count > 0:
                 generated_coding = await _select_dsa_coding_challenges(db=bg_db, difficulty=difficulty, count=coding_count)
 
-            if body.include_sql and (body.sql_question_count or 0) > 0:
+            if include_sql and sql_count > 0:
                 sql_challenges = await qgen.generate_sql_challenges(
                     job=JobDescriptionModel(
                         id=str(job.get("id")),
@@ -607,7 +614,7 @@ async def invite_assessments(
                         min_experience_years=int(job.get("min_experience_years") or 0),
                         is_active=True,
                     ),
-                    count=body.sql_question_count or 1,
+                    count=sql_count,
                     difficulty=difficulty
                 )
                 if isinstance(generated_coding, list):
