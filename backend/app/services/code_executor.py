@@ -649,7 +649,7 @@ __CANDIDATE_CODE__
 // the class is invisible to code above via `globalThis[CLASS_NAME]`.
 // This shim captures the exported value back into a local `var` so that
 // `typeof Solution !== 'undefined'` and `globalThis[CLASS_NAME]` checks work.
-(function() {
+;(function() {
   try {
     var _exp = (typeof module !== 'undefined' && module && module.exports) ? module.exports : null;
     if (_exp && typeof _exp === 'function') {
@@ -776,11 +776,12 @@ function resolveTarget() {
     throw new Error("No callable method found on class '" + CLASS_NAME + "'");
   }
 
-  // 2. Named function lookup (safe — no eval)
+  // 2. Named function lookup
   if (FUNCTION_NAME) {
     var found = null;
     try { found = (typeof globalThis !== 'undefined') ? globalThis[FUNCTION_NAME] : undefined; } catch (e) {}
     if (typeof found !== 'function') { try { found = (typeof global !== 'undefined') ? global[FUNCTION_NAME] : undefined; } catch (e) {} }
+    if (typeof found !== 'function') { try { found = eval(FUNCTION_NAME); } catch (e) {} }
     if (typeof found === 'function') return found;
 
     // Try Solution class fallback
@@ -814,6 +815,8 @@ function resolveTarget() {
   for (var i = 0; i < candidates.length; i++) {
     try {
       var c = (typeof globalThis !== 'undefined') ? globalThis[candidates[i]] : undefined;
+      if (typeof c !== 'function') { try { c = (typeof global !== 'undefined') ? global[candidates[i]] : undefined; } catch(e){} }
+      if (typeof c !== 'function') { try { c = eval(candidates[i]); } catch(e){} }
       if (typeof c === 'function') return c;
     } catch (e) {}
   }

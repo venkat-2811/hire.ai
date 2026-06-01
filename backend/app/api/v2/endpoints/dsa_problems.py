@@ -69,7 +69,7 @@ def _derive_function_name_and_mode(
             m = re.search(r"\bfunction\s+(\w+)\s*\(", code)
             if m:
                 return m.group(1), "function", None
-            m = re.search(r"\b(?:const|let|var)\s+(\w+)\s*=\s*\(", code)
+            m = re.search(r"\b(?:const|let|var)\s+(\w+)\s*=\s*(?:function\s*)?\(", code)
             if m:
                 return m.group(1), "function", None
 

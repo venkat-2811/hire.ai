@@ -91,7 +91,7 @@ def _derive_function_name_and_mode(
             m = re.search(r"\bfunction\s+(\w+)\s*\(", code)
             if m:
                 return m.group(1), "function", None
-            m = re.search(r"\b(?:const|let|var)\s+(\w+)\s*=\s*\(", code)
+            m = re.search(r"\b(?:const|let|var)\s+(\w+)\s*=\s*(?:function\s*)?\(", code)
             if m:
                 return m.group(1), "function", None
 
@@ -898,7 +898,7 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
         # Inject fallback starter code for common languages
         repaired["starter_code"] = {
             "python3": f"# {title}\ndef solution():\n    # Write your solution here\n    pass\n",
-            "javascript": f"// {title}\nfunction solution() {{\n    // Write your solution here\n}}\n",
+            "javascript": f"// {title}\nclass Solution {{\n    solution() {{\n        // Write your solution here\n    }}\n}}\n",
             "java": f"// {title}\npublic class Solution {{\n    public static void main(String[] args) {{\n        // Write your solution here\n    }}\n}}\n",
             "cpp": f"// {title}\n#include <iostream>\nint main() {{\n    // Write your solution here\n    return 0;\n}}\n",
         }
