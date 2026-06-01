@@ -26,7 +26,7 @@ from app.services.ai.apex_blanks import (
 )
 from app.services.db.supabase_service import get_db_admin_service
 from app.services.code_executor import HackerEarthExecutor
-from app.services.email_service import get_email_service
+from app.services.email_queue import email_queue, Priority
 from app.services.question_generator import get_question_generator
 from app.utils.responses import api_error, ok
 
@@ -547,7 +547,6 @@ async def invite_assessments(
     async def _generate_update_and_email():
         bg_started = time()
         bg_db = get_db_admin_service()
-        bg_email = get_email_service()
         qgen = get_question_generator()
 
         logger.info(
@@ -729,12 +728,18 @@ async def invite_assessments(
                 if not recipient_email:
                     raise RuntimeError("Candidate email is missing")
 
-                await bg_email.send_assessment_invite(
-                    to=recipient_email,
-                    candidate_name=str(meta.get("candidate_name") or "Candidate"),
-                    job_title=str(job.get("title") or ""),
-                    assessment_link=assessment_link,
-                    deadline=deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC"),
+                html, text, subject = email_queue.build_assessment_invite(
+                    str(meta.get("candidate_name") or "Candidate"),
+                    str(job.get("title") or ""),
+                    assessment_link,
+                    deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC")
+                )
+                await email_queue.enqueue(
+                    to_email=recipient_email,
+                    subject=subject,
+                    html_body=html,
+                    text_body=text,
+                    priority=Priority.HIGH
                 )
 
                 def _mark_email_ok():
@@ -2345,3 +2350,82 @@ async def submit_apex_blanks(
             "results": judged.get("results") or [],
         }
     )
+
+from app.models.schemas import JobDescription as JobDescriptionModel
+
+async def generate_assessment_questions(job_title: str, mcq_count: int, sql_count: int):
+    qgen = get_question_generator()
+    jd = JobDescriptionModel(
+        id="dummy",
+        title=job_title,
+        role="developer",
+        level="mid",
+        description="",
+        must_have_skills=[],
+        good_to_have_skills=[],
+        min_experience_years=0,
+        is_active=True,
+    )
+    
+    tasks = []
+    if mcq_count > 0:
+        tasks.append(qgen.generate_mcq_questions(jd, count=mcq_count, difficulty="medium"))
+    else:
+        tasks.append(asyncio.sleep(0, result=[]))
+        
+    if sql_count > 0:
+        tasks.append(qgen.generate_sql_challenges(jd, count=sql_count, difficulty="medium"))
+    else:
+        tasks.append(asyncio.sleep(0, result=[]))
+        
+    mcqs, sqls = await asyncio.gather(*tasks)
+    return mcqs, sqls
+
+@router.post("/{candidate_id}/send", status_code=202)
+async def send_assessment_single(
+    candidate_id: str,
+    body: AssessmentInviteRequest,
+    user: ClerkUser = Depends(require_user)
+):
+    db = get_db_admin_service()
+    
+    job = await _fetch_job_for_user(db=db, job_id=body.job_id, user_id=user.id)
+    if not job:
+        return api_error(message="Job not found", status_code=404)
+        
+    candidates = await _fetch_candidates(db=db, candidate_ids=[candidate_id])
+    if not candidates:
+        return api_error(message="Candidate not found", status_code=404)
+    candidate = candidates[0]
+    
+    mcq_count = int(body.mcq_question_count or 0) if body.include_mcq is not False else 0
+    sql_count = int(body.sql_question_count or 0) if body.include_sql else 0
+    
+    async def _generate_and_enqueue():
+        logger.info(f"Generating questions for {candidate_id}")
+        mcqs, sqls = await generate_assessment_questions(
+            str(job.get("title") or ""), 
+            mcq_count, 
+            sql_count
+        )
+        
+        # Simulated DB storage logic
+        
+        assessment_link = f"{str(get_settings().frontend_url).rstrip('/')}/assessment/{uuid.uuid4()}"
+        html, text, subject = email_queue.build_assessment_invite(
+            str(candidate.get("full_name") or "Candidate"),
+            str(job.get("title") or ""),
+            assessment_link,
+            "72 hours"
+        )
+        
+        await email_queue.enqueue(
+            to_email=str(candidate.get("email") or ""),
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            priority=Priority.HIGH
+        )
+        
+    asyncio.create_task(_generate_and_enqueue())
+    return ok({"status": "Accepted"}, status_code=202)

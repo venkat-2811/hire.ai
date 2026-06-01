@@ -15,11 +15,13 @@ from app.middleware.clerk_auth import ClerkAuthMiddleware
 from app.middleware.request_id import RequestIdMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.openai_client import get_openai_service
+from app.services.email_queue import email_queue
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
+    await email_queue.start()
     # Startup
     setup_logging(os.getenv("LOG_LEVEL", "INFO"))
     validate_environment()
@@ -29,7 +31,7 @@ async def lifespan(app: FastAPI):
     register_exception_handlers(app)
     yield
     # Shutdown
-    pass
+    await email_queue.stop()
 
 
 app = FastAPI(
@@ -98,4 +100,12 @@ async def openai_ping():
         "ok": True,
         "model": getattr(openai, "model_name", None),
         "response": (response_text or "").strip()[:200],
+    }
+
+@app.get("/health/email-queue")
+def email_queue_health():
+    return {
+        "queue_size": email_queue.queue_size,
+        "workers": len(email_queue.workers),
+        "status": "running" if email_queue.workers else "stopped"
     }
