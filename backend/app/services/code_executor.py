@@ -363,6 +363,7 @@ class HackerEarthExecutor:
             _TEMPLATE = (
                 'import json\n'
                 'import sys\n'
+                'import asyncio\n'
                 'import traceback\n'
                 'import re\n'
                 'from math import isfinite\n'
@@ -472,6 +473,34 @@ class HackerEarthExecutor:
                 'def _cmp(actual, expected):\n'
                 '    return _eq(_nv(actual), _nv(expected))\n'
                 '\n'
+                'def _stdin_text(input_data):\n'
+                '    raw = input_data\n'
+                '    if isinstance(raw, dict) and list(raw.keys()) == ["input"]:\n'
+                '        raw = raw["input"]\n'
+                '    raw = _nv(raw)\n'
+                '    if raw is None:\n'
+                '        return ""\n'
+                '    if isinstance(raw, str):\n'
+                '        return raw if raw.endswith("\\n") else raw + "\\n"\n'
+                '    if isinstance(raw, (dict, list, tuple)):\n'
+                '        return json.dumps(raw, ensure_ascii=False) + "\\n"\n'
+                '    return str(raw) + "\\n"\n'
+                '\n'
+                'def _run_program(src, input_data):\n'
+                '    import io as _io2\n'
+                '    _real_stdin2 = sys.stdin\n'
+                '    _real_stdout2 = sys.stdout\n'
+                '    _cap2 = _io2.StringIO()\n'
+                '    try:\n'
+                '        sys.stdin = _io2.StringIO(_stdin_text(input_data))\n'
+                '        sys.stdout = _cap2\n'
+                '        _ns = {"__name__": "__main__"}\n'
+                '        exec(compile(src, "<candidate_code>", "exec"), _ns)\n'
+                '        return _cap2.getvalue()\n'
+                '    finally:\n'
+                '        sys.stdin = _real_stdin2\n'
+                '        sys.stdout = _real_stdout2\n'
+                '\n'
                 'if __name__ == "__main__":\n'
                 '    import io as _io\n'
                 '    _real_stdin = sys.stdin\n'
@@ -481,27 +510,23 @@ class HackerEarthExecutor:
                 '        namespace = {}\n'
                 '        exec(compile(__CODE_REPR__, "<candidate_code>", "exec"), namespace)\n'
                 '        sys.stdin = _real_stdin\n'
+                '        target = None\n'
                 '        if EXECUTION_MODE == "class":\n'
                 '            klass = namespace.get(CLASS_NAME)\n'
                 '            if klass is None:\n'
                 '                klass = next((v for v in namespace.values() if isinstance(v, type) and not v.__name__.startswith("_")), None)\n'
-                '            if klass is None:\n'
-                '                raise NameError("Class \'" + CLASS_NAME + "\' not found in submitted code")\n'
-                '            inst = klass()\n'
-                '            if FUNCTION_NAME:\n'
-                '                target = getattr(inst, FUNCTION_NAME, None)\n'
-                '            else:\n'
-                '                target = None\n'
-                '            if target is None:\n'
-                '                import inspect as _insp\n'
-                '                target = next(\n'
-                '                    (getattr(inst, m) for m in dir(inst)\n'
-                '                     if not m.startswith("_") and callable(getattr(inst, m, None))\n'
-                '                     and not isinstance(getattr(type(inst), m, None), (staticmethod, classmethod))),\n'
-                '                    None\n'
-                '                )\n'
-                '            if target is None:\n'
-                '                raise AttributeError("No callable method found on \'" + CLASS_NAME + "\'")\n'
+                '            if klass is not None:\n'
+                '                inst = klass()\n'
+                '                if FUNCTION_NAME:\n'
+                '                    target = getattr(inst, FUNCTION_NAME, None)\n'
+                '                if target is None:\n'
+                '                    import inspect as _insp\n'
+                '                    target = next(\n'
+                '                        (getattr(inst, m) for m in dir(inst)\n'
+                '                         if not m.startswith("_") and callable(getattr(inst, m, None))\n'
+                '                         and not isinstance(getattr(type(inst), m, None), (staticmethod, classmethod))),\n'
+                '                        None\n'
+                '                    )\n'
                 '        elif FUNCTION_NAME:\n'
                 '            target = namespace.get(FUNCTION_NAME)\n'
                 '            if target is None:\n'
@@ -510,16 +535,12 @@ class HackerEarthExecutor:
                 '                    target = getattr(inst, FUNCTION_NAME, None) or next(\n'
                 '                        (getattr(inst, m) for m in dir(inst) if not m.startswith("_") and callable(getattr(inst, m))), None\n'
                 '                    )\n'
-                '                if target is None:\n'
-                '                    raise NameError("Function \'" + FUNCTION_NAME + "\' not found in submitted code")\n'
                 '        else:\n'
                 '            if "Solution" in namespace:\n'
                 '                inst = namespace["Solution"]()\n'
                 '                target = next((getattr(inst, m) for m in dir(inst) if not m.startswith("_") and callable(getattr(inst, m))), None)\n'
                 '            else:\n'
                 '                target = next((v for v in namespace.values() if callable(v) and not isinstance(v, type)), None)\n'
-                '            if target is None:\n'
-                '                raise NameError("Could not find a callable function in submitted code")\n'
                 '        _real_stdout = sys.stdout\n'
                 '        passed = 0\n'
                 '        for idx, tc in enumerate(TEST_CASES):\n'
@@ -543,7 +564,12 @@ class HackerEarthExecutor:
                 '                _cap = _io.StringIO()\n'
                 '                sys.stdout = _cap\n'
                 '                try:\n'
-                '                    if isinstance(_inp_kw, dict):\n'
+                '                    if target is None:\n'
+                '                        sys.stdout = _real_stdout\n'
+                '                        _program_stdout = _run_program(__CODE_REPR__, input_data)\n'
+                '                        _cap = _io.StringIO(_program_stdout)\n'
+                '                        result = _program_stdout.rstrip("\\n")\n'
+                '                    elif isinstance(_inp_kw, dict):\n'
                 '                        import inspect as _insp_kw\n'
                 '                        _pk_kw = []\n'
                 '                        try:\n'
@@ -595,11 +621,13 @@ class HackerEarthExecutor:
                 '                            raise _last_exc or RuntimeError("Could not dispatch target call")\n'
                 '                    else:\n'
                 '                        result = target(*_get_args(input_data, target))\n'
+                '                    if target is not None and hasattr(result, "__await__"):\n'
+                '                        result = asyncio.run(result)\n'
                 '                finally:\n'
                 '                    sys.stdout = _real_stdout\n'
                 '                tr["stdout"] = _cap.getvalue()\n'
                 '                tr["actual"] = result\n'
-                '                tr["passed"] = _cmp(result, expected)\n'
+                '                tr["passed"] = _cmp(result, expected) or _cmp(tr["stdout"].rstrip("\\n"), expected)\n'
                 '                tr["status"] = "AC" if tr["passed"] else "WA"\n'
                 '                if not tr["passed"]:\n'
                 '                    tr["stderr"] = json.dumps({"norm_actual": _nv(result), "norm_expected": _nv(expected)}, ensure_ascii=False)\n'
@@ -638,10 +666,34 @@ class HackerEarthExecutor:
             fn_js = json.dumps(fn)
             mode_js = json.dumps(mode)
             cls_js = json.dumps(cls)
+            code_js = json.dumps(code)
+            fn_capture = ""
+            if fn:
+                fn_capture = (
+                    "try { if (typeof " + fn + " !== 'undefined') { "
+                    "if (typeof globalThis !== 'undefined') { globalThis[" + fn_js + "] = " + fn + "; } "
+                    "if (typeof global !== 'undefined') { global[" + fn_js + "] = " + fn + "; } "
+                    "if (typeof module !== 'undefined' && module) { module.exports = module.exports || {}; "
+                    "if (typeof module.exports === 'object') { module.exports[" + fn_js + "] = " + fn + "; } } "
+                    "} } catch (_e) {}"
+                )
+            cls_capture = ""
+            if cls:
+                cls_capture = (
+                    "try { if (typeof " + cls + " !== 'undefined') { "
+                    "if (typeof globalThis !== 'undefined') { globalThis[" + cls_js + "] = " + cls + "; } "
+                    "if (typeof global !== 'undefined') { global[" + cls_js + "] = " + cls + "; } "
+                    "if (typeof module !== 'undefined' && module) { module.exports = module.exports || {}; "
+                    "if (typeof module.exports === 'object') { module.exports[" + cls_js + "] = " + cls + "; } } "
+                    "} } catch (_e) {}"
+                )
 
             _JS_TEMPLATE = r'''// ---- Candidate code ----
 __CANDIDATE_CODE__
 // ---- End candidate code ----
+
+__FN_CAPTURE__
+__CLS_CAPTURE__
 
 // ── CommonJS export capture shim ──────────────────────────────────────────
 // ES6 `class Foo {}` declarations are block-scoped and NOT added to `global`
@@ -675,6 +727,7 @@ var PARAM_SCHEMA = JSON.parse(__PS_JSON__);
 var FUNCTION_NAME = __FN_JSON__;
 var EXECUTION_MODE = __MODE_JSON__;
 var CLASS_NAME = __CLS_JSON__;
+var CANDIDATE_SOURCE = __CODE_JSON__;
 
 function _nv(v, d) {
   d = d || 0;
@@ -724,6 +777,72 @@ function _eq(a, b) {
 }
 
 function _cmp(actual, expected) { return _eq(_nv(actual), _nv(expected)); }
+
+function _stdinText(inputData) {
+  var raw = inputData;
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 1 && Object.prototype.hasOwnProperty.call(raw, 'input')) {
+    raw = raw.input;
+  }
+  raw = _nv(raw);
+  if (raw === null || typeof raw === 'undefined') return '';
+  if (typeof raw === 'string') return /\n$/.test(raw) ? raw : raw + '\n';
+  if (typeof raw === 'object') return JSON.stringify(raw) + '\n';
+  return String(raw) + '\n';
+}
+
+function _makeStdin(stdinText) {
+  return {
+    _text: stdinText,
+    setEncoding: function() {},
+    resume: function() {},
+    on: function(event, cb) {
+      if (event === 'data' && stdinText) cb(stdinText);
+      if (event === 'end') cb();
+      return this;
+    },
+    once: function(event, cb) { return this.on(event, cb); }
+  };
+}
+
+function _makeRequire(stdinText) {
+  var realRequire = (typeof require === 'function') ? require : null;
+  return function(mod) {
+    if (mod === 'fs') {
+      return {
+        readFileSync: function(fd) {
+          if (fd === 0 || fd === '0') return stdinText;
+          if (!realRequire) return stdinText;
+          return realRequire('fs').readFileSync.apply(realRequire('fs'), arguments);
+        }
+      };
+    }
+    if (!realRequire) throw new Error('require is not available');
+    return realRequire(mod);
+  };
+}
+
+async function _runProgramCase(source, inputData) {
+  var stdinText = _stdinText(inputData);
+  var lines = [];
+  var fakeConsole = {
+    log: function() { lines.push(Array.prototype.slice.call(arguments).map(String).join(' ')); },
+    warn: function() { lines.push(Array.prototype.slice.call(arguments).map(String).join(' ')); },
+    error: function() { lines.push(Array.prototype.slice.call(arguments).map(String).join(' ')); }
+  };
+  var moduleObj = { exports: {} };
+  var fakeProcess = {
+    env: (typeof process !== 'undefined' && process && process.env) ? process.env : {},
+    argv: (typeof process !== 'undefined' && process && process.argv) ? process.argv.slice() : [],
+    stdin: _makeStdin(stdinText),
+    stdout: { write: function(s) { lines.push(String(s)); } },
+    stderr: { write: function(s) { lines.push(String(s)); } },
+    exit: function(code) { throw new Error('Process exited with code ' + String(code)); }
+  };
+  var runner = new Function('require', 'module', 'exports', 'process', 'console', 'globalThis', source);
+  var result = runner(_makeRequire(stdinText), moduleObj, moduleObj.exports, fakeProcess, fakeConsole, {});
+  if (result && typeof result.then === 'function') await result;
+  return lines.join('\n');
+}
 
 function _lookupGlobal(name) {
   if (!name) return undefined;
@@ -866,8 +985,10 @@ function _stopCapture() {
 
 var report = { success: true, status: 'accepted', score: 0, testcases: [] };
 
+(async function() {
 try {
-  var target = resolveTarget();
+  var target = null;
+  try { target = resolveTarget(); } catch (_resolveErr) { target = null; }
   var passed = 0;
   for (var i = 0; i < TEST_CASES.length; i++) {
     var tc = TEST_CASES[i] || {};
@@ -876,12 +997,19 @@ try {
     var tr = { index: i, input: inputData, expected: expected, actual: null, passed: false, status: 'NA', stdout: '', stderr: '', error: null };
     try {
       if (inputData === null || inputData === undefined) throw new Error('Testcase input is null');
-      _startCapture();
-      var args = getArgs(inputData, target);
-      var result = target.apply(null, args);
-      tr.stdout = _stopCapture();
+      var result;
+      if (typeof target === 'function') {
+        _startCapture();
+        var args = getArgs(inputData, target);
+        result = target.apply(null, args);
+        if (result && typeof result.then === 'function') result = await result;
+        tr.stdout = _stopCapture();
+      } else {
+        tr.stdout = await _runProgramCase(CANDIDATE_SOURCE, inputData);
+        result = tr.stdout.replace(/\n+$/, '');
+      }
       tr.actual = result;
-      tr.passed = _cmp(result, expected);
+      tr.passed = _cmp(result, expected) || _cmp(tr.stdout.replace(/\n+$/, ''), expected);
       tr.status = tr.passed ? 'AC' : 'WA';
       if (!tr.passed) tr.stderr = JSON.stringify({ norm_actual: _nv(result), norm_expected: _nv(expected) });
       if (tr.passed) passed++;
@@ -905,15 +1033,19 @@ try {
 
 _origLog('---RESULT_SEPARATOR---');
 _origLog(JSON.stringify(report));
+})();
 '''
             return (
                 _JS_TEMPLATE
                 .replace('__CANDIDATE_CODE__', code)
+                .replace('__FN_CAPTURE__', fn_capture)
+                .replace('__CLS_CAPTURE__', cls_capture)
                 .replace('__TC_JSON__', tc_js)
                 .replace('__PS_JSON__', ps_js)
                 .replace('__FN_JSON__', fn_js)
                 .replace('__MODE_JSON__', mode_js)
                 .replace('__CLS_JSON__', cls_js)
+                .replace('__CODE_JSON__', code_js)
             )
 
         if language == "java":
@@ -921,6 +1053,8 @@ _origLog(JSON.stringify(report));
                 return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "").replace("\t", "\\t")
             tc_java = _java_str_escape(tc_json)
             ps_java = _java_str_escape(ps_json)
+            _java_class_matches = re.findall(r'\bclass\s+(\w+)\b', code)
+            _java_primary_class = next((name for name in _java_class_matches if name != 'Main'), '')
             def _sanitize_java_wrapper(text: str) -> str:
                 """Replace non-ASCII characters with ASCII equivalents in autogenerated Java wrapper code."""
                 _replacements = [
@@ -941,6 +1075,7 @@ public class Main {{
     private static final String FUNCTION_NAME = "{fn}";
     private static final String EXECUTION_MODE = "{mode}";
     private static final String CLASS_NAME = "{cls if cls else "Solution"}";
+    private static final String PRIMARY_CLASS_NAME = "{_java_primary_class}";
 
     // --- Minimal stdlib-only JSON value wrapper ---
     static class JVal {{
@@ -1068,8 +1203,13 @@ public class Main {{
     }}
 
     private static Object invoke(JVal input) throws Exception {{
-        String solName = CLASS_NAME.isEmpty() ? "Solution" : CLASS_NAME;
-        Class<?> solClass = Class.forName(solName);
+        Class<?> solClass = null;
+        String[] candidates = new String[] {{ CLASS_NAME, PRIMARY_CLASS_NAME, "Solution" }};
+        for (String name : candidates) {{
+            if (name == null || name.isEmpty()) continue;
+            try {{ solClass = Class.forName(name); break; }} catch (Throwable ignore) {{}}
+        }}
+        if (solClass == null) throw new ClassNotFoundException(CLASS_NAME.isEmpty() ? "Solution" : CLASS_NAME);
         Object inst = solClass.getDeclaredConstructor().newInstance();
         Method[] methods = solClass.getDeclaredMethods();
         Method target = null;
@@ -1077,7 +1217,21 @@ public class Main {{
             if (!FUNCTION_NAME.isEmpty() && m.getName().equals(FUNCTION_NAME)) {{ target = m; break; }}
             if (FUNCTION_NAME.isEmpty() && !m.getName().equals("main")) {{ target = m; break; }}
         }}
-        if (target == null) throw new NoSuchMethodException("Method not found: " + FUNCTION_NAME);
+        if (target == null) {{
+            try {{
+                Method mainMethod = solClass.getMethod("main", String[].class);
+                java.io.InputStream realIn = System.in;
+                java.io.PrintStream realOut = System.out;
+                java.io.ByteArrayOutputStream cap = new java.io.ByteArrayOutputStream();
+                String stdin = input.isNull() ? "" : (input.v instanceof String ? (String) input.v : input.toString());
+                if (!stdin.endsWith("\n")) stdin += "\n";
+                System.setIn(new java.io.ByteArrayInputStream(stdin.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                System.setOut(new java.io.PrintStream(cap));
+                try {{ mainMethod.invoke(null, (Object) new String[0]); }} finally {{ System.setIn(realIn); System.setOut(realOut); }}
+                return cap.toString();
+            }} catch (NoSuchMethodException ignore) {{}}
+            throw new NoSuchMethodException("Method not found: " + FUNCTION_NAME);
+        }}
         target.setAccessible(true);
         Object[] callArgs = buildArgs(input, target.getParameterTypes());
         return target.invoke(inst, callArgs);
@@ -1221,6 +1375,12 @@ public class Main {{
 
             tc_cpp = _cpp_str_escape(tc_json)
             ps_cpp = _cpp_str_escape(ps_json)
+            _has_solution_class = bool(re.search(r'\bclass\s+Solution\b', code))
+            _cpp_class_name = (class_name or ("Solution" if _has_solution_class else "")).strip()
+            _has_candidate_main = bool(re.search(r'\b(?:int|signed\s+int|auto)\s+main\s*\(', code))
+            _cpp_user_code = code
+            if _has_candidate_main:
+                _cpp_user_code = '#define main __candidate_main__\n' + code + '\n#undef main'
 
             # Derive fn_call from submitted code if not provided
             _fn_call = fn
@@ -1244,7 +1404,7 @@ public class Main {{
             cpp_src = (
                 '#include <bits/stdc++.h>\n'
                 'using namespace std;\n\n'
-                + code + '\n\n'
+                + _cpp_user_code + '\n\n'
                 '// ---- JSON helpers ----\n'
                 'string j_str(const string& s) {\n'
                 '    string r = "\\""; for (char c : s) { if (c==\'"\') r+="\\\\\\""; else if (c==\'\\\\\') r+="\\\\\\\\"; else r+=c; } r+="\\""; return r;\n'
@@ -1414,10 +1574,13 @@ public class Main {{
             _ml.append('    int passed = 0, total = (int)tcs.arr.size();\n')
             _ml.append('    ostringstream __json_buf;\n')
             _ml.append('    __json_buf << "{\\"success\\":true,\\"status\\":\\"running\\",\\"score\\":0,\\"testcases\\":[";\n')
-            _ml.append('    Solution sol;\n')
+            if _cpp_class_name and not _has_candidate_main:
+                _ml.append(f'    {_cpp_class_name} sol;\n')
             _ml.append('    for (int i = 0; i < total; i++) {\n')
             _ml.append('        if (i) __json_buf << ",";\n')
             _ml.append('        streambuf* __cout_orig = cout.rdbuf();\n')
+            if _has_candidate_main:
+                _ml.append('        streambuf* __cin_orig = cin.rdbuf();\n')
             _ml.append('        ostringstream __user_stdout;\n')
             _ml.append('        cout.rdbuf(__user_stdout.rdbuf());\n')
             _ml.append('        JVal tc = tcs.arr[i];\n')
@@ -1428,6 +1591,13 @@ public class Main {{
             _ml.append('        string err = "";\n')
             _ml.append('        bool ok = false;\n')
             _ml.append('        try {\n')
+            if _has_candidate_main:
+                _ml.append('            string __stdin_text = input_val.is_str ? input_val.str_val : jval_to_str(input_val);\n')
+                _ml.append('            if (!__stdin_text.empty() && __stdin_text.back() != \'\\n\') __stdin_text.push_back(\'\\n\');\n')
+                _ml.append('            istringstream __user_stdin(__stdin_text);\n')
+                _ml.append('            cin.rdbuf(__user_stdin.rdbuf());\n')
+                _ml.append('            __candidate_main__();\n')
+                _ml.append('            actual_str = j_str(__user_stdout.str());\n')
             if _sig_params:
                 for _pi, (_pt, _pn) in enumerate(_sig_params):
                     if len(_sig_params) == 1:
@@ -1437,16 +1607,22 @@ public class Main {{
                     _ml.append(f'            JVal _pv{_pi} = {_pv};\n')
                     _ml.append(f'            auto _arg{_pi} = {_jval_expr(_pt, f"_pv{_pi}")};\n')
                 _call = ', '.join(f'_arg{i}' for i in range(len(_sig_params)))
-                _ml.append(f'            auto _res = sol.{fn_call}({_call});\n')
-                _ml.append('            actual_str = j_val(_res);\n')
+                if not _has_candidate_main:
+                    if _cpp_class_name:
+                        _ml.append(f'            auto _res = sol.{fn_call}({_call});\n')
+                    else:
+                        _ml.append(f'            auto _res = {fn_call}({_call});\n')
+                    _ml.append('            actual_str = j_val(_res);\n')
             else:
-                _ml.append('            JVal iv = input_val;\n')
-                _ml.append('            if (iv.is_obj && iv.obj.size() == 1 && iv.obj.count("input")) iv = iv.obj["input"];\n')
-                _ml.append(f'            if (iv.is_num) {{ auto res = sol.{fn_call}((int)iv.num_val); actual_str = j_val(res); }}\n')
-                _ml.append(f'            else if (iv.is_bool) {{ auto res = sol.{fn_call}(iv.bool_val); actual_str = j_val(res); }}\n')
-                _ml.append(f'            else if (iv.is_str) {{ auto res = sol.{fn_call}(iv.str_val); actual_str = j_val(res); }}\n')
-                _ml.append(f'            else if (iv.is_arr && !iv.arr.empty() && iv.arr[0].is_arr) {{ auto res = sol.{fn_call}(to_int_mat(iv)); actual_str = j_val(res); }}\n')
-                _ml.append(f'            else if (iv.is_arr) {{ auto res = sol.{fn_call}(to_int_vec(iv)); actual_str = j_val(res); }}\n')
+                if not _has_candidate_main:
+                    _prefix = f'sol.{fn_call}' if _cpp_class_name else fn_call
+                    _ml.append('            JVal iv = input_val;\n')
+                    _ml.append('            if (iv.is_obj && iv.obj.size() == 1 && iv.obj.count("input")) iv = iv.obj["input"];\n')
+                    _ml.append(f'            if (iv.is_num) {{ auto res = {_prefix}((int)iv.num_val); actual_str = j_val(res); }}\n')
+                    _ml.append(f'            else if (iv.is_bool) {{ auto res = {_prefix}(iv.bool_val); actual_str = j_val(res); }}\n')
+                    _ml.append(f'            else if (iv.is_str) {{ auto res = {_prefix}(iv.str_val); actual_str = j_val(res); }}\n')
+                    _ml.append(f'            else if (iv.is_arr && !iv.arr.empty() && iv.arr[0].is_arr) {{ auto res = {_prefix}(to_int_mat(iv)); actual_str = j_val(res); }}\n')
+                    _ml.append(f'            else if (iv.is_arr) {{ auto res = {_prefix}(to_int_vec(iv)); actual_str = j_val(res); }}\n')
             _ml.append('            string exp_str = jval_to_str(expected_val);\n')
             _ml.append('            ok = (actual_str == exp_str);\n')
             _ml.append('            if (!ok) {\n')
@@ -1465,6 +1641,8 @@ public class Main {{
             _ml.append('        } catch (...) {\n')
             _ml.append('            err = "Unknown exception"; status = "RE";\n')
             _ml.append('        }\n')
+            if _has_candidate_main:
+                _ml.append('        cin.rdbuf(__cin_orig);\n')
             _ml.append('        cout.rdbuf(__cout_orig);\n')
             _ml.append('        __json_buf << "{\\"index\\":" << i\n')
             _ml.append('             << ",\\"input\\":" << jval_to_str(input_val)\n')
