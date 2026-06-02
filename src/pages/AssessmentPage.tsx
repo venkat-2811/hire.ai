@@ -983,7 +983,7 @@ public class CandidateSolution {
   const runCode = async (challengeId: string) => {
     if (!assessmentData || runningCode) return;
 
-    const challenge = codingChallenges.find(c => c.id === challengeId);
+    const challenge = codingChallenges.find(c => c.id === challengeId) || sqlChallenges.find(c => c.id === challengeId);
     if (!challenge) return;
 
     const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
@@ -1087,7 +1087,7 @@ public class CandidateSolution {
   const submitCodingSolution = async (challengeId: string) => {
     if (!assessmentData || submittingCode) return;
 
-    const challenge = codingChallenges.find(c => c.id === challengeId);
+    const challenge = codingChallenges.find(c => c.id === challengeId) || sqlChallenges.find(c => c.id === challengeId);
     if (!challenge) return;
 
     const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
@@ -1192,7 +1192,7 @@ public class CandidateSolution {
   };
 
   const resetCode = (challengeId: string) => {
-    const challenge = codingChallenges.find(c => c.id === challengeId);
+    const challenge = codingChallenges.find(c => c.id === challengeId) || sqlChallenges.find(c => c.id === challengeId);
     if (!challenge) return;
 
     const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
