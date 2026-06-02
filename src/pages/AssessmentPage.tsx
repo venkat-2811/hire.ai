@@ -227,6 +227,7 @@ export default function AssessmentPage() {
   const [codingChallenges, setCodingChallenges] = useState<CodingChallenge[]>([]);
   const [apexBlanks, setApexBlanks] = useState<ApexFillInBlankQuestion[]>([]);
   const [sqlChallenges, setSqlChallenges] = useState<CodingChallenge[]>([]);
+  const hasMcq = mcqQuestions.length > 0;
   const hasCoding = codingChallenges.length > 0;
   const hasApexBlanks = apexBlanks.length > 0;
   const hasSql = sqlChallenges.length > 0;
@@ -1638,7 +1639,6 @@ public class CandidateSolution {
     const code = (codingSolutions[challenge.id] || {})[lang] || '';
     return code !== (challenge.starter_code?.[lang] || '');
   }).length / codingChallenges.length) * 100;
-  const hasMcq = mcqQuestions.length > 0;
   const activeTab = hasMcq
     ? ((hasCoding || hasApexBlanks || hasSql) ? currentTab : 'mcq')
     : (hasApexBlanks ? 'apex_blanks' : (hasCoding ? 'coding' : 'sql'));
