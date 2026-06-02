@@ -34,7 +34,6 @@ import {
   Play,
   Send,
   CheckCircle2,
-  XCircle as XCircleIcon,
   Terminal,
   Database,
 } from 'lucide-react';
@@ -2388,7 +2387,7 @@ public class CandidateSolution {
                                         {result.passed ? (
                                           <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                                         ) : (
-                                          <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                                          <XCircle className="h-3.5 w-3.5 text-red-500" />
                                         )}
                                         <span className="font-semibold font-sans">Test {idx + 1}</span>
                                         <Badge
@@ -2707,7 +2706,7 @@ public class CandidateSolution {
                                       {activeResult.stderr && (
                                         <div>
                                           <p className="text-[10px] font-semibold text-red-500 mb-1 flex items-center gap-1.5">
-                                            <XCircleIcon className="h-3 w-3" /> Runtime Error / Stderr
+                                            <XCircle className="h-3 w-3" /> Runtime Error / Stderr
                                           </p>
                                           <pre className="text-xs font-mono text-red-400 bg-red-950/20 border border-red-500/20 rounded px-3 py-2 whitespace-pre-wrap">
                                             {safeString(activeResult.stderr)}
@@ -2961,7 +2960,7 @@ public class CandidateSolution {
                                         {result.passed ? (
                                           <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                                         ) : (
-                                          <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                                          <XCircle className="h-3.5 w-3.5 text-red-500" />
                                         )}
                                         <span className="font-semibold font-sans">Test {idx + 1}</span>
                                         <Badge
@@ -3280,7 +3279,7 @@ public class CandidateSolution {
                                       {activeResult.stderr && (
                                         <div>
                                           <p className="text-[10px] font-semibold text-red-500 mb-1 flex items-center gap-1.5">
-                                            <XCircleIcon className="h-3 w-3" /> Runtime Error / Stderr
+                                            <XCircle className="h-3 w-3" /> Runtime Error / Stderr
                                           </p>
                                           <pre className="text-xs font-mono text-red-400 bg-red-950/20 border border-red-500/20 rounded px-3 py-2 whitespace-pre-wrap">
                                             {safeString(activeResult.stderr)}
