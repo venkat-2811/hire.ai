@@ -926,7 +926,7 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
     title = challenge.get("title", "Untitled Challenge")
     
     # Repair starter code
-    starter_code = challenge.get("starter_code") or {}
+    starter_code = challenge.get("starter_code")
     if not isinstance(starter_code, dict) or not starter_code:
         # Inject fallback starter code for common languages
         repaired["starter_code"] = {
@@ -936,6 +936,16 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
             "csharp": f"// {title}\npublic class Solution {{\n    public int Solve() {{\n        // Write your solution here\n        return 0;\n    }}\n}}\n",
         }
         logger.warning("[assessments.repair] injected_fallback_starter_code challenge_id=%s", str(challenge_id))
+    else:
+        # It's an existing dict, but might be missing C# or have JS
+        repaired["starter_code"] = dict(starter_code)
+        if "javascript" in repaired["starter_code"]:
+            del repaired["starter_code"]["javascript"]
+        if "typescript" in repaired["starter_code"]:
+            del repaired["starter_code"]["typescript"]
+            
+        if "csharp" not in repaired["starter_code"] and "c#" not in repaired["starter_code"]:
+            repaired["starter_code"]["csharp"] = f"// {title}\npublic class Solution {{\n    public int Solve() {{\n        // Write your solution here\n        return 0;\n    }}\n}}\n"
     
     # Repair test cases
     test_cases = challenge.get("test_cases") or []
