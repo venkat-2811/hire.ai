@@ -1255,14 +1255,157 @@ int main() {{
             cs_src = f'''using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Reflection;
+using System.Text;
 
 {code}
 
 public class Program {{
     static string TC_JSON = "{tc_cs}";
+
+    public class JVal {{
+        public object v;
+        public JVal(object v) {{ this.v = v; }}
+        public bool isNull() {{ return v == null; }}
+        public bool isArr() {{ return v is List<JVal>; }}
+        public bool isObj() {{ return v is Dictionary<string, JVal>; }}
+        public List<JVal> arr() {{ return (List<JVal>)v; }}
+        public Dictionary<string, JVal> obj() {{ return (Dictionary<string, JVal>)v; }}
+        public JVal get(string k) {{ return isObj() && obj().ContainsKey(k) ? obj()[k] : new JVal(null); }}
+        public JVal get(int i) {{ return isArr() && i < arr().Count ? arr()[i] : new JVal(null); }}
+        public int size() {{ return isArr() ? arr().Count : isObj() ? obj().Count : 0; }}
+        public double asDouble() {{
+            if (v is double d) return d;
+            if (v is float f) return f;
+            if (v is int i) return i;
+            if (v is long l) return l;
+            if (double.TryParse(v?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double result)) return result;
+            return 0;
+        }}
+        public int asInt() {{ return (int)asDouble(); }}
+        public long asLong() {{ return (long)asDouble(); }}
+        public bool asBool() {{ return v is bool b ? b : (v?.ToString().ToLower() == "true"); }}
+        public string asStr() {{ return v == null ? "null" : v.ToString(); }}
+    }}
+
+    public class JP {{
+        string s; int p;
+        public JP(string s) {{ this.s = s.Trim(); this.p = 0; }}
+        void ws() {{ while (p < s.Length && char.IsWhiteSpace(s[p])) p++; }}
+        public JVal parse() {{
+            ws();
+            if (p >= s.Length) return new JVal(null);
+            char c = s[p];
+            if (c == '"') return parseStr();
+            if (c == '[') return parseArr();
+            if (c == '{{') return parseObj();
+            if (c == 't') {{ p += 4; return new JVal(true); }}
+            if (c == 'f') {{ p += 5; return new JVal(false); }}
+            if (c == 'n') {{ p += 4; return new JVal(null); }}
+            return parseNum();
+        }}
+        JVal parseStr() {{
+            p++;
+            var sb = new StringBuilder();
+            while (p < s.Length) {{
+                char c = s[p++];
+                if (c == '"') break;
+                if (c == '\\\\') {{
+                    if (p < s.Length) {{
+                        char e = s[p++];
+                        if (e == '"') sb.Append('"');
+                        else if (e == 'n') sb.Append('\\n');
+                        else if (e == 'r') sb.Append('\\r');
+                        else if (e == 't') sb.Append('\\t');
+                        else if (e == '\\\\') sb.Append('\\\\');
+                        else sb.Append(e);
+                    }}
+                }} else sb.Append(c);
+            }}
+            return new JVal(sb.ToString());
+        }}
+        JVal parseArr() {{
+            p++;
+            var list = new List<JVal>();
+            ws();
+            if (p < s.Length && s[p] == ']') {{ p++; return new JVal(list); }}
+            while (p < s.Length) {{
+                list.Add(parse());
+                ws();
+                if (p < s.Length && s[p] == ',') p++;
+                else break;
+            }}
+            if (p < s.Length && s[p] == ']') p++;
+            return new JVal(list);
+        }}
+        JVal parseObj() {{
+            p++;
+            var map = new Dictionary<string, JVal>();
+            ws();
+            if (p < s.Length && s[p] == '}}') {{ p++; return new JVal(map); }}
+            while (p < s.Length) {{
+                ws();
+                JVal k = parseStr();
+                ws();
+                if (p < s.Length && s[p] == ':') p++;
+                JVal v = parse();
+                map[k.asStr()] = v;
+                ws();
+                if (p < s.Length && s[p] == ',') p++;
+                else break;
+            }}
+            if (p < s.Length && s[p] == '}}') p++;
+            return new JVal(map);
+        }}
+        JVal parseNum() {{
+            int start = p;
+            while (p < s.Length) {{
+                char c = s[p];
+                if (char.IsDigit(c) || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E') p++;
+                else break;
+            }}
+            string tok = s.Substring(start, p - start);
+            try {{
+                if (tok.Contains(".") || tok.Contains("e") || tok.Contains("E")) return new JVal(double.Parse(tok, System.Globalization.CultureInfo.InvariantCulture));
+                long lv = long.Parse(tok);
+                return new JVal(lv <= int.MaxValue && lv >= int.MinValue ? (object)(int)lv : (object)lv);
+            }} catch {{ return new JVal(tok); }}
+        }}
+    }}
+
+    public static JVal parseJSON(string src) {{ return new JP(src).parse(); }}
     
+    static string jsonStrLit(string s) {{
+        if (s == null) return "null";
+        return "\\"" + s.Replace("\\\\","\\\\\\\\").Replace("\\"","\\\\\\"").Replace("\\n","\\\\n").Replace("\\r","").Replace("\\t","\\\\t") + "\\"";
+    }}
+
+    static string toJsonStr(object v) {{
+        if (v == null) return "null";
+        if (v is bool b) return b ? "true" : "false";
+        if (v is int || v is long || v is double || v is float) return Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture);
+        if (v is string s) return jsonStrLit(s);
+        if (v is int[] a1) return "[" + string.Join(",", a1) + "]";
+        if (v is long[] a2) return "[" + string.Join(",", a2) + "]";
+        if (v is double[] a3) return "[" + string.Join(",", a3.Select(x => Convert.ToString(x, System.Globalization.CultureInfo.InvariantCulture))) + "]";
+        if (v is string[] a4) return "[" + string.Join(",", a4.Select(x => jsonStrLit(x))) + "]";
+        if (v is int[][] a5) return "[" + string.Join(",", a5.Select(row => toJsonStr(row))) + "]";
+        if (v is char[] a6) return "[" + string.Join(",", a6.Select(x => jsonStrLit(x.ToString()))) + "]";
+        if (v is char[][] a7) return "[" + string.Join(",", a7.Select(row => toJsonStr(row))) + "]";
+        if (v is JVal jval) {{
+            if (jval.isNull()) return "null";
+            if (jval.isArr()) return "[" + string.Join(",", jval.arr().Select(x => toJsonStr(x))) + "]";
+            if (jval.isObj()) return "{{" + string.Join(",", jval.obj().Select(kvp => "\\"" + kvp.Key + "\\":" + toJsonStr(kvp.Value))) + "}}";
+            return toJsonStr(jval.v);
+        }}
+        if (v is System.Collections.IEnumerable en) {{
+            var list = new List<string>();
+            foreach (var item in en) list.Add(toJsonStr(item));
+            return "[" + string.Join(",", list) + "]";
+        }}
+        return jsonStrLit(v.ToString());
+    }}
+
     public static void Main(string[] args) {{
         var report = new Dictionary<string, object> {{
             {{"success", true}},
@@ -1272,7 +1415,7 @@ public class Program {{
         }};
         
         try {{
-            var testCases = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(TC_JSON);
+            var testCases = parseJSON(TC_JSON);
             var solType = typeof(Solution);
             var methods = solType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
                 .Where(m => m.DeclaringType == solType && m.Name != "ToString" && m.Name != "GetHashCode" && m.Name != "Equals")
@@ -1283,7 +1426,7 @@ public class Program {{
                 report["status"] = "compile_error";
                 report["stderr"] = "No public methods found in Solution class";
                 Console.WriteLine("---RESULT_SEPARATOR---");
-                Console.WriteLine(JsonSerializer.Serialize(report));
+                Console.WriteLine(toJsonStr(report));
                 return;
             }}
             
@@ -1292,8 +1435,8 @@ public class Program {{
             var tcResults = new List<object>();
             int passed = 0;
             
-            for (int idx = 0; idx < testCases.Count; idx++) {{
-                var tc = testCases[idx];
+            for (int idx = 0; idx < testCases.size(); idx++) {{
+                var tc = testCases.get(idx);
                 var tr = new Dictionary<string, object> {{
                     {{"index", idx}},
                     {{"passed", false}},
@@ -1303,31 +1446,31 @@ public class Program {{
                 }};
                 
                 try {{
-                    var inputEl = tc.ContainsKey("input") ? tc["input"] : default(JsonElement);
-                    var expectedEl = tc.ContainsKey("expected") ? tc["expected"] : default(JsonElement);
+                    var inputEl = tc.isObj() && tc.obj().ContainsKey("input") ? tc.obj()["input"] : new JVal(null);
+                    var expectedEl = tc.isObj() && tc.obj().ContainsKey("expected") ? tc.obj()["expected"] : new JVal(null);
                     
                     var parameters = method.GetParameters();
                     var callArgs = new object[parameters.Length];
                     
-                    if (inputEl.ValueKind == JsonValueKind.Object) {{
-                        var inputDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(inputEl.GetRawText());
+                    if (inputEl.isObj()) {{
+                        var inputDict = inputEl.obj();
                         for (int i = 0; i < parameters.Length; i++) {{
                             var pName = parameters[i].Name;
                             if (inputDict.ContainsKey(pName)) {{
-                                callArgs[i] = ConvertJsonElement(inputDict[pName], parameters[i].ParameterType);
+                                callArgs[i] = ConvertJVal(inputDict[pName], parameters[i].ParameterType);
                             }}
                         }}
-                    }} else if (inputEl.ValueKind == JsonValueKind.Array && parameters.Length == 1) {{
-                        callArgs[0] = ConvertJsonElement(inputEl, parameters[0].ParameterType);
+                    }} else if (inputEl.isArr() && parameters.Length == 1) {{
+                        callArgs[0] = ConvertJVal(inputEl, parameters[0].ParameterType);
                     }} else if (parameters.Length == 1) {{
-                        callArgs[0] = ConvertJsonElement(inputEl, parameters[0].ParameterType);
+                        callArgs[0] = ConvertJVal(inputEl, parameters[0].ParameterType);
                     }}
                     
                     var result = method.Invoke(sol, callArgs);
                     tr["actual"] = result;
                     
-                    var actualJson = JsonSerializer.Serialize(result);
-                    var expectedJson = expectedEl.GetRawText();
+                    var actualJson = toJsonStr(result);
+                    var expectedJson = toJsonStr(expectedEl);
                     
                     bool isEqual = NormalizeAndCompare(actualJson, expectedJson);
                     tr["passed"] = isEqual;
@@ -1341,7 +1484,7 @@ public class Program {{
                 tcResults.Add(tr);
             }}
             
-            int total = testCases.Count;
+            int total = testCases.size();
             double score = total > 0 ? Math.Round(passed * 10000.0 / total) / 100.0 : 0;
             report["testcases"] = tcResults;
             report["score"] = score;
@@ -1355,29 +1498,37 @@ public class Program {{
         }}
         
         Console.WriteLine("---RESULT_SEPARATOR---");
-        Console.WriteLine(JsonSerializer.Serialize(report));
+        Console.WriteLine(toJsonStr(report));
     }}
     
-    static object ConvertJsonElement(JsonElement el, Type targetType) {{
-        if (targetType == typeof(int) || targetType == typeof(Int32)) return el.GetInt32();
-        if (targetType == typeof(long) || targetType == typeof(Int64)) return el.GetInt64();
-        if (targetType == typeof(double) || targetType == typeof(Double)) return el.GetDouble();
-        if (targetType == typeof(bool) || targetType == typeof(Boolean)) return el.GetBoolean();
-        if (targetType == typeof(string) || targetType == typeof(String)) return el.GetString();
-        if (targetType == typeof(int[])) return el.EnumerateArray().Select(x => x.GetInt32()).ToArray();
-        if (targetType == typeof(string[])) return el.EnumerateArray().Select(x => x.GetString()).ToArray();
-        if (targetType == typeof(int[][])) return el.EnumerateArray().Select(row => row.EnumerateArray().Select(x => x.GetInt32()).ToArray()).ToArray();
-        if (targetType == typeof(List<int>)) return el.EnumerateArray().Select(x => x.GetInt32()).ToList();
-        if (targetType == typeof(List<string>)) return el.EnumerateArray().Select(x => x.GetString()).ToList();
-        return JsonSerializer.Deserialize(el.GetRawText(), targetType);
+    static object ConvertJVal(JVal el, Type targetType) {{
+        if (el.isNull()) return null;
+        if (targetType == typeof(int) || targetType == typeof(Int32)) return el.asInt();
+        if (targetType == typeof(long) || targetType == typeof(Int64)) return el.asLong();
+        if (targetType == typeof(double) || targetType == typeof(Double)) return el.asDouble();
+        if (targetType == typeof(bool) || targetType == typeof(Boolean)) return el.asBool();
+        if (targetType == typeof(string) || targetType == typeof(String)) return el.asStr();
+        if (targetType == typeof(int[])) return el.isArr() ? el.arr().Select(x => x.asInt()).ToArray() : new int[0];
+        if (targetType == typeof(string[])) return el.isArr() ? el.arr().Select(x => x.asStr()).ToArray() : new string[0];
+        if (targetType == typeof(int[][])) return el.isArr() ? el.arr().Select(row => row.isArr() ? row.arr().Select(x => x.asInt()).ToArray() : new int[0]).ToArray() : new int[0][];
+        if (targetType == typeof(List<int>)) return el.isArr() ? el.arr().Select(x => x.asInt()).ToList() : new List<int>();
+        if (targetType == typeof(List<string>)) return el.isArr() ? el.arr().Select(x => x.asStr()).ToList() : new List<string>();
+        return el.v;
     }}
     
     static bool NormalizeAndCompare(string actual, string expected) {{
         actual = actual.Trim();
         expected = expected.Trim();
         if (actual == expected) return true;
+        
+        // Strip quotes
+        string ua = actual.StartsWith("\\"") && actual.EndsWith("\\"") ? actual.Substring(1, actual.Length - 2) : actual;
+        string ub = expected.StartsWith("\\"") && expected.EndsWith("\\"") ? expected.Substring(1, expected.Length - 2) : expected;
+        if (ua == ub) return true;
+        
         // Try numeric comparison
-        if (double.TryParse(actual, out double a) && double.TryParse(expected, out double e)) {{
+        if (double.TryParse(ua, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double a) && 
+            double.TryParse(ub, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double e)) {{
             return Math.Abs(a - e) <= 1e-6;
         }}
         return false;
