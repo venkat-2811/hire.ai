@@ -574,9 +574,9 @@ async def invite_assessments(
         gen_error: Optional[str] = None
         gen_started = time()
         try:
-            if include_mcq and mcq_count > 0:
-                from app.models.schemas import JobDescription as JobDescriptionModel
+            from app.models.schemas import JobDescription as JobDescriptionModel
 
+            if include_mcq and mcq_count > 0:
                 jd = JobDescriptionModel(
                     id=str(job.get("id")),
                     title=str(job.get("title")),

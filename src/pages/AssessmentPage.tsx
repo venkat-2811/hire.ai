@@ -36,6 +36,7 @@ import {
   CheckCircle2,
   XCircle as XCircleIcon,
   Terminal,
+  Database,
 } from 'lucide-react';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
 import {
@@ -1578,15 +1579,31 @@ public class CandidateSolution {
               <p className="text-sm">
                 <strong>Step 2: Start Assessment</strong>
               </p>
-              <div className="flex gap-4 mt-2">
-                <div className="flex items-center gap-2">
-                  <FileQuestion className="h-4 w-4" />
-                  <span className="text-sm">{assessmentData?.mcq_count} MCQ Questions</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Code className="h-4 w-4" />
-                  <span className="text-sm">{isApexMode ? `${apexBlanks.length} Apex Questions` : `${assessmentData?.coding_count} Coding Challenges`}</span>
-                </div>
+              <div className="flex flex-wrap gap-4 mt-2">
+                {hasMcq && (
+                  <div className="flex items-center gap-2">
+                    <FileQuestion className="h-4 w-4" />
+                    <span className="text-sm">{mcqQuestions.length} MCQ Questions</span>
+                  </div>
+                )}
+                {hasApexBlanks && (
+                  <div className="flex items-center gap-2">
+                    <Code className="h-4 w-4" />
+                    <span className="text-sm">{apexBlanks.length} Apex Questions</span>
+                  </div>
+                )}
+                {hasCoding && !hasApexBlanks && (
+                  <div className="flex items-center gap-2">
+                    <Code className="h-4 w-4" />
+                    <span className="text-sm">{codingChallenges.length} Coding Challenges</span>
+                  </div>
+                )}
+                {hasSql && (
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4" />
+                    <span className="text-sm">{sqlChallenges.length} SQL Challenges</span>
+                  </div>
+                )}
               </div>
             </div>
 
