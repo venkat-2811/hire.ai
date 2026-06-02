@@ -945,7 +945,15 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
             del repaired["starter_code"]["typescript"]
             
         if "csharp" not in repaired["starter_code"] and "c#" not in repaired["starter_code"]:
-            repaired["starter_code"]["csharp"] = f"// {title}\npublic class Solution {{\n    public int Solve() {{\n        // Write your solution here\n        return 0;\n    }}\n}}\n"
+            java_code = repaired["starter_code"].get("java", "")
+            if java_code and "class Solution" in java_code:
+                # Dynamically derive C# starter code from Java to preserve method signatures (like 2D arrays/lists)
+                csharp_code = java_code.replace("String", "string").replace("boolean", "bool")
+                csharp_code = csharp_code.replace("List<", "IList<").replace("Map<", "IDictionary<")
+                csharp_code = csharp_code.replace("HashMap<", "Dictionary<").replace("ArrayList<", "List<")
+                repaired["starter_code"]["csharp"] = csharp_code
+            else:
+                repaired["starter_code"]["csharp"] = f"// {title}\npublic class Solution {{\n    public int Solve() {{\n        // Write your solution here\n        return 0;\n    }}\n}}\n"
     
     # Repair test cases
     test_cases = challenge.get("test_cases") or []
