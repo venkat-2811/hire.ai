@@ -61,17 +61,14 @@ def _derive_function_name_and_mode(
             if m:
                 return m.group(1), "function", None
 
-        if lang == "typescript":
+        if lang in ("csharp", "c#"):
             if re.search(r"\bclass\s+Solution\b", code):
-                m = re.search(r"\bclass\s+Solution\b[\s\S]*?\n\s*(\w+)\s*\(", code)
+                m = re.search(
+                    r"\bclass\s+Solution\b[\s\S]*?\b(?:public|private|protected)?\s*\w+[\w\[\]<>]*\s+(\w+)\s*\(",
+                    code,
+                )
                 if m:
                     return m.group(1), "class", "Solution"
-            m = re.search(r"\bfunction\s+(\w+)\s*\(", code)
-            if m:
-                return m.group(1), "function", None
-            m = re.search(r"\b(?:const|let|var)\s+(\w+)\s*=\s*(?:function\s*)?\(", code)
-            if m:
-                return m.group(1), "function", None
 
         if lang == "java":
             if re.search(r"\bclass\s+Solution\b", code):

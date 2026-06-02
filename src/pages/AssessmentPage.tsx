@@ -95,7 +95,7 @@ interface CodingChallenge {
   description: string;
   constraints: string;
   examples: Array<{ input: string; output: string; explanation?: string }>;
-  starter_code: Record<string, string>; // { python3: "...", java: "...", cpp: "...", csharp: "..." }
+  starter_code: Record<string, string>; // { python3: "...", cpp: "...", java: "...", csharp: "..." }
   test_cases: TestCase[];
   points: number;
   time_limit_seconds: number;
@@ -2513,7 +2513,7 @@ public class CandidateSolution {
                               <SelectContent>
                                 {(currentCoding.supported_languages || []).map((lang) => (
                                   <SelectItem key={lang} value={lang}>
-                                    {{ python3: 'Python 3', python: 'Python', java: 'Java', cpp: 'C++', c: 'C', typescript: 'TypeScript', csharp: 'C#', 'c#': 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
+                                    {{ python3: 'Python 3', python: 'Python', java: 'Java', cpp: 'C++', csharp: 'C#', 'c#': 'C#', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -2558,7 +2558,7 @@ public class CandidateSolution {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={isApexMode ? 'java' : currentCoding.metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', java: 'java', cpp: 'cpp', c: 'c', typescript: 'typescript', csharp: 'csharp', 'c#': 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'java', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
+                          language={isApexMode ? 'java' : currentCoding.metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', java: 'java', cpp: 'cpp', csharp: 'csharp', 'c#': 'csharp', apex: 'java', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
                           theme="vs-dark"
                           value={(codingSolutions[currentCoding.id] || {})[isApexMode ? 'apex' : currentCoding.metadata?.is_sql ? 'sql' : (codingLanguages[currentCoding.id] || 'python3')] || ''}
                           onChange={(value) => {
@@ -3086,7 +3086,7 @@ public class CandidateSolution {
                               <SelectContent>
                                 {(sqlChallenges[currentSqlIndex].supported_languages || []).map((lang) => (
                                   <SelectItem key={lang} value={lang}>
-                                    {{ python3: 'Python 3', python: 'Python', java: 'Java', cpp: 'C++', c: 'C', typescript: 'TypeScript', csharp: 'C#', 'c#': 'C#', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
+                                    {{ python3: 'Python 3', python: 'Python', java: 'Java', cpp: 'C++', csharp: 'C#', 'c#': 'C#', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -3131,7 +3131,7 @@ public class CandidateSolution {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={isApexMode ? 'java' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', java: 'java', cpp: 'cpp', c: 'c', typescript: 'typescript', csharp: 'csharp', 'c#': 'csharp', go: 'go', rust: 'rust', kotlin: 'kotlin', ruby: 'ruby', apex: 'java', sql: 'sql' }[(codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3')] || 'python')}
+                          language={isApexMode ? 'java' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', java: 'java', cpp: 'cpp', csharp: 'csharp', 'c#': 'csharp', apex: 'java', sql: 'sql' }[(codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3')] || 'python')}
                           theme="vs-dark"
                           value={(codingSolutions[sqlChallenges[currentSqlIndex].id] || {})[isApexMode ? 'apex' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : (codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3')] || ''}
                           onChange={(value) => {

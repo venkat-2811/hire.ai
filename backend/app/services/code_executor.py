@@ -8,7 +8,7 @@ Falls back to local subprocess execution if HackerEarth API is unavailable.
 Production execution model:
 - Exactly ONE HackerEarth submission per Run/Submit call.
 - The runner loops through ALL test cases and emits a structured JSON report.
-- Python/JS/TS use fully self-contained interpreted runners.
+- Python uses a fully self-contained interpreted runner.
 - Java/C++/Go/Rust use built-in harnesses (no external wrapper_template needed).
 - Testcase normalization prevents false Wrong Answers.
 """
@@ -39,7 +39,7 @@ POLL_INTERVAL_SECONDS = 1.5
 # Map frontend language names to HackerEarth language identifiers
 # Reference: https://api.hackerearth.com/v4/partner/code-evaluation/
 LANGUAGE_MAP = {
-    # Primary supported languages (8 required)
+    # Primary supported languages
     "python3": "PYTHON3",
     "python": "PYTHON3",
     "java": "JAVA14",
@@ -631,41 +631,7 @@ class HackerEarthExecutor:
                 .replace('__CODE_REPR__', code_repr)
             )
 
-        if language == "typescript":
-            tc_js = json.dumps(tc_json)
-            ps_js = json.dumps(ps_json)
-            fn_js = json.dumps(fn)
-            mode_js = json.dumps(mode)
-            cls_js = json.dumps(cls)
-            fn_capture = ""
-            if fn:
-                fn_capture = (
-                    "try { if (typeof " + fn + " !== 'undefined') { "
-                    "if (typeof globalThis !== 'undefined') { globalThis[" + fn_js + "] = " + fn + "; } "
-                    "if (typeof global !== 'undefined') { global[" + fn_js + "] = " + fn + "; } "
-                    "if (typeof module !== 'undefined' && module) { module.exports = module.exports || {}; "
-                    "if (typeof module.exports === 'object') { module.exports[" + fn_js + "] = " + fn + "; } } "
-                    "} } catch (_e) {}"
-                )
-            cls_capture = ""
-            if cls:
-                cls_capture = (
-                    "try { if (typeof " + cls + " !== 'undefined') { "
-                    "if (typeof globalThis !== 'undefined') { globalThis[" + cls_js + "] = " + cls + "; } "
-                    "if (typeof global !== 'undefined') { global[" + cls_js + "] = " + cls + "; } "
-                    "if (typeof module !== 'undefined' && module) { module.exports = module.exports || {}; "
-                    "if (typeof module.exports === 'object') { module.exports[" + cls_js + "] = " + cls + "; } } "
-                    "} } catch (_e) {}"
-                )
 
-            _JS_TEMPLATE = r'''// ---- Candidate code ----
-__CANDIDATE_CODE__
-// ---- End candidate code ----
-
-__FN_CAPTURE__
-__CLS_CAPTURE__
-
-// ── CommonJS export capture shim ──────────────────────────────────────────
 // ES6 `class Foo {}` declarations are block-scoped and NOT added to `global`
 // in Node.js. When candidates write `class Solution { ... }; module.exports = Solution;`
 // the class is invisible to code above via `globalThis[CLASS_NAME]`.
@@ -1837,7 +1803,7 @@ fn main() {{
 
         raise ValueError(
             f"No built-in harness for language '{language}'. "
-            "Supported: python3, typescript, java, cpp, c, csharp, go, rust. "
+            "Supported: python3, java, cpp, csharp. "
             "For Apex/SQL or other languages, provide a wrapper_template in problem.solution_wrappers[lang]."
         )
 

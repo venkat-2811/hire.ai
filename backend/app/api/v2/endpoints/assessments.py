@@ -83,20 +83,14 @@ def _derive_function_name_and_mode(
             if m:
                 return m.group(1), "function", None
 
-        if lang == "typescript":
+        if lang in ("csharp", "c#"):
             if re.search(r"\bclass\s+Solution\b", code):
-                m = re.search(r"\bclass\s+Solution\b[\s\S]*?\n\s*(\w+)\s*\(", code)
+                m = re.search(
+                    r"\bclass\s+Solution\b[\s\S]*?\b(?:public|private|protected)?\s*\w+[\w\[\]<>]*\s+(\w+)\s*\(",
+                    code,
+                )
                 if m:
                     return m.group(1), "class", "Solution"
-            m = re.search(r"\bfunction\s+(\w+)\s*\(", code)
-            if m:
-                return m.group(1), "function", None
-            m = re.search(r"\b(?:const|let|var)\s+(\w+)\s*=\s*(?:function\s*)?\(", code)
-            if m:
-                return m.group(1), "function", None
-            m = re.search(r"\b(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>", code)
-            if m:
-                return m.group(1), "function", None
 
         if lang == "java":
             if re.search(r"\bclass\s+Solution\b", code):
@@ -937,9 +931,9 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
         # Inject fallback starter code for common languages
         repaired["starter_code"] = {
             "python3": f"# {title}\ndef solution():\n    # Write your solution here\n    pass\n",
+            "cpp": f"// {title}\n#include <iostream>\nusing namespace std;\nint main() {{\n    // Write your solution here\n    return 0;\n}}\n",
             "java": f"// {title}\npublic class Solution {{\n    public static void main(String[] args) {{\n        // Write your solution here\n    }}\n}}\n",
-            "cpp": f"// {title}\n#include <iostream>\nint main() {{\n    // Write your solution here\n    return 0;\n}}\n",
-            "csharp": f"// {title}\nusing System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class Solution {{\n    public void Solve() {{\n        // Write your solution here\n    }}\n}}\n",
+            "csharp": f"// {title}\npublic class Solution {{\n    public int Solve() {{\n        // Write your solution here\n        return 0;\n    }}\n}}\n",
         }
         logger.warning("[assessments.repair] injected_fallback_starter_code challenge_id=%s", str(challenge_id))
     
@@ -975,7 +969,7 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
     
     # Ensure supported_languages
     if not repaired.get("supported_languages") or not isinstance(repaired["supported_languages"], list):
-        repaired["supported_languages"] = ["python3", "java", "cpp", "csharp"]
+        repaired["supported_languages"] = ["python3", "cpp", "java", "csharp"]
         logger.warning("[assessments.repair] injected_fallback_languages challenge_id=%s", str(challenge_id))
     
     return repaired
@@ -1397,9 +1391,9 @@ async def coding_run(session_id: str, body: Dict[str, Any] = Body(...)):
     wrapper_template = _raw_wrapper if (isinstance(_raw_wrapper, str) and "{{CODE}}" in _raw_wrapper) else None
 
     # Get function_name from (possibly backfilled) problem metadata.
-    # For interpreted languages (Python/JS/TS) function_name is optional — runner auto-detects.
+    # For interpreted languages (Python only) function_name is optional — runner auto-detects.
     function_name = problem.get("function_name") or problem.get("method_name") or ""
-    interpreted_langs = {"python3", "python", "typescript"}
+    interpreted_langs = {"python3", "python"}
     if not function_name and str(language).lower() not in interpreted_langs:
         logger.warning(
             "[assessments.coding_run] function_name_missing session_id=%s challenge_id=%s language=%s",
@@ -1690,9 +1684,9 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
     wrapper_template = _raw_wrapper if (isinstance(_raw_wrapper, str) and "{{CODE}}" in _raw_wrapper) else None
 
     # Get function_name from (possibly backfilled) problem metadata.
-    # For interpreted languages (Python/JS/TS) function_name is optional — runner auto-detects.
+    # For interpreted languages (Python only) function_name is optional — runner auto-detects.
     function_name = problem.get("function_name") or problem.get("method_name") or ""
-    interpreted_langs = {"python3", "python", "typescript"}
+    interpreted_langs = {"python3", "python"}
     if not function_name and str(language).lower() not in interpreted_langs:
         logger.warning(
             "[assessments.coding_submit] function_name_missing session_id=%s challenge_id=%s language=%s",
