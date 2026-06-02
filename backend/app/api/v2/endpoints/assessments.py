@@ -883,7 +883,7 @@ def _validate_assessment_content(session: Dict[str, Any]) -> Tuple[bool, Optiona
                 return False, f"MCQ question {idx} is missing correct_index.", None
 
     # Validate coding content - but mark for repair instead of hard-fail
-    if include_coding and coding_count_expected > 0:
+    if include_coding and not is_apex_mode and coding_count_expected > 0:
         coding_challenges = session.get("coding_challenges") or []
         if not isinstance(coding_challenges, list) or len(coding_challenges) == 0:
             return False, "Coding challenges are not available for this session. Please ask the recruiter to resend the assessment.", None
@@ -2131,7 +2131,7 @@ async def start_assessment(token: str):
             mcq_questions = []
 
         coding_challenges = session.get("coding_challenges") or []
-        if include_coding:
+        if include_coding and not is_apex_mode:
             if not isinstance(coding_challenges, list) or len(coding_challenges) == 0:
                 # This is a fundamental issue - cannot repair what doesn't exist
                 return api_error(
