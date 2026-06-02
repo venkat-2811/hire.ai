@@ -61,7 +61,7 @@ def _derive_function_name_and_mode(
             if m:
                 return m.group(1), "function", None
 
-        if lang in ("javascript", "typescript"):
+        if lang == "typescript":
             if re.search(r"\bclass\s+Solution\b", code):
                 m = re.search(r"\bclass\s+Solution\b[\s\S]*?\n\s*(\w+)\s*\(", code)
                 if m:

@@ -42,7 +42,6 @@ LANGUAGE_MAP = {
     # Primary supported languages (8 required)
     "python3": "PYTHON3",
     "python": "PYTHON3",
-    "javascript": "JAVASCRIPT_NODE",
     "java": "JAVA14",
     "cpp": "CPP17",
     "cpp17": "CPP17",
@@ -632,7 +631,7 @@ class HackerEarthExecutor:
                 .replace('__CODE_REPR__', code_repr)
             )
 
-        if language in ("javascript", "typescript"):
+        if language == "typescript":
             tc_js = json.dumps(tc_json)
             ps_js = json.dumps(ps_json)
             fn_js = json.dumps(fn)
@@ -1838,7 +1837,7 @@ fn main() {{
 
         raise ValueError(
             f"No built-in harness for language '{language}'. "
-            "Supported: python3, javascript, typescript, java, cpp, c, csharp, go, rust. "
+            "Supported: python3, typescript, java, cpp, c, csharp, go, rust. "
             "For Apex/SQL or other languages, provide a wrapper_template in problem.solution_wrappers[lang]."
         )
 

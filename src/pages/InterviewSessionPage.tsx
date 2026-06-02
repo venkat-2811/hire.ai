@@ -379,7 +379,7 @@ export default function InterviewSessionPage() {
                   <div className="border rounded-md overflow-hidden" style={{ height: 400 }}>
                     <Editor
                       height="100%"
-                      language={currentPractical?.metadata?.is_sql ? 'sql' : 'javascript'}
+                      language={currentPractical?.metadata?.is_sql ? 'sql' : 'python'}
                       theme="vs-dark"
                       value={response}
                       onChange={(value) => setResponse(value || '')}

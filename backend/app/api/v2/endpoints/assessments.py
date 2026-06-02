@@ -83,7 +83,7 @@ def _derive_function_name_and_mode(
             if m:
                 return m.group(1), "function", None
 
-        if lang in ("javascript", "typescript"):
+        if lang == "typescript":
             if re.search(r"\bclass\s+Solution\b", code):
                 m = re.search(r"\bclass\s+Solution\b[\s\S]*?\n\s*(\w+)\s*\(", code)
                 if m:
@@ -937,9 +937,9 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
         # Inject fallback starter code for common languages
         repaired["starter_code"] = {
             "python3": f"# {title}\ndef solution():\n    # Write your solution here\n    pass\n",
-            "javascript": f"// {title}\nclass Solution {{\n    solution() {{\n        // Write your solution here\n    }}\n}}\n",
             "java": f"// {title}\npublic class Solution {{\n    public static void main(String[] args) {{\n        // Write your solution here\n    }}\n}}\n",
             "cpp": f"// {title}\n#include <iostream>\nint main() {{\n    // Write your solution here\n    return 0;\n}}\n",
+            "csharp": f"// {title}\nusing System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class Solution {{\n    public void Solve() {{\n        // Write your solution here\n    }}\n}}\n",
         }
         logger.warning("[assessments.repair] injected_fallback_starter_code challenge_id=%s", str(challenge_id))
     
@@ -975,7 +975,7 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
     
     # Ensure supported_languages
     if not repaired.get("supported_languages") or not isinstance(repaired["supported_languages"], list):
-        repaired["supported_languages"] = ["python3", "javascript"]
+        repaired["supported_languages"] = ["python3", "java", "cpp", "csharp"]
         logger.warning("[assessments.repair] injected_fallback_languages challenge_id=%s", str(challenge_id))
     
     return repaired
@@ -1399,7 +1399,7 @@ async def coding_run(session_id: str, body: Dict[str, Any] = Body(...)):
     # Get function_name from (possibly backfilled) problem metadata.
     # For interpreted languages (Python/JS/TS) function_name is optional — runner auto-detects.
     function_name = problem.get("function_name") or problem.get("method_name") or ""
-    interpreted_langs = {"python3", "python", "javascript", "typescript"}
+    interpreted_langs = {"python3", "python", "typescript"}
     if not function_name and str(language).lower() not in interpreted_langs:
         logger.warning(
             "[assessments.coding_run] function_name_missing session_id=%s challenge_id=%s language=%s",
@@ -1692,7 +1692,7 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
     # Get function_name from (possibly backfilled) problem metadata.
     # For interpreted languages (Python/JS/TS) function_name is optional — runner auto-detects.
     function_name = problem.get("function_name") or problem.get("method_name") or ""
-    interpreted_langs = {"python3", "python", "javascript", "typescript"}
+    interpreted_langs = {"python3", "python", "typescript"}
     if not function_name and str(language).lower() not in interpreted_langs:
         logger.warning(
             "[assessments.coding_submit] function_name_missing session_id=%s challenge_id=%s language=%s",
