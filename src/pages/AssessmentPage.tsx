@@ -1639,9 +1639,12 @@ public class CandidateSolution {
     const code = (codingSolutions[challenge.id] || {})[lang] || '';
     return code !== (challenge.starter_code?.[lang] || '');
   }).length / codingChallenges.length) * 100;
-  const activeTab = hasMcq
-    ? ((hasCoding || hasApexBlanks || hasSql) ? currentTab : 'mcq')
-    : (hasApexBlanks ? 'apex_blanks' : (hasCoding ? 'coding' : 'sql'));
+  const validTabs = [];
+  if (hasMcq) validTabs.push('mcq');
+  if (hasCoding) validTabs.push('coding');
+  if (hasApexBlanks) validTabs.push('apex_blanks');
+  if (hasSql) validTabs.push('sql');
+  const activeTab = validTabs.includes(currentTab) ? currentTab : (validTabs[0] || 'mcq');
 
   return (
     <AssessmentErrorBoundary>
