@@ -1261,7 +1261,7 @@ using System.Reflection;
 {code}
 
 public class Program {{
-    static string TC_JSON = @"{tc_cs}";
+    static string TC_JSON = "{tc_cs}";
     
     public static void Main(string[] args) {{
         var report = new Dictionary<string, object> {{
@@ -1292,7 +1292,8 @@ public class Program {{
             var tcResults = new List<object>();
             int passed = 0;
             
-            foreach (var (tc, idx) in testCases.Select((t, i) => (t, i))) {{
+            for (int idx = 0; idx < testCases.Count; idx++) {{
+                var tc = testCases[idx];
                 var tr = new Dictionary<string, object> {{
                     {{"index", idx}},
                     {{"passed", false}},
@@ -1302,8 +1303,8 @@ public class Program {{
                 }};
                 
                 try {{
-                    var inputEl = tc.ContainsKey("input") ? tc["input"] : default;
-                    var expectedEl = tc.ContainsKey("expected") ? tc["expected"] : default;
+                    var inputEl = tc.ContainsKey("input") ? tc["input"] : default(JsonElement);
+                    var expectedEl = tc.ContainsKey("expected") ? tc["expected"] : default(JsonElement);
                     
                     var parameters = method.GetParameters();
                     var callArgs = new object[parameters.Length];
