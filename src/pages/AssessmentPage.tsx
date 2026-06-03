@@ -258,21 +258,13 @@ export default function AssessmentPage() {
   const [activeTestCaseTab, setActiveTestCaseTab] = useState(0);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const assessmentMode = assessmentData?.assessment_mode === 'apex' ? 'apex' : 'dsa';
-  const isApexMode = assessmentMode === 'apex' || !!assessmentData?.is_apex_mode;
+  // Coding (DSA) section always uses standard languages (Python, C++, Java, C#).
+  // Apex is fill-in-the-blanks only — it has its own dedicated apex_blanks tab.
+  // SQL section always uses sql. There is no apex coding editor.
 
   const [apexBlankAnswers, setApexBlankAnswers] = useState<Record<string, Record<string, string>>>({});
   const [apexBlanksEvaluation, setApexBlanksEvaluation] = useState<{ results: ApexBlanksEvaluationResult[]; total_score: number; max_score: number } | null>(null);
   const [submittingApexBlanks, setSubmittingApexBlanks] = useState(false);
-
-  const apexStarterTemplate = `// Apex Starter Template (Phase 1 - AI Evaluated)
-public class CandidateSolution {
-    public static void run() {
-        // Write your Apex logic here
-        System.debug('Hello from Apex');
-    }
-}
-`;
 
   // Proctoring state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -766,22 +758,17 @@ public class CandidateSolution {
           // This is what enables LeetCode-style switching — each language always has a buffer.
           const initialSolutions: Record<string, Record<string, string>> = {};
           const initialLanguages: Record<string, string> = {};
+          // DSA coding always uses standard languages — never Apex.
           codingList.forEach((c: CodingChallenge) => {
-            const defaultLang = c.metadata?.is_sql
-              ? 'sql'
-              : (data?.is_apex_mode || false)
-              ? 'apex'
-              : (c.supported_languages?.includes('python3') ? 'python3' : (c.supported_languages?.[0] || 'python3'));
+            const defaultLang = c.supported_languages?.includes('python3')
+              ? 'python3'
+              : (c.supported_languages?.[0] || 'python3');
             initialLanguages[c.id] = defaultLang;
             // Pre-populate every language buffer with its starter code
             initialSolutions[c.id] = {};
-            if (data?.is_apex_mode) {
-              initialSolutions[c.id]['apex'] = c.starter_code?.apex || apexStarterTemplate;
-            } else {
-              (c.supported_languages || [defaultLang]).forEach((lang: string) => {
-                initialSolutions[c.id][lang] = c.starter_code?.[lang] || '';
-              });
-            }
+            (c.supported_languages || [defaultLang]).forEach((lang: string) => {
+              initialSolutions[c.id][lang] = c.starter_code?.[lang] || '';
+            });
           });
           setCodingSolutions(initialSolutions);
           setCodingLanguages(initialLanguages);
@@ -989,7 +976,7 @@ public class CandidateSolution {
     const challenge = codingChallenges.find(c => c.id === challengeId) || sqlChallenges.find(c => c.id === challengeId);
     if (!challenge) return;
 
-    const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
+    const lang = challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
     const code = codingSolutions[challengeId]?.[lang];
     if (!code) {
       toast.error('Please write some code first');
@@ -1093,7 +1080,7 @@ public class CandidateSolution {
     const challenge = codingChallenges.find(c => c.id === challengeId) || sqlChallenges.find(c => c.id === challengeId);
     if (!challenge) return;
 
-    const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
+    const lang = challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
     const code = codingSolutions[challengeId]?.[lang];
     if (!code) {
       toast.error('Please write some code first');
@@ -1198,11 +1185,9 @@ public class CandidateSolution {
     const challenge = codingChallenges.find(c => c.id === challengeId) || sqlChallenges.find(c => c.id === challengeId);
     if (!challenge) return;
 
-    const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
+    const lang = challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
     if (challenge) {
-      const starter = lang === 'apex'
-        ? (challenge.starter_code?.apex || apexStarterTemplate)
-        : (challenge.starter_code?.[lang] || '');
+      const starter = challenge.starter_code?.[lang] || '';
       // Reset only the current language buffer — silently, no confirm popup
       setCodingSolutions(prev => ({
         ...prev,
@@ -1241,7 +1226,7 @@ public class CandidateSolution {
       if (codingChallenges.length > 0) {
         for (const challenge of codingChallenges) {
           const challengeId = challenge.id;
-          const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
+          const lang = challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
           const code = codingSolutions[challengeId]?.[lang] || '';
           const starter = challenge?.starter_code?.[lang] || '';
           if (!code?.trim() || code === starter) continue;
@@ -1296,7 +1281,7 @@ public class CandidateSolution {
       if (codingChallenges.length > 0) {
         for (const challenge of codingChallenges) {
           const challengeId = challenge.id;
-          const lang = isApexMode ? 'apex' : challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
+          const lang = challenge.metadata?.is_sql ? 'sql' : (codingLanguages[challengeId] || 'python3');
           const code = codingSolutions[challengeId]?.[lang] || '';
           const starter = challenge?.starter_code?.[lang] || '';
           // Only submit if candidate actually changed starter code.
@@ -1648,6 +1633,20 @@ public class CandidateSolution {
   if (hasApexBlanks) validTabs.push('apex_blanks');
   if (hasSql) validTabs.push('sql');
   const activeTab = validTabs.includes(currentTab) ? currentTab : (validTabs[0] || 'mcq');
+
+  const getNextSectionInfo = (currentSectionId: string) => {
+    const currentIndex = validTabs.indexOf(currentSectionId);
+    if (currentIndex >= 0 && currentIndex < validTabs.length - 1) {
+      const nextTab = validTabs[currentIndex + 1];
+      let name = 'Section';
+      if (nextTab === 'mcq') name = 'MCQ';
+      if (nextTab === 'coding') name = 'DSA';
+      if (nextTab === 'apex_blanks') name = 'Apex';
+      if (nextTab === 'sql') name = 'SQL';
+      return { tab: nextTab as 'mcq' | 'coding' | 'apex_blanks' | 'sql', name };
+    }
+    return null;
+  };
 
   return (
     <AssessmentErrorBoundary>
@@ -2031,25 +2030,21 @@ public class CandidateSolution {
                             Clear Response
                           </Button>
                         </div>
-                        {currentMcqIndex === mcqQuestions.length - 1 && hasCoding ? (
-                          <Button
-                            onClick={() => setCurrentTab('coding')}
-                          >
-                            Next Section →
-                          </Button>
-                        ) : currentMcqIndex === mcqQuestions.length - 1 && hasApexBlanks ? (
-                          <Button
-                            onClick={() => setCurrentTab('apex_blanks')}
-                          >
-                            Next Section →
-                          </Button>
-                        ) : currentMcqIndex < mcqQuestions.length - 1 ? (
+                        {currentMcqIndex >= mcqQuestions.length - 1 ? (
+                          getNextSectionInfo('mcq') ? (
+                            <Button
+                              onClick={() => setCurrentTab(getNextSectionInfo('mcq')!.tab)}
+                            >
+                              Next Section → {getNextSectionInfo('mcq')!.name}
+                            </Button>
+                          ) : null
+                        ) : (
                           <Button
                             onClick={() => setCurrentMcqIndex((prev) => prev + 1)}
                           >
                             Next
                           </Button>
-                        ) : null}
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -2160,13 +2155,27 @@ public class CandidateSolution {
                           >
                             Previous
                           </Button>
-                          <Button
-                            variant="outline"
-                            disabled={currentApexBlankIndex >= apexBlanks.length - 1}
-                            onClick={() => setCurrentApexBlankIndex((i) => Math.min(apexBlanks.length - 1, i + 1))}
-                          >
-                            Next
-                          </Button>
+                          {currentApexBlankIndex >= apexBlanks.length - 1 ? (
+                            getNextSectionInfo('apex_blanks') ? (
+                              <Button
+                                variant="outline"
+                                onClick={() => setCurrentTab(getNextSectionInfo('apex_blanks')!.tab)}
+                              >
+                                Next Section → {getNextSectionInfo('apex_blanks')!.name}
+                              </Button>
+                            ) : (
+                              <Button variant="outline" disabled>
+                                Next
+                              </Button>
+                            )
+                          ) : (
+                            <Button
+                              variant="outline"
+                              onClick={() => setCurrentApexBlankIndex((i) => Math.min(apexBlanks.length - 1, i + 1))}
+                            >
+                              Next
+                            </Button>
+                          )}
                         </div>
 
                         <Button onClick={submitApexBlanks} disabled={submittingApexBlanks}>
@@ -2465,39 +2474,13 @@ public class CandidateSolution {
                       {/* Editor Toolbar */}
                       <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                         <div className="flex items-center gap-2">
-                          {isApexMode ? (
-                            <div className="flex flex-col leading-tight">
-                              <div className="text-xs font-semibold">
-                                {assessmentData?.coding_environment_label || 'Apex Coding Environment (AI-Evaluated - Phase 1)'}
-                              </div>
-                              <div
-                                className="text-[10px] text-muted-foreground"
-                                title="This coding test is evaluated using AI approximation and not actual Apex execution."
-                              >
-                                AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)
-                              </div>
-                            </div>
-                          ) : currentCoding.metadata?.is_sql ? (
-                            <div className="flex flex-col leading-tight">
-                              <div className="text-xs font-semibold flex items-center gap-1">
-                                <Code className="h-3 w-3" /> MySQL Database Engine
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                Read-only query execution
-                              </div>
-                            </div>
-                          ) : (
                           <Select
                               value={codingLanguages[currentCoding.id] || 'python3'}
                               onValueChange={(lang) => {
-                                // LeetCode-style: silently switch language.
-                                // Save current code to the outgoing language buffer (already done via onChange),
-                                // then switch to the new language. Each language has its own independent buffer.
                                 setCodingLanguages(prev => ({ ...prev, [currentCoding.id]: lang }));
-                                // If this language has no buffer yet, initialize it with starter code
                                 setCodingSolutions(prev => {
                                   const existing = prev[currentCoding.id]?.[lang];
-                                  if (existing !== undefined) return prev; // already has content
+                                  if (existing !== undefined) return prev;
                                   const starter = currentCoding.starter_code?.[lang] || '';
                                   return {
                                     ...prev,
@@ -2507,21 +2490,19 @@ public class CandidateSolution {
                                     },
                                   };
                                 });
-                                // No alerts. No confirms. No disruptions.
                               }}
                             >
                               <SelectTrigger className="w-[140px] h-7 text-xs">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {(currentCoding.supported_languages || []).map((lang) => (
+                                {(currentCoding.supported_languages || []).filter(l => l !== 'apex').map((lang) => (
                                   <SelectItem key={lang} value={lang}>
-                                    {{ python3: 'Python 3', python: 'Python', java: 'Java', cpp: 'C++', csharp: 'C#', 'c#': 'C#', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
+                                    {{ python3: 'Python 3', python: 'Python', java: 'Java', cpp: 'C++', csharp: 'C#', 'c#': 'C#', sql: 'MySQL' }[lang] || lang}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                          )}
                           <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => resetCode(currentCoding.id)}>
                             Reset
                           </Button>
@@ -2561,11 +2542,11 @@ public class CandidateSolution {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={isApexMode ? 'java' : currentCoding.metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', java: 'java', cpp: 'cpp', csharp: 'csharp', 'c#': 'csharp', apex: 'java', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python')}
+                          language={{ python3: 'python', python: 'python', java: 'java', cpp: 'cpp', csharp: 'csharp', 'c#': 'csharp', sql: 'sql' }[(codingLanguages[currentCoding.id] || 'python3')] || 'python'}
                           theme="vs-dark"
-                          value={(codingSolutions[currentCoding.id] || {})[isApexMode ? 'apex' : currentCoding.metadata?.is_sql ? 'sql' : (codingLanguages[currentCoding.id] || 'python3')] || ''}
+                          value={(codingSolutions[currentCoding.id] || {})[codingLanguages[currentCoding.id] || 'python3'] || ''}
                           onChange={(value) => {
-                            const lang = isApexMode ? 'apex' : currentCoding.metadata?.is_sql ? 'sql' : (codingLanguages[currentCoding.id] || 'python3');
+                            const lang = codingLanguages[currentCoding.id] || 'python3';
                             handleCodingSolution(currentCoding.id, lang, value || '');
                           }}
                           options={{
@@ -2752,12 +2733,21 @@ public class CandidateSolution {
                   >
                     Previous Challenge
                   </Button>
-                  <Button
-                    onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}
-                    disabled={currentCodingIndex === codingChallenges.length - 1}
-                  >
-                    Next Challenge
-                  </Button>
+                  {currentCodingIndex >= codingChallenges.length - 1 ? (
+                    getNextSectionInfo('coding') ? (
+                      <Button onClick={() => setCurrentTab(getNextSectionInfo('coding')!.tab)}>
+                        Next Section → {getNextSectionInfo('coding')!.name}
+                      </Button>
+                    ) : (
+                      <Button disabled>
+                        Next Challenge
+                      </Button>
+                    )
+                  ) : (
+                    <Button onClick={() => setCurrentCodingIndex((prev) => Math.min(codingChallenges.length - 1, prev + 1))}>
+                      Next Challenge
+                    </Button>
+                  )}
                 </div>
               </div>
             </TabsContent>
@@ -3038,20 +3028,7 @@ public class CandidateSolution {
                       {/* Editor Toolbar */}
                       <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                         <div className="flex items-center gap-2">
-                          {isApexMode ? (
-                            <div className="flex flex-col leading-tight">
-                              <div className="text-xs font-semibold">
-                                {assessmentData?.coding_environment_label || 'Apex Coding Environment (AI-Evaluated - Phase 1)'}
-                              </div>
-                              <div
-                                className="text-[10px] text-muted-foreground"
-                                title="This coding test is evaluated using AI approximation and not actual Apex execution."
-                              >
-                                AI-Evaluated (Phase 1 - Approximate Validation, Not Real Execution)
-                              </div>
-                            </div>
-                          ) : sqlChallenges[currentSqlIndex].metadata?.is_sql ? (
-                            <div className="flex flex-col leading-tight">
+                          <div className="flex flex-col leading-tight">
                               <div className="text-xs font-semibold flex items-center gap-1">
                                 <Code className="h-3 w-3" /> MySQL Database Engine
                               </div>
@@ -3059,42 +3036,6 @@ public class CandidateSolution {
                                 Read-only query execution
                               </div>
                             </div>
-                          ) : (
-                          <Select
-                              value={codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3'}
-                              onValueChange={(lang) => {
-                                // LeetCode-style: silently switch language.
-                                // Save current code to the outgoing language buffer (already done via onChange),
-                                // then switch to the new language. Each language has its own independent buffer.
-                                setCodingLanguages(prev => ({ ...prev, [sqlChallenges[currentSqlIndex].id]: lang }));
-                                // If this language has no buffer yet, initialize it with starter code
-                                setCodingSolutions(prev => {
-                                  const existing = prev[sqlChallenges[currentSqlIndex].id]?.[lang];
-                                  if (existing !== undefined) return prev; // already has content
-                                  const starter = sqlChallenges[currentSqlIndex].starter_code?.[lang] || '';
-                                  return {
-                                    ...prev,
-                                    [sqlChallenges[currentSqlIndex].id]: {
-                                      ...(prev[sqlChallenges[currentSqlIndex].id] || {}),
-                                      [lang]: starter,
-                                    },
-                                  };
-                                });
-                                // No alerts. No confirms. No disruptions.
-                              }}
-                            >
-                              <SelectTrigger className="w-[140px] h-7 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(sqlChallenges[currentSqlIndex].supported_languages || []).map((lang) => (
-                                  <SelectItem key={lang} value={lang}>
-                                    {{ python3: 'Python 3', python: 'Python', java: 'Java', cpp: 'C++', csharp: 'C#', 'c#': 'C#', apex: 'Apex', sql: 'MySQL' }[lang] || lang}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
                           <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => resetCode(sqlChallenges[currentSqlIndex].id)}>
                             Reset
                           </Button>
@@ -3134,12 +3075,11 @@ public class CandidateSolution {
                       <div className="flex-none border-b border-border" style={{ height: 350 }}>
                         <Editor
                           height="100%"
-                          language={isApexMode ? 'java' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : ({ python3: 'python', python: 'python', java: 'java', cpp: 'cpp', csharp: 'csharp', 'c#': 'csharp', apex: 'java', sql: 'sql' }[(codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3')] || 'python')}
+                          language="sql"
                           theme="vs-dark"
-                          value={(codingSolutions[sqlChallenges[currentSqlIndex].id] || {})[isApexMode ? 'apex' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : (codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3')] || ''}
+                          value={(codingSolutions[sqlChallenges[currentSqlIndex].id] || {})['sql'] || ''}
                           onChange={(value) => {
-                            const lang = isApexMode ? 'apex' : sqlChallenges[currentSqlIndex].metadata?.is_sql ? 'sql' : (codingLanguages[sqlChallenges[currentSqlIndex].id] || 'python3');
-                            handleCodingSolution(sqlChallenges[currentSqlIndex].id, lang, value || '');
+                            handleCodingSolution(sqlChallenges[currentSqlIndex].id, 'sql', value || '');
                           }}
                           options={{
                             minimap: { enabled: false },
@@ -3325,12 +3265,21 @@ public class CandidateSolution {
                   >
                     Previous Challenge
                   </Button>
-                  <Button
-                    onClick={() => setCurrentSqlIndex((prev) => Math.min(sqlChallenges.length - 1, prev + 1))}
-                    disabled={currentSqlIndex === sqlChallenges.length - 1}
-                  >
-                    Next Challenge
-                  </Button>
+                  {currentSqlIndex >= sqlChallenges.length - 1 ? (
+                    getNextSectionInfo('sql') ? (
+                      <Button onClick={() => setCurrentTab(getNextSectionInfo('sql')!.tab)}>
+                        Next Section → {getNextSectionInfo('sql')!.name}
+                      </Button>
+                    ) : (
+                      <Button disabled>
+                        Next Challenge
+                      </Button>
+                    )
+                  ) : (
+                    <Button onClick={() => setCurrentSqlIndex((prev) => Math.min(sqlChallenges.length - 1, prev + 1))}>
+                      Next Challenge
+                    </Button>
+                  )}
                 </div>
               </div>
             </TabsContent>
