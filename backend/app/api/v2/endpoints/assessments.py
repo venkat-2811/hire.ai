@@ -560,62 +560,150 @@ async def invite_assessments(
             "good_to_have_skills": job.get("good_to_have_skills") or [],
         }
 
-        gen_ok = False
+        generation_report = {
+            "mcq": {"status": "skipped", "count": 0},
+            "coding": {"status": "skipped", "count": 0},
+            "apex": {"status": "skipped", "count": 0},
+            "sql": {"status": "skipped", "count": 0},
+        }
+        has_ok = False
         gen_error: Optional[str] = None
         gen_started = time()
+        
         try:
             from app.models.schemas import JobDescription as JobDescriptionModel
+            from app.models.schemas import RoleLevel
+            import json
+            
+            # Since role might not be a strict Python Enum, we validate against known roles
+            VALID_ROLES = {
+                "software_engineer", "frontend_developer", "backend_developer", 
+                "fullstack_developer", "salesforce_developer", "data_scientist", 
+                "devops_engineer", "qa_engineer", "product_manager", "designer",
+                "business_analyst", "salesforce_admin"
+            }
+            
+            safe_role = str(job.get("role") or "software_engineer").lower()
+            safe_level_str = str(job.get("level") or "mid").lower()
+            
+            # Helper to perform the DB audit for both enums
+            def trigger_db_audit():
+                async def _audit_enum_values():
+                    try:
+                        all_jobs_res = await bg_db.client.from_("job_descriptions").select("id, level, role").execute()
+                        valid_levels = {e.value for e in RoleLevel}
+                        for j in (getattr(all_jobs_res, "data", []) or []):
+                            # Audit level
+                            lvl = str(j.get("level") or "mid").lower()
+                            if lvl not in valid_levels:
+                                logger.warning(f"[assessments.invite.audit] invalid_enum_in_db table='job_descriptions' field='level' value='{lvl}' id={j.get('id')}")
+                            # Audit role
+                            r = str(j.get("role") or "software_engineer").lower()
+                            if r not in VALID_ROLES:
+                                logger.warning(f"[assessments.invite.audit] invalid_enum_in_db table='job_descriptions' field='role' value='{r}' id={j.get('id')}")
+                    except Exception as audit_e:
+                        logger.exception(f"[assessments.invite.audit] Failed to run DB audit: {audit_e}")
+                # Call as a non-blocking background task
+                asyncio.create_task(_audit_enum_values())
 
+            # Validate role
+            if safe_role not in VALID_ROLES:
+                logger.warning(f"[assessments.invite] invalid_enum_value field='role' value='{safe_role}' job_id={job.get('id')}. Skipping invite generation.")
+                trigger_db_audit()
+                raise ValueError(f"Invalid enum value field='role' value='{safe_role}'")
+
+            # Validate level
+            try:
+                safe_level = RoleLevel(safe_level_str)
+            except ValueError:
+                logger.warning(f"[assessments.invite] invalid_enum_value field='level' value='{safe_level_str}' job_id={job.get('id')}. Skipping invite generation.")
+                trigger_db_audit()
+                raise ValueError(f"Invalid enum value field='level' value='{safe_level_str}'")
+                
+            jd = JobDescriptionModel(
+                id=str(job.get("id") or "unknown"),
+                title=str(job.get("title") or "Unknown Title"),
+                role=safe_role,
+                level=safe_level,
+                description=str(job.get("description") or ""),
+                must_have_skills=job.get("must_have_skills") or [],
+                good_to_have_skills=job.get("good_to_have_skills") or [],
+                min_experience_years=int(job.get("min_experience_years") or 0),
+                is_active=True,
+            )
+            
             if include_mcq and mcq_count > 0:
-                jd = JobDescriptionModel(
-                    id=str(job.get("id")),
-                    title=str(job.get("title")),
-                    role=job.get("role"),
-                    level=job.get("level"),
-                    description=str(job.get("description") or ""),
-                    must_have_skills=job.get("must_have_skills") or [],
-                    good_to_have_skills=job.get("good_to_have_skills") or [],
-                    min_experience_years=int(job.get("min_experience_years") or 0),
-                    is_active=True,
-                )
-                generated_mcqs = await qgen.generate_mcq_questions(jd, count=mcq_count, difficulty=difficulty)
+                try:
+                    generated_mcqs = await qgen.generate_mcq_questions(jd, count=mcq_count, difficulty=difficulty)
+                    if generated_mcqs:
+                        generation_report["mcq"] = {"status": "ok", "count": len(generated_mcqs)}
+                    else:
+                        generation_report["mcq"] = {"status": "failed", "error": "Returned empty list"}
+                except Exception as e:
+                    # 4. Do not silently swallow errors (preserve stack trace)
+                    logger.exception(f"[assessments.invite] MCQ generation failed: {e}")
+                    generation_report["mcq"] = {"status": "failed", "error": str(e)}
 
             # DSA coding challenges (independent of Apex)
             if include_coding and coding_count > 0:
-                generated_coding = await _select_dsa_coding_challenges(db=bg_db, difficulty=difficulty, count=coding_count)
+                try:
+                    generated_coding = await _select_dsa_coding_challenges(db=bg_db, difficulty=difficulty, count=coding_count)
+                    if generated_coding:
+                        generation_report["coding"] = {"status": "ok", "count": len(generated_coding)}
+                    else:
+                        generation_report["coding"] = {"status": "failed", "error": "Returned empty list"}
+                except Exception as e:
+                    logger.exception(f"[assessments.invite] Coding generation failed: {e}")
+                    generation_report["coding"] = {"status": "failed", "error": str(e)}
 
             # Apex fill-in-the-blanks (independent of DSA, only when job allows it)
             if include_apex and apex_count > 0:
-                generated_apex_blanks = await generate_apex_fill_in_the_blanks(
-                    job=job_payload,
-                    count=max(1, min(20, apex_count)),
-                    difficulty=difficulty,
-                )
+                try:
+                    generated_apex_blanks = await generate_apex_fill_in_the_blanks(
+                        job=job_payload,
+                        count=max(1, min(20, apex_count)),
+                        difficulty=difficulty,
+                    )
+                    if generated_apex_blanks:
+                        generation_report["apex"] = {"status": "ok", "count": len(generated_apex_blanks)}
+                    else:
+                        generation_report["apex"] = {"status": "failed", "error": "Returned empty list"}
+                except Exception as e:
+                    logger.exception(f"[assessments.invite] Apex generation failed: {e}")
+                    generation_report["apex"] = {"status": "failed", "error": str(e)}
 
             if include_sql and sql_count > 0:
-                sql_challenges = await qgen.generate_sql_challenges(
-                    job=JobDescriptionModel(
-                        id=str(job.get("id")),
-                        title=str(job.get("title")),
-                        role=job.get("role"),
-                        level=job.get("level"),
-                        description=str(job.get("description") or ""),
-                        must_have_skills=job.get("must_have_skills") or [],
-                        good_to_have_skills=job.get("good_to_have_skills") or [],
-                        min_experience_years=int(job.get("min_experience_years") or 0),
-                        is_active=True,
-                    ),
-                    count=sql_count,
-                    difficulty=difficulty
-                )
+                try:
+                    sql_challenges = await qgen.generate_sql_challenges(
+                        job=jd,
+                        count=sql_count,
+                        difficulty=difficulty
+                    )
+                    if sql_challenges:
+                        generation_report["sql"] = {"status": "ok", "count": len(sql_challenges)}
+                    else:
+                        generation_report["sql"] = {"status": "failed", "error": "Returned empty list"}
+                except Exception as e:
+                    logger.exception(f"[assessments.invite] SQL generation failed: {e}")
+                    generation_report["sql"] = {"status": "failed", "error": str(e)}
 
-            gen_ok = True
+            # Log the structured report
+            logger.info(f"[assessments.invite] generation_report job_id={job.get('id')} report={json.dumps(generation_report)}")
+
+            # Determine if we have at least one successful generation
+            has_ok = any(info.get("status") == "ok" for info in generation_report.values())
+            has_requested = any(info.get("status") != "skipped" for info in generation_report.values())
+            
+            if has_requested and not has_ok:
+                gen_error = "All requested generation modules failed or returned empty content"
+                logger.error(f"[assessments.invite.dead_letter] All generation failed for session. job_id={job.get('id')}, candidates={len(candidates)}, report={json.dumps(generation_report)}")
         except Exception as e:
             gen_error = str(e)
+            logger.exception(f"[assessments.invite] Fatal error in background generation: {e}")
         finally:
             logger.info(
-                "[assessments.invite] generation_done ok=%s duration_s=%.3f",
-                str(gen_ok),
+                "[assessments.invite] generation_done has_ok=%s duration_s=%.3f",
+                str(has_ok),
                 float(time() - gen_started),
             )
 
@@ -635,18 +723,18 @@ async def invite_assessments(
                 new_pd = {
                     **existing_pd,
                     "content_generation": {
-                        "status": "ready" if gen_ok else "failed",
+                        "status": "ready" if has_ok else "failed",
                         "completed_at": _utc_now_iso(),
                         "error": gen_error,
                     },
                 }
                 # Store Apex blanks in assessment_content (separate from coding_challenges)
-                if gen_ok and include_apex and generated_apex_blanks:
+                if has_ok and include_apex and generated_apex_blanks:
                     if "assessment_content" not in new_pd:
                         new_pd["assessment_content"] = {}
                     new_pd["assessment_content"]["apex_blanks"] = generated_apex_blanks
                 
-                if gen_ok and include_sql and sql_count > 0:
+                if has_ok and include_sql and sql_count > 0:
                     if "assessment_content" not in new_pd:
                         new_pd["assessment_content"] = {}
                     new_pd["assessment_content"]["sql_challenges"] = sql_challenges
@@ -670,7 +758,7 @@ async def invite_assessments(
             except Exception as e:
                 logger.exception("[assessments.invite] session_update_failed session_id=%s error=%s", str(sid), str(e))
 
-        if not gen_ok:
+        if not has_ok:
             logger.error("[assessments.invite] background_abort generation_failed error=%s", str(gen_error))
             return
 
