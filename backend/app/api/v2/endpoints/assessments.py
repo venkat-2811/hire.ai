@@ -27,6 +27,7 @@ from app.services.ai.apex_blanks import (
 from app.services.db.supabase_service import get_db_admin_service
 from app.services.code_executor import HackerEarthExecutor
 from app.services.email_queue import email_queue, Priority
+from app.services.email_service import get_email_service
 from app.services.question_generator import get_question_generator
 from app.utils.responses import api_error, ok
 
@@ -762,16 +763,37 @@ async def invite_assessments(
             logger.error("[assessments.invite] background_abort generation_failed error=%s", str(gen_error))
             return
 
-        # Send emails after content is ready (never blocks invite API response)
+        # Send emails after content is ready — runs inside background task, direct await is safe
+        # and gives us real SMTP delivery confirmation before writing status to DB.
+        email_svc = get_email_service()
         settings = get_settings()
         for meta in session_meta:
             sid = meta["session_id"]
             token = meta["token"]
             assessment_link = f"{str(settings.frontend_url).rstrip('/')}/assessment/{token}"
+            recipient_email = str(meta.get("email") or "").strip()
+            send_started = time()
             try:
-                recipient_email = str(meta.get("email") or "").strip()
+                if not recipient_email:
+                    raise RuntimeError("Candidate email is missing")
 
-                def _fetch_pd_email():
+                html, text, subject = email_queue.build_assessment_invite(
+                    str(meta.get("candidate_name") or "Candidate"),
+                    str(job.get("title") or ""),
+                    assessment_link,
+                    deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC"),
+                )
+
+                # Direct SMTP send — confirmed before we write "sent" to DB
+                await email_svc.send_email(
+                    to=recipient_email,
+                    subject=subject,
+                    html=html,
+                    text=text,
+                )
+
+                # Only reach here on confirmed SMTP success — fetch fresh proctoring_data to merge
+                def _fetch_current_pd(sid=sid):
                     return (
                         bg_db.client.from_("assessment_sessions")
                         .select("proctoring_data")
@@ -780,63 +802,23 @@ async def invite_assessments(
                         .execute()
                     )
 
-                pd_res = await bg_db.run(_fetch_pd_email)
-                pd_row = getattr(pd_res, "data", None) or {}
-                email_pd = pd_row.get("proctoring_data") if isinstance(pd_row, dict) else {}
-                if not isinstance(email_pd, dict):
-                    email_pd = {}
+                cur_res = await bg_db.run(_fetch_current_pd)
+                cur_row = getattr(cur_res, "data", None) or {}
+                cur_pd = cur_row.get("proctoring_data") if isinstance(cur_row, dict) else {}
+                if not isinstance(cur_pd, dict):
+                    cur_pd = {}
 
-                def _mark_email_sending():
+                def _write_email_sent(sid=sid, cur_pd=cur_pd):
                     return (
                         bg_db.client.from_("assessment_sessions")
                         .update(
                             {
                                 "proctoring_data": {
-                                    **email_pd,
+                                    **cur_pd,
                                     "invite_delivery": {
-                                        **(email_pd.get("invite_delivery") if isinstance(email_pd.get("invite_delivery"), dict) else {}),
-                                        "status": "sending",
-                                        "sending_at": _utc_now_iso(),
-                                    },
-                                },
-                                "updated_at": _utc_now_iso(),
-                            }
-                        )
-                        .eq("id", sid)
-                        .execute()
-                    )
-
-                await bg_db.run(_mark_email_sending)
-
-                send_started = time()
-                if not recipient_email:
-                    raise RuntimeError("Candidate email is missing")
-
-                html, text, subject = email_queue.build_assessment_invite(
-                    str(meta.get("candidate_name") or "Candidate"),
-                    str(job.get("title") or ""),
-                    assessment_link,
-                    deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC")
-                )
-                await email_queue.enqueue(
-                    to_email=recipient_email,
-                    subject=subject,
-                    html_body=html,
-                    text_body=text,
-                    priority=Priority.HIGH
-                )
-
-                def _mark_email_ok():
-                    return (
-                        bg_db.client.from_("assessment_sessions")
-                        .update(
-                            {
-                                "proctoring_data": {
-                                    **email_pd,
-                                    "invite_delivery": {
-                                        **(email_pd.get("invite_delivery") if isinstance(email_pd.get("invite_delivery"), dict) else {}),
                                         "status": "sent",
                                         "sent_at": _utc_now_iso(),
+                                        "to": recipient_email,
                                     },
                                 },
                                 "updated_at": _utc_now_iso(),
@@ -846,16 +828,20 @@ async def invite_assessments(
                         .execute()
                     )
 
-                await bg_db.run(_mark_email_ok)
+                await bg_db.run(_write_email_sent)
                 logger.info(
-                    "[assessments.invite] email_sent session_id=%s duration_s=%.3f",
-                    str(sid),
-                    float(time() - send_started),
+                    "[assessments.invite] email_confirmed_sent session_id=%s to=%s duration_s=%.3f",
+                    sid, recipient_email, float(time() - send_started),
                 )
+
             except Exception as e:
-                logger.exception("[assessments.invite] email_failed session_id=%s error=%s", str(sid), str(e))
+                logger.exception(
+                    "[assessments.invite] email_failed session_id=%s to=%s error=%s",
+                    sid, recipient_email or "(missing)", str(e),
+                )
+                # Write failure status so recruiter dashboard can surface the error
                 try:
-                    def _fetch_pd_fail():
+                    def _fetch_pd_fail(sid=sid):
                         return (
                             bg_db.client.from_("assessment_sessions")
                             .select("proctoring_data")
@@ -864,13 +850,13 @@ async def invite_assessments(
                             .execute()
                         )
 
-                    pd_res = await bg_db.run(_fetch_pd_fail)
-                    pd_row = getattr(pd_res, "data", None) or {}
-                    fail_pd = pd_row.get("proctoring_data") if isinstance(pd_row, dict) else {}
+                    fail_res = await bg_db.run(_fetch_pd_fail)
+                    fail_row = getattr(fail_res, "data", None) or {}
+                    fail_pd = fail_row.get("proctoring_data") if isinstance(fail_row, dict) else {}
                     if not isinstance(fail_pd, dict):
                         fail_pd = {}
 
-                    def _mark_email_fail():
+                    def _write_email_failed(sid=sid, fail_pd=fail_pd, err=str(e)):
                         return (
                             bg_db.client.from_("assessment_sessions")
                             .update(
@@ -878,10 +864,10 @@ async def invite_assessments(
                                     "proctoring_data": {
                                         **fail_pd,
                                         "invite_delivery": {
-                                            **(fail_pd.get("invite_delivery") if isinstance(fail_pd.get("invite_delivery"), dict) else {}),
                                             "status": "failed",
                                             "failed_at": _utc_now_iso(),
-                                            "error": str(e),
+                                            "to": recipient_email or None,
+                                            "error": err,
                                         },
                                     },
                                     "updated_at": _utc_now_iso(),
@@ -891,9 +877,9 @@ async def invite_assessments(
                             .execute()
                         )
 
-                    await bg_db.run(_mark_email_fail)
+                    await bg_db.run(_write_email_failed)
                 except Exception:
-                    pass
+                    pass  # don't let DB update failure mask the original send error
 
         logger.info(
             "[assessments.invite] background_done duration_s=%.3f",

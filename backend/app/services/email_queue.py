@@ -64,41 +64,30 @@ class SMTPConfig:
         self.use_ssl = settings.smtp_use_ssl
 
     def get_security_settings(self) -> Tuple[bool, bool]:
+        """Return (use_tls, start_tls) based on port."""
         if self.port == 465:
-            return True, False
+            return True, False  # Implicit TLS (Hostinger default)
         if self.port in (587, 25):
-            return False, True
+            return False, True  # STARTTLS
         return (self.use_ssl, not self.use_ssl)
 
 
 class SMTPWorker:
+    """
+    Stateless SMTP worker — opens a fresh connection per email job using
+    aiosmtplib.send(). This avoids all stale-socket / idle-timeout bugs
+    that plague persistent-connection approaches.
+    """
+
     def __init__(self, queue: asyncio.PriorityQueue, config: SMTPConfig, worker_id: int):
         self.queue = queue
         self.config = config
         self.worker_id = worker_id
-        self.smtp: Optional[aiosmtplib.SMTP] = None
         self._running = False
-
-    async def _ensure_connected(self):
-        if self.smtp and self.smtp.is_connected:
-            return
-
-        use_tls, start_tls = self.config.get_security_settings()
-        self.smtp = aiosmtplib.SMTP(
-            hostname=self.config.host,
-            port=self.config.port,
-            use_tls=use_tls,
-            start_tls=start_tls,
-            timeout=30,
-        )
-        
-        await self.smtp.connect()
-        await self.smtp.login(self.config.user, self.config.password)
-        logger.info(f"[email_worker_{self.worker_id}] connected to SMTP server")
 
     def _build_message(self, job: EmailJob) -> MIMEMultipart:
         has_attachments = len(job.attachments) > 0
-        
+
         msg = MIMEMultipart("mixed" if has_attachments else "alternative")
         msg["From"] = formataddr(("Rekshift", self.config.from_email))
         msg["To"] = job.to_email
@@ -113,7 +102,7 @@ class SMTPWorker:
             body_part.attach(MIMEText(job.text_body, "plain", "utf-8"))
             body_part.attach(MIMEText(job.html_body, "html", "utf-8"))
             msg.attach(body_part)
-            
+
             for att in job.attachments:
                 filename = att.get("filename", "attachment")
                 data = att.get("data", b"")
@@ -127,94 +116,118 @@ class SMTPWorker:
         else:
             msg.attach(MIMEText(job.text_body, "plain", "utf-8"))
             msg.attach(MIMEText(job.html_body, "html", "utf-8"))
-            
+
         return msg
 
     async def _send(self, job: EmailJob):
-        try:
-            await self._ensure_connected()
-        except Exception as e:
-            logger.error(f"[email_worker_{self.worker_id}] failed to connect: {str(e)}")
-            raise
-
+        """
+        Send using a brand-new SMTP connection per invocation.
+        aiosmtplib.send() opens, authenticates, sends, and closes — no stale state.
+        """
+        use_tls, start_tls = self.config.get_security_settings()
         msg = self._build_message(job)
-        
+
+        last_err: Optional[Exception] = None
+        for attempt in range(1, job.max_attempts + 1):
+            try:
+                logger.info(
+                    "[email_worker_%s] sending attempt=%s job=%s to=%s subject=%s host=%s port=%s use_tls=%s",
+                    self.worker_id, attempt, job.job_id, job.to_email,
+                    job.subject[:60], self.config.host, self.config.port, use_tls,
+                )
+                await aiosmtplib.send(
+                    msg,
+                    hostname=self.config.host,
+                    port=self.config.port,
+                    username=self.config.user,
+                    password=self.config.password,
+                    use_tls=use_tls,
+                    start_tls=start_tls,
+                    timeout=30,
+                )
+                logger.info(
+                    "[email_worker_%s] sent job=%s to=%s",
+                    self.worker_id, job.job_id, job.to_email,
+                )
+                return  # success
+            except Exception as e:
+                last_err = e
+                logger.exception(
+                    "[email_worker_%s] SMTP failed attempt=%s job=%s to=%s error=%s",
+                    self.worker_id, attempt, job.job_id, job.to_email, str(e),
+                )
+                if attempt < job.max_attempts:
+                    backoff = 2 ** attempt  # 2s, 4s, 8s
+                    logger.info("[email_worker_%s] retrying job=%s in %ss", self.worker_id, job.job_id, backoff)
+                    await asyncio.sleep(backoff)
+
+        # All attempts exhausted — dead-letter
+        logger.error(
+            "[email_worker_%s] dead_letter job=%s to=%s subject=%s all %s attempts failed. last_error=%s",
+            self.worker_id, job.job_id, job.to_email, job.subject, job.max_attempts, str(last_err),
+        )
         try:
-            await self.smtp.send_message(msg)
-            logger.info(f"[email_worker_{self.worker_id}] Sent email to {job.to_email} (job={job.job_id})")
-        except aiosmtplib.SMTPServerDisconnected:
-            logger.warning(f"[email_worker_{self.worker_id}] Disconnected. Reconnecting and retrying once.")
-            await self._ensure_connected()
-            await self.smtp.send_message(msg)
-            logger.info(f"[email_worker_{self.worker_id}] Sent email to {job.to_email} on retry (job={job.job_id})")
+            dead_letter_path = os.path.join(os.getcwd(), "dead_letter.log")
+            with open(dead_letter_path, "a") as f:
+                f.write(
+                    f"[{datetime.now(timezone.utc).isoformat()}] FAILED to={job.to_email} "
+                    f"subject={job.subject!r} attempts={job.max_attempts} "
+                    f"error={last_err!r}\n"
+                )
+        except Exception:
+            pass  # don't let dead-letter logging kill the worker
 
     async def run(self):
         self._running = True
-        logger.info(f"[email_worker_{self.worker_id}] Worker started")
-        
+        logger.info("[email_worker_%s] started", self.worker_id)
+
         while self._running:
             try:
                 job = await self.queue.get()
             except asyncio.CancelledError:
                 break
-                
-            job.attempts += 1
-            
+
             try:
                 await self._send(job)
             except Exception as e:
-                logger.error(f"[email_worker_{self.worker_id}] Failed to send job {job.job_id}: {str(e)}")
-                
-                if job.attempts < job.max_attempts:
-                    backoff = 2 ** job.attempts  # 2, 4, 8...
-                    logger.info(f"[email_worker_{self.worker_id}] Re-enqueuing job {job.job_id} in {backoff}s")
-                    async def re_enqueue():
-                        await asyncio.sleep(backoff)
-                        await self.queue.put(job)
-                    asyncio.create_task(re_enqueue())
-                else:
-                    logger.error(f"[email_worker_{self.worker_id}] Job {job.job_id} exceeded max attempts. Dead-lettering.")
-                    with open("dead_letter.log", "a") as f:
-                        f.write(f"[{datetime.now(timezone.utc).isoformat()}] Failed to send email to {job.to_email}. Subject: {job.subject}. Error: {str(e)}\n")
+                # _send handles its own retries and dead-lettering; this is a safety net
+                logger.exception("[email_worker_%s] unexpected error for job=%s: %s", self.worker_id, job.job_id, e)
             finally:
                 self.queue.task_done()
-                
-        if self.smtp and self.smtp.is_connected:
-            self.smtp.close()
-        logger.info(f"[email_worker_{self.worker_id}] Worker stopped")
+
+        logger.info("[email_worker_%s] stopped", self.worker_id)
 
 
 class EmailQueueManager:
     def __init__(self, workers: int = 3):
         self.num_workers = workers
-        self.queue = asyncio.PriorityQueue()
+        self.queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
         self.workers: List[asyncio.Task] = []
         self.config = SMTPConfig()
 
     async def start(self):
         if self.workers:
             return
-            
+
         for i in range(self.num_workers):
             worker = SMTPWorker(self.queue, self.config, i)
-            task = asyncio.create_task(worker.run())
+            task = asyncio.create_task(worker.run(), name=f"email_worker_{i}")
             self.workers.append(task)
-        logger.info(f"[EmailQueueManager] Started {self.num_workers} workers")
+        logger.info("[EmailQueueManager] started %s workers (stateless mode)", self.num_workers)
 
     async def stop(self):
-        logger.info("[EmailQueueManager] Stopping...")
+        logger.info("[EmailQueueManager] stopping…")
         try:
-            # Wait up to 30s for the queue to finish processing
             await asyncio.wait_for(self.queue.join(), timeout=30.0)
         except asyncio.TimeoutError:
-            logger.warning("[EmailQueueManager] Queue did not empty within 30s timeout")
-            
+            logger.warning("[EmailQueueManager] queue did not drain within 30s")
+
         for task in self.workers:
             task.cancel()
-            
+
         await asyncio.gather(*self.workers, return_exceptions=True)
         self.workers = []
-        logger.info("[EmailQueueManager] Stopped")
+        logger.info("[EmailQueueManager] stopped")
 
     @property
     def queue_size(self) -> int:
@@ -228,7 +241,7 @@ class EmailQueueManager:
         text_body: Optional[str] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
         priority: Priority = Priority.NORMAL,
-        max_attempts: int = 3
+        max_attempts: int = 3,
     ) -> str:
         if not self.config.user or not self.config.password:
             raise RuntimeError("SMTP_USER and SMTP_PASSWORD are not configured")
@@ -243,13 +256,14 @@ class EmailQueueManager:
             html_body=html_body,
             text_body=text_body,
             attachments=attachments,
-            max_attempts=max_attempts
+            max_attempts=max_attempts,
         )
         await self.queue.put(job)
+        logger.info("[EmailQueueManager] enqueued job=%s to=%s priority=%s", job.job_id, to_email, priority.name)
         return job.job_id
-        
+
     # --- TEMPLATE HELPERS ----------------------------------------------------
-    
+
     def build_application_received(self, candidate_name: str, job_title: str) -> Tuple[str, Optional[str], str]:
         subject = f"Application Received - {job_title}"
         html = f"""
@@ -257,13 +271,13 @@ class EmailQueueManager:
             <h2 style="color: #1a1a2e;">Application Received</h2>
             <p>Dear {candidate_name},</p>
             <p>Thank you for applying to the <strong>{job_title}</strong> position.</p>
-            <p>We have received your application and our team will review it shortly. 
+            <p>We have received your application and our team will review it shortly.
             We will contact you soon regarding the next steps in our hiring process.</p>
             <p>Best regards,<br>The Hiring Team</p>
         </div>
         """
         return html, None, subject
-        
+
     def build_assessment_invite(self, candidate_name: str, job_title: str, assessment_link: str, deadline: Optional[str] = None) -> Tuple[str, Optional[str], str]:
         subject = f"Technical Assessment Invitation - {job_title}"
         deadline_text = f"<p><strong>Deadline:</strong> {deadline}</p>" if deadline else ""
@@ -283,8 +297,8 @@ class EmailQueueManager:
                 <li>Tab switching or leaving the assessment window will end your session</li>
             </ul>
             <p style="margin: 30px 0;">
-                <a href="{assessment_link}" 
-                   style="background-color: #6366f1; color: white; padding: 12px 24px; 
+                <a href="{assessment_link}"
+                   style="background-color: #6366f1; color: white; padding: 12px 24px;
                           text-decoration: none; border-radius: 6px; display: inline-block;">
                     Start Assessment
                 </a>
@@ -294,7 +308,7 @@ class EmailQueueManager:
         </div>
         """
         return html, None, subject
-        
+
     def build_interview_invite(self, candidate_name: str, job_title: str, interview_link: str, scheduled_time: Optional[str] = None) -> Tuple[str, Optional[str], str]:
         subject = f"Interview Invitation - {job_title}"
         time_text = f"<p><strong>Scheduled Time:</strong> {scheduled_time}</p>" if scheduled_time else ""
@@ -302,7 +316,7 @@ class EmailQueueManager:
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #1a1a2e;">Interview Invitation</h2>
             <p>Dear {candidate_name},</p>
-            <p>Congratulations on completing the technical assessment for the <strong>{job_title}</strong> position!</p>
+            <p>Congratulations on being shortlisted for the <strong>{job_title}</strong> position!</p>
             <p>We are pleased to invite you to the next stage: an AI-powered interview.</p>
             {time_text}
             <p><strong>Important Instructions:</strong></p>
@@ -315,8 +329,8 @@ class EmailQueueManager:
                 <li>Full-screen mode is required</li>
             </ul>
             <p style="margin: 30px 0;">
-                <a href="{interview_link}" 
-                   style="background-color: #6366f1; color: white; padding: 12px 24px; 
+                <a href="{interview_link}"
+                   style="background-color: #6366f1; color: white; padding: 12px 24px;
                           text-decoration: none; border-radius: 6px; display: inline-block;">
                     Start Interview
                 </a>
@@ -326,16 +340,16 @@ class EmailQueueManager:
         </div>
         """
         return html, None, subject
-        
+
     def build_acceptance_email(self, candidate_name: str, job_title: str) -> Tuple[str, Optional[str], str]:
         subject = f"Congratulations! You've Been Selected - {job_title}"
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #1a1a2e;">🎉 Congratulations!</h2>
             <p>Dear {candidate_name},</p>
-            <p>We are thrilled to inform you that you have been selected for the 
+            <p>We are thrilled to inform you that you have been selected for the
             <strong>{job_title}</strong> position!</p>
-            <p>Your performance throughout the hiring process has been exceptional, 
+            <p>Your performance throughout the hiring process has been exceptional,
             and we believe you will be a valuable addition to our team.</p>
             <p>Our HR team will reach out to you shortly with the offer details and next steps.</p>
             <p>Welcome aboard!</p>
@@ -350,9 +364,9 @@ class EmailQueueManager:
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #1a1a2e;">Application Update</h2>
             <p>Dear {candidate_name},</p>
-            <p>Thank you for your interest in the <strong>{job_title}</strong> position 
+            <p>Thank you for your interest in the <strong>{job_title}</strong> position
             and for taking the time to go through our hiring process.</p>
-            <p>After careful consideration, we have decided to move forward with other candidates 
+            <p>After careful consideration, we have decided to move forward with other candidates
             whose qualifications more closely match our current needs.</p>
             <p>We encourage you to apply for future openings that match your skills and experience.</p>
             <p>We wish you the best in your career endeavors.</p>
@@ -360,7 +374,7 @@ class EmailQueueManager:
         </div>
         """
         return html, None, subject
-        
+
     def build_offer_letter_email(self, candidate_name: str, job_title: str, company_name: str, acceptance_link: str) -> Tuple[str, Optional[str], str]:
         subject = f"🎉 Congratulations! Your Offer Letter – {job_title} at {company_name}"
         html = f"""
@@ -377,47 +391,20 @@ class EmailQueueManager:
                 </div>
                 <p style="color: #374151; line-height: 1.7; font-size: 15px;">
                     We are thrilled to offer you the position of <strong>{job_title}</strong> at <strong>{company_name}</strong>.
-                    Your performance throughout our hiring process has been truly impressive, and we cannot wait to have you on board.
+                    Your performance throughout our hiring process has been truly impressive.
                 </p>
-                <div style="background: #fef9ec; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px 20px; margin: 20px 0;">
-                    <p style="margin: 0; color: #92400e; font-weight: 700; font-size: 14px;">📎 Your Offer Letter is Attached</p>
-                    <p style="margin: 6px 0 0 0; color: #78350f; font-size: 13px; line-height: 1.5;">
-                        Please open and review the attached offer letter carefully. It contains your compensation details,
-                        start date, and all employment terms.
-                    </p>
-                </div>
-                <div style="background: #f0f4ff; border-left: 4px solid #6366f1; padding: 16px 20px; border-radius: 4px; margin: 24px 0;">
-                    <p style="margin: 0 0 8px 0; color: #4f46e5; font-weight: 700; font-size: 14px;">📋 To Accept Your Offer:</p>
-                    <ol style="margin: 0; padding-left: 18px; color: #374151; line-height: 2; font-size: 14px;">
-                        <li>Review the attached offer letter</li>
-                        <li>Click the <strong>"Accept Offer"</strong> button below</li>
-                        <li>Enter your full name as a digital signature</li>
-                        <li>Click <strong>"Submit Acceptance"</strong> to confirm</li>
-                    </ol>
-                </div>
                 <div style="text-align: center; margin: 36px 0 20px 0;">
-                    <a href="{acceptance_link}" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 18px 48px; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; display: inline-block; box-shadow: 0 6px 20px rgba(16,185,129,0.4); letter-spacing: 0.3px;">
+                    <a href="{acceptance_link}" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 18px 48px; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; display: inline-block;">
                         ✅ Accept Offer
                     </a>
                 </div>
                 <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 4px 0 24px 0;">
                     This acceptance link expires in <strong>7 business days</strong>. Please respond promptly.
                 </p>
-                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
-                <p style="color: #6b7280; line-height: 1.6; font-size: 14px;">
-                    If you have any questions about the offer, please don't hesitate to reach out to our HR team.
-                    We're here to help make your transition as smooth as possible.
-                </p>
                 <p style="color: #374151; margin-bottom: 0;">
                     Warm regards,<br/>
                     <strong>Talent Acquisition Team</strong><br/>
                     <span style="color: #6b7280;">{company_name}</span>
-                </p>
-            </div>
-            <div style="background: #f3f4f6; padding: 16px 40px; text-align: center; border-top: 1px solid #e5e7eb;">
-                <p style="color: #9ca3af; font-size: 11px; margin: 0;">
-                    This is a confidential communication intended solely for {candidate_name}.
-                    If you received this in error, please notify us immediately.
                 </p>
             </div>
         </div>

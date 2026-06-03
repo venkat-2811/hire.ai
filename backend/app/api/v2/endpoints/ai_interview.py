@@ -16,8 +16,6 @@ from app.config import get_settings
 from app.services.whisper_service import get_whisper_service
 from app.services.db.supabase_service import get_db_admin_service
 from app.services.email_service import get_email_service
-from app.services.openai_client import get_openai_service
-from app.utils.responses import api_error, ok
 
 logger = logging.getLogger(__name__)
 
@@ -613,7 +611,8 @@ async def invite_ai_interviews(
     difficulty = (body.difficulty or "medium").strip().lower()
 
     invites_sent = 0
-    failed: List[str] = []
+    email_failed: List[str] = []  # candidate IDs where session was created but email delivery failed
+    failed: List[str] = []        # candidate IDs where session creation itself failed
     failed_reasons: Dict[str, str] = {}
 
     for c in candidates:
@@ -667,9 +666,8 @@ async def invite_ai_interviews(
                 "microphone_enabled": False,
                 "resume_insights": resume_insights,
                 "invite_delivery": {"status": "pending", "attempted_at": _utc_now_iso()},
+                "difficulty": difficulty,
             }
-
-            proctoring_data["difficulty"] = difficulty
 
             insert_row = {
                 "id": session_id,
@@ -685,36 +683,79 @@ async def invite_ai_interviews(
                 "created_at": _utc_now_iso(),
             }
 
-            logger.info("[ai_interview.invite] inserting session session_id=%s candidate_id=%s job_id=%s", session_id, cid, body.job_id)
+            logger.info(
+                "[ai_interview.invite] inserting session session_id=%s candidate_id=%s job_id=%s",
+                session_id, cid, body.job_id,
+            )
             await db.run(lambda: db.client.from_("ai_interview_sessions").insert(insert_row).execute())
 
-            # Email is non-blocking infra
-            try:
-                interview_link = f"{str(settings.frontend_url).rstrip('/')}/ai-interview/{token}"
-                recipient_email = str(c.get("email") or "").strip()
-                if not recipient_email:
-                    raise RuntimeError("Candidate email is missing")
-                await email_service.send_interview_invite(
-                    to=recipient_email,
-                    candidate_name=str(c.get("full_name") or "Candidate"),
-                    job_title=str(job.get("title") or ""),
-                    interview_link=interview_link,
-                    scheduled_time=body.scheduled_time,
-                )
-                proctoring_data["invite_delivery"] = {"status": "sent", "sent_at": _utc_now_iso()}
-            except Exception as e:
-                logger.error("[ai_interview.invite] EMAIL FAILED session=%s to=%s error=%s", session_id, recipient_email if 'recipient_email' in dir() else '?', str(e))
-                proctoring_data["invite_delivery"] = {"status": "failed", "failed_at": _utc_now_iso(), "error": str(e)}
+            # Session created successfully — count this invite regardless of email outcome
+            invites_sent += 1
 
-            await db.run(
-                lambda: db.client.from_("ai_interview_sessions")
-                .update({"proctoring_data": proctoring_data, "updated_at": _utc_now_iso()})
-                .eq("id", session_id)
-                .execute()
+            # Send the invite email in a background task to not block API response
+            # but allow writing accurate sent/failed status back to DB.
+            recipient_email = str(c.get("email") or "").strip()
+            
+            async def _send_and_update_status(
+                sid=session_id, 
+                to_email=recipient_email, 
+                c_name=str(c.get("full_name") or "Candidate"),
+                j_title=str(job.get("title") or ""),
+                token_val=token,
+                sched_time=body.scheduled_time
+            ):
+                try:
+                    if not to_email:
+                        raise RuntimeError("Candidate email address is missing")
+                        
+                    interview_link = f"{str(settings.frontend_url).rstrip('/')}/ai-interview/{token_val}"
+                    
+                    await email_service.send_interview_invite(
+                        to=to_email,
+                        candidate_name=c_name,
+                        job_title=j_title,
+                        interview_link=interview_link,
+                        scheduled_time=sched_time,
+                    )
+                    
+                    # Email confirmed sent
+                    async def _mark_sent():
+                        res = db.client.from_("ai_interview_sessions").select("proctoring_data").eq("id", sid).single().execute()
+                        pd = getattr(res, "data", {}).get("proctoring_data", {})
+                        if not isinstance(pd, dict): pd = {}
+                        pd["invite_delivery"] = {"status": "sent", "sent_at": _utc_now_iso(), "to": to_email}
+                        db.client.from_("ai_interview_sessions").update({"proctoring_data": pd, "updated_at": _utc_now_iso()}).eq("id", sid).execute()
+                        
+                    await db.run(_mark_sent)
+                    logger.info("[ai_interview.invite] email_confirmed_sent session=%s to=%s", sid, to_email)
+                    
+                except Exception as email_err:
+                    logger.exception("[ai_interview.invite] email_failed session=%s to=%s error=%s", sid, to_email, str(email_err))
+                    async def _mark_failed():
+                        res = db.client.from_("ai_interview_sessions").select("proctoring_data").eq("id", sid).single().execute()
+                        pd = getattr(res, "data", {}).get("proctoring_data", {})
+                        if not isinstance(pd, dict): pd = {}
+                        pd["invite_delivery"] = {"status": "failed", "failed_at": _utc_now_iso(), "to": to_email, "error": str(email_err)}
+                        db.client.from_("ai_interview_sessions").update({"proctoring_data": pd, "updated_at": _utc_now_iso()}).eq("id", sid).execute()
+                        
+                    try:
+                        await db.run(_mark_failed)
+                    except Exception:
+                        pass
+                        
+            # Fire and forget the email + db update task
+            asyncio.create_task(_send_and_update_status())
+            
+            logger.info(
+                "[ai_interview.invite] email_task_started session=%s to=%s",
+                session_id, recipient_email,
             )
 
-            invites_sent += 1
         except Exception as e:
+            logger.exception(
+                "[ai_interview.invite] session_creation_failed candidate_id=%s error=%s",
+                cid, str(e),
+            )
             failed.append(str(cid))
             failed_reasons[str(cid)] = str(e)
 
@@ -722,7 +763,8 @@ async def invite_ai_interviews(
         {
             "success": invites_sent > 0,
             "invites_sent": invites_sent,
-            "failed": failed,
+            "email_failed": email_failed,   # sessions created but email delivery failed
+            "failed": failed,               # session creation itself failed
             "failed_reasons": failed_reasons,
         }
     )
