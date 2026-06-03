@@ -690,6 +690,104 @@ export default function CandidateDetailsPage() {
                             </div>
                           </div>
                         )}
+
+                        {/* SQL Responses */}
+                        {(() => {
+                          const pd = assessmentDetails.proctoring_data as any;
+                          const sqlChallenges: any[] = pd?.assessment_content?.sql_challenges || [];
+                          const sqlSubs: any[] = pd?.sql_submissions || [];
+                          if (sqlChallenges.length === 0 && sqlSubs.length === 0) return null;
+
+                          // Build a lookup map: challenge_id → submission
+                          const subMap = new Map<string, any>();
+                          sqlSubs.forEach((s: any) => {
+                            const cid = s?.challenge_id != null ? String(s.challenge_id) : '';
+                            if (cid) subMap.set(cid, s);
+                          });
+
+                          // If we have no challenges metadata but do have submissions, render from submissions
+                          const displayList: any[] = sqlChallenges.length > 0 ? sqlChallenges : sqlSubs.map((s: any) => ({ id: s?.challenge_id, title: 'SQL Challenge', description: '' }));
+
+                          return (
+                            <div>
+                              <h4 className="font-semibold text-sm mb-3">SQL Responses</h4>
+                              <div className="space-y-4">
+                                {displayList.map((ch: any, idx: number) => {
+                                  const cid = ch?.id != null ? String(ch.id) : String(idx);
+                                  const sub = subMap.get(cid) || (sqlChallenges.length === 0 ? sqlSubs[idx] : undefined);
+                                  const attempted = !!sub;
+                                  const score = sub?.score_percentage ?? null;
+                                  const testResults: any[] = sub?.test_results || [];
+                                  const firstResult = testResults[0];
+
+                                  return (
+                                    <div key={cid} className="p-4 rounded-lg border">
+                                      <div className="flex items-center justify-between mb-2 gap-3">
+                                        <h5 className="font-medium text-sm">
+                                          {safeRender(ch?.title) || `SQL Challenge ${idx + 1}`}
+                                        </h5>
+                                        {attempted ? (
+                                          <Badge variant={score != null && score >= 70 ? 'default' : 'secondary'}>
+                                            {score != null ? `${Math.round(score)}%` : 'Submitted'}
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="secondary">Not Attempted</Badge>
+                                        )}
+                                      </div>
+
+                                      {ch?.description && (
+                                        <p className="text-xs text-muted-foreground mb-2">{safeRender(ch.description)}</p>
+                                      )}
+
+                                      {attempted ? (
+                                        <>
+                                          {/* Candidate's SQL query */}
+                                          <div className="mb-3">
+                                            <p className="text-xs text-muted-foreground mb-1">Candidate's SQL Query</p>
+                                            <pre className="text-xs bg-muted p-3 rounded max-h-48 overflow-auto whitespace-pre-wrap font-mono">
+                                              {typeof sub?.code === 'string' && sub.code.trim()
+                                                ? sub.code
+                                                : '(no query submitted)'}
+                                            </pre>
+                                          </div>
+
+                                          {/* Execution result */}
+                                          {firstResult && (
+                                            <div className="space-y-1">
+                                              <p className="text-xs text-muted-foreground">Execution Result</p>
+                                              <div className={`flex items-center gap-2 text-xs ${firstResult?.passed ? 'text-green-600' : 'text-destructive'}`}>
+                                                {firstResult?.passed
+                                                  ? <CheckCircle className="h-3 w-3" />
+                                                  : <XCircle className="h-3 w-3" />}
+                                                <span>{firstResult?.passed ? 'Accepted' : firstResult?.status || 'Wrong Answer'}</span>
+                                              </div>
+                                              {firstResult?.stdout && (
+                                                <pre className="text-xs bg-muted/50 p-2 rounded max-h-32 overflow-auto whitespace-pre-wrap mt-1">
+                                                  {firstResult.stdout}
+                                                </pre>
+                                              )}
+                                              {firstResult?.error && (
+                                                <p className="text-xs text-destructive mt-1">{safeRender(firstResult.error)}</p>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {/* Feedback from evaluator */}
+                                          {sub?.runtime_error && (
+                                            <p className="text-xs text-destructive mt-2">{safeRender(sub.runtime_error)}</p>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <div className="text-xs text-muted-foreground">Status: Not Attempted</div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                       </TabsContent>
                     )}
 

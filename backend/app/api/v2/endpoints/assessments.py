@@ -481,8 +481,9 @@ async def invite_assessments(
                 "include_apex": bool(include_apex),
                 "difficulty": difficulty,
                 # is_apex_mode kept for backward-compat with older sessions
-                "is_apex_mode": False,
-                "assessment_mode": "apex" if include_apex and not include_coding else "dsa",
+                "is_apex_mode": bool(include_apex),
+                # assessment_mode: 'both' when DSA + Apex, 'apex' for Apex-only, 'dsa' otherwise
+                "assessment_mode": "both" if (include_apex and include_coding) else ("apex" if include_apex else "dsa"),
             },
             "content_generation": {
                 "status": "queued",
@@ -929,8 +930,8 @@ def _validate_assessment_content(session: Dict[str, Any]) -> Tuple[bool, Optiona
             if q.get("correct_index") is None:
                 return False, f"MCQ question {idx} is missing correct_index.", None
 
-    # ── DSA coding validation (only when coding is enabled and apex is NOT the sole mode) ──
-    if include_coding and not include_apex and coding_count_expected > 0:
+    # ── DSA coding validation (when DSA coding is enabled, validate it independently of Apex) ──
+    if include_coding and coding_count_expected > 0:
         coding_challenges = session.get("coding_challenges") or []
         if not isinstance(coding_challenges, list) or len(coding_challenges) == 0:
             return False, "Coding challenges are not available for this session. Please ask the recruiter to resend the assessment.", None
@@ -1999,7 +2000,7 @@ async def complete(session_id: str):
     db = get_db_admin_service()
     sessions, db_err = await db.select_safe(
         "assessment_sessions",
-        columns="id,status,mcq_score,coding_score,started_at",
+        columns="id,status,mcq_score,coding_score,started_at,proctoring_data",
         filters={"id": session_id},
         limit=1,
         context={"endpoint": "complete", "session_id": str(session_id)},
@@ -2019,12 +2020,23 @@ async def complete(session_id: str):
         logger.warning("[assessments.complete] invalid_status session_id=%s status=%s", str(session_id), str(current_status))
         return api_error(message="Assessment not in progress", status_code=400)
 
+    # Pull extra section scores from proctoring_data (SQL + Apex stored there)
+    proctoring_data = session.get("proctoring_data") or {}
+    if not isinstance(proctoring_data, dict):
+        proctoring_data = {}
+    sql_score_raw = proctoring_data.get("sql_score")
+    apex_score_raw = proctoring_data.get("apex_blanks_score")
+    sql_score = float(sql_score_raw) if sql_score_raw is not None else None
+    apex_score = float(apex_score_raw) if apex_score_raw is not None else None
+
     logger.info(
-        "[assessments.complete] completion_start session_id=%s status=%s mcq_score=%s coding_score=%s",
+        "[assessments.complete] completion_start session_id=%s status=%s mcq_score=%s coding_score=%s sql_score=%s apex_score=%s",
         str(session_id),
         str(current_status),
         str(session.get("mcq_score")),
         str(session.get("coding_score")),
+        str(sql_score),
+        str(apex_score),
     )
 
     if session.get("status") == "pending":
@@ -2038,12 +2050,18 @@ async def complete(session_id: str):
     coding_raw = session.get("coding_score")
     coding_val = float(coding_raw) if coding_raw is not None else None
 
-    if coding_val is None:
-        total_score = mcq_val
-    elif session.get("mcq_score") is None:
-        total_score = coding_val
-    else:
-        total_score = (mcq_val + coding_val) / 2
+    # Build total score as an equal-weight average of all sections that were submitted
+    section_scores: List[float] = []
+    if session.get("mcq_score") is not None:
+        section_scores.append(mcq_val)
+    if coding_val is not None:
+        section_scores.append(coding_val)
+    if sql_score is not None:
+        section_scores.append(sql_score)
+    if apex_score is not None:
+        section_scores.append(apex_score)
+
+    total_score = sum(section_scores) / len(section_scores) if section_scores else 0.0
 
     updated_rows, db_err = await db.update_safe(
         "assessment_sessions",
@@ -2063,14 +2081,16 @@ async def complete(session_id: str):
         return api_error(message="Failed to complete assessment. Please try again.", status_code=500)
 
     logger.info(
-        "[assessments.complete] completion_complete session_id=%s total_score=%.2f mcq_score=%.2f coding_score=%.2f",
+        "[assessments.complete] completion_complete session_id=%s total_score=%.2f mcq_score=%.2f coding_score=%.2f sql_score=%s apex_score=%s",
         str(session_id),
         float(total_score),
         float(mcq_val),
         float(coding_val) if coding_val is not None else 0.0,
+        str(sql_score),
+        str(apex_score),
     )
 
-    return ok({"success": True, "mcq_score": mcq_val, "coding_score": coding_val, "total_score": total_score})
+    return ok({"success": True, "mcq_score": mcq_val, "coding_score": coding_val, "sql_score": sql_score, "apex_score": apex_score, "total_score": total_score})
 
 
 @router.get("/start/{token}")
@@ -2149,23 +2169,24 @@ async def start_assessment(token: str):
             else {}
         )
 
-        assessment_mode = assessment_config.get("assessment_mode")
-        if assessment_mode not in ("apex", "dsa"):
-            is_apex_mode = bool(
-                session.get("is_apex_mode") or assessment_config.get("is_apex_mode")
+        # ── Read per-section flags set at invite time ─────────────────────────
+        include_mcq = bool(assessment_config.get("include_mcq", True))
+        include_coding = bool(assessment_config.get("include_coding", True))
+        include_sql = bool(assessment_config.get("include_sql", False))
+        include_apex = bool(assessment_config.get("include_apex", False))
+
+        # Legacy compat: honour old is_apex_mode flag if include_apex not explicitly set
+        if not include_apex:
+            include_apex = bool(
+                assessment_config.get("is_apex_mode")
+                or session.get("is_apex_mode")
+                or assessment_config.get("assessment_mode") == "apex"
             )
-            assessment_mode = "apex" if is_apex_mode else "dsa"
-        is_apex_mode = assessment_mode == "apex" or bool(
-            session.get("is_apex_mode") or assessment_config.get("is_apex_mode")
-        )
 
         mcq_val = session.get("mcq_question_count")
-        mcq_count_expected = int(mcq_val) if mcq_val is not None else 20
+        mcq_count_expected = int(mcq_val) if mcq_val is not None else 0
         coding_val = session.get("coding_challenge_count")
-        coding_count_expected = int(coding_val) if coding_val is not None else 2
-
-        include_mcq = assessment_config.get("include_mcq") is not False
-        include_coding = assessment_config.get("include_coding") is not False
+        coding_count_expected = int(coding_val) if coding_val is not None else 0
 
         include_mcq = bool(include_mcq and mcq_count_expected > 0)
         include_coding = bool(include_coding and coding_count_expected > 0)
@@ -2177,21 +2198,31 @@ async def start_assessment(token: str):
         )
         apex_blanks: List[Dict[str, Any]] = []
         sql_challenges: List[Dict[str, Any]] = []
-        
-        stored_sql = content.get("sql_challenges") if isinstance(content, dict) else None
-        if isinstance(stored_sql, list):
-            sql_challenges = stored_sql
 
-        if assessment_mode == "apex":
-            stored = content.get("apex_blanks") if isinstance(content, dict) else None
-            if isinstance(stored, list):
-                apex_blanks = stored
+        # ── Resolve stored assessment_mode for frontend label only ─────────────
+        stored_mode = assessment_config.get("assessment_mode") or "dsa"
+        if stored_mode not in ("apex", "dsa", "both"):
+            stored_mode = "apex" if include_apex and not include_coding else "both" if (include_apex and include_coding) else "dsa"
+        is_apex_mode = include_apex  # apex mode simply means apex section is active
+
+        # ── Load SQL challenges ───────────────────────────────────────────────
+        if include_sql:
+            stored_sql = content.get("sql_challenges") if isinstance(content, dict) else None
+            if isinstance(stored_sql, list):
+                sql_challenges = stored_sql
+
+        # ── Load and validate Apex blanks (independent of DSA) ────────────────
+        if include_apex:
+            stored_apex = content.get("apex_blanks") if isinstance(content, dict) else None
+            if isinstance(stored_apex, list):
+                apex_blanks = stored_apex
             if not apex_blanks:
                 return api_error(
                     message="Apex questions are not available for this session. Please ask the recruiter to resend the assessment.",
                     status_code=400,
                 )
 
+        # ── Load and validate MCQ ─────────────────────────────────────────────
         mcq_questions = session.get("mcq_questions") or []
         if include_mcq:
             if not isinstance(mcq_questions, list) or len(mcq_questions) == 0:
@@ -2207,10 +2238,10 @@ async def start_assessment(token: str):
         else:
             mcq_questions = []
 
+        # ── Load and validate DSA coding challenges (independent of Apex) ─────
         coding_challenges = session.get("coding_challenges") or []
-        if include_coding and not is_apex_mode:
+        if include_coding:
             if not isinstance(coding_challenges, list) or len(coding_challenges) == 0:
-                # This is a fundamental issue - cannot repair what doesn't exist
                 return api_error(
                     message="Coding challenges are not available for this session. Please ask the recruiter to resend the assessment.",
                     status_code=400,
@@ -2240,15 +2271,21 @@ async def start_assessment(token: str):
                 "candidate_name": candidates_rel.get("full_name"),
                 "job_title": jobs_rel.get("title"),
                 "job_role": jobs_rel.get("role"),
-                "assessment_mode": assessment_mode,
+                "assessment_mode": stored_mode,
                 "is_apex_mode": is_apex_mode,
+                "include_mcq": include_mcq,
+                "include_coding": include_coding,
+                "include_apex": include_apex,
+                "include_sql": include_sql,
                 "coding_environment_label": "Apex Coding Environment (AI-Evaluated - Phase 1)"
-                if is_apex_mode
+                if include_apex and not include_coding
                 else None,
                 "mcq_count": len(safe_mcq),
                 "coding_count": len(coding_challenges)
                 if isinstance(coding_challenges, list)
                 else 0,
+                "apex_count": len(apex_blanks),
+                "sql_count": len(sql_challenges),
                 "total_time_minutes": session.get("total_time_minutes") or 90,
                 "deadline": session.get("deadline"),
                 "started_at": session.get("started_at"),
