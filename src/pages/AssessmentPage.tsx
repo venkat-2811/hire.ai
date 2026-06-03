@@ -140,7 +140,10 @@ interface AssessmentData {
   job_title: string;
   job_role?: string;
   assessment_mode?: 'dsa' | 'apex';
+  /** @deprecated Use include_apex instead */
   is_apex_mode?: boolean;
+  /** Recruiter explicitly enabled Apex fill-in-the-blanks for this session */
+  include_apex?: boolean;
   coding_environment_label?: string | null;
   mcq_count: number;
   coding_count: number;

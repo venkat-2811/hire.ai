@@ -17,6 +17,9 @@ export interface JobDescription {
   assessment_cutoff: number;
   interview_cutoff: number;
   include_sql_assessment: boolean;
+  // Recruiter-controlled Salesforce/Apex flags
+  is_salesforce_job: boolean;
+  include_apex_assessment: boolean;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
   end_customer?: 'your_own_company' | 'end_customer';
@@ -38,6 +41,9 @@ export interface JobDescriptionCreate {
   assessment_cutoff?: number;
   interview_cutoff?: number;
   include_sql_assessment?: boolean;
+  // Recruiter-controlled Salesforce/Apex flags
+  is_salesforce_job?: boolean;
+  include_apex_assessment?: boolean;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
   end_customer_name?: string | null;

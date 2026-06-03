@@ -28,6 +28,9 @@ class JobDescriptionCreate(BaseModel):
     resume_cutoff: int = 0
     assessment_cutoff: int = 0
     interview_cutoff: int = 0
+    # Recruiter-controlled Salesforce/Apex flags (replaces auto-detection)
+    is_salesforce_job: bool = False
+    include_apex_assessment: bool = False
 
 
 class JobDescriptionUpdate(BaseModel):
@@ -43,6 +46,9 @@ class JobDescriptionUpdate(BaseModel):
     assessment_cutoff: Optional[int] = None
     interview_cutoff: Optional[int] = None
     is_active: Optional[bool] = None
+    # Recruiter-controlled Salesforce/Apex flags (replaces auto-detection)
+    is_salesforce_job: Optional[bool] = None
+    include_apex_assessment: Optional[bool] = None
 
 
 class JobDescription(JobDescriptionCreate, TimestampMixin):

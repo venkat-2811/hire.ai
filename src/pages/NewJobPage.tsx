@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth, useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ArrowLeft, Plus, X, Loader2, Sparkles, Database } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowLeft, Plus, X, Loader2, Sparkles, Database, Cloud } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCreateJob, type JobDescriptionCreate } from '@/hooks/useJobs';
 import { LEVEL_CONFIG, type RoleLevel } from '@/types/database';
@@ -39,6 +40,14 @@ export default function NewJobPage() {
   const [goodToHaveSkills, setGoodToHaveSkills] = useState<string[]>([]);
   const [newMustHave, setNewMustHave] = useState('');
   const [newGoodToHave, setNewGoodToHave] = useState('');
+  // Recruiter-controlled Salesforce/Apex flags
+  const [isSalesforceJob, setIsSalesforceJob] = useState(false);
+  const [includeApexAssessment, setIncludeApexAssessment] = useState(false);
+
+  const handleSalesforceToggle = (checked: boolean) => {
+    setIsSalesforceJob(checked);
+    if (!checked) setIncludeApexAssessment(false);
+  };
 
   const handleAddMustHave = () => {
     if (newMustHave.trim() && !mustHaveSkills.includes(newMustHave.trim())) {
@@ -116,6 +125,8 @@ export default function NewJobPage() {
       location: location || undefined,
       endCustomer: (endCustomer as any) || undefined,
       end_customer_name: endCustomer === 'end_customer' ? endCustomerName.trim() : null,
+      is_salesforce_job: isSalesforceJob,
+      include_apex_assessment: isSalesforceJob ? includeApexAssessment : false,
     }, {
       onSuccess: () => {
         navigate('/jobs');
@@ -376,6 +387,67 @@ export default function NewJobPage() {
                     ))}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Salesforce / Apex Configuration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cloud className="h-5 w-5 text-blue-500" />
+                  Salesforce Configuration
+                </CardTitle>
+                <CardDescription>Configure Salesforce-specific assessment options</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Is Salesforce Job */}
+                <div className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:border-border transition-colors">
+                  <Checkbox
+                    id="is_salesforce_job"
+                    checked={isSalesforceJob}
+                    onCheckedChange={(checked) => handleSalesforceToggle(!!checked)}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="is_salesforce_job" className="text-sm font-medium cursor-pointer">
+                      Is this a Salesforce-related job?
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Enables Salesforce-specific assessment options for this job
+                    </p>
+                  </div>
+                </div>
+
+                {/* Include Apex — only visible when Salesforce is checked */}
+                <AnimatePresence>
+                  {isSalesforceJob && (
+                    <motion.div
+                      key="apex-option"
+                      initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                      animate={{ opacity: 1, height: 'auto', marginTop: 0 }}
+                      exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <div className="ml-6 flex items-start gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5 hover:border-blue-500/40 transition-colors">
+                        <Checkbox
+                          id="include_apex_assessment"
+                          checked={includeApexAssessment}
+                          onCheckedChange={(checked) => setIncludeApexAssessment(!!checked)}
+                          className="mt-0.5"
+                        />
+                        <div className="space-y-0.5">
+                          <Label htmlFor="include_apex_assessment" className="text-sm font-medium cursor-pointer">
+                            Do you want to include Apex Questions for Assessment?
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            Adds an Apex fill-in-the-blanks section to the assessment invite dialog
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </CardContent>
             </Card>
 

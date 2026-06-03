@@ -129,6 +129,15 @@ async def create_job(payload: Dict[str, Any], user: ClerkUser = Depends(require_
     if end_customer_val == "end_customer" and not end_customer_name_val:
         return api_error(message="Name of Customer/Client is required when hiring for End Customer", status_code=400)
 
+    # Validate Salesforce/Apex flags: include_apex_assessment requires is_salesforce_job=True
+    is_salesforce_job = bool(payload.get("is_salesforce_job", False))
+    include_apex_assessment = bool(payload.get("include_apex_assessment", False))
+    if include_apex_assessment and not is_salesforce_job:
+        return api_error(
+            message="include_apex_assessment can only be enabled when is_salesforce_job is true.",
+            status_code=400,
+        )
+
     job_data = {
         "title": payload.get("title"),
         "role": payload.get("role"),
@@ -144,6 +153,8 @@ async def create_job(payload: Dict[str, Any], user: ClerkUser = Depends(require_
         "location": payload.get("location"),
         "end_customer": end_customer_val,
         "end_customer_name": end_customer_name_val if end_customer_val == "end_customer" else None,
+        "is_salesforce_job": is_salesforce_job,
+        "include_apex_assessment": include_apex_assessment,
         "is_active": True,
         "created_by": user.id,
     }
@@ -177,7 +188,8 @@ async def update_job(job_id: str, payload: Dict[str, Any], user: ClerkUser = Dep
         "must_have_skills", "good_to_have_skills", "min_experience_years",
         "is_active", "resume_cutoff", "assessment_cutoff", "interview_cutoff",
         "include_sql_assessment",
-        "location", "end_customer", "end_customer_name"
+        "location", "end_customer", "end_customer_name",
+        "is_salesforce_job", "include_apex_assessment",
     ]
     
     update_data = {k: v for k, v in payload.items() if k in allowed_keys}
@@ -195,6 +207,41 @@ async def update_job(job_id: str, payload: Dict[str, Any], user: ClerkUser = Dep
         update_data["end_customer_name"] = ecn
     elif ec and ec != "end_customer":
         update_data["end_customer_name"] = None
+
+    # Validate Salesforce/Apex flags: include_apex_assessment requires is_salesforce_job=True.
+    # We must consider both the payload values and the existing values in the DB.
+    if "is_salesforce_job" in update_data or "include_apex_assessment" in update_data:
+        # Fetch current job state to cross-validate
+        def _fetch_current():
+            return (
+                db.client.from_("job_descriptions")
+                .select("is_salesforce_job, include_apex_assessment")
+                .eq("id", job_id)
+                .eq("created_by", user.id)
+                .maybe_single()
+                .execute()
+            )
+        current_res = await db.run(_fetch_current)
+        current = getattr(current_res, "data", None) or {}
+
+        # Resolve effective values (payload overrides current)
+        effective_is_salesforce = update_data.get(
+            "is_salesforce_job",
+            current.get("is_salesforce_job", False)
+        )
+        effective_include_apex = update_data.get(
+            "include_apex_assessment",
+            current.get("include_apex_assessment", False)
+        )
+        if effective_include_apex and not effective_is_salesforce:
+            return api_error(
+                message="include_apex_assessment can only be enabled when is_salesforce_job is true.",
+                status_code=400,
+            )
+        # If is_salesforce_job is being set to False, force include_apex_assessment to False too.
+        if "is_salesforce_job" in update_data and not update_data["is_salesforce_job"]:
+            update_data["include_apex_assessment"] = False
+
     if not update_data:
         return api_error(message="No valid fields to update", status_code=400)
 

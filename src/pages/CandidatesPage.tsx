@@ -73,7 +73,6 @@ import { useCandidateAnalytics } from '@/hooks/useAnalytics';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
-import { isSalesforceRoleText } from '@/lib/utils/salesforce';
 import { assessmentsApi } from '@/lib/api';
 import { aiInterviewApi } from '@/lib/api';
 import { candidatesWorkflowApi } from '@/lib/api';
@@ -124,6 +123,9 @@ export default function CandidatesPage() {
   const [includeCoding, setIncludeCoding] = useState(true);
   const [includeSql, setIncludeSql] = useState(false);
   const [sqlCount, setSqlCount] = useState(1);
+  // Apex (Salesforce) section — only shown when job.include_apex_assessment = true
+  const [includeApex, setIncludeApex] = useState(false);
+  const [apexCount, setApexCount] = useState(3);
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | ''>('');
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
@@ -181,27 +183,6 @@ export default function CandidatesPage() {
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
   const selectedJob = useMemo(() => allJobs.find((j) => j.id === selectedJobId) || null, [allJobs, selectedJobId]);
-  // Determine Apex mode based ONLY on the Job Title (case-insensitive).
-  // Keywords: Salesforce, Apex, SF
-  const selectedJobLooksSalesforce = useMemo(() => {
-    if (!selectedJob) return false;
-    const title = selectedJob.title || '';
-    return /(salesforce|apex|\bSF\b)/i.test(title);
-  }, [selectedJob]);
-
-  // Auto-determine assessment mode based on job role
-  const assessmentMode = useMemo(() => {
-    return selectedJobLooksSalesforce ? 'apex' : 'dsa';
-  }, [selectedJobLooksSalesforce]);
-
-  // Auto-configure sections based on assessment mode initially
-  // We no longer lock these for apex mode, allowing the user to explicitly toggle them.
-  useEffect(() => {
-    if (assessmentMode === 'apex') {
-      setIncludeMcq(true);
-      setIncludeCoding(true); // Default to true, but allow toggling
-    }
-  }, [assessmentMode]);
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -310,8 +291,8 @@ export default function CandidatesPage() {
       return;
     }
 
-    if (!includeMcq && !includeCoding && !includeSql) {
-      toast.error('Please enable at least one section (MCQ, Coding, or SQL)');
+    if (!includeMcq && !includeCoding && !includeSql && !includeApex) {
+      toast.error('Please enable at least one section (MCQ, Coding, SQL, or Apex)');
       return;
     }
 
@@ -348,14 +329,14 @@ export default function CandidatesPage() {
         job_id: selectedJobId,
         deadline: deadlineDate.toISOString(),
         mcq_question_count: includeMcq ? mcqCount : 0,
-        // In APEX mode, `codingCount` represents the number of Apex fill-in-the-blanks questions.
-        coding_challenge_count: assessmentMode === 'apex' ? codingCount : (includeCoding ? codingCount : 0),
+        coding_challenge_count: includeCoding ? codingCount : 0,
         difficulty: assessmentDifficulty,
         include_mcq: includeMcq,
         include_coding: includeCoding,
         include_sql: includeSql,
         sql_question_count: includeSql ? sqlCount : 0,
-        assessment_mode: assessmentMode,
+        include_apex: includeApex,
+        apex_question_count: includeApex ? apexCount : 0,
         total_time_minutes: totalTimeMinutes || undefined,
       });
       toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
@@ -853,16 +834,6 @@ export default function CandidatesPage() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Technical Assessment Mode</Label>
-                <div className="text-sm font-medium">
-                  {assessmentMode === 'apex' ? 'APEX (Salesforce)' : 'DSA (Data Structures & Algorithms)'}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Automatically determined based on the job role.
-                </div>
-              </div>
-
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label>Include Technical MCQs</Label>
@@ -883,15 +854,13 @@ export default function CandidatesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{assessmentMode === 'apex' ? 'Apex Fill-in-the-Blanks Questions' : 'Include Coding Challenges'}</Label>
+                  <Label>Include Coding Challenges (DSA)</Label>
                   <div className="flex items-center gap-2">
                     <Checkbox
                       checked={includeCoding}
                       onCheckedChange={(v) => setIncludeCoding(!!v)}
                     />
-                    <span className="text-sm text-muted-foreground">
-                      {assessmentMode === 'apex' ? 'Enable apex syntax section' : 'Enable coding section'}
-                    </span>
+                    <span className="text-sm text-muted-foreground">Enable coding section</span>
                   </div>
                   <Input
                     type="number"
@@ -921,6 +890,35 @@ export default function CandidatesPage() {
                   />
                 </div>
               </div>
+
+              {/* Apex section — only visible when the job is configured for it */}
+              {selectedJob?.include_apex_assessment && (
+                <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wide">Salesforce / Apex</span>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Include Apex Fill-in-the-Blanks</Label>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={includeApex}
+                          onCheckedChange={(v) => setIncludeApex(!!v)}
+                        />
+                        <span className="text-sm text-muted-foreground">Enable Apex section</span>
+                      </div>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={apexCount}
+                        onChange={(e) => setApexCount(Math.max(1, Number(e.target.value) || 1))}
+                        disabled={!includeApex}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">

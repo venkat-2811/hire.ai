@@ -231,29 +231,13 @@ class AssessmentInviteRequest(BaseModel):
     difficulty: Optional[str] = "medium"
     include_mcq: Optional[bool] = True
     include_coding: Optional[bool] = True
-    assessment_mode: Optional[str] = None
+    assessment_mode: Optional[str] = None  # kept for backward compat, no longer used for routing
     total_time_minutes: Optional[int] = None
     include_sql: Optional[bool] = False
     sql_question_count: Optional[int] = 0
-
-
-def _is_salesforce_role(job: Dict[str, Any]) -> bool:
-    import re
-
-    text = " ".join(
-        [
-            str(job.get("role") or ""),
-            str(job.get("title") or ""),
-            str(job.get("description") or ""),
-            " ".join(job.get("must_have_skills") or [])
-            if isinstance(job.get("must_have_skills"), list)
-            else "",
-            " ".join(job.get("good_to_have_skills") or [])
-            if isinstance(job.get("good_to_have_skills"), list)
-            else "",
-        ]
-    )
-    return bool(re.search(r"(salesforce|apex|crm developer)", text, re.IGNORECASE))
+    # Apex (Salesforce) section — only honoured when job.include_apex_assessment = True
+    include_apex: Optional[bool] = False
+    apex_question_count: Optional[int] = 3
 
 
 def _calc_total_time_minutes(
@@ -349,7 +333,10 @@ async def _fetch_job_for_user(
     def _fetch():
         return (
             db.client.from_("job_descriptions")
-            .select("id, title, role, level, description, must_have_skills, good_to_have_skills, include_sql_assessment")
+            .select(
+                "id, title, role, level, description, must_have_skills, good_to_have_skills, "
+                "include_sql_assessment, is_salesforce_job, include_apex_assessment"
+            )
             .eq("id", job_id)
             .eq("created_by", user_id)
             .single()
@@ -416,18 +403,23 @@ async def invite_assessments(
     if not job:
         return api_error(message="Job not found", status_code=404)
 
-    is_salesforce = _is_salesforce_role(job)
-    expected_mode = "apex" if is_salesforce else "dsa"
-    if body.assessment_mode and body.assessment_mode != expected_mode:
+    # ── Recruiter-controlled Salesforce/Apex logic ──────────────────────────────
+    # The system NO LONGER auto-detects Salesforce roles. The recruiter's job
+    # configuration (include_apex_assessment) and invite-dialog choices are the
+    # single source of truth.
+    job_allows_apex = bool(job.get("include_apex_assessment", False))
+
+    # Gate: apex questions can only be included when the job is configured for it.
+    include_apex = bool(body.include_apex) if job_allows_apex else False
+    if body.include_apex and not job_allows_apex:
         return api_error(
-            message=f"Assessment mode '{body.assessment_mode}' is not valid for this job role. Expected '{expected_mode}'.",
+            message="This job is not configured for Apex assessment. Enable 'Include Apex Questions' when creating the job.",
             status_code=400,
         )
-    assessment_mode = expected_mode
-    is_apex_mode = assessment_mode == "apex"
+    apex_count = int(body.apex_question_count or 3) if include_apex else 0
 
     include_mcq = body.include_mcq is not False
-    include_coding = body.include_coding is not False
+    include_coding = body.include_coding is not False  # DSA
     include_sql = body.include_sql is True
 
     difficulty = (body.difficulty or "medium").strip().lower()
@@ -437,21 +429,22 @@ async def invite_assessments(
     mcq_count_raw = body.mcq_question_count if body.mcq_question_count is not None else 20
     mcq_count = int(mcq_count_raw) if include_mcq else 0
 
-    coding_count_raw = body.coding_challenge_count if body.coding_challenge_count is not None else (4 if is_apex_mode else 2)
+    coding_count_raw = body.coding_challenge_count if body.coding_challenge_count is not None else 2
     coding_count = int(coding_count_raw) if include_coding else 0
-    apex_blanks_count = coding_count if is_apex_mode else 0
 
     sql_count_raw = body.sql_question_count if body.sql_question_count is not None else 0
     sql_count = int(sql_count_raw) if include_sql else 0
 
     if include_mcq and mcq_count < 1:
         return api_error(message="MCQ question count must be at least 1 when MCQ is enabled", status_code=400)
+    if include_apex and apex_count < 1:
+        return api_error(message="Apex question count must be at least 1 when Apex is enabled", status_code=400)
 
     total_time_minutes = (
         int(body.total_time_minutes) if body.total_time_minutes else _calc_total_time_minutes(
             difficulty=difficulty,
             mcq_count=mcq_count,
-            coding_count=(apex_blanks_count if is_apex_mode else coding_count),
+            coding_count=coding_count,
         )
     )
 
@@ -484,9 +477,12 @@ async def invite_assessments(
             "assessment_config": {
                 "include_mcq": bool(include_mcq),
                 "include_coding": bool(include_coding),
+                "include_sql": bool(include_sql),
+                "include_apex": bool(include_apex),
                 "difficulty": difficulty,
-                "assessment_mode": assessment_mode,
-                "is_apex_mode": bool(is_apex_mode),
+                # is_apex_mode kept for backward-compat with older sessions
+                "is_apex_mode": False,
+                "assessment_mode": "apex" if include_apex and not include_coding else "dsa",
             },
             "content_generation": {
                 "status": "queued",
@@ -507,7 +503,7 @@ async def invite_assessments(
                 "status": "pending",
                 "deadline": deadline_dt.isoformat(),
                 "mcq_question_count": mcq_count,
-                "coding_challenge_count": apex_blanks_count if is_apex_mode else coding_count,
+                "coding_challenge_count": coding_count,
                 "total_time_minutes": total_time_minutes,
                 "mcq_questions": [],
                 "coding_challenges": [],
@@ -584,15 +580,17 @@ async def invite_assessments(
                 )
                 generated_mcqs = await qgen.generate_mcq_questions(jd, count=mcq_count, difficulty=difficulty)
 
-            if is_apex_mode:
-                if apex_blanks_count > 0:
-                    generated_apex_blanks = await generate_apex_fill_in_the_blanks(
-                        job=job_payload,
-                        count=max(1, min(20, apex_blanks_count)),
-                        difficulty=difficulty,
-                    )
-            elif include_coding and coding_count > 0:
+            # DSA coding challenges (independent of Apex)
+            if include_coding and coding_count > 0:
                 generated_coding = await _select_dsa_coding_challenges(db=bg_db, difficulty=difficulty, count=coding_count)
+
+            # Apex fill-in-the-blanks (independent of DSA, only when job allows it)
+            if include_apex and apex_count > 0:
+                generated_apex_blanks = await generate_apex_fill_in_the_blanks(
+                    job=job_payload,
+                    count=max(1, min(20, apex_count)),
+                    difficulty=difficulty,
+                )
 
             if include_sql and sql_count > 0:
                 sql_challenges = await qgen.generate_sql_challenges(
@@ -642,8 +640,11 @@ async def invite_assessments(
                         "error": gen_error,
                     },
                 }
-                if gen_ok and is_apex_mode:
-                    new_pd["assessment_content"] = {"apex_blanks": generated_apex_blanks}
+                # Store Apex blanks in assessment_content (separate from coding_challenges)
+                if gen_ok and include_apex and generated_apex_blanks:
+                    if "assessment_content" not in new_pd:
+                        new_pd["assessment_content"] = {}
+                    new_pd["assessment_content"]["apex_blanks"] = generated_apex_blanks
                 
                 if gen_ok and include_sql and sql_count > 0:
                     if "assessment_content" not in new_pd:

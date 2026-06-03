@@ -204,6 +204,11 @@ export interface JobDescription {
   interview_cutoff?: number;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
+  end_customer?: 'your_own_company' | 'end_customer';
+  end_customer_name?: string | null;
+  // Recruiter-controlled Salesforce/Apex flags
+  is_salesforce_job?: boolean;
+  include_apex_assessment?: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -270,6 +275,9 @@ export interface JobDescriptionCreate {
   interview_cutoff?: number;
   location?: string;
   endCustomer?: 'your_own_company' | 'end_customer';
+  // Recruiter-controlled Salesforce/Apex flags
+  is_salesforce_job?: boolean;
+  include_apex_assessment?: boolean;
 }
 
 export const jobsApi = {
@@ -489,10 +497,14 @@ export interface AssessmentInviteRequest {
   difficulty: 'easy' | 'medium' | 'hard' | string;
   include_mcq: boolean;
   include_coding: boolean;
+  /** @deprecated kept for backward compat, no longer used for routing */
   assessment_mode?: 'dsa' | 'apex' | string;
   total_time_minutes?: number;
   include_sql?: boolean;
   sql_question_count?: number;
+  /** Apex fill-in-the-blanks section — only active when job.include_apex_assessment = true */
+  include_apex?: boolean;
+  apex_question_count?: number;
 }
 
 export interface AssessmentInviteResponse {
