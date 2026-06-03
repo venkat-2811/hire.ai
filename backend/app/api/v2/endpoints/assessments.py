@@ -27,7 +27,6 @@ from app.services.ai.apex_blanks import (
 from app.services.db.supabase_service import get_db_admin_service
 from app.services.code_executor import HackerEarthExecutor
 from app.services.email_queue import email_queue, Priority
-from app.services.email_service import get_email_service
 from app.services.question_generator import get_question_generator
 from app.utils.responses import api_error, ok
 
@@ -419,9 +418,9 @@ async def invite_assessments(
         )
     apex_count = int(body.apex_question_count or 3) if include_apex else 0
 
-    include_mcq = body.include_mcq is not False
-    include_coding = body.include_coding is not False  # DSA
-    include_sql = body.include_sql is True
+    include_mcq = bool(body.include_mcq) if body.include_mcq is not None else True
+    include_coding = bool(body.include_coding) if body.include_coding is not None else True  # DSA
+    include_sql = bool(body.include_sql) if body.include_sql is not None else False
 
     difficulty = (body.difficulty or "medium").strip().lower()
     if difficulty not in ("easy", "medium", "hard"):
@@ -541,16 +540,25 @@ async def invite_assessments(
         qgen = get_question_generator()
 
         logger.info(
-            "[assessments.invite] background_start invites=%s job_id=%s mode=%s difficulty=%s",
+            "[assessments.invite] background_start invites=%s job_id=%s include_mcq=%s include_coding=%s include_sql=%s include_apex=%s difficulty=%s",
             str(invites_sent),
             str(body.job_id),
-            str(assessment_mode),
+            str(include_mcq),
+            str(include_coding),
+            str(include_sql),
+            str(include_apex),
             str(difficulty),
         )
 
+        # ── Per-section results (always initialised so session-update code is safe) ──
         generated_mcqs: List[Dict[str, Any]] = []
         generated_coding: List[Dict[str, Any]] = []
         generated_apex_blanks: List[Dict[str, Any]] = []
+        generated_sql: List[Dict[str, Any]] = []
+
+        # Per-section error tracking. A failure in one section does NOT block
+        # emails — we still send the link as long as at least one section was generated.
+        section_errors: Dict[str, Optional[str]] = {}
 
         job_payload = {
             "title": job.get("title"),
@@ -561,158 +569,100 @@ async def invite_assessments(
             "good_to_have_skills": job.get("good_to_have_skills") or [],
         }
 
-        generation_report = {
-            "mcq": {"status": "skipped", "count": 0},
-            "coding": {"status": "skipped", "count": 0},
-            "apex": {"status": "skipped", "count": 0},
-            "sql": {"status": "skipped", "count": 0},
-        }
-        has_ok = False
-        gen_error: Optional[str] = None
         gen_started = time()
-        
-        try:
-            from app.models.schemas import JobDescription as JobDescriptionModel
-            from app.models.schemas import RoleLevel
-            import json
-            
-            # Since role might not be a strict Python Enum, we validate against known roles
-            VALID_ROLES = {
-                "software_engineer", "frontend_developer", "backend_developer", 
-                "fullstack_developer", "salesforce_developer", "data_scientist", 
-                "devops_engineer", "qa_engineer", "product_manager", "designer",
-                "business_analyst", "salesforce_admin"
-            }
-            
-            safe_role = str(job.get("role") or "software_engineer").lower()
-            safe_level_str = str(job.get("level") or "mid").lower()
-            
-            # Helper to perform the DB audit for both enums
-            def trigger_db_audit():
-                async def _audit_enum_values():
-                    try:
-                        all_jobs_res = await bg_db.client.from_("job_descriptions").select("id, level, role").execute()
-                        valid_levels = {e.value for e in RoleLevel}
-                        for j in (getattr(all_jobs_res, "data", []) or []):
-                            # Audit level
-                            lvl = str(j.get("level") or "mid").lower()
-                            if lvl not in valid_levels:
-                                logger.warning(f"[assessments.invite.audit] invalid_enum_in_db table='job_descriptions' field='level' value='{lvl}' id={j.get('id')}")
-                            # Audit role
-                            r = str(j.get("role") or "software_engineer").lower()
-                            if r not in VALID_ROLES:
-                                logger.warning(f"[assessments.invite.audit] invalid_enum_in_db table='job_descriptions' field='role' value='{r}' id={j.get('id')}")
-                    except Exception as audit_e:
-                        logger.exception(f"[assessments.invite.audit] Failed to run DB audit: {audit_e}")
-                # Call as a non-blocking background task
-                asyncio.create_task(_audit_enum_values())
+        from app.models.schemas import JobDescription as JobDescriptionModel
 
-            # Validate role
-            if safe_role not in VALID_ROLES:
-                logger.warning(f"[assessments.invite] invalid_enum_value field='role' value='{safe_role}' job_id={job.get('id')}. Skipping invite generation.")
-                trigger_db_audit()
-                raise ValueError(f"Invalid enum value field='role' value='{safe_role}'")
-
-            # Validate level
+        # ── MCQ generation ────────────────────────────────────────────────────
+        if include_mcq and mcq_count > 0:
             try:
-                safe_level = RoleLevel(safe_level_str)
-            except ValueError:
-                logger.warning(f"[assessments.invite] invalid_enum_value field='level' value='{safe_level_str}' job_id={job.get('id')}. Skipping invite generation.")
-                trigger_db_audit()
-                raise ValueError(f"Invalid enum value field='level' value='{safe_level_str}'")
-                
-            jd = JobDescriptionModel(
-                id=str(job.get("id") or "unknown"),
-                title=str(job.get("title") or "Unknown Title"),
-                role=safe_role,
-                level=safe_level,
-                description=str(job.get("description") or ""),
-                must_have_skills=job.get("must_have_skills") or [],
-                good_to_have_skills=job.get("good_to_have_skills") or [],
-                min_experience_years=int(job.get("min_experience_years") or 0),
-                is_active=True,
-            )
-            
-            if include_mcq and mcq_count > 0:
-                try:
-                    generated_mcqs = await qgen.generate_mcq_questions(jd, count=mcq_count, difficulty=difficulty)
-                    if generated_mcqs:
-                        generation_report["mcq"] = {"status": "ok", "count": len(generated_mcqs)}
-                    else:
-                        generation_report["mcq"] = {"status": "failed", "error": "Returned empty list"}
-                except Exception as e:
-                    # 4. Do not silently swallow errors (preserve stack trace)
-                    logger.exception(f"[assessments.invite] MCQ generation failed: {e}")
-                    generation_report["mcq"] = {"status": "failed", "error": str(e)}
+                jd = JobDescriptionModel(
+                    id=str(job.get("id")),
+                    title=str(job.get("title")),
+                    role=job.get("role"),
+                    level=job.get("level"),
+                    description=str(job.get("description") or ""),
+                    must_have_skills=job.get("must_have_skills") or [],
+                    good_to_have_skills=job.get("good_to_have_skills") or [],
+                    min_experience_years=int(job.get("min_experience_years") or 0),
+                    is_active=True,
+                )
+                generated_mcqs = await qgen.generate_mcq_questions(jd, count=mcq_count, difficulty=difficulty)
+                logger.info("[assessments.invite] mcq_generated count=%s", len(generated_mcqs))
+            except Exception as e:
+                section_errors["mcq"] = str(e)
+                logger.error("[assessments.invite] mcq_generation_failed error=%s", str(e))
 
-            # DSA coding challenges (independent of Apex)
-            if include_coding and coding_count > 0:
-                try:
-                    generated_coding = await _select_dsa_coding_challenges(db=bg_db, difficulty=difficulty, count=coding_count)
-                    if generated_coding:
-                        generation_report["coding"] = {"status": "ok", "count": len(generated_coding)}
-                    else:
-                        generation_report["coding"] = {"status": "failed", "error": "Returned empty list"}
-                except Exception as e:
-                    logger.exception(f"[assessments.invite] Coding generation failed: {e}")
-                    generation_report["coding"] = {"status": "failed", "error": str(e)}
+        # ── DSA coding challenges ────────────────────────────────────────────
+        if include_coding and coding_count > 0:
+            try:
+                generated_coding = await _select_dsa_coding_challenges(
+                    db=bg_db, difficulty=difficulty, count=coding_count
+                )
+                logger.info("[assessments.invite] coding_generated count=%s", len(generated_coding))
+            except Exception as e:
+                section_errors["coding"] = str(e)
+                logger.error("[assessments.invite] coding_generation_failed error=%s", str(e))
 
-            # Apex fill-in-the-blanks (independent of DSA, only when job allows it)
-            if include_apex and apex_count > 0:
-                try:
-                    generated_apex_blanks = await generate_apex_fill_in_the_blanks(
-                        job=job_payload,
-                        count=max(1, min(20, apex_count)),
-                        difficulty=difficulty,
-                    )
-                    if generated_apex_blanks:
-                        generation_report["apex"] = {"status": "ok", "count": len(generated_apex_blanks)}
-                    else:
-                        generation_report["apex"] = {"status": "failed", "error": "Returned empty list"}
-                except Exception as e:
-                    logger.exception(f"[assessments.invite] Apex generation failed: {e}")
-                    generation_report["apex"] = {"status": "failed", "error": str(e)}
+        # ── Apex fill-in-the-blanks ──────────────────────────────────────────
+        if include_apex and apex_count > 0:
+            try:
+                generated_apex_blanks = await generate_apex_fill_in_the_blanks(
+                    job=job_payload,
+                    count=max(1, min(20, apex_count)),
+                    difficulty=difficulty,
+                )
+                logger.info("[assessments.invite] apex_generated count=%s", len(generated_apex_blanks))
+            except Exception as e:
+                section_errors["apex"] = str(e)
+                logger.error("[assessments.invite] apex_generation_failed error=%s", str(e))
 
-            if include_sql and sql_count > 0:
-                try:
-                    sql_challenges = await qgen.generate_sql_challenges(
-                        job=jd,
-                        count=sql_count,
-                        difficulty=difficulty
-                    )
-                    if sql_challenges:
-                        generation_report["sql"] = {"status": "ok", "count": len(sql_challenges)}
-                    else:
-                        generation_report["sql"] = {"status": "failed", "error": "Returned empty list"}
-                except Exception as e:
-                    logger.exception(f"[assessments.invite] SQL generation failed: {e}")
-                    generation_report["sql"] = {"status": "failed", "error": str(e)}
+        # ── SQL challenges ───────────────────────────────────────────────────
+        if include_sql and sql_count > 0:
+            try:
+                generated_sql = await qgen.generate_sql_challenges(
+                    job=JobDescriptionModel(
+                        id=str(job.get("id")),
+                        title=str(job.get("title")),
+                        role=job.get("role"),
+                        level=job.get("level"),
+                        description=str(job.get("description") or ""),
+                        must_have_skills=job.get("must_have_skills") or [],
+                        good_to_have_skills=job.get("good_to_have_skills") or [],
+                        min_experience_years=int(job.get("min_experience_years") or 0),
+                        is_active=True,
+                    ),
+                    count=sql_count,
+                    difficulty=difficulty,
+                )
+                logger.info("[assessments.invite] sql_generated count=%s", len(generated_sql))
+            except Exception as e:
+                section_errors["sql"] = str(e)
+                logger.error("[assessments.invite] sql_generation_failed error=%s", str(e))
 
-            # Log the structured report
-            logger.info(f"[assessments.invite] generation_report job_id={job.get('id')} report={json.dumps(generation_report)}")
+        logger.info(
+            "[assessments.invite] generation_done duration_s=%.3f section_errors=%s",
+            float(time() - gen_started),
+            str(section_errors),
+        )
 
-            # Determine if we have at least one successful generation
-            has_ok = any(info.get("status") == "ok" for info in generation_report.values())
-            has_requested = any(info.get("status") != "skipped" for info in generation_report.values())
-            
-            if has_requested and not has_ok:
-                gen_error = "All requested generation modules failed or returned empty content"
-                logger.error(f"[assessments.invite.dead_letter] All generation failed for session. job_id={job.get('id')}, candidates={len(candidates)}, report={json.dumps(generation_report)}")
-        except Exception as e:
-            gen_error = str(e)
-            logger.exception(f"[assessments.invite] Fatal error in background generation: {e}")
-        finally:
-            logger.info(
-                "[assessments.invite] generation_done has_ok=%s duration_s=%.3f",
-                str(has_ok),
-                float(time() - gen_started),
-            )
+        # Determine whether ANY required section succeeded.
+        # We consider generation "ok enough" to send the email as long as:
+        # - Every ENABLED section either produced content or wasn't required.
+        # A section is "required" if the recruiter enabled it AND asked for > 0 items.
+        required_sections_ok = True
+        if include_mcq and mcq_count > 0 and "mcq" in section_errors:
+            required_sections_ok = False
+        if include_coding and coding_count > 0 and "coding" in section_errors:
+            required_sections_ok = False
+        # SQL and Apex failures are NON-FATAL: we still send the email.
+        # The candidate gets a link; the assessor can re-send if content is missing.
 
-        # Update sessions with generation status/content
+        # ── Update sessions with generation status/content ───────────────────
         for meta in session_meta:
             sid = meta["session_id"]
             try:
-                def _fetch_pd():
+                # Use default-arg capture to avoid Python late-binding closure bug
+                def _fetch_pd(sid=sid):
                     return bg_db.client.from_("assessment_sessions").select("proctoring_data").eq("id", sid).single().execute()
 
                 res = await bg_db.run(_fetch_pd)
@@ -721,26 +671,29 @@ async def invite_assessments(
                 if not isinstance(existing_pd, dict):
                     existing_pd = {}
 
+                gen_ok = required_sections_ok
+                gen_error_summary = "; ".join(f"{k}: {v}" for k, v in section_errors.items()) or None
+
                 new_pd = {
                     **existing_pd,
                     "content_generation": {
-                        "status": "ready" if has_ok else "failed",
+                        "status": "ready" if gen_ok else "partial" if section_errors else "failed",
                         "completed_at": _utc_now_iso(),
-                        "error": gen_error,
+                        "error": gen_error_summary,
+                        "section_errors": section_errors if section_errors else None,
                     },
                 }
-                # Store Apex blanks in assessment_content (separate from coding_challenges)
-                if has_ok and include_apex and generated_apex_blanks:
-                    if "assessment_content" not in new_pd:
-                        new_pd["assessment_content"] = {}
-                    new_pd["assessment_content"]["apex_blanks"] = generated_apex_blanks
-                
-                if has_ok and include_sql and sql_count > 0:
-                    if "assessment_content" not in new_pd:
-                        new_pd["assessment_content"] = {}
-                    new_pd["assessment_content"]["sql_challenges"] = sql_challenges
 
-                def _update_session():
+                # Always build assessment_content from whatever was generated
+                assessment_content: Dict[str, Any] = dict(existing_pd.get("assessment_content") or {})
+                if generated_apex_blanks:
+                    assessment_content["apex_blanks"] = generated_apex_blanks
+                if generated_sql:
+                    assessment_content["sql_challenges"] = generated_sql
+                if assessment_content:
+                    new_pd["assessment_content"] = assessment_content
+
+                def _update_session(sid=sid, new_pd=new_pd):
                     return (
                         bg_db.client.from_("assessment_sessions")
                         .update(
@@ -759,41 +712,29 @@ async def invite_assessments(
             except Exception as e:
                 logger.exception("[assessments.invite] session_update_failed session_id=%s error=%s", str(sid), str(e))
 
-        if not has_ok:
-            logger.error("[assessments.invite] background_abort generation_failed error=%s", str(gen_error))
+        # ── Abort email if critical sections failed ───────────────────────────
+        if not required_sections_ok:
+            logger.error(
+                "[assessments.invite] background_abort critical_generation_failed errors=%s",
+                str(section_errors),
+            )
             return
 
-        # Send emails after content is ready — runs inside background task, direct await is safe
-        # and gives us real SMTP delivery confirmation before writing status to DB.
-        email_svc = get_email_service()
+        # ── Send emails ──────────────────────────────────────────────────────
+        # Emails are sent AFTER session content is written to DB, so the
+        # candidate always arrives at a session that already has questions.
         settings = get_settings()
         for meta in session_meta:
             sid = meta["session_id"]
             token = meta["token"]
             assessment_link = f"{str(settings.frontend_url).rstrip('/')}/assessment/{token}"
-            recipient_email = str(meta.get("email") or "").strip()
-            send_started = time()
             try:
+                recipient_email = str(meta.get("email") or "").strip()
                 if not recipient_email:
                     raise RuntimeError("Candidate email is missing")
 
-                html, text, subject = email_queue.build_assessment_invite(
-                    str(meta.get("candidate_name") or "Candidate"),
-                    str(job.get("title") or ""),
-                    assessment_link,
-                    deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC"),
-                )
-
-                # Direct SMTP send — confirmed before we write "sent" to DB
-                await email_svc.send_email(
-                    to=recipient_email,
-                    subject=subject,
-                    html=html,
-                    text=text,
-                )
-
-                # Only reach here on confirmed SMTP success — fetch fresh proctoring_data to merge
-                def _fetch_current_pd(sid=sid):
+                # Fetch fresh proctoring_data to stamp delivery status
+                def _fetch_pd_email(sid=sid):
                     return (
                         bg_db.client.from_("assessment_sessions")
                         .select("proctoring_data")
@@ -802,23 +743,23 @@ async def invite_assessments(
                         .execute()
                     )
 
-                cur_res = await bg_db.run(_fetch_current_pd)
-                cur_row = getattr(cur_res, "data", None) or {}
-                cur_pd = cur_row.get("proctoring_data") if isinstance(cur_row, dict) else {}
-                if not isinstance(cur_pd, dict):
-                    cur_pd = {}
+                pd_res = await bg_db.run(_fetch_pd_email)
+                pd_row = getattr(pd_res, "data", None) or {}
+                email_pd = pd_row.get("proctoring_data") if isinstance(pd_row, dict) else {}
+                if not isinstance(email_pd, dict):
+                    email_pd = {}
 
-                def _write_email_sent(sid=sid, cur_pd=cur_pd):
+                def _mark_email_sending(sid=sid, email_pd=email_pd):
                     return (
                         bg_db.client.from_("assessment_sessions")
                         .update(
                             {
                                 "proctoring_data": {
-                                    **cur_pd,
+                                    **email_pd,
                                     "invite_delivery": {
-                                        "status": "sent",
-                                        "sent_at": _utc_now_iso(),
-                                        "to": recipient_email,
+                                        **(email_pd.get("invite_delivery") if isinstance(email_pd.get("invite_delivery"), dict) else {}),
+                                        "status": "sending",
+                                        "sending_at": _utc_now_iso(),
                                     },
                                 },
                                 "updated_at": _utc_now_iso(),
@@ -828,18 +769,51 @@ async def invite_assessments(
                         .execute()
                     )
 
-                await bg_db.run(_write_email_sent)
-                logger.info(
-                    "[assessments.invite] email_confirmed_sent session_id=%s to=%s duration_s=%.3f",
-                    sid, recipient_email, float(time() - send_started),
+                await bg_db.run(_mark_email_sending)
+
+                send_started = time()
+                html, text, subject = email_queue.build_assessment_invite(
+                    str(meta.get("candidate_name") or "Candidate"),
+                    str(job.get("title") or ""),
+                    assessment_link,
+                    deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC"),
+                )
+                await email_queue.enqueue(
+                    to_email=recipient_email,
+                    subject=subject,
+                    html_body=html,
+                    text_body=text,
+                    priority=Priority.HIGH,
                 )
 
-            except Exception as e:
-                logger.exception(
-                    "[assessments.invite] email_failed session_id=%s to=%s error=%s",
-                    sid, recipient_email or "(missing)", str(e),
+                def _mark_email_ok(sid=sid, email_pd=email_pd):
+                    return (
+                        bg_db.client.from_("assessment_sessions")
+                        .update(
+                            {
+                                "proctoring_data": {
+                                    **email_pd,
+                                    "invite_delivery": {
+                                        **(email_pd.get("invite_delivery") if isinstance(email_pd.get("invite_delivery"), dict) else {}),
+                                        "status": "sent",
+                                        "sent_at": _utc_now_iso(),
+                                    },
+                                },
+                                "updated_at": _utc_now_iso(),
+                            }
+                        )
+                        .eq("id", sid)
+                        .execute()
+                    )
+
+                await bg_db.run(_mark_email_ok)
+                logger.info(
+                    "[assessments.invite] email_sent session_id=%s duration_s=%.3f",
+                    str(sid),
+                    float(time() - send_started),
                 )
-                # Write failure status so recruiter dashboard can surface the error
+            except Exception as e:
+                logger.exception("[assessments.invite] email_failed session_id=%s error=%s", str(sid), str(e))
                 try:
                     def _fetch_pd_fail(sid=sid):
                         return (
@@ -850,13 +824,13 @@ async def invite_assessments(
                             .execute()
                         )
 
-                    fail_res = await bg_db.run(_fetch_pd_fail)
-                    fail_row = getattr(fail_res, "data", None) or {}
-                    fail_pd = fail_row.get("proctoring_data") if isinstance(fail_row, dict) else {}
+                    pd_res = await bg_db.run(_fetch_pd_fail)
+                    pd_row = getattr(pd_res, "data", None) or {}
+                    fail_pd = pd_row.get("proctoring_data") if isinstance(pd_row, dict) else {}
                     if not isinstance(fail_pd, dict):
                         fail_pd = {}
 
-                    def _write_email_failed(sid=sid, fail_pd=fail_pd, err=str(e)):
+                    def _mark_email_fail(sid=sid, fail_pd=fail_pd):
                         return (
                             bg_db.client.from_("assessment_sessions")
                             .update(
@@ -864,10 +838,10 @@ async def invite_assessments(
                                     "proctoring_data": {
                                         **fail_pd,
                                         "invite_delivery": {
+                                            **(fail_pd.get("invite_delivery") if isinstance(fail_pd.get("invite_delivery"), dict) else {}),
                                             "status": "failed",
                                             "failed_at": _utc_now_iso(),
-                                            "to": recipient_email or None,
-                                            "error": err,
+                                            "error": str(e),
                                         },
                                     },
                                     "updated_at": _utc_now_iso(),
@@ -877,9 +851,9 @@ async def invite_assessments(
                             .execute()
                         )
 
-                    await bg_db.run(_write_email_failed)
+                    await bg_db.run(_mark_email_fail)
                 except Exception:
-                    pass  # don't let DB update failure mask the original send error
+                    pass
 
         logger.info(
             "[assessments.invite] background_done duration_s=%.3f",
@@ -921,24 +895,28 @@ def _validate_assessment_content(session: Dict[str, Any]) -> Tuple[bool, Optiona
     If repair_context is provided, the assessment can be auto-repaired instead of rejected."""
     proctoring_data = session.get("proctoring_data") if isinstance(session.get("proctoring_data"), dict) else {}
     assessment_config = proctoring_data.get("assessment_config") or {}
-    assessment_mode = assessment_config.get("assessment_mode")
-    is_apex_mode = assessment_mode == "apex"
-    include_mcq = assessment_config.get("include_mcq") is not False
-    include_coding = assessment_config.get("include_coding") is not False
+
+    # Read flags from assessment_config (stored at invite time)
+    include_mcq = bool(assessment_config.get("include_mcq", True))
+    include_coding = bool(assessment_config.get("include_coding", True))
+    include_sql = bool(assessment_config.get("include_sql", False))
+    include_apex = bool(assessment_config.get("include_apex", False))
+    # Legacy compatibility: honour old is_apex_mode if include_apex not set
+    if not include_apex:
+        include_apex = assessment_config.get("assessment_mode") == "apex" or bool(assessment_config.get("is_apex_mode", False))
 
     mcq_count_expected = int(session.get("mcq_question_count") or 0)
     coding_count_expected = int(session.get("coding_challenge_count") or 0)
 
     repair_context = {"needs_repair": False, "repairs": []}
 
-    # Validate MCQ content
+    # ── MCQ validation ───────────────────────────────────────────────────────
     if include_mcq and mcq_count_expected > 0:
         mcq_questions = session.get("mcq_questions") or []
         if not isinstance(mcq_questions, list) or len(mcq_questions) == 0:
             return False, "MCQ questions are not available for this session. Please ask the recruiter to resend the assessment.", None
         if len(mcq_questions) != mcq_count_expected:
             return False, f"MCQ question count mismatch. Expected {mcq_count_expected}, found {len(mcq_questions)}. Please ask the recruiter to resend the assessment.", None
-        # Validate each MCQ has required fields
         for idx, q in enumerate(mcq_questions):
             if not isinstance(q, dict):
                 return False, f"MCQ question {idx} is malformed.", None
@@ -951,12 +929,11 @@ def _validate_assessment_content(session: Dict[str, Any]) -> Tuple[bool, Optiona
             if q.get("correct_index") is None:
                 return False, f"MCQ question {idx} is missing correct_index.", None
 
-    # Validate coding content - but mark for repair instead of hard-fail
-    if include_coding and not is_apex_mode and coding_count_expected > 0:
+    # ── DSA coding validation (only when coding is enabled and apex is NOT the sole mode) ──
+    if include_coding and not include_apex and coding_count_expected > 0:
         coding_challenges = session.get("coding_challenges") or []
         if not isinstance(coding_challenges, list) or len(coding_challenges) == 0:
             return False, "Coding challenges are not available for this session. Please ask the recruiter to resend the assessment.", None
-        # Validate each coding challenge and mark for repair if needed
         for idx, c in enumerate(coding_challenges):
             if not isinstance(c, dict):
                 return False, f"Coding challenge {idx} is malformed.", None
@@ -964,12 +941,10 @@ def _validate_assessment_content(session: Dict[str, Any]) -> Tuple[bool, Optiona
                 return False, f"Coding challenge {idx} is missing ID.", None
             if not c.get("title"):
                 return False, f"Coding challenge {idx} is missing title.", None
-            
             starter_code = c.get("starter_code") or {}
             if not isinstance(starter_code, dict) or not starter_code:
                 repair_context["needs_repair"] = True
                 repair_context["repairs"].append(f"Coding challenge {idx}: missing starter_code - will inject fallback")
-            
             test_cases = c.get("test_cases") or []
             if not isinstance(test_cases, list) or not test_cases:
                 repair_context["needs_repair"] = True
@@ -980,12 +955,20 @@ def _validate_assessment_content(session: Dict[str, Any]) -> Tuple[bool, Optiona
                     repair_context["needs_repair"] = True
                     repair_context["repairs"].append(f"Coding challenge {idx}: no public test cases - will inject fallback")
 
-    # Validate Apex blanks
-    if is_apex_mode:
+    # ── Apex fill-in-the-blanks validation ──────────────────────────────────
+    if include_apex:
         content = proctoring_data.get("assessment_content") or {}
         apex_blanks = content.get("apex_blanks") or []
         if not isinstance(apex_blanks, list) or len(apex_blanks) == 0:
             return False, "Apex questions are not available for this session. Please ask the recruiter to resend the assessment.", None
+
+    # ── SQL validation (non-fatal — missing SQL is tolerated) ────────────────
+    if include_sql:
+        content = proctoring_data.get("assessment_content") or {}
+        sql_challenges = content.get("sql_challenges") or []
+        if not isinstance(sql_challenges, list) or len(sql_challenges) == 0:
+            # Log but do NOT fail — the candidate can still take MCQ / coding sections
+            logger.warning("[assessments.start] sql_questions_missing session_id=%s", str(session.get("id")))
 
     if repair_context["needs_repair"]:
         logger.warning("[assessments.start] content_needs_repair session_id=%s repairs=%s", str(session.get("id")), str(repair_context["repairs"]))
