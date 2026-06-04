@@ -253,10 +253,22 @@ class SupabaseService:
 
         return await anyio.to_thread.run_sync(_run)
 
-    async def run(self, fn):
-        """Run an arbitrary sync Supabase operation in a worker thread."""
-
-        return await anyio.to_thread.run_sync(fn)
+    async def run(self, fn, retries: int = 3):
+        """Run an arbitrary sync Supabase operation in a worker thread with retries."""
+        import httpx
+        
+        for attempt in range(retries):
+            try:
+                return await anyio.to_thread.run_sync(fn)
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ReadError) as e:
+                if attempt == retries - 1:
+                    logger.error("[db.run] Failed after %d attempts. Final error: %s", retries, e)
+                    raise
+                logger.warning(
+                    "[db.run] Supabase connection error: %s. Retrying %d/%d...", 
+                    type(e).__name__, attempt + 1, retries - 1
+                )
+                await anyio.sleep(0.5 * (2 ** attempt))
 
     async def run_safe(
         self,

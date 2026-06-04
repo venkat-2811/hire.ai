@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowLeft, Loader2, Save, Sparkles, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
@@ -46,12 +47,6 @@ export default function EditJobPage() {
   const [extractingSkills, setExtractingSkills] = useState(false);
   // Recruiter-controlled Salesforce/Apex flags
   const [isSalesforceJob, setIsSalesforceJob] = useState(false);
-  const [includeApexAssessment, setIncludeApexAssessment] = useState(false);
-
-  const handleSalesforceToggle = (checked: boolean) => {
-    setIsSalesforceJob(checked);
-    if (!checked) setIncludeApexAssessment(false);
-  };
 
   useEffect(() => {
     if (job) {
@@ -69,7 +64,6 @@ export default function EditJobPage() {
       setEndCustomer((job.endCustomer || job.end_customer) as any || '');
       setEndCustomerName(job.end_customer_name || '');
       setIsSalesforceJob(job.is_salesforce_job ?? false);
-      setIncludeApexAssessment(job.include_apex_assessment ?? false);
     }
   }, [job]);
 
@@ -102,7 +96,7 @@ export default function EditJobPage() {
         endCustomer: endCustomer || undefined,
         end_customer_name: endCustomer === 'end_customer' ? endCustomerName.trim() : null,
         is_salesforce_job: isSalesforceJob,
-        include_apex_assessment: isSalesforceJob ? includeApexAssessment : false,
+        include_apex_assessment: isSalesforceJob,
       } as any);
 
       toast.success('Job updated successfully');
@@ -216,6 +210,22 @@ export default function EditJobPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div className="space-y-2 flex flex-col justify-center">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="is_salesforce_job"
+                    checked={isSalesforceJob}
+                    onCheckedChange={(checked) => setIsSalesforceJob(checked)}
+                  />
+                  <Label htmlFor="is_salesforce_job" className="cursor-pointer">
+                    Salesforce Related Job
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enable to automatically use Apex assessments instead of standard DSA coding challenges
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -351,65 +361,7 @@ export default function EditJobPage() {
                 </div>
               </div>
 
-              {/* Salesforce / Apex Configuration */}
-              <div className="border-t pt-6 space-y-4">
-                <div>
-                  <h3 className="text-sm font-semibold flex items-center gap-2 mb-1">
-                    <Cloud className="h-4 w-4 text-blue-500" />
-                    Salesforce Configuration
-                  </h3>
-                  <p className="text-xs text-muted-foreground mb-3">Configure Salesforce-specific assessment options</p>
-                </div>
 
-                {/* Is Salesforce Job */}
-                <div className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:border-border transition-colors">
-                  <Checkbox
-                    id="edit_is_salesforce_job"
-                    checked={isSalesforceJob}
-                    onCheckedChange={(checked) => handleSalesforceToggle(!!checked)}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-0.5">
-                    <Label htmlFor="edit_is_salesforce_job" className="text-sm font-medium cursor-pointer">
-                      Is this a Salesforce-related job?
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Enables Salesforce-specific assessment options for this job
-                    </p>
-                  </div>
-                </div>
-
-                {/* Include Apex — only visible when Salesforce is checked */}
-                <AnimatePresence>
-                  {isSalesforceJob && (
-                    <motion.div
-                      key="edit-apex-option"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="overflow-hidden"
-                    >
-                      <div className="ml-6 flex items-start gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5 hover:border-blue-500/40 transition-colors">
-                        <Checkbox
-                          id="edit_include_apex_assessment"
-                          checked={includeApexAssessment}
-                          onCheckedChange={(checked) => setIncludeApexAssessment(!!checked)}
-                          className="mt-0.5"
-                        />
-                        <div className="space-y-0.5">
-                          <Label htmlFor="edit_include_apex_assessment" className="text-sm font-medium cursor-pointer">
-                            Do you want to include Apex Questions for Assessment?
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Adds an Apex fill-in-the-blanks section to the assessment invite dialog
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
 
               <div className="flex gap-4">
                 <Button type="button" variant="outline" onClick={() => navigate(-1)}>

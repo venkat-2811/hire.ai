@@ -291,7 +291,9 @@ export default function CandidatesPage() {
       return;
     }
 
-    if (!includeMcq && !includeCoding && !includeSql && !includeApex) {
+    const isSalesforce = selectedJob?.is_salesforce_job || selectedJob?.include_apex_assessment;
+
+    if (!includeMcq && (isSalesforce ? !includeApex : !includeCoding) && !includeSql) {
       toast.error('Please enable at least one section (MCQ, Coding, SQL, or Apex)');
       return;
     }
@@ -306,7 +308,7 @@ export default function CandidatesPage() {
       return;
     }
     
-    if (includeCoding && codingCount < 1) {
+    if (!isSalesforce && includeCoding && codingCount < 1) {
       toast.error('QUESTIONS SHOULD BE EQUAL TO OR GREATER THAN 1');
       return;
     }
@@ -329,14 +331,14 @@ export default function CandidatesPage() {
         job_id: selectedJobId,
         deadline: deadlineDate.toISOString(),
         mcq_question_count: includeMcq ? mcqCount : 0,
-        coding_challenge_count: includeCoding ? codingCount : 0,
+        coding_challenge_count: (!isSalesforce && includeCoding) ? codingCount : 0,
         difficulty: assessmentDifficulty,
         include_mcq: includeMcq,
-        include_coding: includeCoding,
+        include_coding: isSalesforce ? false : includeCoding,
         include_sql: includeSql,
         sql_question_count: includeSql ? sqlCount : 0,
-        include_apex: includeApex,
-        apex_question_count: includeApex ? apexCount : 0,
+        include_apex: isSalesforce ? includeApex : false,
+        apex_question_count: (isSalesforce && includeApex) ? apexCount : 0,
         total_time_minutes: totalTimeMinutes || undefined,
       });
       toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
@@ -853,24 +855,46 @@ export default function CandidatesPage() {
                     disabled={!includeMcq}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Include Coding Challenges (DSA)</Label>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      checked={includeCoding}
-                      onCheckedChange={(v) => setIncludeCoding(!!v)}
+                {(selectedJob?.is_salesforce_job || selectedJob?.include_apex_assessment) ? (
+                  <div className="space-y-2">
+                    <Label>Include Apex Fill-in-the-Blanks</Label>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={includeApex}
+                        onCheckedChange={(v) => setIncludeApex(!!v)}
+                      />
+                      <span className="text-sm text-muted-foreground">Enable Apex section</span>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={apexCount}
+                      onChange={(e) => setApexCount(Math.max(1, Number(e.target.value) || 1))}
+                      disabled={!includeApex}
                     />
-                    <span className="text-sm text-muted-foreground">Enable coding section</span>
                   </div>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={codingCount}
-                    onChange={(e) => setCodingCount(Math.max(0, Number(e.target.value) || 0))}
-                    disabled={!includeCoding}
-                  />
-                </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>Include Coding Challenges (DSA)</Label>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={includeCoding}
+                        onCheckedChange={(v) => setIncludeCoding(!!v)}
+                      />
+                      <span className="text-sm text-muted-foreground">Enable coding section</span>
+                    </div>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={codingCount}
+                      onChange={(e) => setCodingCount(Math.max(0, Number(e.target.value) || 0))}
+                      disabled={!includeCoding}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label>Include SQL Assessment</Label>
                   <div className="flex items-center gap-2">
@@ -890,35 +914,6 @@ export default function CandidatesPage() {
                   />
                 </div>
               </div>
-
-              {/* Apex section — only visible when the job is configured for it */}
-              {selectedJob?.include_apex_assessment && (
-                <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wide">Salesforce / Apex</span>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Include Apex Fill-in-the-Blanks</Label>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={includeApex}
-                          onCheckedChange={(v) => setIncludeApex(!!v)}
-                        />
-                        <span className="text-sm text-muted-foreground">Enable Apex section</span>
-                      </div>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={apexCount}
-                        onChange={(e) => setApexCount(Math.max(1, Number(e.target.value) || 1))}
-                        disabled={!includeApex}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
