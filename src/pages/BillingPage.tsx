@@ -255,7 +255,7 @@ export default function BillingPage() {
                 </Badge>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Globe className="h-3.5 w-3.5" />
-                  <span>Stripe Production Mode</span>
+                  <span>Stripe Test Mode</span>
                 </div>
               </div>
               <CardTitle className="text-3xl font-black mt-2 tracking-tight flex items-baseline gap-2">
@@ -496,7 +496,7 @@ export default function BillingPage() {
                   </thead>
                   <tbody>
                     {invoices.map((invoice) => {
-                      const currency = String(invoice.metadata?.currency || activeCurrency).upper();
+                      const currency = String(invoice.metadata?.currency || activeCurrency).toUpperCase();
                       return (
                         <tr key={invoice.id} className="border-b hover:bg-muted/10 transition-colors">
                           <td className="py-4 font-semibold text-foreground">#{invoice.id.slice(0, 8).toUpperCase()}</td>

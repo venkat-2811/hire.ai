@@ -77,16 +77,30 @@ async def _create_stripe_checkout(
     return resp.json()
 
 def _get_frontend_url(request: Request) -> str:
+    """Resolve the correct frontend origin for Stripe redirect URLs.
+
+    Priority:
+    1. If the request Origin/Referer header shows a localhost URL → use that (dev mode)
+    2. Otherwise use FRONTEND_URL env variable (staging / production)
+    3. Last resort: derive from forwarded host headers
+    """
+    from urllib.parse import urlparse
+
+    # Dev mode: trust the browser's own origin
+    origin = request.headers.get("origin") or request.headers.get("referer") or ""
+    if "localhost" in origin or "127.0.0.1" in origin:
+        parsed = urlparse(origin)
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+    # Production: use configured FRONTEND_URL
+    env_url = os.environ.get("FRONTEND_URL", "").strip()
+    if env_url:
+        return env_url.rstrip("/")
+
+    # Last resort: forwarded host headers
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     proto = (request.headers.get("x-forwarded-proto") or "https").split(",")[0].strip()
-    is_local = "localhost" in host
-    if is_local:
-        proto = "http"
-    dynamic = f"{proto}://{host}" if host else "https://rekshift.com"
-    env_url = os.environ.get("FRONTEND_URL", "")
-    if env_url and "localhost" not in env_url and "rekshift" not in env_url:
-        return env_url
-    return dynamic
+    return f"{proto}://{host}".rstrip("/")
 
 async def _get_or_create_subscription(db, user_id: str) -> Dict[str, Any]:
     def _fetch():
@@ -333,7 +347,7 @@ async def billing_webhook(request: Request):
 async def billing_subscribe(payload: Dict[str, Any], request: Request, user: ClerkUser = Depends(require_user)):
     """POST /api/v2/billing/subscribe
     
-    Generates a live Stripe Checkout Session URL in subscription mode.
+    Generates a test mode Stripe Checkout Session URL in subscription mode.
     """
     plan = _normalize_plan(payload.get("plan"))
     currency = str(payload.get("currency") or "USD").upper()
@@ -399,6 +413,17 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
             headers={"Authorization": f"Bearer {key}"},
         )
     if resp.status_code != 200:
+        err_body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        err_code = (err_body.get("error") or {}).get("code", "")
+        if err_code == "resource_missing":
+            return api_error(
+                message=(
+                    "Checkout session not found in current Stripe account. "
+                    "This usually means the session was created with a different Stripe key "
+                    "than the one currently configured. Please start a fresh checkout."
+                ),
+                status_code=400,
+            )
         return api_error(message=f"Stripe error: {resp.text}", status_code=502)
 
     stripe_session = resp.json()

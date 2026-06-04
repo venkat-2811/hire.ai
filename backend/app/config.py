@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = Field(default=True, alias="SMTP_USE_SSL")
 
     stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
+    stripe_webhook_secret: str = Field(default="", alias="STRIPE_WEBHOOK_SECRET")
+    stripe_mode: str = Field(default="test", alias="STRIPE_MODE")
     deployment_date: str = Field(default="2026-05-29T22:35:00+05:30", alias="DEPLOYMENT_DATE")
 
 
@@ -117,6 +119,15 @@ def get_settings() -> Settings:
             s.cors_origins.append(full)
     if s.frontend_url and s.frontend_url not in s.cors_origins:
         s.cors_origins.append(s.frontend_url)
+    # ── Live-key safeguard ────────────────────────────────────────────────────
+    # Prevent accidental live-mode usage in any environment where the key starts
+    # with sk_live_.  To use live keys, explicitly set STRIPE_MODE=live.
+    if s.stripe_secret_key and s.stripe_secret_key.startswith("sk_live_") and s.stripe_mode != "live":
+        raise RuntimeError(
+            "SAFETY GUARD: sk_live_* Stripe key detected but STRIPE_MODE is not 'live'. "
+            "Set STRIPE_MODE=live explicitly if you intend to process real payments, "
+            "or replace the key with your sk_test_* test key."
+        )
     return s
 
 

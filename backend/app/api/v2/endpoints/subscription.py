@@ -85,6 +85,14 @@ async def _get_stripe_session(session_id: str) -> Dict[str, Any]:
             headers={"Authorization": f"Bearer {key}"},
         )
     if resp.status_code != 200:
+        err_body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        err_code = (err_body.get("error") or {}).get("code", "")
+        if err_code == "resource_missing":
+            raise RuntimeError(
+                "Checkout session not found in current Stripe account. "
+                "This usually means the session was created with a different Stripe key "
+                "than the one currently configured. Please start a fresh checkout."
+            )
         raise RuntimeError(f"Stripe error: {resp.text}")
     return resp.json()
 
@@ -106,18 +114,31 @@ async def _cancel_stripe_subscription(subscription_id: str) -> None:
         logger.error("[Stripe] Failed to cancel subscription %s: %s", subscription_id, resp.text)
 
 def _get_frontend_url(request: Request) -> str:
+    """Resolve the correct frontend origin for Stripe redirect URLs.
+    
+    Priority:
+    1. If the request Origin/Referer header shows a localhost URL → use that (dev mode)
+    2. Otherwise use FRONTEND_URL from settings (staging / production)
+    """
     settings = get_settings()
+
+    # Check if request is coming from a localhost browser origin
+    origin = request.headers.get("origin") or request.headers.get("referer") or ""
+    if "localhost" in origin or "127.0.0.1" in origin:
+        # Strip any path from referer, keep just scheme+host+port
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+    # Production: use configured FRONTEND_URL
     env_url = str(settings.frontend_url or os.environ.get("FRONTEND_URL", "") or "").strip()
     if env_url:
         return env_url.rstrip("/")
 
+    # Last resort: derive from request host headers
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     proto = (request.headers.get("x-forwarded-proto") or "https").split(",")[0].strip()
-    is_local = "localhost" in host
-    if is_local:
-        proto = "http"
-    dynamic = f"{proto}://{host}" if host else "https://rekshift.com"
-    return dynamic.rstrip("/")
+    return f"{proto}://{host}".rstrip("/")
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
