@@ -1,13 +1,14 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useRequireAuth } from '@/hooks/useAuth';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2, Save, Building2, User, Globe2, Briefcase, MapPin } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useState, useEffect } from 'react';
 import { type Profile } from '@/lib/api';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function ProfilePage() {
   const { user, loading } = useRequireAuth();
@@ -20,22 +21,23 @@ export default function ProfilePage() {
     if (profile) {
       setFormData({
         company_name: profile.company_name || '',
-        organization_email: profile.organization_email || '',
+        organization_email: profile.organization_email || user?.email || '',
         company_website: profile.company_website || '',
         company_size: profile.company_size || '',
         industry: profile.industry || '',
         headquarters_location: profile.headquarters_location || '',
+        country: profile.country || '',
         hiring_roles: profile.hiring_roles || '',
         hiring_regions: profile.hiring_regions || '',
         preferred_timezone: profile.preferred_timezone || '',
         contact_phone: profile.contact_phone || '',
       });
     }
-  }, [profile]);
+  }, [profile, user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -46,7 +48,7 @@ export default function ProfilePage() {
   if (loading || profileLoading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-full">
+        <div className="flex items-center justify-center h-full min-h-[80vh]">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </DashboardLayout>
@@ -55,38 +57,38 @@ export default function ProfilePage() {
 
   return (
     <DashboardLayout>
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold">Profile</h1>
-          <p className="text-muted-foreground mt-1">Manage your account and company details</p>
+          <h1 className="text-3xl font-extrabold tracking-tight">Organization Profile</h1>
+          <p className="text-muted-foreground mt-2">
+            Manage your organization's details, hiring preferences, and account settings.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-6 md:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle>Account Details</CardTitle>
-                <CardDescription>Your personal login information</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input value={user?.email || ''} readOnly disabled className="bg-muted" />
-                  <p className="text-xs text-muted-foreground mt-1">Email cannot be changed directly.</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+        <form onSubmit={handleSubmit}>
+          <Tabs defaultValue="company" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 max-w-2xl mb-8">
+              <TabsTrigger value="company" className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" /> Company Details
+              </TabsTrigger>
+              <TabsTrigger value="hiring" className="flex items-center gap-2">
+                <Briefcase className="h-4 w-4" /> Hiring Preferences
+              </TabsTrigger>
+              <TabsTrigger value="account" className="flex items-center gap-2">
+                <User className="h-4 w-4" /> Account
+              </TabsTrigger>
+            </TabsList>
 
-          <div className="md:col-span-2">
-            <Card>
-              <form onSubmit={handleSubmit}>
+            <TabsContent value="company" className="space-y-6">
+              <Card className="border-border shadow-sm">
                 <CardHeader>
-                  <CardTitle>Company Profile</CardTitle>
-                  <CardDescription>This information is used across your hiring pipelines and reports.</CardDescription>
+                  <CardTitle className="text-xl">Organization Information</CardTitle>
+                  <CardDescription>
+                    These details will be used across your hiring pipelines and external communications.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <Label htmlFor="company_name">Company Name</Label>
                       <Input
@@ -98,34 +100,13 @@ export default function ProfilePage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="organization_email">Organization Email</Label>
-                      <Input
-                        id="organization_email"
-                        name="organization_email"
-                        type="email"
-                        value={formData.organization_email || ''}
-                        onChange={handleChange}
-                        placeholder="e.g. careers@acmecorp.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="company_website">Website</Label>
+                      <Label htmlFor="company_website">Website URL</Label>
                       <Input
                         id="company_website"
                         name="company_website"
                         value={formData.company_website || ''}
                         onChange={handleChange}
                         placeholder="e.g. https://acmecorp.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="company_size">Company Size</Label>
-                      <Input
-                        id="company_size"
-                        name="company_size"
-                        value={formData.company_size || ''}
-                        onChange={handleChange}
-                        placeholder="e.g. 50-200"
                       />
                     </div>
                     <div className="space-y-2">
@@ -139,44 +120,125 @@ export default function ProfilePage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="headquarters_location">HQ Location</Label>
+                      <Label htmlFor="company_size">Company Size</Label>
                       <Input
-                        id="headquarters_location"
-                        name="headquarters_location"
-                        value={formData.headquarters_location || ''}
+                        id="company_size"
+                        name="company_size"
+                        value={formData.company_size || ''}
                         onChange={handleChange}
-                        placeholder="e.g. San Francisco, CA"
+                        placeholder="e.g. 50-200"
                       />
                     </div>
+                  </div>
+
+                  <div className="pt-4 border-t">
+                    <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground" /> Location Details
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="headquarters_location">Headquarters (City/State)</Label>
+                        <Input
+                          id="headquarters_location"
+                          name="headquarters_location"
+                          value={formData.headquarters_location || ''}
+                          onChange={handleChange}
+                          placeholder="e.g. San Francisco, CA"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="country">Country</Label>
+                        <Input
+                          id="country"
+                          name="country"
+                          value={formData.country || ''}
+                          onChange={handleChange}
+                          placeholder="e.g. United States"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="hiring" className="space-y-6">
+              <Card className="border-border shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-xl">Hiring Setup</CardTitle>
+                  <CardDescription>
+                    Configure your recruitment scope and operational preferences.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label htmlFor="hiring_roles">Hiring Roles</Label>
+                      <Label htmlFor="hiring_roles">Primary Hiring Roles</Label>
                       <Input
                         id="hiring_roles"
                         name="hiring_roles"
                         value={formData.hiring_roles || ''}
                         onChange={handleChange}
-                        placeholder="e.g. Engineering, Sales"
+                        placeholder="e.g. Engineering, Sales, Product"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="hiring_regions">Hiring Regions</Label>
+                      <Label htmlFor="hiring_regions">Hiring Regions / Scope</Label>
                       <Input
                         id="hiring_regions"
                         name="hiring_regions"
                         value={formData.hiring_regions || ''}
                         onChange={handleChange}
-                        placeholder="e.g. Remote, US"
+                        placeholder="e.g. Remote Worldwide, US & Canada"
                       />
                     </div>
+                  </div>
+                  
+                  <div className="pt-4 border-t">
+                    <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+                      <Globe2 className="h-4 w-4 text-muted-foreground" /> Operational Settings
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="preferred_timezone">Preferred Timezone</Label>
+                        <Input
+                          id="preferred_timezone"
+                          name="preferred_timezone"
+                          value={formData.preferred_timezone || ''}
+                          onChange={handleChange}
+                          placeholder="e.g. PST"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="account" className="space-y-6">
+              <Card className="border-border shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-xl">Account Credentials</CardTitle>
+                  <CardDescription>
+                    Security and primary contact details for this account.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label htmlFor="preferred_timezone">Preferred Timezone</Label>
+                      <Label htmlFor="organization_email">Organization / Login Email</Label>
                       <Input
-                        id="preferred_timezone"
-                        name="preferred_timezone"
-                        value={formData.preferred_timezone || ''}
-                        onChange={handleChange}
-                        placeholder="e.g. PST"
+                        id="organization_email"
+                        name="organization_email"
+                        type="email"
+                        value={formData.organization_email || user?.email || ''}
+                        readOnly
+                        disabled
+                        className="bg-muted cursor-not-allowed"
                       />
+                      <p className="text-[11px] text-muted-foreground font-medium mt-1.5">
+                        Your mail ID cannot be changed. Contact support for modifications.
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="contact_phone">Contact Phone</Label>
@@ -190,16 +252,17 @@ export default function ProfilePage() {
                     </div>
                   </div>
                 </CardContent>
-                <CardFooter className="flex justify-end border-t pt-6">
-                  <Button type="submit" disabled={isUpdating}>
-                    {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save Changes
-                  </Button>
-                </CardFooter>
-              </form>
-            </Card>
+              </Card>
+            </TabsContent>
+          </Tabs>
+
+          <div className="flex justify-end pt-6 border-t mt-8">
+            <Button type="submit" size="lg" disabled={isUpdating} className="font-semibold px-8">
+              {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Profile Changes
+            </Button>
           </div>
-        </div>
+        </form>
       </div>
     </DashboardLayout>
   );

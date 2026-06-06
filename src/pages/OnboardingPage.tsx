@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown, Globe } from 'lucide-react';
+import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown, TrendingUp, Globe } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -56,7 +56,7 @@ const ONBOARDING_PLANS = [
     gradient: 'from-blue-500 to-cyan-500',
     cardBg: 'bg-blue-500/5 border-blue-500/20',
     features: [
-      { text: '100 Candidate Assessments', highlight: true },
+      { text: '50 Candidate Assessments', highlight: true },
       { text: 'AI Assessment MCQ + Coding', highlight: true },
       { text: 'Priority Customer Support', highlight: false },
       { text: 'Valid for 6 Full Months', highlight: false },
@@ -66,20 +66,37 @@ const ONBOARDING_PLANS = [
   {
     id: 'growth',
     name: 'Growth',
-    priceUSD: 1100,
-    priceINR: 99000,
-    validity: '1 Year',
+    priceUSD: 500,
+    priceINR: 45000,
+    validity: '6 Months',
     icon: Crown,
     gradient: 'from-purple-500 to-pink-500',
     cardBg: 'bg-purple-500/5 border-purple-500/30',
     popular: true,
     features: [
-      { text: '500 Candidate Assessments', highlight: true },
-      { text: 'Premium Multi-role Hiring', highlight: true },
-      { text: 'Dedicated Priority Support', highlight: false },
-      { text: 'Valid for 1 Full Year', highlight: false },
+      { text: '100 Candidate Assessments', highlight: true },
+      { text: 'Everything in Starter Plan', highlight: true },
+      { text: 'Priority Customer Support', highlight: false },
+      { text: 'Valid for 6 Full Months', highlight: false },
     ],
     cta: 'Choose Growth',
+  },
+  {
+    id: 'scale',
+    name: 'Scale',
+    priceUSD: 2000,
+    priceINR: 180000,
+    validity: '1 Year',
+    icon: TrendingUp,
+    gradient: 'from-amber-500 to-orange-500',
+    cardBg: 'bg-amber-500/5 border-amber-500/30',
+    features: [
+      { text: '500 Candidate Assessments', highlight: true },
+      { text: 'Everything in Growth Plan', highlight: true },
+      { text: 'Priority Customer Support', highlight: false },
+      { text: 'Valid for 1 Full Year', highlight: false },
+    ],
+    cta: 'Choose Scale',
   },
 ];
 
@@ -155,7 +172,7 @@ export default function OnboardingPage() {
           void queryClient.invalidateQueries({ queryKey: ['layout-billing-usage'] });
           void queryClient.invalidateQueries({ queryKey: ['profile'] });
           updateProfile.mutate(
-            { onboarding_completed: true } as any,
+            { onboarding_completed: true } as Record<string, unknown>,
             { onSuccess: () => navigate('/dashboard', { replace: true }) },
           );
         })
@@ -210,7 +227,7 @@ export default function OnboardingPage() {
       if (planId === 'free') {
         await subscriptionApi.selectFree();
         updateProfile.mutate(
-          { onboarding_completed: true } as any,
+          { onboarding_completed: true } as Record<string, unknown>,
           { onSuccess: () => navigate('/dashboard', { replace: true }) },
         );
         return;
@@ -219,8 +236,9 @@ export default function OnboardingPage() {
       // Create Stripe Checkout session and redirect
       const session = await subscriptionApi.createOrder(planId, detectedCurrency);
       window.location.href = session.url;
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to initialize subscription purchase.');
+    } catch (err: unknown) {
+      const e = err as Error;
+      toast.error(e.message || 'Failed to initialize subscription purchase.');
       setProcessingPlan(false);
       setSelectedPlan(null);
     }
@@ -360,7 +378,7 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 {ONBOARDING_PLANS.map((plan) => {
                   const price = detectedCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
                   
@@ -403,7 +421,7 @@ export default function OnboardingPage() {
 
                       <Button
                         className="w-full mt-auto font-bold"
-                        variant={plan.id === 'growth' ? 'default' : 'outline'}
+                        variant={plan.popular || plan.id === 'scale' ? 'default' : 'outline'}
                         disabled={processingPlan}
                         onClick={(e) => {
                           e.stopPropagation();

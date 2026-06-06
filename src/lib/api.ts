@@ -242,6 +242,7 @@ export interface Profile {
   company_size: string | null;
   industry: string | null;
   headquarters_location: string | null;
+  country: string | null;
   hiring_regions: string | null;
   hiring_roles: string | null;
   preferred_timezone: string | null;
@@ -469,14 +470,14 @@ export const candidatesWorkflowApi = {
 
   getOfferDetails: (token: string) =>
     request<OfferDetails>(`/candidates/offer-details?token=${encodeURIComponent(token)}`, {
-            skipAuth: true,
+      skipAuth: true,
     }),
 
   submitOfferAcceptance: (body: { token: string; full_name_signature: string }) =>
     request<OfferAcceptanceResponse>('/candidates/submit-offer-acceptance', {
       method: 'POST',
       body,
-            skipAuth: true,
+      skipAuth: true,
     }),
 
   bulkUpdateInterviewMode: (body: { candidate_ids: string[]; job_id: string; interview_mode: 'ai' | 'manual' }) =>
@@ -518,7 +519,7 @@ export const assessmentsApi = {
     request<AssessmentInviteResponse>('/assessments/invite', {
       method: 'POST',
       body,
-            timeoutMs: 45000,
+      timeoutMs: 45000,
     }),
 };
 
@@ -639,7 +640,7 @@ export interface AssessmentCodingSubmitResponse {
 const _assessmentsRuntimeApiBase = {
   start: (token: string) =>
     request<any>(`/assessments/start/${encodeURIComponent(token)}`, {
-            timeoutMs: 30000,
+      timeoutMs: 30000,
       skipAuth: true,
     }),
 
@@ -657,7 +658,7 @@ const _assessmentsRuntimeApiBase = {
     request<AssessmentMcqSubmitResponse>(`/assessments/${encodeURIComponent(sessionId)}/mcq/submit`, {
       method: 'POST',
       body: submissions,
-            timeoutMs: 30000,
+      timeoutMs: 30000,
       skipAuth: true,
     }),
 
@@ -665,7 +666,7 @@ const _assessmentsRuntimeApiBase = {
     request<AssessmentCodingRunResponse>(`/assessments/${encodeURIComponent(sessionId)}/coding/run`, {
       method: 'POST',
       body,
-            timeoutMs: 60000,
+      timeoutMs: 60000,
       skipAuth: true,
     }),
 
@@ -676,7 +677,7 @@ const _assessmentsRuntimeApiBase = {
     request<AssessmentCodingSubmitResponse>(`/assessments/${encodeURIComponent(sessionId)}/coding/submit`, {
       method: 'POST',
       body,
-            timeoutMs: 90000,
+      timeoutMs: 90000,
       skipAuth: true,
     }),
 
@@ -684,14 +685,14 @@ const _assessmentsRuntimeApiBase = {
     request<AssessmentProctoringResponse>(`/assessments/${encodeURIComponent(sessionId)}/proctoring`, {
       method: 'POST',
       body,
-            timeoutMs: 20000,
+      timeoutMs: 20000,
       skipAuth: true,
     }),
 
   complete: (sessionId: string) =>
     request<AssessmentCompleteResponse>(`/assessments/${encodeURIComponent(sessionId)}/complete`, {
       method: 'POST',
-            timeoutMs: 30000,
+      timeoutMs: 30000,
       skipAuth: true,
     }),
 
@@ -779,18 +780,18 @@ export const aiInterviewApi = {
     request<AiInterviewInviteResponse>('/ai-interview/invite', {
       method: 'POST',
       body,
-            timeoutMs: 60000,
+      timeoutMs: 60000,
     }),
 
   start: (token: string) =>
     request<AiInterviewStartResponse>(`/ai-interview/start/${encodeURIComponent(token)}`, {
-            timeoutMs: 25000,
+      timeoutMs: 25000,
       skipAuth: true,
     }),
 
   question: (sessionId: string) =>
     request<AiInterviewQuestionResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/question`, {
-            timeoutMs: 25000,
+      timeoutMs: 25000,
       skipAuth: true,
     }),
 
@@ -798,7 +799,7 @@ export const aiInterviewApi = {
     request<AiInterviewQuestionResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/adapt-question`, {
       method: 'POST',
       body: { next_index },
-            timeoutMs: 25000,
+      timeoutMs: 25000,
       skipAuth: true,
     }),
 
@@ -806,8 +807,8 @@ export const aiInterviewApi = {
     const formData = new FormData();
     const ext = audio.type.includes('ogg') ? 'ogg'
       : audio.type.includes('mp4') ? 'mp4'
-      : audio.type.includes('wav') ? 'wav'
-      : 'webm';
+        : audio.type.includes('wav') ? 'wav'
+          : 'webm';
     formData.append('audio', audio, `recording.${ext}`);
     formData.append('question_index', String(questionIndex));
     formData.append('mime_type', audio.type || 'audio/webm');
@@ -829,7 +830,7 @@ export const aiInterviewApi = {
     request<AiInterviewResponseSubmitResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/response`, {
       method: 'POST',
       body,
-            timeoutMs: 25000,
+      timeoutMs: 25000,
       skipAuth: true,
     }),
 
@@ -841,14 +842,14 @@ export const aiInterviewApi = {
     request<AiInterviewProctoringResponse>(`/ai-interview/${encodeURIComponent(sessionId)}/proctoring`, {
       method: 'POST',
       body,
-            timeoutMs: 25000,
+      timeoutMs: 25000,
       skipAuth: true,
     }),
 
   complete: (sessionId: string) =>
     request<AiInterviewEvaluationResult>(`/ai-interview/${encodeURIComponent(sessionId)}/complete`, {
       method: 'POST',
-            timeoutMs: 45000,
+      timeoutMs: 45000,
       skipAuth: true,
     }),
 };
@@ -879,13 +880,13 @@ export interface ApplySubmissionResponse {
 export const applyApi = {
   getJob: (jobId: string) =>
     request<PublicJob>(`/apply/job/${encodeURIComponent(jobId)}`, {
-            timeoutMs: 20000,
+      timeoutMs: 20000,
       skipAuth: true,
     }),
 
   submit: (formData: FormData) =>
     uploadFile<ApplySubmissionResponse>(`/apply/submit`, formData, true, {
-            timeoutMs: 60000,
+      timeoutMs: 60000,
     }),
 };
 
@@ -1096,7 +1097,7 @@ export const screeningApi = {
     if (params?.min_score) searchParams.set('min_score', String(params.min_score));
     const query = searchParams.toString();
     return request<ATSScreeningResult[]>(`/screening/job/${jobId}${query ? `?${query}` : ''}`, {
-          });
+    });
   },
 
   get: (id: string) =>
@@ -1215,7 +1216,7 @@ export const interviewsApi = {
     if (params?.job_id) searchParams.set('job_id', params.job_id);
     const query = searchParams.toString();
     return request<InterviewSession[]>(`/interviews${query ? `?${query}` : ''}`, {
-          });
+    });
   },
 
   get: (id: string) =>
@@ -1324,7 +1325,7 @@ export const analyticsApi = {
     if (params?.recommendation) searchParams.set('recommendation', params.recommendation);
     const query = searchParams.toString();
     return request<CandidateAnalytics[]>(`/analytics/candidates${query ? `?${query}` : ''}`, {
-          });
+    });
   },
 
   getJobSummary: (jobId: string) =>
@@ -1350,7 +1351,7 @@ export const analyticsApi = {
       }[];
       period_days: number;
     }>(`/analytics/trends${query}`, {
-          });
+    });
   },
 };
 
@@ -1390,10 +1391,10 @@ export const subscriptionApi = {
     request<SubscriptionInfo>('/subscription', {
     }),
 
-  createOrder: (plan: string, currency?: string) =>
+  createOrder: (plan: string, currency?: string, country?: string) =>
     request<{ session_id: string; url: string; plan: string }>(
       '/subscription/create-order',
-      { method: 'POST', body: { plan, currency } },
+      { method: 'POST', body: { plan, currency, country } },
     ),
 
   verify: (data: {
@@ -1404,11 +1405,6 @@ export const subscriptionApi = {
       '/subscription/verify',
       { method: 'POST', body: data },
     ),
-
-  selectFree: () =>
-    request<{ success: boolean; plan: string }>('/subscription/select-free', {
-      method: 'POST',
-    }),
 
   cancel: () =>
     request<{ success: boolean; message: string }>('/subscription/cancel', {
@@ -1425,7 +1421,7 @@ export const usageApi = {
 // ============== Billing API ==============
 
 export interface BillingUsageResponse {
-  plan: 'free' | 'starter' | 'growth' | 'enterprise';
+  plan: 'free' | 'starter' | 'growth' | 'scale' | 'enterprise' | 'tempusa1' | 'tempusa2' | 'tempind1' | 'tempind2';
   status: string;
   billing_cycle_end: string;
   currency: string;
@@ -1436,6 +1432,7 @@ export interface BillingUsageResponse {
 }
 
 export interface BillingInvoice {
+  metadata: any;
   id: string;
   user_id: string;
   period_start: string;
@@ -1452,11 +1449,27 @@ export interface BillingInvoice {
   updated_at: string;
 }
 
+export type BillingPlanId =
+  | 'starter'
+  | 'growth'
+  | 'scale'
+  | 'enterprise'
+  | 'tempusa1'
+  | 'tempusa2'
+  | 'tempind1'
+  | 'tempind2';
+
 export const billingApi = {
-  subscribe: (plan: 'starter' | 'growth' | 'enterprise', currency?: string) =>
-    request<{ success: boolean; session_id: string; checkout_url: string; plan: string; deposit_amount: number }>(
+  /**
+   * Initiates a Stripe Checkout session for a given plan.
+   * @param plan  Plan identifier
+   * @param currency  'USD' or 'INR' — must match the user's geo-detected currency
+   * @param country   ISO 3166-1 alpha-2 country code (e.g. 'IN', 'US')
+   */
+  subscribe: (plan: BillingPlanId, currency?: string, country?: string) =>
+    request<{ success: boolean; session_id: string; checkout_url: string; plan: string; currency: string; deposit_amount: number }>(
       '/billing/subscribe',
-      { method: 'POST', body: { plan, currency } },
+      { method: 'POST', body: { plan, currency, country } },
     ),
 
   usage: () =>
@@ -1516,7 +1529,7 @@ export const dsaProblemsApi = {
     if (params?.is_active === false) sp.set('is_active', 'false');
     const q = sp.toString();
     return request<DsaProblem[]>(`/dsa-problems${q ? `?${q}` : ''}`, {
-          });
+    });
   },
 
   get: (id: string) =>

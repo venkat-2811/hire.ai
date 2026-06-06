@@ -102,13 +102,11 @@ async def _cancel_stripe_subscription(subscription_id: str) -> None:
         return
         
     async with httpx.AsyncClient() as client:
-        resp = await client.post(
+        resp = await client.delete(
             f"https://api.stripe.com/v1/subscriptions/{subscription_id}",
             headers={
                 "Authorization": f"Bearer {key}",
-                "Content-Type": "application/x-www-form-urlencoded",
             },
-            content=urlencode({"cancel_at_period_end": "true"}),
         )
     if resp.status_code != 200:
         logger.error("[Stripe] Failed to cancel subscription %s: %s", subscription_id, resp.text)
@@ -192,6 +190,12 @@ async def create_order(payload: Dict[str, Any], request: Request, user: ClerkUse
 
     if plan == "free":
         return api_error(message="Free plan does not require payment", status_code=400)
+
+    if plan == "enterprise":
+        return api_error(
+            message="Enterprise subscriptions are handled manually. Please contact our sales team at sales@hire.ai.",
+            status_code=400,
+        )
 
     cfg = BILLING_PLAN_CONFIG[plan]
     price = cfg[currency]["price"]
@@ -350,34 +354,6 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
         "profile": updated,
     })
 
-@router.post("/select-free")
-async def select_free(user: ClerkUser = Depends(require_user)):
-    """POST /api/v2/subscription/select-free"""
-    db = get_db_admin_service()
-    now = datetime.now(timezone.utc).isoformat()
-
-    def _update():
-        return (
-            db.client.from_("profiles")
-            .update({
-                "subscription_plan": "free",
-                "subscription_status": "active",
-                "plan_selected_at": now,
-                "updated_at": now,
-            })
-            .eq("user_id", user.id)
-            .execute()
-        )
-
-    await db.run(_update)
-
-    def _fetch_profile():
-        return db.client.from_("profiles").select("*").eq("user_id", user.id).maybe_single().execute()
-
-    fetch_res = await db.run(_fetch_profile)
-    updated = getattr(fetch_res, "data", None)
-    return ok({"success": True, "plan": "free", "profile": updated})
-
 @router.post("/cancel")
 async def cancel_subscription(user: ClerkUser = Depends(require_user)):
     """POST /api/v2/subscription/cancel
@@ -408,7 +384,7 @@ async def cancel_subscription(user: ClerkUser = Depends(require_user)):
     def _update_profile():
         return (
             db.client.from_("profiles")
-            .update({"subscription_status": "cancel_at_period_end", "updated_at": now})
+            .update({"subscription_plan": "free", "subscription_status": "active", "updated_at": now})
             .eq("user_id", user.id)
             .execute()
         )
@@ -417,10 +393,10 @@ async def cancel_subscription(user: ClerkUser = Depends(require_user)):
     def _update_sub():
         return (
             db.client.from_("subscriptions")
-            .update({"status": "cancel_at_period_end", "updated_at": now})
+            .update({"status": "active", "plan": "free", "updated_at": now})
             .eq("user_id", user.id)
             .execute()
         )
     await db.run(_update_sub)
 
-    return ok({"success": True, "message": "Subscription cancelled. Access continues until the end of the billing period."})
+    return ok({"success": True, "message": "Your subscription has been cancelled successfully. Your account has been moved to the Free Plan."})
