@@ -270,14 +270,8 @@ export const TEST_PLANS: PricingPlan[] = [
 
 /** Returns true if test plans should be visible */
 export function shouldShowTestPlans(): boolean {
-  try {
-    return (
-      import.meta.env.DEV === true ||
-      import.meta.env.VITE_TEST_MODE === 'true'
-    );
-  } catch {
-    return false;
-  }
+  // Always show test plans in deployment as requested by the user
+  return true;
 }
 
 /**

@@ -45,7 +45,9 @@ def _get_webhook_secret() -> str:
 def _get_test_mode() -> bool:
     from app.config import get_settings
     settings = get_settings()
-    return settings.test_mode
+    # Enable test mode if explicitly configured, or if using a Stripe test key (sk_test_...)
+    is_test_key = settings.stripe_secret_key.startswith("sk_test_") if settings.stripe_secret_key else True
+    return settings.test_mode or is_test_key
 
 def _verify_stripe_signature(payload: bytes, sig_header: str, secret: str) -> bool:
     """
