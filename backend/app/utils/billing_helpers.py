@@ -95,7 +95,7 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "candidates": 5,
         "validity": "1 Month",
         "USD": {"price": 0, "currency_symbol": "$"},
-        "INR": {"price": 530, "currency_symbol": "₹"},
+        "INR": {"price": 30, "currency_symbol": "₹"},
         "interval": "month",
         "interval_count": 1,
         "test_only": True,

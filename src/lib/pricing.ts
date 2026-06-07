@@ -41,36 +41,31 @@ export const INDIA_COUNTRY_CODE = 'IN';
 
 /** Storage keys for caching detected country */
 const COUNTRY_CACHE_KEY = 'rekshift_detected_country';
+const COUNTRY_CACHE_TS_KEY = 'rekshift_detected_country_ts';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export function getCachedCountry(): { country: string; source: string } | null {
+  try {
+    const cached = sessionStorage.getItem(COUNTRY_CACHE_KEY) || localStorage.getItem(COUNTRY_CACHE_KEY);
+    const ts = sessionStorage.getItem(COUNTRY_CACHE_TS_KEY) || localStorage.getItem(COUNTRY_CACHE_TS_KEY);
+    if (cached && ts && Date.now() - parseInt(ts, 10) < CACHE_TTL_MS) {
+      return { country: cached, source: 'cache' };
+    }
+  } catch {}
+  return null;
+}
 
 /**
  * Detect user country using a 4-tier priority:
- * 1. sessionStorage cache (instant)
- * 2. localStorage cache
- * 3. IP geolocation via ipapi.co
- * 4. Browser timezone/locale fallback
+ * 1. Cache (instant, with timestamp)
+ * 2. IP geolocation via ipapi.co
+ * 3. Browser timezone/locale fallback
  *
- * @returns ISO 3166-1 alpha-2 country code (e.g. 'IN', 'US')
+ * @returns object with country code and detection source
  */
-export async function detectUserCountry(): Promise<string> {
-  // 1. Session cache — fastest, no network
-  try {
-    const cached = sessionStorage.getItem(COUNTRY_CACHE_KEY);
-    if (cached) return cached;
-  } catch {
-    // Ignore storage errors (e.g. incognito restrictions)
-  }
-
-  // 2. Local storage cache — persisted across sessions
-  try {
-    const persisted = localStorage.getItem(COUNTRY_CACHE_KEY);
-    if (persisted) {
-      // Promote to session cache
-      sessionStorage.setItem(COUNTRY_CACHE_KEY, persisted);
-      return persisted;
-    }
-  } catch {
-    // Ignore
-  }
+export async function detectUserCountry(): Promise<{ country: string; source: string }> {
+  const cached = getCachedCountry();
+  if (cached) return cached;
 
   // 3. IP geolocation via ipapi.co
   try {
@@ -86,7 +81,7 @@ export async function detectUserCountry(): Promise<string> {
       const country = String(data?.country_code || '').toUpperCase();
       if (country && country.length === 2) {
         _cacheCountry(country);
-        return country;
+        return { country, source: 'api' };
       }
     }
   } catch {
@@ -97,13 +92,16 @@ export async function detectUserCountry(): Promise<string> {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const country = _countryFromTimezone(tz);
   _cacheCountry(country);
-  return country;
+  return { country, source: 'timezone_fallback' };
 }
 
 function _cacheCountry(country: string): void {
   try {
+    const ts = Date.now().toString();
     sessionStorage.setItem(COUNTRY_CACHE_KEY, country);
+    sessionStorage.setItem(COUNTRY_CACHE_TS_KEY, ts);
     localStorage.setItem(COUNTRY_CACHE_KEY, country);
+    localStorage.setItem(COUNTRY_CACHE_TS_KEY, ts);
   } catch {
     // Ignore storage errors
   }
@@ -259,10 +257,10 @@ export const TEST_PLANS: PricingPlan[] = [
     id: 'tempind2',
     name: 'Temp IND 2',
     priceUSD: null,
-    priceINR: 530,
+    priceINR: 30,
     candidates: 5,
     validity: '1 Month',
-    tagline: '[TEST] ₹530 plan for QA testing. Not visible in production.',
+    tagline: '[TEST] ₹30 plan for QA testing. Not visible in production.',
     features: ['5 Candidate Assessments', 'QA Testing Only'],
     isTestPlan: true,
   },

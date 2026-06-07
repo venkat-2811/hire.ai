@@ -2,8 +2,9 @@ import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import logoFull from '@/assets/LOGO_full.png';
-import { Check, Globe, Phone, FlaskConical } from 'lucide-react';
+import { Check, Phone, FlaskConical } from 'lucide-react';
+import Footer from '@/components/layout/Footer';
+import Navbar from '@/components/layout/Navbar';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import {
   PRODUCTION_PLANS,
@@ -212,35 +213,7 @@ const PricingPage = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="fixed top-4 left-1/2 -translate-x-1/2 w-[95%] md:w-[80%] lg:w-[60%] z-50 bg-background/80 backdrop-blur-xl border rounded-full shadow-lg transition-all duration-300">
-        <div className="px-6 h-14 flex items-center justify-between">
-          <Link to="/" className="flex items-center cursor-pointer">
-            <img
-              src={logoFull}
-              alt="Rekshift"
-              className="h-11 w-auto object-contain"
-              draggable={false}
-            />
-          </Link>
-
-          <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium">
-            <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Home</Link>
-            <Link to="/#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</Link>
-            <Link to="/#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">How it Works</Link>
-            <Link to="/pricing" className="text-primary">Pricing</Link>
-            <Link to="/contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex rounded-full" asChild>
-              <Link to="/sign-in">Sign In</Link>
-            </Button>
-            <Button size="sm" className="rounded-full" asChild>
-              <Link to="/sign-up">Get Started</Link>
-            </Button>
-          </div>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* Pricing Section */}
       <section className="pt-32 pb-20 px-4">
@@ -257,55 +230,7 @@ const PricingPage = () => {
               Choose the perfect plan for your hiring needs. All plans include our core AI-powered assessment features.
             </p>
 
-            {/* Currency Toggle */}
-            <motion.div
-              initial={isFirstVisit ? { opacity: 0, scale: 0.9 } : false}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: isFirstVisit ? 0.2 : 0 }}
-              className="inline-flex items-center gap-3 bg-card border rounded-full p-1 shadow-sm"
-            >
-              <button
-                id="pricing-toggle-usd"
-                onClick={() => setManualCurrency('USD')}
-                className={`px-6 py-2 rounded-full font-semibold transition-all ${
-                  activeCurrency === 'USD'
-                    ? 'bg-primary text-primary-foreground shadow'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                $ USD
-              </button>
-              <button
-                id="pricing-toggle-inr"
-                onClick={() => setManualCurrency('INR')}
-                className={`px-6 py-2 rounded-full font-semibold transition-all ${
-                  activeCurrency === 'INR'
-                    ? 'bg-primary text-primary-foreground shadow'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                ₹ INR
-              </button>
-              {!geoLoading && manualCurrency === null && (
-                <span className="pr-3 text-xs text-muted-foreground flex items-center gap-1">
-                  <Globe className="h-3 w-3" />
-                  Auto · {country}
-                </span>
-              )}
-              {geoLoading && (
-                <span className="pr-3 text-xs text-muted-foreground animate-pulse">
-                  Detecting...
-                </span>
-              )}
-              {manualCurrency !== null && (
-                <button
-                  onClick={() => setManualCurrency(null)}
-                  className="pr-3 text-xs text-primary underline"
-                >
-                  Auto-detect
-                </button>
-              )}
-            </motion.div>
+            {/* Auto-detected pricing loaded in background */}
           </motion.div>
 
           {/* Loading skeleton while geo-detecting */}
@@ -446,6 +371,8 @@ const PricingPage = () => {
           </div>
         </div>
       </section>
+
+      <Footer />
     </div>
   );
 };

@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
-  Loader2, Wallet, Receipt, AlertTriangle, Check, Globe,
+  Loader2, Wallet, Receipt, AlertTriangle, Check,
   Calendar, ShieldCheck, RefreshCw, Phone, FlaskConical,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -33,8 +33,8 @@ import {
 interface PlanDetail {
   id: string;
   name: string;
-  priceUSD: number;
-  priceINR: number;
+  priceUSD: number | null;
+  priceINR: number | null;
   candidates: number | null;
   validity: string;
   tagline: string;
@@ -47,8 +47,8 @@ function toPlanDetail(p: PricingPlan): PlanDetail {
   return {
     id: p.id,
     name: p.name,
-    priceUSD: p.priceUSD ?? 0,
-    priceINR: p.priceINR ?? 0,
+    priceUSD: p.priceUSD,
+    priceINR: p.priceINR,
     candidates: p.candidates,
     validity: p.validity,
     tagline: p.tagline,
@@ -100,12 +100,9 @@ export default function BillingPage() {
   const invoices = (invoicesQuery.data || []) as BillingInvoice[];
 
   const activePlanId = usage?.plan || 'free';
-  // Prefer currency from subscription record; fall back to geo-detected
-  const activeCurrency: Currency = (
-    usage?.currency === 'INR' ? 'INR'
-    : usage?.currency === 'USD' ? 'USD'
-    : currency
-  );
+  // STRICT REQUIREMENT: Geo-detected currency is the single source of truth.
+  // Never default to the auto-bootstrapped backend currency (which defaults to USD).
+  const activeCurrency: Currency = currency;
 
   // Handle Stripe redirect-back
   useEffect(() => {
@@ -253,12 +250,14 @@ export default function BillingPage() {
 
   const activePlan = VISIBLE_PLANS.find(p => p.id === activePlanId);
 
-  if (usageQuery.isLoading || busy === 'verifying') {
+  if (usageQuery.isLoading || busy === 'verifying' || geoLoading) {
     return (
       <DashboardLayout>
         <div className="min-h-[80vh] flex flex-col items-center justify-center gap-4">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground font-medium animate-pulse">Syncing subscription with Stripe...</p>
+          <p className="text-sm text-muted-foreground font-medium animate-pulse">
+            {geoLoading ? 'Detecting your region for correct pricing...' : 'Syncing subscription with Stripe...'}
+          </p>
         </div>
       </DashboardLayout>
     );
@@ -278,12 +277,7 @@ export default function BillingPage() {
             </p>
           </div>
           <div className="flex items-center gap-3 self-start sm:self-auto">
-            {!geoLoading && (
-              <Badge variant="outline" className="text-xs font-mono gap-1">
-                <Globe className="h-3 w-3" />
-                {country} · {activeCurrency}
-              </Badge>
-            )}
+            {/* Country and currency auto-detected under the hood */}
             <Button
               variant="outline"
               size="sm"
@@ -309,10 +303,7 @@ export default function BillingPage() {
                 <Badge className="px-3 py-1 font-bold text-xs uppercase bg-primary text-primary-foreground tracking-wider">
                   Active Plan
                 </Badge>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Globe className="h-3.5 w-3.5" />
-                  <span>Stripe Test Mode</span>
-                </div>
+                {/* Active subscription status */}
               </div>
               <CardTitle className="text-3xl font-black mt-2 tracking-tight flex items-baseline gap-2">
                 {activePlan?.name || 'Free'} Plan
@@ -455,8 +446,8 @@ export default function BillingPage() {
 
                 // Skip temp plans that don't match the current currency
                 if (plan.isTestPlan) {
-                  if (activeCurrency === 'INR' && plan.priceINR === 0) return null;
-                  if (activeCurrency === 'USD' && plan.priceUSD === 0) return null;
+                  if (activeCurrency === 'INR' && plan.priceINR === null) return null;
+                  if (activeCurrency === 'USD' && plan.priceUSD === null) return null;
                 }
 
                 return (
@@ -504,7 +495,7 @@ export default function BillingPage() {
                         ) : (
                           <div className="flex items-baseline gap-1 mb-2">
                             <span className={`text-3xl font-black ${plan.isTestPlan ? 'text-yellow-700' : ''}`}>
-                              {formatPrice(price, activeCurrency)}
+                              {formatPrice(price ?? 0, activeCurrency)}
                             </span>
                             <span className="text-xs text-muted-foreground font-semibold">/ {plan.validity}</span>
                           </div>

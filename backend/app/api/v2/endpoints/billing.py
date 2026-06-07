@@ -115,6 +115,7 @@ async def _create_stripe_checkout(
     price_id = get_stripe_price_id(plan_id, currency.upper())
 
     if price_id:
+        logger.info(f"[_create_stripe_checkout] Selected Stripe Price ID: {price_id} for plan={plan_id}, currency={currency.upper()}")
         # Use pre-created Stripe Price ID
         params: Dict[str, str] = {
             "mode": "subscription",
@@ -517,8 +518,12 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
     country = str(payload.get("country") or "US").upper()
 
     # Normalize currency from country if not explicitly provided
-    if currency not in ("USD", "INR"):
-        currency = "INR" if country == "IN" else "USD"
+    expected_currency = "INR" if country == "IN" else "USD"
+    if currency not in ("USD", "INR") or currency != expected_currency:
+        logger.warning(f"[billing.subscribe] Currency mismatch or invalid: user requested {currency} for country {country}. Forcing to {expected_currency}.")
+        currency = expected_currency
+
+    logger.info(f"[billing.subscribe] Init checkout: user={user.id}, plan={plan}, country={country}, currency={currency}")
 
     if plan == "free":
         return api_error(message="Free plan does not require payment", status_code=400)
@@ -571,6 +576,7 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
                 "country": country,
             },
         )
+        logger.info(f"[billing.subscribe] Successfully created checkout session {session['id']} for {plan} ({currency})")
     except Exception as exc:
         logger.error("[billing.subscribe] Stripe error for user=%s plan=%s: %s", user.id, plan, exc)
         return api_error(message="Checkout initialization failed. Please try again.", status_code=500)

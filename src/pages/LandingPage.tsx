@@ -16,6 +16,8 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
+import Footer from '@/components/layout/Footer';
+import Navbar from '@/components/layout/Navbar';
 import { useScroll, useMotionValueEvent, useTransform } from 'framer-motion';
 
 const features = [
@@ -57,29 +59,33 @@ const clientLogos = [
     url: 'https://www.compileinfy.com',
     initials: 'CI',
     caption: 'Digital engineering partners',
+    logo: '/Compileinfy Logo.png',
   },
   {
     name: 'DBAce Technologies',
     url: 'https://www.dbacetech.com',
     initials: 'DB',
     caption: 'Business automation experts',
+    logo: '/DBAce.png',
   },
   {
     name: 'Mellowsoft',
     url: 'https://mellowsoftinc.com',
     initials: 'MS',
     caption: 'Software consultancy',
+    logo: '/Mellowsoft Logo.png',
   },
   {
     name: 'BVIT Solutions',
     url: 'https://bvitsolutions.com',
     initials: 'BV',
     caption: 'IT Implementation',
+    logo: '/BVIT Logo.png',
   },
 ];
 
 export default function LandingPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const [activeFeature, setActiveFeature] = useState(0);
   const [activeSection, setActiveSection] = useState('hero');
@@ -134,11 +140,7 @@ export default function LandingPage() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (!loading && user) {
-      navigate('/dashboard');
-    }
-  }, [user, loading, navigate]);
+  // Removed auto-redirect to dashboard for authenticated users to allow landing page navigation
 
   if (loading) {
     return (
@@ -151,56 +153,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation (Detached NavSpy) */}
-      <nav className="fixed top-4 left-1/2 -translate-x-1/2 w-[95%] md:w-[80%] lg:w-[60%] z-50 bg-background/80 backdrop-blur-xl border rounded-full shadow-lg transition-all duration-300">
-        <div className="px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center cursor-pointer" onClick={() => scrollTo('hero')}>
-            <img
-              src={logoFull}
-              alt="Rekshift"
-              className="h-11 w-auto object-contain"
-              draggable={false}
-            />
-          </div>
-
-          {/* ScrollSpy Links */}
-          <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium">
-            {[
-              { id: 'hero', label: 'Home' },
-              { id: 'features', label: 'Features' },
-              { id: 'how-it-works', label: 'How it Works' },
-            ].map((link) => (
-              <button
-                key={link.id}
-                onClick={() => scrollTo(link.id)}
-                className={`transition-colors relative py-1 ${activeSection === link.id ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                {link.label}
-                {activeSection === link.id && (
-                  <motion.div
-                    layoutId="nav-pill"
-                    className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
-                  />
-                )}
-              </button>
-            ))}
-            <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors py-1">
-              Pricing
-            </Link>
-            <Link to="/contact" className="text-muted-foreground hover:text-foreground transition-colors py-1">
-              Contact
-            </Link>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex rounded-full" asChild>
-              <Link to="/sign-in">Sign In</Link>
-            </Button>
-            <Button size="sm" className="rounded-full" asChild>
-              <Link to="/sign-up">Get Started</Link>
-            </Button>
-          </div>
-        </div>
-      </nav>
+      <Navbar activeSection={activeSection} onScrollTo={scrollTo} />
 
       {/* Hero Section */}
       <section id="hero" className="pt-32 pb-20 px-4 min-h-[90vh] flex items-center">
@@ -226,12 +179,21 @@ export default function LandingPage() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button size="lg" asChild>
-                <Link to="/sign-up">
-                  Start Hiring
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </Button>
+              {user ? (
+                <Button size="lg" asChild>
+                  <Link to="/dashboard">
+                    Go to Dashboard
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button size="lg" asChild>
+                  <Link to="/sign-up">
+                    Start Hiring
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Link>
+                </Button>
+              )}
             </div>
 
             {/* Stats */}
@@ -290,9 +252,20 @@ export default function LandingPage() {
                 className="group rounded-3xl border bg-card p-6 transition-shadow hover:shadow-xl"
               >
                 <div className="flex items-center gap-4">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary text-lg font-semibold">
-                    {client.initials}
-                  </div>
+                  {client.logo ? (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white dark:bg-white/[0.04] border border-border/50 p-1.5 overflow-hidden shadow-inner">
+                      <img
+                        src={client.logo}
+                        alt={client.name}
+                        className="h-full w-full object-contain"
+                        draggable={false}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary text-lg font-semibold">
+                      {client.initials}
+                    </div>
+                  )}
                   <div>
                     <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
                       {client.name}
@@ -450,29 +423,28 @@ export default function LandingPage() {
               <p className="text-lg opacity-80 mb-8 max-w-xl mx-auto">
                 Join companies using AI to make faster, fairer, and more accurate hiring decisions.
               </p>
-              <Button size="lg" variant="secondary" asChild>
-                <Link to="/sign-up">
-                  Get Started Free
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </Button>
+              {user ? (
+                <Button size="lg" variant="secondary" asChild>
+                  <Link to="/dashboard">
+                    Go to Dashboard
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button size="lg" variant="secondary" asChild>
+                  <Link to="/sign-up">
+                    Get Started Free
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Link>
+                </Button>
+              )}
             </div>
           </motion.div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-4 border-t">
-        <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <img src={logoIcon} alt="Rekshift" className="h-6 w-6 object-contain filter drop-shadow" draggable={false} />
-            <span className="font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/80 text-lg">Rekshift</span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            © 2026 Rekshift.
-          </p>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

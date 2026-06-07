@@ -11,6 +11,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   detectUserCountry,
+  getCachedCountry,
   getCurrencyForCountry,
   isIndiaCountry,
   type Currency,
@@ -28,16 +29,8 @@ export interface CountryDetectionResult {
 }
 
 // Read synchronously from storage to avoid any flicker on re-renders
-function getStoredCountry(): string | null {
-  try {
-    return (
-      sessionStorage.getItem('rekshift_detected_country') ||
-      localStorage.getItem('rekshift_detected_country') ||
-      null
-    );
-  } catch {
-    return null;
-  }
+function getStoredCountry(): { country: string; source: string } | null {
+  return getCachedCountry();
 }
 
 /**
@@ -55,17 +48,17 @@ export function useCountryDetection(profileCountry?: string | null): CountryDete
   // Synchronously resolve initial state to prevent flicker
   const storedCountry = getStoredCountry();
 
-  const resolveInitial = (): { country: string; isLoading: boolean } => {
+  const resolveInitial = (): { country: string; isLoading: boolean; source: string } => {
     // Profile country takes highest priority (user explicitly set this)
     if (profileCountry && profileCountry.length === 2) {
-      return { country: profileCountry.toUpperCase(), isLoading: false };
+      return { country: profileCountry.toUpperCase(), isLoading: false, source: 'profile' };
     }
     // Cached country — instant, no loading state needed
-    if (storedCountry && storedCountry.length === 2) {
-      return { country: storedCountry.toUpperCase(), isLoading: false };
+    if (storedCountry && storedCountry.country.length === 2) {
+      return { country: storedCountry.country.toUpperCase(), isLoading: false, source: storedCountry.source };
     }
     // Nothing cached — need async detection
-    return { country: 'US', isLoading: true };
+    return { country: 'US', isLoading: true, source: 'pending' };
   };
 
   const initial = resolveInitial();
@@ -92,14 +85,17 @@ export function useCountryDetection(profileCountry?: string | null): CountryDete
     let cancelled = false;
 
     detectUserCountry()
-      .then((detected) => {
+      .then(({ country: detected, source }) => {
         if (!cancelled) {
-          setCountry(detected.toUpperCase());
+          const code = detected.toUpperCase();
+          console.log(`[GeoPricing] Detected ${code} via ${source}`);
+          setCountry(code);
           setIsLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
+          console.warn(`[GeoPricing] Error detecting country, fallback to US:`, err);
           // Graceful fallback to US on any error
           setCountry('US');
           setIsLoading(false);

@@ -4,9 +4,10 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import logoFull from '@/assets/LOGO_full.png';
 import { Mail, Send, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import Footer from '@/components/layout/Footer';
+import Navbar from '@/components/layout/Navbar';
 
 const ContactPage = () => {
   const { toast } = useToast();
@@ -122,35 +123,7 @@ const ContactPage = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="fixed top-4 left-1/2 -translate-x-1/2 w-[95%] md:w-[80%] lg:w-[60%] z-50 bg-background/80 backdrop-blur-xl border rounded-full shadow-lg transition-all duration-300">
-        <div className="px-6 h-14 flex items-center justify-between">
-          <Link to="/" className="flex items-center cursor-pointer">
-            <img
-              src={logoFull}
-              alt="Rekshift"
-              className="h-11 w-auto object-contain"
-              draggable={false}
-            />
-          </Link>
-
-          <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium">
-            <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Home</Link>
-            <Link to="/#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</Link>
-            <Link to="/#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">How it Works</Link>
-            <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
-            <Link to="/contact" className="text-primary">Contact</Link>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex rounded-full" asChild>
-              <Link to="/sign-in">Sign In</Link>
-            </Button>
-            <Button size="sm" className="rounded-full" asChild>
-              <Link to="/sign-up">Get Started</Link>
-            </Button>
-          </div>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* Contact Section */}
       <section className="pt-32 pb-20 px-4">
@@ -375,6 +348,8 @@ const ContactPage = () => {
           </div>
         </div>
       </section>
+
+      <Footer />
     </div>
   );
 };
