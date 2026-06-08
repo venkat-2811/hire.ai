@@ -586,42 +586,24 @@ async def update_candidate(
 ):
     """PATCH /api/v2/candidates/{candidate_id}
 
-    Editable fields: full_name, email, phone, portfolio_url, github_url, location, vendorName, mainSkillset.
-    Resume fields (resume_url, resume_text, resume_parsed_data) are intentionally excluded — immutable after submission.
+    Editable fields: full_name, phone, portfolio_url, github_url, location, vendorName, mainSkillset.
+    Email is immutable after creation. Resume fields (resume_url, resume_text, resume_parsed_data)
+    are intentionally excluded — immutable after submission.
     """
     db = get_db_admin_service()
 
+    if "email" in payload:
+        return api_error(message="Candidate email cannot be modified", status_code=400)
+
     # Resume fields are immutable after application submission — never allow them via this endpoint
     allowed = {
-        "full_name", "email", "phone", "portfolio_url", "github_url",
+        "full_name", "phone", "portfolio_url", "github_url",
         "location", "vendorName", "mainSkillset",
         "consent_given", "consent_timestamp",
     }
     update_data: Dict[str, Any] = {k: v for k, v in payload.items() if k in allowed}
     if not update_data:
         return api_error(message="No valid fields to update", status_code=400)
-
-    # If email is being changed, check for duplicates
-    if "email" in update_data:
-        new_email = str(update_data["email"]).strip().lower()
-        if not new_email:
-            return api_error(message="Email cannot be empty", status_code=400)
-        update_data["email"] = new_email
-
-        def _check_email_conflict():
-            return (
-                db.client.from_("candidates")
-                .select("id")
-                .eq("email", new_email)
-                .neq("id", candidate_id)
-                .limit(1)
-                .execute()
-            )
-
-        conflict_res = await db.run(_check_email_conflict)
-        conflict = getattr(conflict_res, "data", None) or []
-        if isinstance(conflict, list) and conflict:
-            return api_error(message="Another candidate already uses this email address", status_code=409)
 
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     logger.info("[candidates.update] candidate_id=%s fields=%s", candidate_id, list(update_data.keys()))

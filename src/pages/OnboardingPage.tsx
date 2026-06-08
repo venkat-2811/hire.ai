@@ -14,6 +14,8 @@ import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useCountryDetection } from '@/hooks/useCountryDetection';
+import { formatPrice, type Currency } from '@/lib/pricing';
 
 const COMPANY_SIZES = ['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'];
 
@@ -21,12 +23,6 @@ const TIMEZONES = [
   'UTC', 'Asia/Kolkata', 'America/New_York', 'America/Los_Angeles',
   'Europe/London', 'Europe/Berlin', 'Asia/Singapore', 'Australia/Sydney',
 ];
-
-// Geolocation-based currency detection
-const asianTimezones = ['Asia/Kolkata', 'Asia/Karachi', 'Asia/Dhaka', 'Asia/Colombo', 'Asia/Kathmandu', 'Asia/Kabul'];
-const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const isAsiaRegion = asianTimezones.includes(userTimezone) || userTimezone === 'Asia/Kolkata';
-const detectedCurrency = isAsiaRegion ? 'INR' : 'USD';
 
 const ONBOARDING_PLANS = [
   {
@@ -100,12 +96,7 @@ const ONBOARDING_PLANS = [
   },
 ];
 
-const formatCurrency = (amount: number, currency: string) => {
-  if (amount === 0) return currency === 'INR' ? '₹0' : '$0';
-  return currency === 'INR'
-    ? `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
-    : `$${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-};
+const formatCurrency = (amount: number, currency: Currency) => formatPrice(amount, currency);
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -116,6 +107,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
+  const { country, currency: detectedCurrency, isLoading: geoLoading } = useCountryDetection(profile?.country as string | undefined);
 
   const initial = useMemo(() => ({
     organization_email: profile?.organization_email ?? '',
@@ -220,6 +212,7 @@ export default function OnboardingPage() {
   };
 
   const handlePlanSelect = async (planId: string) => {
+    if (processingPlan) return;
     setSelectedPlan(planId);
     setProcessingPlan(true);
 
@@ -234,7 +227,7 @@ export default function OnboardingPage() {
       }
 
       // Create Stripe Checkout session and redirect
-      const session = await subscriptionApi.createOrder(planId, detectedCurrency);
+      const session = await subscriptionApi.createOrder(planId, detectedCurrency, country);
       window.location.href = session.url;
     } catch (err: unknown) {
       const e = err as Error;
@@ -378,65 +371,73 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                {ONBOARDING_PLANS.map((plan) => {
-                  const price = detectedCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
-                  
-                  return (
-                    <motion.div
-                      key={plan.id}
-                      whileHover={{ scale: 1.02 }}
-                      className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all cursor-pointer bg-card ${
-                        selectedPlan === plan.id
-                          ? 'border-primary shadow-lg shadow-primary/10'
-                          : plan.cardBg
-                      } ${plan.popular ? 'ring-2 ring-purple-500/30' : ''}`}
-                      onClick={() => !processingPlan && setSelectedPlan(plan.id)}
-                    >
-                      {plan.popular && (
-                        <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-3">
-                          MOST POPULAR
-                        </Badge>
-                      )}
+              {geoLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-7 items-stretch">
+                  {ONBOARDING_PLANS.map((plan) => (
+                    <div key={plan.id} className="h-[520px] rounded-2xl bg-muted/30 animate-pulse" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-7 items-stretch">
+                  {ONBOARDING_PLANS.map((plan) => {
+                    const price = detectedCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
 
-                      <div className="text-center mb-4">
-                        <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${plan.gradient} mb-3`}>
-                          <plan.icon className="h-6 w-6 text-white" />
-                        </div>
-                        <h3 className="text-lg font-bold">{plan.name}</h3>
-                        <div className="mt-1 flex items-baseline justify-center gap-1">
-                          <span className="text-3xl font-extrabold">{formatCurrency(price, detectedCurrency)}</span>
-                          <span className="text-sm text-muted-foreground font-semibold">/ {plan.validity}</span>
-                        </div>
-                      </div>
-
-                      <ul className="space-y-2.5 mb-6 flex-grow">
-                        {plan.features.map((f, idx) => (
-                          <li key={idx} className="flex items-center gap-2 text-sm">
-                            <Check className={`h-4 w-4 flex-shrink-0 ${f.highlight ? 'text-green-500' : 'text-muted-foreground'}`} />
-                            <span className={f.highlight ? 'font-medium' : 'text-muted-foreground'}>{f.text}</span>
-                          </li>
-                        ))}
-                      </ul>
-
-                      <Button
-                        className="w-full mt-auto font-bold"
-                        variant={plan.popular || plan.id === 'scale' ? 'default' : 'outline'}
-                        disabled={processingPlan}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePlanSelect(plan.id);
-                        }}
+                    return (
+                      <motion.div
+                        key={plan.id}
+                        whileHover={{ scale: 1.02 }}
+                        className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all cursor-pointer bg-card h-full min-h-[520px] ${
+                          selectedPlan === plan.id
+                            ? 'border-primary shadow-lg shadow-primary/10'
+                            : plan.cardBg
+                        } ${plan.popular ? 'ring-2 ring-purple-500/30' : ''}`}
+                        onClick={() => !processingPlan && setSelectedPlan(plan.id)}
                       >
-                        {processingPlan && selectedPlan === plan.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : null}
-                        {plan.id === 'free' ? plan.cta : `${plan.cta} — ${formatCurrency(price, detectedCurrency)}`}
-                      </Button>
-                    </motion.div>
-                  );
-                })}
-              </div>
+                        {plan.popular && (
+                          <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-3">
+                            MOST POPULAR
+                          </Badge>
+                        )}
+
+                        <div className="text-center mb-4">
+                          <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${plan.gradient} mb-3`}>
+                            <plan.icon className="h-6 w-6 text-white" />
+                          </div>
+                          <h3 className="text-lg font-bold">{plan.name}</h3>
+                          <div className="mt-1 flex items-baseline justify-center gap-1">
+                            <span className="text-3xl font-extrabold">{formatCurrency(price, detectedCurrency)}</span>
+                            <span className="text-sm text-muted-foreground font-semibold">/ {plan.validity}</span>
+                          </div>
+                        </div>
+
+                        <ul className="space-y-2.5 mb-6 flex-grow">
+                          {plan.features.map((f, idx) => (
+                            <li key={idx} className="flex items-center gap-2 text-sm">
+                              <Check className={`h-4 w-4 flex-shrink-0 ${f.highlight ? 'text-green-500' : 'text-muted-foreground'}`} />
+                              <span className={f.highlight ? 'font-medium' : 'text-muted-foreground'}>{f.text}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <Button
+                          className="w-full mt-auto font-bold"
+                          variant={plan.popular || plan.id === 'scale' ? 'default' : 'outline'}
+                          disabled={processingPlan}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlanSelect(plan.id);
+                          }}
+                        >
+                          {processingPlan && selectedPlan === plan.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : null}
+                          {plan.id === 'free' ? plan.cta : `${plan.cta} — ${formatCurrency(price, detectedCurrency)}`}
+                        </Button>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="mt-6 text-center">
                 <Button variant="ghost" size="sm" onClick={() => setStep(1)} disabled={processingPlan}>

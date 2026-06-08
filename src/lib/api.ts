@@ -1391,6 +1391,11 @@ export const subscriptionApi = {
     request<SubscriptionInfo>('/subscription', {
     }),
 
+  selectFree: () =>
+    request<{ success: boolean; plan: string; message: string }>('/subscription/select-free', {
+      method: 'POST',
+    }),
+
   createOrder: (plan: string, currency?: string, country?: string) =>
     request<{ session_id: string; url: string; plan: string }>(
       '/subscription/create-order',

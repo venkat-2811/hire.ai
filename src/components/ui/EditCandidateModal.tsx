@@ -11,13 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Lock, Mail, Info } from 'lucide-react';
+import { AlertTriangle, Lock, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { candidatesApi } from '@/lib/api';
 
 interface EditableCandidateFields {
   full_name: string;
-  email: string;
   phone: string;
   location: string;
   portfolio_url: string;
@@ -47,28 +46,22 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
 
   const [fields, setFields] = useState<EditableCandidateFields>({
     full_name: '',
-    email: '',
     phone: '',
     location: '',
     portfolio_url: '',
     github_url: '',
   });
 
-  const [originalEmail, setOriginalEmail] = useState('');
-  const emailChanged = fields.email.trim().toLowerCase() !== originalEmail.toLowerCase();
-
   useEffect(() => {
     if (candidate && open) {
       const f: EditableCandidateFields = {
         full_name: candidate.full_name || '',
-        email: candidate.email || '',
         phone: candidate.phone || '',
         location: candidate.location || '',
         portfolio_url: candidate.portfolio_url || '',
         github_url: candidate.github_url || '',
       };
       setFields(f);
-      setOriginalEmail(candidate.email || '');
       setStep('warning');
     }
   }, [candidate, open]);
@@ -85,21 +78,10 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
       toast.error('Full name is required');
       return;
     }
-    if (!fields.email.trim()) {
-      toast.error('Email is required');
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(fields.email.trim())) {
-      toast.error('Please enter a valid email address');
-      return;
-    }
-
     setSaving(true);
     try {
       const payload: Record<string, string | null> = {
         full_name: fields.full_name.trim(),
-        email: fields.email.trim().toLowerCase(),
         phone: fields.phone.trim() || null,
         location: fields.location.trim() || null,
         portfolio_url: fields.portfolio_url.trim() || null,
@@ -189,23 +171,21 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
                 <div className="space-y-1.5">
                   <Label htmlFor="ec-email" className="flex items-center gap-1.5">
                     <Mail className="h-3.5 w-3.5" />
-                    Email <span className="text-destructive">*</span>
+                    Email
+                    <Badge variant="outline" className="text-[10px]">Read-only</Badge>
                   </Label>
                   <Input
                     id="ec-email"
                     type="email"
-                    value={fields.email}
-                    onChange={(e) => setFields(f => ({ ...f, email: e.target.value }))}
-                    placeholder="candidate@example.com"
+                    value={candidate.email || ''}
+                    readOnly
+                    disabled
+                    className="cursor-not-allowed bg-muted/40"
                   />
-                  {emailChanged && (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-2.5 flex items-start gap-2">
-                      <Info className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-amber-700 dark:text-amber-300">
-                        Future emails, interview invites, OTPs, and hiring communications will be sent to this updated email address.
-                      </p>
-                    </div>
-                  )}
+                  <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <Lock className="h-3.5 w-3.5 mt-0.5" />
+                    <span>Email is a system identifier and cannot be edited.</span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">

@@ -223,6 +223,103 @@ async def create_order(payload: Dict[str, Any], request: Request, user: ClerkUse
 
     return ok({"session_id": session["id"], "url": session["url"], "plan": plan})
 
+
+@router.post("/select-free")
+async def select_free_plan(user: ClerkUser = Depends(require_user)):
+    """POST /api/v2/subscription/select-free
+
+    Activates the free plan without Stripe checkout. Idempotent and safe to
+    call multiple times during onboarding.
+    """
+    db = get_db_admin_service()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    def _fetch_profile():
+        return (
+            db.client.from_("profiles")
+            .select("subscription_plan, subscription_status, plan_selected_at")
+            .eq("user_id", user.id)
+            .maybe_single()
+            .execute()
+        )
+
+    profile_res = await db.run(_fetch_profile)
+    profile = getattr(profile_res, "data", None) or {}
+    existing_plan = _normalize_plan(profile.get("subscription_plan"))
+
+    def _update_profile():
+        return (
+            db.client.from_("profiles")
+            .update({
+                "subscription_plan": "free",
+                "subscription_status": "active",
+                "plan_selected_at": profile.get("plan_selected_at") or now_iso,
+                "updated_at": now_iso,
+            })
+            .eq("user_id", user.id)
+            .execute()
+        )
+
+    await db.run(_update_profile)
+
+    def _fetch_sub():
+        return (
+            db.client.from_("subscriptions")
+            .select("id")
+            .eq("user_id", user.id)
+            .maybe_single()
+            .execute()
+        )
+
+    sub_res = await db.run(_fetch_sub)
+    existing_sub = getattr(sub_res, "data", None)
+
+    if isinstance(existing_sub, dict) and existing_sub.get("id"):
+        def _update_sub():
+            return (
+                db.client.from_("subscriptions")
+                .update({
+                    "plan": "free",
+                    "status": "active",
+                    "billing_cycle_start": now_iso,
+                    "billing_cycle_end": (now + timedelta(days=30)).isoformat(),
+                    "deposit_amount": 0,
+                    "wallet_balance": 0,
+                    "updated_at": now_iso,
+                    "metadata": {"source": "subscription-select-free", "currency": "USD"},
+                })
+                .eq("id", existing_sub["id"])
+                .execute()
+            )
+        await db.run(_update_sub)
+    else:
+        def _insert_sub():
+            return (
+                db.client.from_("subscriptions")
+                .insert({
+                    "user_id": user.id,
+                    "plan": "free",
+                    "status": "active",
+                    "billing_cycle_start": now_iso,
+                    "billing_cycle_end": (now + timedelta(days=30)).isoformat(),
+                    "deposit_amount": 0,
+                    "wallet_balance": 0,
+                    "overage_amount": 0,
+                    "overage_cap": 0,
+                    "metadata": {"source": "subscription-select-free", "currency": "USD"},
+                })
+                .execute()
+            )
+        await db.run(_insert_sub)
+
+    return ok({
+        "success": True,
+        "plan": "free",
+        "message": "Free plan activated successfully.",
+        "previous_plan": existing_plan,
+    })
+
 @router.post("/verify")
 async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(require_user)):
     """POST /api/v2/subscription/verify"""
