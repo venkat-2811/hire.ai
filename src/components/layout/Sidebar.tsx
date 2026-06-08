@@ -54,12 +54,12 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
       <div className="flex items-center h-16 px-3 border-b border-sidebar-border">
         <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
           {(!isMobile && collapsed) ? (
-            /* Collapsed: icon only */
-            <div className="flex-shrink-0 rounded-lg bg-white/95 p-1.5">
+            /* Collapsed: logo full scaled */
+            <div className="flex-shrink-0 rounded-lg bg-white/95 p-1">
               <img
-                src={logoIcon}
+                src={logoFull}
                 alt="Rekshift"
-                className="h-6 w-6 object-contain block"
+                className="h-6 w-8 object-contain block"
                 draggable={false}
               />
             </div>
