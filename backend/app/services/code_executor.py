@@ -596,7 +596,7 @@ class HackerEarthExecutor:
                 '                        result = target(*_get_args(input_data, target))\n'
                 '                finally:\n'
                 '                    sys.stdout = _real_stdout\n'
-                '                tr["stdout"] = _cap.getvalue()\n'
+                '                    tr["stdout"] = _cap.getvalue()\n'
                 '                tr["actual"] = result\n'
                 '                tr["passed"] = _cmp(result, expected)\n'
                 '                tr["status"] = "AC" if tr["passed"] else "WA"\n'
