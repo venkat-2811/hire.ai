@@ -180,7 +180,7 @@ export default function LandingPage() {
 
             <div className="flex flex-col sm:flex-row gap-4">
               {user ? (
-                <Button size="lg" asChild>
+                <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90" asChild>
                   <Link to="/dashboard">
                     Go to Dashboard
                     <ArrowRight className="ml-2 h-5 w-5" />
@@ -233,7 +233,7 @@ export default function LandingPage() {
       </section>
 
       {/* Client Logos Section */}
-      <section id="clients" className="py-20 px-4">
+      <section id="clients" className="pt-12 pb-10 px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4">Trusted by Hiring Teams</h2>
@@ -281,7 +281,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20 px-4">
+      <section id="features" className="pt-10 pb-10 px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">Enterprise-Grade Features</h2>
@@ -347,7 +347,7 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works Section */}
-      <section id="how-it-works" className="py-24 px-4 bg-muted/30">
+      <section id="how-it-works" className="pt-12 pb-16 px-4 bg-muted/30">
         <div className="container mx-auto max-w-4xl" ref={containerRef}>
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">How Rekshift Works</h2>
@@ -358,12 +358,12 @@ export default function LandingPage() {
 
           <div className="relative">
             {/* The persistent background line */}
-            <div className="absolute left-[38px] md:left-1/2 md:-translate-x-1/2 top-0 bottom-0 w-1 bg-muted rounded-full" />
+            <div className="absolute left-[40px] md:left-1/2 md:-translate-x-1/2 top-0 bottom-0 w-1 bg-muted rounded-full" />
 
             {/* The animated fill line */}
             <motion.div
               style={{ height: lineHeight }}
-              className="absolute left-[38px] md:left-1/2 md:-translate-x-1/2 top-0 w-1 bg-primary rounded-full origin-top"
+              className="absolute left-[40px] md:left-1/2 md:-translate-x-1/2 top-0 w-1 bg-primary rounded-full origin-top"
             />
 
             <div className="flex flex-col gap-16 relative z-10">
@@ -375,7 +375,7 @@ export default function LandingPage() {
                 <div key={i} className={`flex flex-col md:flex-row items-start md:items-center gap-6 ${i % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'}`}>
 
                   {/* Content Container */}
-                  <div className={`flex-1 w-full pl-24 md:pl-0 ${i % 2 === 0 ? 'md:pr-16 md:text-right' : 'md:pl-16 md:text-left'}`}>
+                  <div className={`flex-1 w-full pl-20 md:pl-0 ${i % 2 === 0 ? 'md:pr-16 md:text-right' : 'md:pl-16 md:text-left'}`}>
                     <motion.div
                       initial={{ opacity: 0, x: i % 2 === 0 ? -20 : 20 }}
                       whileInView={{ opacity: 1, x: 0 }}
@@ -392,7 +392,7 @@ export default function LandingPage() {
                     initial={{ scale: 0 }}
                     whileInView={{ scale: 1 }}
                     viewport={{ once: true, margin: "-100px" }}
-                    className="absolute left-6 md:static md:left-auto w-14 h-14 bg-background border-4 border-primary text-primary rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0 z-20 shadow-lg"
+                    className="absolute left-4 md:static md:left-auto w-12 h-12 md:w-14 md:h-14 bg-background border-4 border-primary text-primary rounded-full flex items-center justify-center text-lg md:text-xl font-bold flex-shrink-0 z-20 shadow-lg"
                   >
                     {step.icon}
                   </motion.div>
@@ -407,7 +407,7 @@ export default function LandingPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 px-4 bg-muted/30">
+      <section className="py-12 px-4 bg-muted/30">
         <div className="container mx-auto max-w-4xl">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -416,7 +416,7 @@ export default function LandingPage() {
             className="relative rounded-3xl overflow-hidden"
             style={{ background: 'var(--gradient-hero)' }}
           >
-            <div className="relative z-10 p-12 text-center text-white">
+            <div className="relative z-10 p-6 sm:p-12 text-center text-white">
               <h2 className="text-3xl md:text-4xl font-bold mb-4">
                 Ready to Transform Your Hiring?
               </h2>
