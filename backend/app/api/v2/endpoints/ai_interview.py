@@ -229,8 +229,17 @@ def _extract_resume_context(resume_data: Optional[dict], job: Optional[dict] = N
     # --- Certifications -------------------------------------------------------
     certs = resume_data.get("certifications") or resume_data.get("certificates")
     if isinstance(certs, list) and certs:
-        cert_names = [str(c.get("name") or c) for c in certs[:5] if c]
-        cert_names = [n for n in cert_names if n.strip()]
+        cert_names: List[str] = []
+        for c in certs[:5]:
+            if not c:
+                continue
+            if isinstance(c, dict):
+                name = c.get("name") or c.get("title") or c.get("certificate")
+            else:
+                name = c
+            name = str(name).strip() if name is not None else ""
+            if name:
+                cert_names.append(name)
         if cert_names:
             parts.append(f"Certifications: {', '.join(cert_names)}")
 
