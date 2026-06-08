@@ -6,6 +6,17 @@ import { useRequireAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { 
   ArrowLeft, 
   Edit, 
@@ -32,6 +43,8 @@ export default function JobDetailsPage() {
   const { data: job, isLoading } = useJob(jobId || '');
   const deleteJob = useDeleteJob();
   const [copiedLink, setCopiedLink] = useState(false);
+  const [archiveJobOpen, setArchiveJobOpen] = useState(false);
+  const [archiveChecked, setArchiveChecked] = useState(false);
 
   const getApplicationLink = () => {
     return `${window.location.origin}/apply/${jobId}`;
@@ -50,7 +63,7 @@ export default function JobDetailsPage() {
 
   const handleArchive = () => {
     if (jobId) {
-      deleteJob.mutate(jobId, {
+      deleteJob.mutate({ id: jobId, permanent: false }, {
         onSuccess: () => navigate('/jobs'),
       });
     }
@@ -122,7 +135,14 @@ export default function JobDetailsPage() {
                 Edit
               </Link>
             </Button>
-            <Button variant="outline" onClick={handleArchive} className="flex-1 sm:flex-none">
+            <Button variant="outline" onClick={() => {
+              if (job.is_active) {
+                setArchiveJobOpen(true);
+                setArchiveChecked(false);
+              } else {
+                handleArchive();
+              }
+            }} className="flex-1 sm:flex-none">
               <Archive className="mr-2 h-4 w-4" />
               {job.is_active ? 'Archive' : 'Activate'}
             </Button>
@@ -235,6 +255,45 @@ export default function JobDetailsPage() {
             </Card>
           </div>
         </div>
+
+        {/* Archive Confirmation Dialog */}
+        <AlertDialog open={archiveJobOpen} onOpenChange={(open) => !open && setArchiveJobOpen(false)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Archive Job?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-4 pt-2">
+                <p>
+                  This job will be moved to the archived state and will no longer appear as an active job.
+                </p>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="archive-confirm-details" 
+                    checked={archiveChecked}
+                    onCheckedChange={(checked) => setArchiveChecked(!!checked)}
+                  />
+                  <label
+                    htmlFor="archive-confirm-details"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    I understand that this job will be archived.
+                  </label>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  handleArchive();
+                  setArchiveJobOpen(false);
+                }}
+                disabled={!archiveChecked}
+              >
+                Archive Job
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );

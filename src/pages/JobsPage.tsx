@@ -5,6 +5,7 @@ import { useRequireAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Search, 
   Plus, 
@@ -52,6 +53,9 @@ export default function JobsPage() {
   const updateJob = useUpdateJob();
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [archiveJobId, setArchiveJobId] = useState<string | null>(null);
+  const [archiveChecked, setArchiveChecked] = useState(false);
 
   // Fetch subscription info for limit checking
 
@@ -194,7 +198,14 @@ export default function JobsPage() {
                             Edit Job
                           </Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleToggleArchive(job.id, job.is_active)}>
+                        <DropdownMenuItem onClick={() => {
+                          if (job.is_active) {
+                            setArchiveJobId(job.id);
+                            setArchiveChecked(false);
+                          } else {
+                            handleToggleArchive(job.id, job.is_active);
+                          }
+                        }}>
                           <Archive className="mr-2 h-4 w-4" />
                           {job.is_active ? 'Archive Job' : 'Activate Job'}
                         </DropdownMenuItem>
@@ -233,20 +244,81 @@ export default function JobsPage() {
           ))}
         </div>
 
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        {/* Archive Confirmation Dialog */}
+        <AlertDialog open={!!archiveJobId} onOpenChange={(open) => !open && setArchiveJobId(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the job position
-                and remove all associated candidate applications, interviews, and assessment data.
+              <AlertDialogTitle>Archive Job?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-4 pt-2">
+                <p>
+                  This job will be moved to the archived state and will no longer appear as an active job.
+                </p>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="archive-confirm" 
+                    checked={archiveChecked}
+                    onCheckedChange={(checked) => setArchiveChecked(!!checked)}
+                  />
+                  <label
+                    htmlFor="archive-confirm"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    I understand that this job will be archived.
+                  </label>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  if (archiveJobId) {
+                    handleToggleArchive(archiveJobId, true);
+                    setArchiveJobId(null);
+                  }
+                }}
+                disabled={!archiveChecked}
+              >
+                Archive Job
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!deleteId} onOpenChange={(open) => {
+          if (!open) {
+            setDeleteId(null);
+            setDeleteConfirmText('');
+          }
+        }}>
+          <AlertDialogContent className="border-destructive/50">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-destructive flex items-center gap-2">
+                <Trash2 className="h-5 w-5" />
+                Permanently Delete Job?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-4 pt-2">
+                <p className="text-foreground">
+                  <strong>Warning:</strong> Deleting a job is a permanent action and may remove associated candidate applications, interviews, and assessment data.
+                </p>
+                <div className="space-y-2">
+                  <label className="text-sm">
+                    Please type <strong>Delete the job</strong> to confirm.
+                  </label>
+                  <Input 
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Delete the job"
+                  />
+                </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction 
                 onClick={handlePermanentDelete}
+                disabled={deleteConfirmText !== 'Delete the job'}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 Delete Permanently
