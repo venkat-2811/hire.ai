@@ -3488,9 +3488,9 @@ export default function AssessmentPage() {
                             const outputMatchesExpectedText = (() => {
                               if (!activeResult || !activeResult.stdout)
                                 return false;
-                              const actual = activeResult.stdout.trim();
-                              const expected = (
-                                activeResult.expected_output || ""
+                              const actual = safeString(activeResult.stdout).trim();
+                              const expected = safeString(
+                                activeResult.expected_output
                               ).trim();
                               return actual === expected;
                             })();
@@ -4390,9 +4390,9 @@ export default function AssessmentPage() {
                             const outputMatchesExpectedText = (() => {
                               if (!activeResult || !activeResult.stdout)
                                 return false;
-                              const actual = activeResult.stdout.trim();
-                              const expected = (
-                                activeResult.expected_output || ""
+                              const actual = safeString(activeResult.stdout).trim();
+                              const expected = safeString(
+                                activeResult.expected_output
                               ).trim();
                               return actual === expected;
                             })();
