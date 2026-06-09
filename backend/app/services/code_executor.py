@@ -908,8 +908,9 @@ public class Main {{
         if (result instanceof String && expected.v instanceof String) {{
             if (((String)result).equals((String)expected.v)) return true;
         }}
-        if (result instanceof Boolean && expected.v instanceof Boolean) {{
-            return result.equals(expected.v);
+        if (result instanceof Boolean) {{
+            if (expected.v instanceof Boolean) return result.equals(expected.v);
+            return ((Boolean)result).booleanValue() == expected.AsBool();
         }}
         if (result instanceof Number && expected.v instanceof Number) {{
             try {{ return Math.abs(((Number)result).doubleValue() - ((Number)expected.v).doubleValue()) < 1e-6; }} catch(Exception e) {{}}
@@ -1141,6 +1142,7 @@ public class Main {{
             _ml.append('        string actual_str = "null";\n')
             _ml.append('        string status = "RE";\n')
             _ml.append('        string err = "";\n')
+            _ml.append('        string stdout_str = "";\n')
             _ml.append('        bool ok = false;\n')
             _ml.append('        try {\n')
             if _sig_params:
@@ -1181,12 +1183,14 @@ public class Main {{
             _ml.append('            err = "Unknown exception"; status = "RE";\n')
             _ml.append('        }\n')
             _ml.append('        cout.rdbuf(__cout_orig);\n')
+            _ml.append('        stdout_str = __user_stdout.str();\n')
             _ml.append('        __json_buf << "{\\"index\\":" << i\n')
             _ml.append('             << ",\\"input\\":" << jval_to_str(input_val)\n')
             _ml.append('             << ",\\"expected\\":" << jval_to_str(expected_val)\n')
             _ml.append('             << ",\\"actual\\":" << actual_str\n')
             _ml.append('             << ",\\"passed\\":" << (ok?"true":"false")\n')
             _ml.append('             << ",\\"status\\":\\"" << status << "\\""\n')
+            _ml.append('             << ",\\"stdout\\":" << j_str(stdout_str)\n')
             _ml.append('             << ",\\"error\\":" << (err.empty()?"null":j_str(err))\n')
             _ml.append('             << "}";\n')
             _ml.append('    }\n')

@@ -12,9 +12,10 @@ import logoFull from "@/assets/LOGO_full.png";
 
 interface DashboardLayoutProps {
   children: ReactNode;
+  fitContent?: boolean;
 }
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({ children, fitContent = false }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { data: profile } = useProfile();
@@ -32,8 +33,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [location.pathname, navigate, profile]);
 
+  const rootClassName = fitContent ? "flex" : "flex h-screen overflow-hidden";
+  const mainClassName = fitContent ? "flex-1 bg-background" : "flex-1 overflow-auto bg-background";
+
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className={rootClassName}>
       {/* Desktop Sidebar */}
       <div className="hidden md:block">
         <Sidebar className="border-r" />
@@ -64,7 +68,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </Sheet>
         </header>
         
-        <main className="flex-1 overflow-auto bg-background">
+        <main className={mainClassName}>
           {billingUsage && (billingUsage.status === 'paused' || billingUsage.status === 'overdue' || billingUsage.candidates_count >= billingUsage.candidates_limit) && location.pathname !== '/billing' && (
             <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 flex items-center justify-between gap-3">
               <p className="text-sm text-destructive">
