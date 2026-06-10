@@ -905,7 +905,7 @@ async def get_manual_interview(
             .select(
                 "candidate_id, job_id, interview_mode, interview_status, "
                 "manual_interview_score, manual_interview_notes, "
-                "manual_interview_date, interview_completed_at"
+                "manual_interview_at, interview_completed_at"
             )
             .eq("candidate_id", candidate_id)
             .eq("job_id", job_id)
@@ -923,7 +923,7 @@ async def get_manual_interview(
     if not isinstance(row, dict):
         return ok(None)
     notes = row.get("manual_interview_notes") or ""
-    at_val = row.get("manual_interview_date")
+    at_val = row.get("manual_interview_at")
     return ok({
         "candidate_id": row.get("candidate_id", candidate_id),
         "job_id": row.get("job_id", job_id),
@@ -1026,7 +1026,7 @@ async def update_manual_interview(
             .select(
                 "candidate_id, job_id, interview_mode, interview_status, "
                 "manual_interview_score, manual_interview_notes, "
-                "manual_interview_date, interview_completed_at"
+                "manual_interview_at, interview_completed_at"
             )
             .eq("candidate_id", candidate_id)
             .eq("job_id", job_id)
@@ -1055,7 +1055,7 @@ async def update_manual_interview(
         "manual_interview_score": row.get("manual_interview_score"),
         "manual_interview_feedback": fetched_notes,
         "manual_interview_notes": fetched_notes,
-        "manual_interview_at": row.get("manual_interview_date"),
+        "manual_interview_at": row.get("manual_interview_at"),
         "interview_completed_at": row.get("interview_completed_at"),
         "manual_interview_entered_by": None,
     })

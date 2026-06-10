@@ -95,7 +95,7 @@ export default function Navbar({ activeSection, onScrollTo }: NavbarProps) {
           <div className="hidden md:flex items-center gap-3">
             {user ? (
               <>
-                <Button size="sm" className="rounded-full bg-accent text-accent-foreground hover:bg-accent/90" asChild>
+                <Button size="sm" className="rounded-full" asChild>
                   <Link to="/dashboard">Dashboard</Link>
                 </Button>
                 <Button variant="outline" size="sm" className="rounded-full" onClick={() => void signOut()}>
@@ -160,7 +160,7 @@ export default function Navbar({ activeSection, onScrollTo }: NavbarProps) {
           <div className="flex flex-col gap-2 pt-2">
             {user ? (
               <>
-                <Button size="sm" className="w-full rounded-full bg-accent text-accent-foreground hover:bg-accent/90" asChild onClick={() => setIsOpen(false)}>
+                <Button size="sm" className="w-full rounded-full" asChild onClick={() => setIsOpen(false)}>
                   <Link to="/dashboard">Dashboard</Link>
                 </Button>
                 <Button variant="outline" size="sm" className="w-full rounded-full" onClick={() => { setIsOpen(false); void signOut(); }}>

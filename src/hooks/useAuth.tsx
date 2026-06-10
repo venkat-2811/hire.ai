@@ -56,6 +56,11 @@ function ClerkProviderWithRouter({ children }: { children: ReactNode }) {
       publishableKey={CLERK_PUBLISHABLE_KEY}
       routerPush={(to) => navigate(to)}
       routerReplace={(to) => navigate(to, { replace: true })}
+      appearance={{
+        layout: {
+          unsafe_disableDevelopmentModeWarnings: true,
+        }
+      }}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
       signInFallbackRedirectUrl="/dashboard"

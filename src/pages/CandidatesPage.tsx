@@ -735,6 +735,15 @@ export default function CandidatesPage() {
                                     : rawStatus === 'in_progress'
                                       ? 'in_progress'
                                       : 'pending';
+                                  const score = candidateAnalytics?.assessment_score;
+                                  if (status === 'completed' && typeof score === 'number') {
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <ScoreBadge score={score} />
+                                        <StatusBadge status={status} />
+                                      </div>
+                                    );
+                                  }
                                   return <StatusBadge status={status} />;
                                 })()}
                               </TableCell>
@@ -747,6 +756,15 @@ export default function CandidatesPage() {
                                     : rawStatus === 'in_progress'
                                       ? 'in_progress'
                                       : 'pending';
+                                  const score = candidateAnalytics?.interview_score;
+                                  if (status === 'completed' && typeof score === 'number') {
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <ScoreBadge score={score} />
+                                        <StatusBadge status={status} />
+                                      </div>
+                                    );
+                                  }
                                   return <StatusBadge status={status} />;
                                 })()}
                               </TableCell>

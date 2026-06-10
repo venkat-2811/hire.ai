@@ -20,7 +20,14 @@ export function ClerkAuthProvider({ children }: ClerkAuthProviderProps) {
   }
   
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+    <ClerkProvider 
+      publishableKey={CLERK_PUBLISHABLE_KEY}
+      appearance={{
+        layout: {
+          unsafe_disableDevelopmentModeWarnings: true,
+        }
+      }}
+    >
       {children}
     </ClerkProvider>
   );

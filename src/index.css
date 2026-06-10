@@ -34,9 +34,9 @@
     --muted: 215 20% 94%;
     --muted-foreground: 215 16% 47%;
     
-    /* Accent - Emerald for Success/Actions */
-    --accent: 160 84% 39%;
-    --accent-foreground: 0 0% 100%;
+    /* Accent - Deep Navy for Success/Actions */
+    --accent: 222 47% 15%;
+    --accent-foreground: 210 40% 98%;
     
     /* Destructive - Warm Red */
     --destructive: 0 72% 51%;
@@ -62,12 +62,12 @@
     --radius: 0.625rem;
     
     /* AI Glow Effect */
-    --ai-glow: 160 84% 39%;
-    --ai-pulse: 217 91% 60%;
+    --ai-glow: 222 47% 15%;
+    --ai-pulse: 222 47% 25%;
     
     /* Gradient Tokens */
     --gradient-primary: linear-gradient(135deg, hsl(222 47% 15%), hsl(222 47% 25%));
-    --gradient-accent: linear-gradient(135deg, hsl(160 84% 39%), hsl(160 84% 50%));
+    --gradient-accent: linear-gradient(135deg, hsl(222 47% 15%), hsl(222 47% 25%));
     --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%), hsl(220 20% 98%));
     --gradient-hero: linear-gradient(135deg, hsl(222 47% 11%), hsl(222 47% 20%), hsl(217 91% 25%));
     
@@ -75,17 +75,17 @@
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-    --shadow-glow: 0 0 20px -5px hsl(160 84% 39% / 0.3);
+    --shadow-glow: 0 0 20px -5px hsl(222 47% 15% / 0.3);
     
     /* Sidebar */
     --sidebar-background: 222 47% 11%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 160 84% 39%;
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary: 222 47% 15%;
+    --sidebar-primary-foreground: 210 40% 98%;
     --sidebar-accent: 222 47% 18%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 222 47% 20%;
-    --sidebar-ring: 160 84% 39%;
+    --sidebar-ring: 222 47% 15%;
 
     /* Role Colors */
     --role-salesforce: 217 91% 60%;
@@ -118,8 +118,8 @@
     --muted: 222 47% 15%;
     --muted-foreground: 215 20% 65%;
     
-    --accent: 160 84% 45%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 210 40% 98%;
+    --accent-foreground: 222 47% 11%;
     
     --destructive: 0 62% 45%;
     --destructive-foreground: 210 40% 98%;
@@ -135,17 +135,17 @@
     
     --border: 222 47% 20%;
     --input: 222 47% 20%;
-    --ring: 160 84% 45%;
+    --ring: 210 40% 98%;
     
-    --ai-glow: 160 84% 45%;
-    --ai-pulse: 217 91% 65%;
+    --ai-glow: 210 40% 98%;
+    --ai-pulse: 222 47% 15%;
     
     --gradient-hero: linear-gradient(135deg, hsl(222 47% 6%), hsl(222 47% 12%), hsl(217 91% 20%));
     
     --sidebar-background: 222 47% 6%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 160 84% 45%;
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary: 210 40% 98%;
+    --sidebar-primary-foreground: 222 47% 6%;
     --sidebar-accent: 222 47% 12%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 222 47% 15%;

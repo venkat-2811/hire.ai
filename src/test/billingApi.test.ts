@@ -20,7 +20,7 @@ describe('billingApi', () => {
       json: async () => ({ success: true, session_id: 'cs_test', checkout_url: 'https://checkout', plan: 'pro', deposit_amount: 36.13 }),
     });
 
-    const result = await billingApi.subscribe('pro');
+    const result = await billingApi.subscribe('starter');
 
     expect(result.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
