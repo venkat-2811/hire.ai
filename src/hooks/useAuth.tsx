@@ -15,6 +15,8 @@ import {
 import { setAuthTokenGetter } from '@/lib/api';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const CLERK_JS_URL = import.meta.env.VITE_CLERK_JS_URL
+  || "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js";
 
 interface ClerkUser {
   id: string;
@@ -54,6 +56,7 @@ function ClerkProviderWithRouter({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider
       publishableKey={CLERK_PUBLISHABLE_KEY}
+      clerkJSUrl={CLERK_JS_URL}
       routerPush={(to) => navigate(to)}
       routerReplace={(to) => navigate(to, { replace: true })}
       appearance={{
