@@ -1,6 +1,6 @@
 import os
 from functools import lru_cache
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from pydantic import Field, ValidationError, field_validator
 from pathlib import Path
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, alias="DEBUG")
 
     frontend_url: str = Field(default="http://localhost:8080", alias="FRONTEND_URL")
-    cors_origins: List[str] = Field(
+    cors_origins: Union[List[str], str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
             "http://localhost:3000",
