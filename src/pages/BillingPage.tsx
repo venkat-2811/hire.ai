@@ -12,15 +12,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  Calendar, ShieldCheck, RefreshCw, Phone, FlaskConical,
+  Calendar, ShieldCheck, RefreshCw, Phone,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import {
   PRODUCTION_PLANS,
-  TEST_PLANS,
-  shouldShowTestPlans,
   formatPrice,
   getPlanPrice,
   type PricingPlan,
@@ -58,13 +56,9 @@ function toPlanDetail(p: PricingPlan): PlanDetail {
   };
 }
 
-// Visible plans for billing page (production + optionally test plans)
+// Visible plans for billing page (production plans only)
 function getVisiblePlans(): PlanDetail[] {
-  const plans = PRODUCTION_PLANS.map(toPlanDetail);
-  if (shouldShowTestPlans()) {
-    plans.push(...TEST_PLANS.map(toPlanDetail));
-  }
-  return plans;
+  return PRODUCTION_PLANS.map(toPlanDetail);
 }
 
 const VISIBLE_PLANS = getVisiblePlans();
