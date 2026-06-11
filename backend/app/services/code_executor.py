@@ -911,7 +911,7 @@ public class Main {{
         }}
         if (result instanceof Boolean) {{
             if (expected.v instanceof Boolean) return result.equals(expected.v);
-            return ((Boolean)result).booleanValue() == expected.AsBool();
+            return ((Boolean)result).booleanValue() == expected.asBool();
         }}
         if (result instanceof Number && expected.v instanceof Number) {{
             try {{ return Math.abs(((Number)result).doubleValue() - ((Number)expected.v).doubleValue()) < 1e-6; }} catch(Exception e) {{}}
@@ -1540,6 +1540,37 @@ fn main() {{
 
         # Parse the JSON report from stdout
         report_obj: Dict[str, Any] = {}
+        def _try_parse_report_payload(text: str) -> Dict[str, Any]:
+            """Best-effort JSON object extraction from mixed stdout."""
+            raw = (text or "").strip()
+            if not raw:
+                return {}
+
+            candidates: List[str] = [raw]
+
+            # Many harnesses print the final report as the last non-empty line.
+            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+            if lines:
+                candidates.append(lines[-1])
+
+            # If user stdout appears before JSON, try the trailing object slice.
+            m = re.search(r"(\{[\s\S]*\})\s*$", raw)
+            if m:
+                candidates.append(m.group(1).strip())
+
+            seen: set = set()
+            for candidate in candidates:
+                if not candidate or candidate in seen:
+                    continue
+                seen.add(candidate)
+                try:
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
+            return {}
+
         if stdout_content:
             lines = stdout_content.rstrip("\n").split("\n")
             sep_idx = next((i for i, l in enumerate(lines) if l.strip() == "---RESULT_SEPARATOR---"), None)
@@ -1552,21 +1583,13 @@ fn main() {{
                 # No separator — entire stdout is the report
                 payload = stdout_content.strip()
             if payload:
-                try:
-                    _parsed = json.loads(payload)
-                    # Guard: runner emits a JSON object {}; never a list []
-                    report_obj = _parsed if isinstance(_parsed, dict) else {}
-                except json.JSONDecodeError:
+                report_obj = _try_parse_report_payload(payload)
+                if not report_obj and sep_idx is not None:
                     # Try the other side of the separator if first side failed
-                    if sep_idx is not None:
-                        alt = before if payload == after else after
-                        try:
-                            _parsed_alt = json.loads(alt)
-                            report_obj = _parsed_alt if isinstance(_parsed_alt, dict) else {}
-                        except json.JSONDecodeError:
-                            report_obj = {"success": False, "status": "runtime_error", "stderr": payload[:2000]}
-                    else:
-                        report_obj = {"success": False, "status": "runtime_error", "stderr": payload[:2000]}
+                    alt = before if payload == after else after
+                    report_obj = _try_parse_report_payload(alt)
+                if not report_obj:
+                    report_obj = {"success": False, "status": "runtime_error", "stderr": payload[:2000]}
 
         # If TLE/MLE/RE but we got a partial report, still propagate it
         if run_stat in ("TLE", "MLE", "RE") and not report_obj:
