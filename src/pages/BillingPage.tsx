@@ -12,24 +12,23 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  Calendar, ShieldCheck, RefreshCw, Phone, FlaskConical,
+  Calendar, ShieldCheck, RefreshCw, Phone, FlaskConical, Infinity, Crown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
+import { useAdmin } from '@/hooks/useAdmin';
 import {
   PRODUCTION_PLANS,
   TEST_PLANS,
   shouldShowTestPlans,
   formatPrice,
-  getPlanPrice,
   type PricingPlan,
   type Currency,
 } from '@/lib/pricing';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Convert from our shared PricingPlan format to the BillingPage display shape */
 interface PlanDetail {
   id: string;
   name: string;
@@ -58,7 +57,6 @@ function toPlanDetail(p: PricingPlan): PlanDetail {
   };
 }
 
-// Visible plans for billing page (production + optionally test plans)
 function getVisiblePlans(): PlanDetail[] {
   const plans = PRODUCTION_PLANS.map(toPlanDetail);
   if (shouldShowTestPlans()) {
@@ -68,6 +66,117 @@ function getVisiblePlans(): PlanDetail[] {
 }
 
 const VISIBLE_PLANS = getVisiblePlans();
+
+// ── Admin Panel ───────────────────────────────────────────────────────────────
+
+function AdminBillingPanel({ activeCurrency, geoLoading }: { activeCurrency: Currency; geoLoading: boolean }) {
+  return (
+    <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
+      {/* Admin header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight">Billing &amp; Subscriptions</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Admin view — for reference only. No billing applies to admin accounts.
+          </p>
+        </div>
+      </div>
+
+      {/* Admin status card */}
+      <Card className="overflow-hidden border-2 border-yellow-500/40 shadow-xl bg-gradient-to-br from-yellow-500/10 via-card to-card relative">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <Crown className="h-32 w-32 text-yellow-500" />
+        </div>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
+              <Crown className="h-5 w-5 text-yellow-600" />
+            </div>
+            <Badge className="px-4 py-1.5 font-black text-sm uppercase tracking-widest bg-yellow-500 text-white border-0">
+              YOU ARE AN ADMIN
+            </Badge>
+          </div>
+          <CardTitle className="text-2xl font-black mt-4 tracking-tight text-yellow-700 dark:text-yellow-400">
+            Unrestricted Platform Access
+          </CardTitle>
+          <CardDescription className="text-sm font-medium mt-1 text-muted-foreground">
+            This account has complete, unlimited access to all platform features.
+            All subscription limits and usage quotas are bypassed. No billing or Stripe subscription is required.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Candidate Limit', value: '∞ Unlimited' },
+              { label: 'Assessment Limit', value: '∞ Unlimited' },
+              { label: 'AI Usage', value: '∞ Unlimited' },
+              { label: 'Subscription Required', value: 'Never' },
+            ].map(({ label, value }) => (
+              <div key={label} className="space-y-1 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
+                <span className="text-xs text-muted-foreground block">{label}</span>
+                <span className="font-bold text-sm text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
+                  <Infinity className="h-3.5 w-3.5" />
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-yellow-700 dark:text-yellow-400 mb-2">
+              <ShieldCheck className="h-4 w-4" />
+              Admin Bypass Active
+            </div>
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-green-500" /> Candidate creation: unlimited</li>
+              <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-green-500" /> Assessment invites: unlimited</li>
+              <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-green-500" /> AI screening &amp; MCQ generation: unlimited</li>
+              <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-green-500" /> No Stripe subscription required</li>
+              <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-green-500" /> No 403 plan-limit errors</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Plans reference (read-only for admins) */}
+      <div>
+        <div className="mb-6">
+          <h2 className="text-2xl font-extrabold tracking-tight">Available Plans (Reference Only)</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Shown for reference. Admin accounts are not subject to these limits.
+            {geoLoading
+              ? ' Detecting your region...'
+              : ` ${activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing.`
+            }
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {PRODUCTION_PLANS.filter(p => !p.isEnterprise).map(plan => (
+            <Card key={plan.id} className="flex flex-col border-border opacity-75">
+              <CardHeader className="pb-3">
+                <h3 className="text-lg font-bold">{plan.name}</h3>
+                <p className="text-xs text-muted-foreground">{plan.tagline}</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black">
+                    {formatPrice(activeCurrency === 'INR' ? (plan.priceINR ?? 0) : (plan.priceUSD ?? 0), activeCurrency)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">/ {plan.validity}</span>
+                </div>
+                <Badge variant="secondary" className="font-semibold text-xs">
+                  {plan.candidates} Candidates
+                </Badge>
+                <Button variant="outline" size="sm" className="w-full text-xs" disabled>
+                  Admin — No Checkout Required
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -82,26 +191,27 @@ export default function BillingPage() {
   const [cancelChecked, setCancelChecked] = useState(false);
   const [cancelConfirmText, setCancelConfirmText] = useState('');
 
-  // Geo-based currency detection (no flicker — reads from cache first)
   const { country, currency, isLoading: geoLoading } = useCountryDetection();
+  const { isAdmin } = useAdmin();
 
   const usageQuery = useQuery({
     queryKey: ['billing-usage'],
     queryFn: () => billingApi.usage(),
     refetchInterval: 15_000,
+    // Admins don't need billing data — skip the query
+    enabled: !isAdmin,
   });
 
   const invoicesQuery = useQuery({
     queryKey: ['billing-invoices'],
     queryFn: () => billingApi.invoices(),
+    enabled: !isAdmin,
   });
 
   const usage = usageQuery.data;
   const invoices = (invoicesQuery.data || []) as BillingInvoice[];
 
   const activePlanId = usage?.plan || 'free';
-  // STRICT REQUIREMENT: Geo-detected currency is the single source of truth.
-  // Never default to the auto-bootstrapped backend currency (which defaults to USD).
   const activeCurrency: Currency = currency;
 
   // Handle Stripe redirect-back
@@ -121,10 +231,8 @@ export default function BillingPage() {
 
     if (checkout === 'success') {
       if (action === 'subscribe' && sessionId && plan && !verifyingRef.current) {
-        // Save to localStorage just in case verification is interrupted
         localStorage.setItem('last_checkout_session_id', sessionId);
         localStorage.setItem('last_checkout_plan', plan);
-
         verifyingRef.current = true;
         setBusy('verifying');
         billingApi.verifySession(sessionId, plan)
@@ -150,14 +258,11 @@ export default function BillingPage() {
   }, [searchParams]);
 
   const triggerRealtimeUpdates = async (isManual = false) => {
-    if (isManual) {
-      setBusy('refreshing');
-    }
+    if (isManual) setBusy('refreshing');
     try {
       if (isManual) {
         const savedSessionId = localStorage.getItem('last_checkout_session_id');
         const savedPlan = localStorage.getItem('last_checkout_plan');
-
         if (savedSessionId && savedPlan) {
           try {
             await billingApi.verifySession(savedSessionId, savedPlan);
@@ -169,7 +274,6 @@ export default function BillingPage() {
           }
         }
       }
-
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['billing-usage'] }),
         queryClient.invalidateQueries({ queryKey: ['layout-billing-usage'] }),
@@ -178,19 +282,14 @@ export default function BillingPage() {
         usageQuery.refetch(),
         invoicesQuery.refetch(),
       ]);
-
-      if (isManual) {
-        toast.success('Billing status refreshed.');
-      }
+      if (isManual) toast.success('Billing status refreshed.');
     } catch (e: unknown) {
       if (isManual) {
         const err = e as Error;
         toast.error(err.message || 'Failed to refresh billing status');
       }
     } finally {
-      if (isManual) {
-        setBusy(null);
-      }
+      if (isManual) setBusy(null);
     }
   };
 
@@ -250,6 +349,16 @@ export default function BillingPage() {
 
   const activePlan = VISIBLE_PLANS.find(p => p.id === activePlanId);
 
+  // ── Admin: render dedicated admin panel immediately ──────────────────────────
+  if (isAdmin) {
+    return (
+      <DashboardLayout>
+        <AdminBillingPanel activeCurrency={activeCurrency} geoLoading={geoLoading} />
+      </DashboardLayout>
+    );
+  }
+
+  // ── Standard loading state ───────────────────────────────────────────────────
   if (usageQuery.isLoading || busy === 'verifying' || geoLoading) {
     return (
       <DashboardLayout>
@@ -277,7 +386,6 @@ export default function BillingPage() {
             </p>
           </div>
           <div className="flex items-center gap-3 self-start sm:self-auto">
-            {/* Country and currency auto-detected under the hood */}
             <Button
               variant="outline"
               size="sm"
@@ -303,7 +411,6 @@ export default function BillingPage() {
                 <Badge className="px-3 py-1 font-bold text-xs uppercase bg-primary text-primary-foreground tracking-wider">
                   Active Plan
                 </Badge>
-                {/* Active subscription status */}
               </div>
               <CardTitle className="text-3xl font-black mt-2 tracking-tight flex items-baseline gap-2">
                 {activePlan?.name || 'Free'} Plan
@@ -444,7 +551,6 @@ export default function BillingPage() {
                 else if (activePlanId === 'free') ctaLabel = `Select ${plan.name}`;
                 else ctaLabel = 'Upgrade';
 
-                // Skip temp plans that don't match the current currency
                 if (plan.isTestPlan) {
                   if (activeCurrency === 'INR' && plan.priceINR === null) return null;
                   if (activeCurrency === 'USD' && plan.priceUSD === null) return null;
@@ -463,7 +569,6 @@ export default function BillingPage() {
                         : 'hover:shadow-md border-border hover:border-border/80'
                     }`}
                   >
-                    {/* Test plan badge */}
                     {plan.isTestPlan && (
                       <div className="absolute top-0 left-0 right-0 bg-yellow-500/20 border-b border-yellow-500/30 px-3 py-1 flex items-center gap-1.5">
                         <FlaskConical className="h-3.5 w-3.5 text-yellow-600" />
@@ -545,9 +650,7 @@ export default function BillingPage() {
                         ) : isDowngrade ? null : (
                           <Button
                             className={`w-full font-bold uppercase text-xs tracking-wider ${
-                              plan.isTestPlan
-                                ? 'bg-yellow-500 hover:bg-yellow-600 text-white border-0'
-                                : ''
+                              plan.isTestPlan ? 'bg-yellow-500 hover:bg-yellow-600 text-white border-0' : ''
                             }`}
                             variant={plan.isTestPlan ? 'default' : 'default'}
                             onClick={() => handleSubscribe(plan.id as BillingPlanId)}

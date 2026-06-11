@@ -377,7 +377,7 @@ async def invite_assessments(
     db = get_db_admin_service()
 
     from app.utils.billing_helpers import check_candidate_limit
-    err_msg = await check_candidate_limit(db, user.id)
+    err_msg = await check_candidate_limit(db, user.id, user_email=user.email, is_admin=user.is_admin)
     if err_msg:
         return api_error(message=err_msg, status_code=403)
 
