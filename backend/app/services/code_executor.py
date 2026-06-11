@@ -21,6 +21,7 @@ import sys
 import re
 import time
 import traceback
+import shutil
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -1808,13 +1809,7 @@ fn main() {{
         class_name: Optional[str],
         parameter_schema: List[Dict[str, Any]],
     ) -> "ExecutionResult":
-        """Local fallback: only supports Python."""
-        if language not in ("python3", "python"):
-            return ExecutionResult(
-                success=False, test_results=[], passed_count=0,
-                total_count=len(test_cases), score_percentage=0,
-                runtime_error=f"Local execution fallback supports only Python. Requested: {language}",
-            )
+        """Local fallback execution when HackerEarth API credentials are unavailable."""
 
         try:
             runner = self._build_bundle_runner_source(
@@ -1834,16 +1829,82 @@ fn main() {{
                 compilation_error=f"Runner build error: {build_err}",
             )
 
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
-                f.write(runner)
-                temp_file = f.name
+        lang = (language or "").lower()
 
-            try:
+        try:
+            with tempfile.TemporaryDirectory(prefix="hireai_exec_") as td:
+                if lang in ("python3", "python"):
+                    src_name = "main.py"
+                    compile_cmd = None
+                    run_cmd = [sys.executable, src_name]
+                elif lang in ("cpp", "cpp17", "c++"):
+                    src_name = "main.cpp"
+                    compiler = shutil.which("g++")
+                    if not compiler:
+                        return ExecutionResult(
+                            success=False, test_results=[], passed_count=0,
+                            total_count=len(test_cases), score_percentage=0,
+                            runtime_error="Local C++ execution is unavailable (g++ not installed)",
+                        )
+                    compile_cmd = [compiler, "-std=c++17", "-O2", "-pipe", src_name, "-o", "runner"]
+                    run_cmd = [os.path.join(td, "runner")]
+                elif lang == "java":
+                    src_name = "Main.java"
+                    javac = shutil.which("javac")
+                    java = shutil.which("java")
+                    if not javac or not java:
+                        return ExecutionResult(
+                            success=False, test_results=[], passed_count=0,
+                            total_count=len(test_cases), score_percentage=0,
+                            runtime_error="Local Java execution is unavailable (javac/java not installed)",
+                        )
+                    compile_cmd = [javac, src_name]
+                    run_cmd = [java, "Main"]
+                elif lang in ("csharp", "c#"):
+                    src_name = "Main.cs"
+                    mcs = shutil.which("mcs")
+                    mono = shutil.which("mono")
+                    if not mcs or not mono:
+                        return ExecutionResult(
+                            success=False, test_results=[], passed_count=0,
+                            total_count=len(test_cases), score_percentage=0,
+                            runtime_error="Local C# execution is unavailable (mcs/mono not installed)",
+                        )
+                    compile_cmd = [mcs, "-out:Main.exe", src_name]
+                    run_cmd = [mono, "Main.exe"]
+                else:
+                    return ExecutionResult(
+                        success=False, test_results=[], passed_count=0,
+                        total_count=len(test_cases), score_percentage=0,
+                        runtime_error=f"Local execution fallback unsupported for language: {language}",
+                    )
+
+                src_path = os.path.join(td, src_name)
+                with open(src_path, "w", encoding="utf-8") as f:
+                    f.write(runner)
+
+                if compile_cmd:
+                    compile_proc = subprocess.run(
+                        compile_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=90,
+                        cwd=td,
+                    )
+                    if compile_proc.returncode != 0:
+                        comp_err = (compile_proc.stderr or compile_proc.stdout or "Compilation failed")[:3000]
+                        return ExecutionResult(
+                            success=False, test_results=[], passed_count=0,
+                            total_count=len(test_cases), score_percentage=0,
+                            compilation_error=self._format_error_with_line_numbers(comp_err, lang),
+                        )
+
                 proc = subprocess.run(
-                    [sys.executable, temp_file],
-                    capture_output=True, text=True, timeout=60,
-                    cwd=tempfile.gettempdir(),
+                    run_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=td,
                 )
                 stdout_content = proc.stdout or ""
                 stderr_content = proc.stderr or ""
@@ -1853,23 +1914,18 @@ fn main() {{
                         "run_status": {
                             "status": "AC" if proc.returncode == 0 else "RE",
                             "stderr": stderr_content,
-                            "output": "",
+                            "output": stdout_content,
                         },
                     },
                     "_local_stdout": stdout_content,
                 }
                 return self._parse_he_bundle_result(fake_data, test_cases)
-            except subprocess.TimeoutExpired:
-                return ExecutionResult(
-                    success=False, test_results=[], passed_count=0,
-                    total_count=len(test_cases), score_percentage=0,
-                    runtime_error="Local execution timed out (60s)",
-                )
-            finally:
-                try:
-                    os.unlink(temp_file)
-                except Exception:
-                    pass
+        except subprocess.TimeoutExpired:
+            return ExecutionResult(
+                success=False, test_results=[], passed_count=0,
+                total_count=len(test_cases), score_percentage=0,
+                runtime_error="Local execution timed out (60s)",
+            )
         except Exception as e:
             return ExecutionResult(
                 success=False, test_results=[], passed_count=0,
