@@ -65,12 +65,6 @@ class Settings(BaseSettings):
     smtp_from_email: str = Field(default="", alias="SMTP_FROM_EMAIL")
     smtp_use_ssl: bool = Field(default=True, alias="SMTP_USE_SSL")
 
-    # ── Admin Access ──────────────────────────────────────────────────────────
-    # Comma-separated list of additional admin emails (extends the hardcoded set
-    # in app/auth/roles.py). Useful for adding admins without a code deploy.
-    # Example: ADMIN_EMAILS=newadmin@company.com,otheradmin@company.com
-    admin_emails: str = Field(default="", alias="ADMIN_EMAILS")
-
     stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
     stripe_webhook_secret: str = Field(default="", alias="STRIPE_WEBHOOK_SECRET")
     stripe_mode: str = Field(default="test", alias="STRIPE_MODE")

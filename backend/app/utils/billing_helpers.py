@@ -6,22 +6,6 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-
-def is_admin_user(email: Optional[str]) -> bool:
-    """
-    Returns True if the given email belongs to a platform administrator.
-
-    This is the billing-layer admin check. Delegates to the auth layer's
-    is_admin_email() which checks the hardcoded email set + ADMIN_EMAILS env var.
-    """
-    if not email:
-        return False
-    try:
-        from app.auth.roles import is_admin_email
-        return is_admin_email(email)
-    except Exception:
-        return False
-
 # ─── Billing Plan Configuration ───────────────────────────────────────────────
 # Single source of truth for all plans.
 # INR prices updated per requirements:
@@ -230,41 +214,11 @@ async def get_candidate_count_after_deployment(db, recruiter_id: str) -> int:
     return len(unique_cids)
 
 
-async def check_candidate_limit(
-    db,
-    recruiter_id: str,
-    user_email: Optional[str] = None,
-    is_admin: bool = False,
-) -> Optional[str]:
+async def check_candidate_limit(db, recruiter_id: str) -> Optional[str]:
+    """Check if recruiter has reached their plan limit.
+
+    Returns error message string if limit reached, else None.
     """
-    Check if a recruiter has reached their plan's candidate limit.
-
-    Returns an error message string if the limit is reached, or None if the
-    action is allowed.
-
-    Admin bypass (checked first, before any DB queries):
-    - If is_admin=True (from ClerkUser.is_admin), bypass immediately.
-    - If user_email belongs to an admin list, bypass immediately.
-    - Admins have unlimited candidate capacity and never hit plan limits.
-    """
-    # ── Admin bypass — PRIMARY: use is_admin flag from ClerkUser ──────────
-    # This works even when user.email is "unknown" (profile created before JWT fix).
-    if is_admin:
-        logger.debug(
-            "[check_candidate_limit] Admin bypass (is_admin flag) recruiter_id=%s",
-            recruiter_id,
-        )
-        return None
-
-    # ── Admin bypass — SECONDARY: email-based check (legacy fallback) ─────
-    if is_admin_user(user_email):
-        logger.debug(
-            "[check_candidate_limit] Admin bypass (email) email=%s recruiter_id=%s",
-            user_email, recruiter_id,
-        )
-        return None
-
-    # ── Standard recruiter limit check ────────────────────────────────────
     def _fetch_profile():
         return (
             db.client.from_("profiles")

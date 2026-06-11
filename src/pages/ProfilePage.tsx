@@ -1,7 +1,7 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useRequireAuth } from '@/hooks/useAuth';
-import { Loader2, Save, Building2, User, Globe2, Briefcase, MapPin, Pencil, X, Check, Mail, Lock } from 'lucide-react';
+import { Loader2, Save, Building2, User, Globe2, Briefcase, MapPin } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,8 +9,6 @@ import { Label } from '@/components/ui/label';
 import { useState, useEffect } from 'react';
 import { type Profile } from '@/lib/api';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
 
 export default function ProfilePage() {
   const { user, loading } = useRequireAuth();
@@ -18,9 +16,6 @@ export default function ProfilePage() {
   const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
 
   const [formData, setFormData] = useState<Partial<Profile>>({});
-  const [emailEditMode, setEmailEditMode] = useState(false);
-  const [emailDraft, setEmailDraft] = useState('');
-  const [emailError, setEmailError] = useState('');
 
   useEffect(() => {
     if (profile) {
@@ -47,40 +42,7 @@ export default function ProfilePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (emailEditMode) {
-      toast.error('Please confirm or cancel your email change before saving.');
-      return;
-    }
     updateProfile(formData);
-  };
-
-  // ── Email edit helpers ────────────────────────────────────────────────────
-  const startEmailEdit = () => {
-    setEmailDraft(formData.organization_email || user?.email || '');
-    setEmailError('');
-    setEmailEditMode(true);
-  };
-
-  const cancelEmailEdit = () => {
-    setEmailDraft('');
-    setEmailError('');
-    setEmailEditMode(false);
-  };
-
-  const confirmEmailEdit = () => {
-    const trimmed = emailDraft.trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!trimmed) {
-      setEmailError('Email cannot be empty.');
-      return;
-    }
-    if (!emailRegex.test(trimmed)) {
-      setEmailError('Please enter a valid email address.');
-      return;
-    }
-    setFormData((prev) => ({ ...prev, organization_email: trimmed }));
-    setEmailEditMode(false);
-    setEmailError('');
   };
 
   if (loading || profileLoading) {
@@ -117,7 +79,6 @@ export default function ProfilePage() {
               </TabsTrigger>
             </TabsList>
 
-            {/* ── Company Details Tab ─────────────────────────────────────── */}
             <TabsContent value="company" className="space-y-6">
               <Card className="border-border shadow-sm">
                 <CardHeader>
@@ -201,7 +162,6 @@ export default function ProfilePage() {
               </Card>
             </TabsContent>
 
-            {/* ── Hiring Preferences Tab ──────────────────────────────────── */}
             <TabsContent value="hiring" className="space-y-6">
               <Card className="border-border shadow-sm">
                 <CardHeader>
@@ -233,7 +193,7 @@ export default function ProfilePage() {
                       />
                     </div>
                   </div>
-
+                  
                   <div className="pt-4 border-t">
                     <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
                       <Globe2 className="h-4 w-4 text-muted-foreground" /> Operational Settings
@@ -255,7 +215,6 @@ export default function ProfilePage() {
               </Card>
             </TabsContent>
 
-            {/* ── Account Tab ─────────────────────────────────────────────── */}
             <TabsContent value="account" className="space-y-6">
               <Card className="border-border shadow-sm">
                 <CardHeader>
@@ -266,107 +225,21 @@ export default function ProfilePage() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                    {/* Organization / Contact Email — editable */}
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between min-h-[20px]">
-                        <Label htmlFor="organization_email" className="flex items-center gap-1.5">
-                          <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                          Organization Email
-                        </Label>
-                        {!emailEditMode && (
-                          <button
-                            type="button"
-                            onClick={startEmailEdit}
-                            id="edit-org-email-btn"
-                            className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
-                          >
-                            <Pencil className="h-3 w-3" /> Edit
-                          </button>
-                        )}
-                      </div>
-
-                      {emailEditMode ? (
-                        <div className="space-y-2">
-                          <div className="flex gap-2">
-                            <Input
-                              id="organization_email_edit"
-                              type="email"
-                              autoFocus
-                              value={emailDraft}
-                              onChange={(e) => {
-                                setEmailDraft(e.target.value);
-                                if (emailError) setEmailError('');
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') { e.preventDefault(); confirmEmailEdit(); }
-                                if (e.key === 'Escape') cancelEmailEdit();
-                              }}
-                              placeholder="org@yourcompany.com"
-                              className={emailError ? 'border-destructive focus-visible:ring-destructive' : ''}
-                            />
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="default"
-                              className="shrink-0"
-                              onClick={confirmEmailEdit}
-                              id="confirm-org-email-btn"
-                              title="Confirm email"
-                            >
-                              <Check className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="shrink-0"
-                              onClick={cancelEmailEdit}
-                              id="cancel-org-email-btn"
-                              title="Cancel"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          {emailError && (
-                            <p className="text-[11px] text-destructive font-medium">{emailError}</p>
-                          )}
-                        </div>
-                      ) : (
-                        <Input
-                          id="organization_email"
-                          name="organization_email"
-                          type="email"
-                          value={formData.organization_email || user?.email || ''}
-                          readOnly
-                          className="bg-muted/40 cursor-default"
-                        />
-                      )}
-                      <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        Used for organization communications. Separate from your login credentials.
-                      </p>
-                    </div>
-
-                    {/* Login Email — always read-only (Clerk managed) */}
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-1.5">
-                        <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                        Login Email
-                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-1 font-normal">Clerk</Badge>
-                      </Label>
+                      <Label htmlFor="organization_email">Organization / Login Email</Label>
                       <Input
-                        id="login_email_readonly"
-                        value={user?.email || ''}
+                        id="organization_email"
+                        name="organization_email"
+                        type="email"
+                        value={formData.organization_email || user?.email || ''}
                         readOnly
                         disabled
                         className="bg-muted cursor-not-allowed"
                       />
-                      <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        Your Clerk login email cannot be changed here. Contact support if needed.
+                      <p className="text-[11px] text-muted-foreground font-medium mt-1.5">
+                        Your mail ID cannot be changed. Contact support for modifications.
                       </p>
                     </div>
-
-                    {/* Contact Phone */}
                     <div className="space-y-2">
                       <Label htmlFor="contact_phone">Contact Phone</Label>
                       <Input
@@ -384,13 +257,7 @@ export default function ProfilePage() {
           </Tabs>
 
           <div className="flex justify-end pt-6 border-t mt-8">
-            <Button
-              type="submit"
-              size="lg"
-              disabled={isUpdating || emailEditMode}
-              className="font-semibold px-8"
-              title={emailEditMode ? 'Confirm or cancel your email change first' : undefined}
-            >
+            <Button type="submit" size="lg" disabled={isUpdating} className="font-semibold px-8">
               {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save Profile Changes
             </Button>

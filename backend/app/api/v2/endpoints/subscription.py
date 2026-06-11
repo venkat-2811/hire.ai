@@ -142,40 +142,7 @@ def _get_frontend_url(request: Request) -> str:
 
 @router.get("")
 async def get_subscription(user: ClerkUser = Depends(require_user)):
-    """GET /api/v2/subscription
-
-    Returns subscription status and usage limits.
-
-    For admin users: returns unlimited access immediately without any DB lookups.
-    For recruiters: returns actual plan limits and usage counts.
-    """
-    # ── Admin short-circuit ────────────────────────────────────────────────────
-    # Admin users bypass ALL subscription checks. No DB queries needed.
-    # They are NOT assigned fake subscriptions — they simply have unlimited access.
-    if user.is_admin:
-        logger.info("[subscription.get] Admin access granted for user=%s email=%s", user.id, user.email)
-        return ok({
-            "plan": "admin",
-            "status": "active",
-            "is_admin": True,
-            "role": "admin",
-            "subscription_id": None,
-            "plan_selected_at": None,
-            "limits": {
-                "max_jobs": 999999,
-                "max_assessments": 999999,
-                "max_interviews": 999999,
-                "price": 0,
-                "label": "Admin (Unlimited)",
-            },
-            "usage": {
-                "jobs_count": 0,
-                "assessments_count": 0,
-                "interviews_count": 0,
-            },
-        })
-
-    # ── Standard recruiter subscription lookup ─────────────────────────────────
+    """GET /api/v2/subscription"""
     db = get_db_admin_service()
 
     def _fetch():
@@ -197,8 +164,6 @@ async def get_subscription(user: ClerkUser = Depends(require_user)):
     return ok({
         "plan": plan,
         "status": status,
-        "is_admin": False,
-        "role": "recruiter",
         "subscription_id": profile.get("subscription_id"),
         "plan_selected_at": profile.get("plan_selected_at"),
         "limits": {
@@ -218,13 +183,6 @@ async def get_subscription(user: ClerkUser = Depends(require_user)):
 @router.post("/create-order")
 async def create_order(payload: Dict[str, Any], request: Request, user: ClerkUser = Depends(require_user)):
     """POST /api/v2/subscription/create-order"""
-    # Admins do not need subscriptions
-    if user.is_admin:
-        return api_error(
-            message="Admin accounts have unlimited access and do not require a subscription.",
-            status_code=400,
-        )
-
     plan = _normalize_plan(payload.get("plan"))
     currency = str(payload.get("currency") or "USD").upper()
     if currency not in ("USD", "INR"):

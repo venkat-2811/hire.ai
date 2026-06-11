@@ -517,17 +517,6 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
     currency = str(payload.get("currency") or "USD").upper()
     country = str(payload.get("country") or "US").upper()
 
-    # Admins do not need subscriptions — block gracefully
-    if user.is_admin:
-        logger.warning(
-            "[billing.subscribe] Admin user attempted to subscribe: user=%s email=%s plan=%s",
-            user.id, user.email, plan,
-        )
-        return api_error(
-            message="Admin accounts have unlimited access and do not require a Stripe subscription.",
-            status_code=400,
-        )
-
     # Normalize currency from country if not explicitly provided
     expected_currency = "INR" if country == "IN" else "USD"
     if currency not in ("USD", "INR") or currency != expected_currency:
@@ -749,25 +738,7 @@ async def billing_usage(user: ClerkUser = Depends(require_user)):
     """GET /api/v2/billing/usage
 
     Provides structured billing status and real-time candidate limit metrics.
-
-    Admin users receive unlimited metrics immediately without any DB queries.
     """
-    # ── Admin short-circuit ────────────────────────────────────────────────────
-    if user.is_admin:
-        logger.info("[billing.usage] Admin access for user=%s email=%s", user.id, user.email)
-        return ok({
-            "plan": "admin",
-            "status": "active",
-            "is_admin": True,
-            "billing_cycle_end": None,
-            "currency": "USD",
-            "validity": "Unlimited",
-            "candidates_limit": 999999,
-            "candidates_count": 0,
-            "price": 0,
-        })
-
-    # ── Standard recruiter usage lookup ───────────────────────────────────────
     db = get_db_admin_service()
 
     def _fetch_profile():
@@ -800,7 +771,6 @@ async def billing_usage(user: ClerkUser = Depends(require_user)):
     return ok({
         "plan": plan,
         "status": status,
-        "is_admin": False,
         "billing_cycle_end": cycle_end,
         "currency": currency,
         "validity": cfg["validity"],
