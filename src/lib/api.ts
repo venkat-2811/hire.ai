@@ -1358,8 +1358,13 @@ export const analyticsApi = {
 // ============== Subscription API ==============
 
 export interface SubscriptionInfo {
-  plan: 'free' | 'starter' | 'growth' | 'enterprise';
+  /** The user's active plan. 'admin' is returned for platform administrators. */
+  plan: 'free' | 'starter' | 'growth' | 'scale' | 'enterprise' | 'admin' | 'tempusa1' | 'tempusa2' | 'tempind1' | 'tempind2';
   status: string;
+  /** True if the user is a platform administrator with unlimited access. */
+  is_admin: boolean;
+  /** The user's RBAC role: 'admin' or 'recruiter'. */
+  role: 'admin' | 'recruiter';
   subscription_id: string | null;
   plan_selected_at: string | null;
   limits: {
@@ -1426,9 +1431,12 @@ export const usageApi = {
 // ============== Billing API ==============
 
 export interface BillingUsageResponse {
-  plan: 'free' | 'starter' | 'growth' | 'scale' | 'enterprise' | 'tempusa1' | 'tempusa2' | 'tempind1' | 'tempind2';
+  /** The user's active plan. 'admin' is returned for platform administrators. */
+  plan: 'free' | 'starter' | 'growth' | 'scale' | 'enterprise' | 'admin' | 'tempusa1' | 'tempusa2' | 'tempind1' | 'tempind2';
   status: string;
-  billing_cycle_end: string;
+  /** True if the user is a platform administrator with unlimited access. */
+  is_admin?: boolean;
+  billing_cycle_end: string | null;
   currency: string;
   validity: string;
   candidates_limit: number;
