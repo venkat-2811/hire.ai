@@ -231,7 +231,7 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
         candidate_row = cand if isinstance(cand, dict) else existing[0]
     else:
         from app.utils.billing_helpers import check_candidate_limit
-        err_msg = await check_candidate_limit(db, user.id, user_email=user.email, is_admin=user.is_admin)
+        err_msg = await check_candidate_limit(db, user.id)
         if err_msg:
             return api_error(message=err_msg, status_code=403)
 
@@ -279,7 +279,7 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
             return api_error(message="This candidate has already applied to this job", status_code=400)
 
         from app.utils.billing_helpers import check_candidate_limit
-        err_msg = await check_candidate_limit(db, user.id, user_email=user.email, is_admin=user.is_admin)
+        err_msg = await check_candidate_limit(db, user.id)
         if err_msg:
             return api_error(message=err_msg, status_code=403)
 
