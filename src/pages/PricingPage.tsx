@@ -2,14 +2,12 @@ import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Check, Phone, FlaskConical } from 'lucide-react';
+import { Check, Phone } from 'lucide-react';
 import Footer from '@/components/layout/Footer';
 import Navbar from '@/components/layout/Navbar';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import {
   PRODUCTION_PLANS,
-  TEST_PLANS,
-  shouldShowTestPlans,
   formatPrice,
   type Currency,
   type PricingPlan,
@@ -49,13 +47,7 @@ const PricingPage = () => {
   // Allow manual override via toggle; fall back to detected currency
   const activeCurrency: Currency = manualCurrency ?? detectedCurrency;
 
-  // Plans to display: production + test (if dev)
   const productionPlans = PRODUCTION_PLANS;
-  const testPlans = shouldShowTestPlans()
-    ? TEST_PLANS.filter(p =>
-        activeCurrency === 'INR' ? (p.priceINR ?? 0) > 0 : (p.priceUSD ?? 0) > 0
-      )
-    : [];
 
   const getPriceDisplay = (plan: PricingPlan): { symbol: string; amount: string } => {
     if (plan.isEnterprise) return { symbol: '', amount: '' };
@@ -69,7 +61,7 @@ const PricingPage = () => {
   // Render a single pricing card
   const renderPlanCard = (plan: PricingPlan, index: number) => {
     const { amount } = getPriceDisplay(plan);
-    const isHighlighted = plan.highlighted && !plan.isTestPlan;
+    const isHighlighted = !!plan.highlighted;
 
     return (
       <motion.div
@@ -78,9 +70,7 @@ const PricingPage = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: isFirstVisit ? index * 0.1 : 0 }}
         className={`relative rounded-3xl overflow-hidden transition-all duration-300 ${
-          plan.isTestPlan
-            ? 'ring-2 ring-dashed ring-yellow-500/40 bg-card border border-yellow-500/30 hover:shadow-lg'
-            : isHighlighted
+          isHighlighted
             ? 'ring-2 ring-primary shadow-2xl md:scale-105'
             : plan.isEnterprise
             ? 'ring-2 ring-purple-500/30 bg-card border border-purple-500/20 hover:shadow-lg'
@@ -90,23 +80,13 @@ const PricingPage = () => {
         {/* Card Background */}
         <div
           className={`p-8 h-full flex flex-col ${
-            plan.isTestPlan
-              ? 'bg-yellow-500/5'
-              : isHighlighted
+            isHighlighted
               ? 'bg-gradient-to-br from-primary/10 via-card to-card border border-primary/20'
               : plan.isEnterprise
               ? 'bg-gradient-to-br from-purple-500/5 via-card to-card'
               : 'bg-card'
           }`}
         >
-          {/* Test Plan Banner */}
-          {plan.isTestPlan && (
-            <div className="absolute top-0 right-0 left-0 bg-yellow-500/20 border-b border-yellow-500/30 text-center py-1.5 text-xs font-semibold text-yellow-700 flex items-center justify-center gap-1.5">
-              <FlaskConical className="h-3.5 w-3.5" />
-              DEV / TEST ONLY — Not visible in production
-            </div>
-          )}
-
           {/* Popular Badge */}
           {isHighlighted && (
             <div className="absolute top-0 right-0 left-0 bg-primary text-primary-foreground text-center py-2 text-sm font-semibold">
@@ -114,11 +94,10 @@ const PricingPage = () => {
             </div>
           )}
 
-          <div className={plan.isTestPlan ? 'mt-8' : isHighlighted ? 'mt-10' : ''}>
+          <div className={isHighlighted ? 'mt-10' : ''}>
             {/* Plan Name */}
             <h3 className={`text-2xl font-bold mb-2 ${
-              plan.isTestPlan ? 'text-yellow-700'
-              : plan.isEnterprise ? 'text-purple-600'
+              plan.isEnterprise ? 'text-purple-600'
               : 'text-foreground'
             }`}>
               {plan.name}
@@ -133,7 +112,7 @@ const PricingPage = () => {
                 </>
               ) : (
                 <>
-                  <span className={`text-4xl font-bold ${plan.isTestPlan ? 'text-yellow-700' : 'text-foreground'}`}>
+                  <span className={`text-4xl font-bold text-foreground`}>
                     {amount}
                   </span>
                   <p className="text-muted-foreground mt-2 text-sm">
@@ -147,15 +126,7 @@ const PricingPage = () => {
             </div>
 
             {/* CTA Button */}
-            {plan.isTestPlan ? (
-              <Button
-                size="lg"
-                className="w-full rounded-lg mb-8 font-semibold bg-yellow-500 hover:bg-yellow-600 text-white border-0"
-                asChild
-              >
-                <Link to="/sign-up">⚗ Test This Plan</Link>
-              </Button>
-            ) : plan.isEnterprise ? (
+            {plan.isEnterprise ? (
               <Button
                 size="lg"
                 className="w-full rounded-lg mb-8 font-semibold bg-purple-600 hover:bg-purple-700 text-white border-0"
@@ -190,13 +161,11 @@ const PricingPage = () => {
               {plan.features.map((feature, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    plan.isTestPlan ? 'bg-yellow-500/20'
-                    : plan.isEnterprise ? 'bg-purple-500/20'
+                    plan.isEnterprise ? 'bg-purple-500/20'
                     : 'bg-primary/20'
                   }`}>
                     <Check className={`h-3 w-3 ${
-                      plan.isTestPlan ? 'text-yellow-600'
-                      : plan.isEnterprise ? 'text-purple-500'
+                      plan.isEnterprise ? 'text-purple-500'
                       : 'text-primary'
                     }`} />
                   </div>
@@ -247,21 +216,6 @@ const PricingPage = () => {
                 {productionPlans.map((plan, i) => renderPlanCard(plan, i))}
               </div>
 
-              {/* Test Plans — DEV/QA only */}
-              {testPlans.length > 0 && (
-                <div className="mb-16">
-                  <div className="flex items-center gap-3 mb-6">
-                    <FlaskConical className="h-5 w-5 text-yellow-600" />
-                    <h2 className="text-xl font-bold text-yellow-700">Test Plans (Dev / QA Only)</h2>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium border border-yellow-300">
-                      Hidden in Production
-                    </span>
-                  </div>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
-                    {testPlans.map((plan, i) => renderPlanCard(plan, productionPlans.length + i))}
-                  </div>
-                </div>
-              )}
             </>
           )}
 

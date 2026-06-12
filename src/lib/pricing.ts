@@ -266,10 +266,9 @@ export const TEST_PLANS: PricingPlan[] = [
   },
 ];
 
-/** Returns true if test plans should be visible */
+/** Returns true if test plans should be visible — always false; test plans are dev-only. */
 export function shouldShowTestPlans(): boolean {
-  // Always show test plans in deployment as requested by the user
-  return true;
+  return false;
 }
 
 /**

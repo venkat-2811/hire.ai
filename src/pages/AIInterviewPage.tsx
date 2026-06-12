@@ -53,7 +53,7 @@ interface InterviewQuestion {
   expected_duration_seconds: number;
 }
 
-const DEFAULT_QUESTION_WINDOW_SECONDS = 60;
+const DEFAULT_QUESTION_WINDOW_SECONDS = 90;
 
 interface InterviewEvaluationResult {
   overall_score: number;
@@ -271,6 +271,8 @@ export default function AIInterviewPage() {
 
       setIsQuestionReadComplete(false);
       setCurrentQuestion(data);
+      setQuestionTimeLeftSeconds(DEFAULT_QUESTION_WINDOW_SECONDS);
+      setQuestionDurationSeconds(DEFAULT_QUESTION_WINDOW_SECONDS);
 
       // Speak the question after a short delay
       setTimeout(() => {
@@ -583,27 +585,45 @@ export default function AIInterviewPage() {
     loadInterview();
   }, [token]);
 
-  // Cleanup
+  const cleanupResources = useCallback(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (questionTimerRef.current) {
+      clearInterval(questionTimerRef.current);
+      questionTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current) {
+      try {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch {
+        // ignore
+      }
+      mediaRecorderRef.current = null;
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+    setCameraEnabled(false);
+    setMicEnabled(false);
+  }, []);
+
+  useEffect(() => {
+    if (isTerminated || isCompleted) {
+      cleanupResources();
+    }
+  }, [isTerminated, isCompleted, cleanupResources]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
-      if (questionTimerRef.current) {
-        clearInterval(questionTimerRef.current);
-      }
-      if (mediaRecorderRef.current) {
-        try {
-          if (mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
-          }
-        } catch {
-          // ignore cleanup errors
-        }
-      }
-      window.speechSynthesis.cancel();
+      cleanupResources();
     };
-  }, []);
+  }, [cleanupResources]);
 
   // Start interview after setup
   const handleStartInterview = async () => {
@@ -820,7 +840,7 @@ export default function AIInterviewPage() {
               <p className="text-sm font-medium">Interview Details:</p>
               <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                 <p>Questions: {interviewData?.total_questions}</p>
-                <p>Time per question: 01:00</p>
+                <p>Time per question: 01:30</p>
                 <p>Estimated Duration: {interviewData?.estimated_duration_minutes} minutes</p>
               </div>
             </div>
