@@ -2196,6 +2196,36 @@ export default function AssessmentPage() {
                     </div>
                   )}
 
+                  {sqlChallenges.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span>SQL Questions:</span>
+                        <span className="font-medium">
+                          {
+                            sqlChallenges.filter((ch) =>
+                              Object.keys(codingSolutions[ch.id] || {}).some(
+                                (lang) => codingSolutions[ch.id][lang]?.trim(),
+                              ),
+                            ).length
+                          }{" "}
+                          / {sqlChallenges.length} attempted
+                        </span>
+                      </div>
+                      <Progress
+                        value={
+                          (sqlChallenges.filter((ch) =>
+                            Object.keys(codingSolutions[ch.id] || {}).some(
+                              (lang) => codingSolutions[ch.id][lang]?.trim(),
+                            ),
+                          ).length /
+                            sqlChallenges.length) *
+                          100
+                        }
+                        className="h-2"
+                      />
+                    </div>
+                  )}
+
                   <div className="flex justify-between text-sm pt-2 border-t">
                     <span>Time Remaining:</span>
                     <span
@@ -2513,134 +2543,139 @@ export default function AssessmentPage() {
             {/* MCQ Section */}
             {hasMcq && (
               <TabsContent value="mcq">
-                <div className="max-w-3xl mx-auto space-y-6">
-                  <Progress value={mcqProgress} className="h-2" />
-
-                  {currentMcq && (
-                    <Card>
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-lg">
-                            Question {currentMcqIndex + 1} of{" "}
-                            {mcqQuestions.length}
-                          </CardTitle>
-                          <Badge variant="outline">
-                            {currentMcq.points} pts
-                          </Badge>
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-6xl mx-auto">
+                  {/* Left Column: Question Navigator */}
+                  <div className="md:col-span-1">
+                    <Card className="sticky top-4">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm">
+                          Question Navigator
+                        </CardTitle>
                       </CardHeader>
-                      <CardContent className="space-y-6">
-                        <p className="text-base">{currentMcq.question}</p>
-
-                        <RadioGroup
-                          key={`mcq-radio-${currentMcq.id}`}
-                          value={
-                            mcqAnswers[currentMcq.id] !== undefined
-                              ? mcqAnswers[currentMcq.id].toString()
-                              : ""
-                          }
-                          onValueChange={(v) =>
-                            handleMcqAnswer(currentMcq.id, parseInt(v))
-                          }
-                        >
-                          {currentMcq.options.map((option, index) => (
-                            <div
-                              key={index}
-                              className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${
-                                mcqAnswers[currentMcq.id] === index
-                                  ? "border-primary bg-primary/5"
-                                  : "hover:bg-muted/50"
-                              }`}
-                              onClick={() =>
-                                handleMcqAnswer(currentMcq.id, index)
+                      <CardContent>
+                        <div className="flex flex-wrap gap-2">
+                          {mcqQuestions.map((q, index) => (
+                            <Button
+                              key={q.id}
+                              variant={
+                                mcqAnswers[q.id] !== undefined
+                                  ? "default"
+                                  : "outline"
                               }
+                              size="sm"
+                              className={`w-10 h-10 ${currentMcqIndex === index ? "ring-2 ring-primary" : ""}`}
+                              onClick={() => setCurrentMcqIndex(index)}
                             >
-                              <RadioGroupItem
-                                value={index.toString()}
-                                id={`option-${currentMcq.id}-${index}`}
-                              />
-                              <Label
-                                htmlFor={`option-${currentMcq.id}-${index}`}
-                                className="flex-1 cursor-pointer"
-                              >
-                                {option}
-                              </Label>
-                            </div>
+                              {index + 1}
+                            </Button>
                           ))}
-                        </RadioGroup>
-
-                        <div className="flex justify-between pt-4">
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              onClick={() =>
-                                setCurrentMcqIndex((prev) =>
-                                  Math.max(0, prev - 1),
-                                )
-                              }
-                              disabled={currentMcqIndex === 0}
-                            >
-                              Previous
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => handleMcqAnswer(currentMcq.id, -1)}
-                              disabled={mcqAnswers[currentMcq.id] === undefined}
-                            >
-                              Clear Response
-                            </Button>
-                          </div>
-                          {currentMcqIndex >= mcqQuestions.length - 1 ? (
-                            getNextSectionInfo("mcq") ? (
-                              <Button
-                                onClick={() =>
-                                  setCurrentTab(getNextSectionInfo("mcq")!.tab)
-                                }
-                              >
-                                Next Section → {getNextSectionInfo("mcq")!.name}
-                              </Button>
-                            ) : null
-                          ) : (
-                            <Button
-                              onClick={() =>
-                                setCurrentMcqIndex((prev) => prev + 1)
-                              }
-                            >
-                              Next
-                            </Button>
-                          )}
                         </div>
                       </CardContent>
                     </Card>
-                  )}
+                  </div>
 
-                  {/* Question Navigator */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">
-                        Question Navigator
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex flex-wrap gap-2">
-                        {mcqQuestions.map((q, index) => (
-                          <Button
-                            key={q.id}
-                            variant={
-                              mcqAnswers[q.id] !== undefined
-                                ? "default"
-                                : "outline"
+                  {/* Right Column: Question Content */}
+                  <div className="md:col-span-3 space-y-6">
+                    <Progress value={mcqProgress} className="h-2" />
+
+                    {currentMcq && (
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">
+                              Question {currentMcqIndex + 1} of{" "}
+                              {mcqQuestions.length}
+                            </CardTitle>
+                            <Badge variant="outline">
+                              {currentMcq.points} pts
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                          <p className="text-base">{currentMcq.question}</p>
+
+                          <RadioGroup
+                            key={`mcq-radio-${currentMcq.id}`}
+                            value={
+                              mcqAnswers[currentMcq.id] !== undefined
+                                ? mcqAnswers[currentMcq.id].toString()
+                                : ""
                             }
-                            size="sm"
-                            className={`w-10 h-10 ${currentMcqIndex === index ? "ring-2 ring-primary" : ""}`}
-                            onClick={() => setCurrentMcqIndex(index)}
+                            onValueChange={(v) =>
+                              handleMcqAnswer(currentMcq.id, parseInt(v))
+                            }
                           >
-                            {index + 1}
-                          </Button>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                            {currentMcq.options.map((option, index) => (
+                              <div
+                                key={index}
+                                className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                                  mcqAnswers[currentMcq.id] === index
+                                    ? "border-primary bg-primary/5"
+                                    : "hover:bg-muted/50"
+                                }`}
+                                onClick={() =>
+                                  handleMcqAnswer(currentMcq.id, index)
+                                }
+                              >
+                                <RadioGroupItem
+                                  value={index.toString()}
+                                  id={`option-${currentMcq.id}-${index}`}
+                                />
+                                <Label
+                                  htmlFor={`option-${currentMcq.id}-${index}`}
+                                  className="flex-1 cursor-pointer"
+                                >
+                                  {option}
+                                </Label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+
+                          <div className="flex justify-between pt-4">
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                onClick={() =>
+                                  setCurrentMcqIndex((prev) =>
+                                    Math.max(0, prev - 1),
+                                  )
+                                }
+                                disabled={currentMcqIndex === 0}
+                              >
+                                Previous
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => handleMcqAnswer(currentMcq.id, -1)}
+                                disabled={mcqAnswers[currentMcq.id] === undefined}
+                              >
+                                Clear Response
+                              </Button>
+                            </div>
+                            {currentMcqIndex >= mcqQuestions.length - 1 ? (
+                              getNextSectionInfo("mcq") ? (
+                                <Button
+                                  onClick={() =>
+                                    setCurrentTab(getNextSectionInfo("mcq")!.tab)
+                                  }
+                                >
+                                  Next Section → {getNextSectionInfo("mcq")!.name}
+                                </Button>
+                              ) : null
+                            ) : (
+                              <Button
+                                onClick={() =>
+                                  setCurrentMcqIndex((prev) => prev + 1)
+                                }
+                              >
+                                Next
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
                 </div>
               </TabsContent>
             )}

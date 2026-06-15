@@ -95,7 +95,9 @@ export default function ProfilePage() {
                         id="company_name"
                         name="company_name"
                         value={formData.company_name || ''}
-                        onChange={handleChange}
+                        readOnly
+                        disabled
+                        className="bg-muted cursor-not-allowed"
                         placeholder="e.g. Acme Corp"
                       />
                     </div>
@@ -105,7 +107,9 @@ export default function ProfilePage() {
                         id="company_website"
                         name="company_website"
                         value={formData.company_website || ''}
-                        onChange={handleChange}
+                        readOnly
+                        disabled
+                        className="bg-muted cursor-not-allowed"
                         placeholder="e.g. https://acmecorp.com"
                       />
                     </div>

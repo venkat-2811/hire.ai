@@ -45,7 +45,7 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
     <div
       className={cn(
         "flex flex-col h-full bg-sidebar text-sidebar-foreground transition-all duration-300",
-        !isMobile && collapsed ? "w-16" : "w-64",
+        !isMobile && collapsed ? "w-16" : "w-56",
         isMobile && "w-full",
         className
       )}

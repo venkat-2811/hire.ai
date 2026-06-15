@@ -62,7 +62,7 @@ export function DashboardLayout({ children, fitContent = false }: DashboardLayou
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-64 bg-sidebar border-r-0">
+            <SheetContent side="left" className="p-0 w-56 bg-sidebar border-r-0">
               <Sidebar isMobile />
             </SheetContent>
           </Sheet>

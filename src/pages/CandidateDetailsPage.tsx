@@ -479,15 +479,15 @@ export default function CandidateDetailsPage() {
                             )}
                           </div>
                           {hasSql && (
-                            <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-950/20 rounded-lg border border-indigo-100 dark:border-indigo-900/30">
-                              <p className="text-xs text-indigo-600 dark:text-indigo-400 mb-1 font-medium flex items-center justify-center gap-1">
-                                <Database className="h-3 w-3" />
+                            <div className="text-center p-4 bg-muted/50 rounded-lg">
+                              <p className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                                <Database className="h-3.5 w-3.5 text-muted-foreground" />
                                 SQL Score
                               </p>
                               {assessmentDetails.sql_score != null ? (
                                 <ScoreBadge score={assessmentDetails.sql_score} size="lg" />
                               ) : (
-                                <span className="text-muted-foreground">-</span>
+                                <ScoreBadge score={0} size="lg" />
                               )}
                             </div>
                           )}
@@ -765,7 +765,7 @@ export default function CandidateDetailsPage() {
                                         <div className="space-y-1.5">
                                           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Problem Statement</p>
                                           <div className="max-h-48 overflow-y-auto rounded-md border border-muted/30 bg-muted/10 p-3">
-                                            <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground leading-relaxed">
+                                            <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] text-foreground/90 leading-relaxed prose-p:text-[13px] prose-p:leading-relaxed prose-li:text-[13px] prose-li:leading-relaxed">
                                               <ReactMarkdown>{safeRender(ch.description)}</ReactMarkdown>
                                             </div>
                                           </div>
