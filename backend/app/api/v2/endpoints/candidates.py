@@ -11,6 +11,11 @@ from app.auth.clerk import ClerkUser
 from app.services.ai.factory import get_ai
 from app.services.db.supabase_service import get_db_admin_service
 from app.utils.responses import ok, api_error
+from app.utils.tenant_guards import (
+    verify_candidate_belongs_to_user,
+    verify_job_belongs_to_user,
+    get_user_job_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +132,31 @@ async def list_candidates(
             if cid and jid:
                 screening_map[f"{cid}:{jid}"] = s
 
+    # Fetch per-recruiter candidate overrides from job_applications
+    # These are mutable fields the recruiter has edited (name, phone, etc.)
+    # stored privately so they never bleed across tenant boundaries.
+    def _fetch_overrides():
+        return (
+            db.client.from_("job_applications")
+            .select("candidate_id, job_id, candidate_overrides")
+            .in_("job_id", job_ids)
+            .in_("candidate_id", candidate_ids)
+            .execute()
+        )
+
+    overrides_res = await db.run(_fetch_overrides)
+    overrides_raw = getattr(overrides_res, "data", None) or []
+    # Build map: (candidate_id, job_id) -> overrides dict
+    overrides_map: Dict[str, Dict[str, Any]] = {}
+    for ov in overrides_raw:
+        if not isinstance(ov, dict):
+            continue
+        cid = ov.get("candidate_id")
+        jid = ov.get("job_id")
+        ov_data = ov.get("candidate_overrides")
+        if cid and jid and isinstance(ov_data, dict) and ov_data:
+            overrides_map[f"{cid}:{jid}"] = ov_data
+
     out: List[Dict[str, Any]] = []
     for c in candidates:
         if not isinstance(c, dict):
@@ -136,11 +166,16 @@ async def list_candidates(
             continue
         for jid in job_map.get(cid, []):
             key = f"{cid}:{jid}"
+            # Start from the canonical candidate data …
             item = {
                 **c,
                 "job_id": jid,
                 "applied_at": applied_at_map.get(key),
             }
+            # … then layer this recruiter's private overrides on top
+            tenant_overrides = overrides_map.get(key, {})
+            if tenant_overrides:
+                item.update(tenant_overrides)
             s_data = screening_map.get(key)
             if s_data:
                 item["ats_score"] = s_data.get("overall_score")
@@ -200,18 +235,31 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
 
     if isinstance(existing, list) and existing and isinstance(existing[0], dict) and existing[0].get("id"):
         existing_id = existing[0]["id"]
-        update_data: Dict[str, Any] = {
-            "full_name": full_name,
-            "phone": payload.get("phone"),
-            "portfolio_url": payload.get("portfolio_url") or payload.get("portfolioUrl"),
-            "github_url": payload.get("github_url") or payload.get("githubUrl"),
-            "consent_given": bool(payload.get("consent_given") or payload.get("consentGiven")),
-            "consent_timestamp": now if (payload.get("consent_given") or payload.get("consentGiven")) else None,
-            "location": payload.get("location"),
-            "vendorName": payload.get("vendorName"),
-            "mainSkillset": payload.get("mainSkillset"),
-            "updated_at": now,
-        }
+        existing_row = existing[0]
+
+        # SECURITY: Only update fields that are currently null/empty on the shared candidate
+        # record. This prevents a recruiter from clobbering another tenant's data when adding
+        # an existing candidate (same email) to their own job.
+        update_data: Dict[str, Any] = {"updated_at": now}
+
+        def _merge_if_null(field: str, value: Any) -> None:
+            """Only include the field in the update payload if the existing value is falsy."""
+            if value and not existing_row.get(field):
+                update_data[field] = value
+
+        _merge_if_null("full_name", full_name)
+        _merge_if_null("phone", payload.get("phone"))
+        _merge_if_null("portfolio_url", payload.get("portfolio_url") or payload.get("portfolioUrl"))
+        _merge_if_null("github_url", payload.get("github_url") or payload.get("githubUrl"))
+        _merge_if_null("location", payload.get("location"))
+        _merge_if_null("vendorName", payload.get("vendorName"))
+        _merge_if_null("mainSkillset", payload.get("mainSkillset"))
+
+        # Consent is always honoured for the candidate themselves (opt-in)
+        if payload.get("consent_given") or payload.get("consentGiven"):
+            update_data["consent_given"] = True
+            if not existing_row.get("consent_timestamp"):
+                update_data["consent_timestamp"] = now
 
         def _update():
             return (
@@ -319,7 +367,11 @@ async def upload_resume(
 
     db = get_db_admin_service()
 
-    # 1. Verify the candidate exists
+    # 1a. Tenant guard: verify this candidate applied to one of the user's jobs
+    if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+        return api_error(message="Candidate not found", status_code=404)
+
+    # 1b. Verify the candidate exists
     def _fetch_candidate():
         return (
             db.client.from_("candidates")
@@ -562,6 +614,10 @@ async def get_candidate(candidate_id: str, user: ClerkUser = Depends(require_use
     """GET /api/v2/candidates/{candidate_id}"""
     db = get_db_admin_service()
 
+    # Tenant guard: verify this candidate applied to one of the user's jobs
+    if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+        return api_error(message="Candidate not found", status_code=404)
+
     def _fetch():
         return (
             db.client.from_("candidates")
@@ -575,6 +631,27 @@ async def get_candidate(candidate_id: str, user: ClerkUser = Depends(require_use
     candidate = getattr(res, "data", None)
     if not isinstance(candidate, dict) or not candidate.get("id"):
         return api_error(message="Candidate not found", status_code=404)
+
+    # Merge the calling recruiter's per-tenant overrides on top of the
+    # canonical candidate row so they see their private version of this record.
+    user_job_ids = await get_user_job_ids(db, user.id)
+    if user_job_ids:
+        def _fetch_ov():
+            return (
+                db.client.from_("job_applications")
+                .select("candidate_overrides")
+                .eq("candidate_id", candidate_id)
+                .in_("job_id", user_job_ids)
+                .limit(1)
+                .execute()
+            )
+        ov_res = await db.run(_fetch_ov)
+        ov_rows = getattr(ov_res, "data", None) or []
+        if ov_rows and isinstance(ov_rows[0], dict):
+            overrides = ov_rows[0].get("candidate_overrides") or {}
+            if isinstance(overrides, dict) and overrides:
+                candidate = {**candidate, **overrides}
+
     return ok(candidate)
 
 
@@ -592,6 +669,10 @@ async def update_candidate(
     """
     db = get_db_admin_service()
 
+    # Tenant guard: only the recruiter who owns the job this candidate applied to can edit
+    if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+        return api_error(message="Candidate not found", status_code=404)
+
     if "email" in payload:
         return api_error(message="Candidate email cannot be modified", status_code=400)
 
@@ -605,20 +686,56 @@ async def update_candidate(
     if not update_data:
         return api_error(message="No valid fields to update", status_code=400)
 
-    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    logger.info("[candidates.update] candidate_id=%s fields=%s", candidate_id, list(update_data.keys()))
+    logger.info("[candidates.update] candidate_id=%s fields=%s user=%s", candidate_id, list(update_data.keys()), user.id)
 
-    def _update():
+    # SECURITY: Write mutable fields into job_applications.candidate_overrides
+    # (the recruiter's private per-tenant copy) — NOT into the global candidates
+    # table. This prevents one recruiter's edits from leaking to other tenants.
+    user_job_ids = await get_user_job_ids(db, user.id)
+    if not user_job_ids:
+        return api_error(message="No jobs found for this user", status_code=404)
+
+    # Fetch current overrides from the recruiter's first matching application
+    def _fetch_current_overrides():
         return (
-            db.client.from_("candidates")
-            .update(update_data)
-            .eq("id", candidate_id)
+            db.client.from_("job_applications")
+            .select("id, job_id, candidate_overrides")
+            .eq("candidate_id", candidate_id)
+            .in_("job_id", user_job_ids)
             .execute()
         )
 
-    await db.run(_update)
+    ov_res = await db.run(_fetch_current_overrides)
+    ov_rows = getattr(ov_res, "data", None) or []
+    if not ov_rows:
+        return api_error(message="Candidate not found", status_code=404)
 
-    def _fetch():
+    # Update candidate_overrides on ALL of this recruiter's applications for this candidate
+    # (a recruiter may have the same candidate in multiple jobs)
+    for app_row in ov_rows:
+        if not isinstance(app_row, dict):
+            continue
+        app_job_id = app_row.get("job_id")
+        if not app_job_id:
+            continue
+        existing_overrides = app_row.get("candidate_overrides") or {}
+        if not isinstance(existing_overrides, dict):
+            existing_overrides = {}
+        merged = {**existing_overrides, **update_data}
+
+        app_jid = app_job_id  # capture for closure
+        def _write_overrides(jid=app_jid, data=merged):
+            return (
+                db.client.from_("job_applications")
+                .update({"candidate_overrides": data, "updated_at": datetime.now(timezone.utc).isoformat()})
+                .eq("candidate_id", candidate_id)
+                .eq("job_id", jid)
+                .execute()
+            )
+        await db.run(_write_overrides)
+
+    # Return the merged view: base candidate + this recruiter's overrides
+    def _fetch_base():
         return (
             db.client.from_("candidates")
             .select("*")
@@ -626,12 +743,16 @@ async def update_candidate(
             .maybe_single()
             .execute()
         )
-
-    res = await db.run(_fetch)
-    updated = getattr(res, "data", None)
-    if not isinstance(updated, dict) or not updated.get("id"):
+    base_res = await db.run(_fetch_base)
+    base = getattr(base_res, "data", None)
+    if not isinstance(base, dict) or not base.get("id"):
         return api_error(message="Candidate not found after update", status_code=404)
-    return ok(updated)
+
+    # Use the latest overrides from the first app row for the response
+    latest_overrides = {}
+    if ov_rows and isinstance(ov_rows[0].get("candidate_overrides"), dict):
+        latest_overrides = {**ov_rows[0]["candidate_overrides"], **update_data}
+    return ok({**base, **latest_overrides})
 
 
 @router.delete("/{candidate_id}")
@@ -647,6 +768,18 @@ async def delete_candidate(
     Otherwise removes the candidate entirely with all associated data.
     """
     db = get_db_admin_service()
+
+    # Tenant guard: verify the caller owns the relevant job(s) before deletion
+    if job_id:
+        if not await verify_job_belongs_to_user(db, job_id, user.id):
+            return api_error(message="Job not found or access denied", status_code=404)
+        # Also verify the candidate actually applied to this specific job
+        if not await verify_candidate_belongs_to_user(db, candidate_id, user.id, job_id=job_id):
+            return api_error(message="Candidate not found for this job", status_code=404)
+    else:
+        # Full delete: only allowed if the candidate applied to at least one of the user's jobs
+        if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+            return api_error(message="Candidate not found", status_code=404)
 
     if job_id:
         # --- Remove candidate from a specific job (full cleanup) ---
@@ -752,6 +885,10 @@ async def get_parsed_resume(candidate_id: str, user: ClerkUser = Depends(require
     """GET /api/v2/candidates/{candidate_id}/parsed-resume"""
     db = get_db_admin_service()
 
+    # Tenant guard
+    if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+        return api_error(message="Candidate not found", status_code=404)
+
     def _fetch():
         return (
             db.client.from_("candidates")
@@ -780,6 +917,17 @@ async def get_assessment_details(
     """GET /api/v2/candidates/{candidate_id}/assessment-details"""
     db = get_db_admin_service()
 
+    # Tenant guard: if job_id provided verify ownership; otherwise verify general ownership
+    if job_id:
+        if not await verify_candidate_belongs_to_user(db, candidate_id, user.id, job_id=job_id):
+            return api_error(message="Candidate not found for this job", status_code=404)
+    else:
+        if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+            return api_error(message="Candidate not found", status_code=404)
+
+    # Scope the assessment query to only the user's jobs
+    user_job_ids = await get_user_job_ids(db, user.id)
+
     def _fetch():
         q = (
             db.client.from_("assessment_sessions")
@@ -788,6 +936,8 @@ async def get_assessment_details(
         )
         if job_id:
             q = q.eq("job_id", job_id)
+        elif user_job_ids:
+            q = q.in_("job_id", user_job_ids)
         return q.order("created_at", desc=True).limit(1).execute()
 
     res = await db.run(_fetch)
@@ -803,6 +953,17 @@ async def get_interview_details(
 ):
     """GET /api/v2/candidates/{candidate_id}/interview-details"""
     db = get_db_admin_service()
+
+    # Tenant guard: verify this candidate applied to one of the user's jobs
+    if job_id:
+        if not await verify_candidate_belongs_to_user(db, candidate_id, user.id, job_id=job_id):
+            return api_error(message="Candidate not found for this job", status_code=404)
+    else:
+        if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+            return api_error(message="Candidate not found", status_code=404)
+
+    # Scope queries to user's jobs only
+    user_job_ids = await get_user_job_ids(db, user.id)
 
     def _shape_ai_session(row: Dict[str, Any]) -> Dict[str, Any]:
         raw_questions = row.get("questions")
@@ -867,6 +1028,8 @@ async def get_interview_details(
         )
         if job_id:
             q = q.eq("job_id", job_id)
+        elif user_job_ids:
+            q = q.in_("job_id", user_job_ids)
         return q.order("created_at", desc=True).limit(1).execute()
 
     res = await db.run(_fetch)
@@ -883,6 +1046,8 @@ async def get_interview_details(
         )
         if job_id:
             q = q.eq("job_id", job_id)
+        elif user_job_ids:
+            q = q.in_("job_id", user_job_ids)
         return q.order("created_at", desc=True).limit(1).execute()
 
     legacy_res = await db.run(_fetch_legacy)
@@ -898,6 +1063,10 @@ async def get_manual_interview(
 ):
     """GET /api/v2/candidates/{candidate_id}/manual-interview?job_id=..."""
     db = get_db_admin_service()
+
+    # Tenant guard: verify the job belongs to this user
+    if not await verify_job_belongs_to_user(db, job_id, user.id):
+        return api_error(message="Job not found or access denied", status_code=404)
 
     def _fetch():
         return (
@@ -952,6 +1121,10 @@ async def update_manual_interview(
     # --- Validate inputs -------------------------------------------------------
     if not candidate_id or not job_id:
         return api_error(message="candidate_id and job_id are required", status_code=400)
+
+    # Tenant guard: verify the job belongs to this user
+    if not await verify_job_belongs_to_user(db, job_id, user.id):
+        return api_error(message="Job not found or access denied", status_code=404)
 
     # Backend score validation
     raw_score = payload.get("manual_interview_score")

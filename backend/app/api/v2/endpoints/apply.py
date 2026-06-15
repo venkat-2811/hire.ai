@@ -128,7 +128,36 @@ async def submit_application(
         candidate_payload["resume_parsed_data"] = resume_parsed_data
 
     if candidate_id:
-        await db.update("candidates", candidate_payload, filters={"id": candidate_id})
+        # SECURITY: When updating an existing shared candidate record, only overwrite fields
+        # that are currently null/empty. This prevents a new application from clobbering
+        # contact details recorded by a different recruiter's tenant context.
+        existing_full = await db.select("candidates", columns="*", filters={"id": candidate_id}, limit=1)
+        existing_row = existing_full[0] if existing_full else {}
+
+        safe_update: Dict[str, Any] = {"updated_at": _utc_now_iso()}
+        # Always update consent (opt-in)
+        if consent:
+            safe_update["consent_given"] = True
+            if not existing_row.get("consent_timestamp"):
+                safe_update["consent_timestamp"] = _utc_now_iso()
+        # Only fill in missing contact fields
+        for field, value in [
+            ("full_name", full_name),
+            ("phone", phone),
+            ("portfolio_url", portfolio_url),
+            ("github_url", github_url),
+            ("location", location),
+            ("vendorName", vendorName),
+            ("mainSkillset", mainSkillset),
+        ]:
+            if value and not existing_row.get(field):
+                safe_update[field] = value
+        # Resume data from this submission is always stored (application-specific)
+        if resume_text:
+            safe_update["resume_text"] = resume_text
+            safe_update["resume_parsed_data"] = resume_parsed_data
+
+        await db.update("candidates", safe_update, filters={"id": candidate_id})
     else:
         import uuid
 
