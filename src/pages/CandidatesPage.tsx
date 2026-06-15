@@ -130,6 +130,7 @@ export default function CandidatesPage() {
   const [interviewQuestionCount, setInterviewQuestionCount] = useState(5);
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [interviewMode, setInterviewMode] = useState<'ai' | 'manual'>('ai');
+  const [interviewTimeLimit, setInterviewTimeLimit] = useState<number | undefined>(undefined);
 
   // Deadline defaults to 48 hours from now, rounded UP to the next 10-minute interval.
   // e.g. 01:13 → 48h later at 01:20 | 01:51 → 48h later at 02:00
@@ -426,6 +427,7 @@ export default function CandidatesPage() {
           question_count: interviewQuestionCount,
           difficulty: interviewDifficulty,
           deadline: deadlineDate.toISOString(),
+          time_limit: interviewTimeLimit,
         });
         toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
       }
@@ -1050,6 +1052,22 @@ export default function CandidatesPage() {
                     />
                     <p className="text-xs text-muted-foreground">
                       Candidates will answer {interviewQuestionCount} question{interviewQuestionCount !== 1 ? 's' : ''} in the interview.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Interview Time Limit (Minutes) - Optional</Label>
+                    <Input
+                      type="number"
+                      min={5}
+                      max={180}
+                      step={5}
+                      value={interviewTimeLimit || ''}
+                      onChange={(e) => setInterviewTimeLimit(e.target.value ? Number(e.target.value) : undefined)}
+                      placeholder="Calculated automatically if empty"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      If left blank, the system will allocate 2 minutes per question.
                     </p>
                   </div>
 

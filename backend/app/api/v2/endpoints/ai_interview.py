@@ -562,6 +562,7 @@ class InterviewInviteRequest(BaseModel):
     question_count: Optional[int] = 5
     difficulty: Optional[str] = "medium"
     deadline: Optional[str] = None
+    time_limit: Optional[int] = None
 
 
 @router.post("/invite")
@@ -621,6 +622,14 @@ async def invite_ai_interviews(
     requested_count = max(1, min(30, int(body.question_count or 5)))
     difficulty = (body.difficulty or "medium").strip().lower()
 
+    if body.time_limit is not None:
+        calculated_time_limit = body.time_limit
+    else:
+        # Calculate default: exactly 2 minutes per question for response time
+        calculated_time_limit = requested_count * 2
+        if calculated_time_limit < 2:
+            calculated_time_limit = 2
+
     invites_sent = 0
     failed: List[str] = []
     failed_reasons: Dict[str, str] = {}
@@ -679,6 +688,7 @@ async def invite_ai_interviews(
             }
 
             proctoring_data["difficulty"] = difficulty
+            proctoring_data["time_limit_minutes"] = calculated_time_limit
 
             insert_row = {
                 "id": session_id,
@@ -797,13 +807,16 @@ async def start_interview(token: str):
 
     cand = session.get("candidates") or {}
     job = session.get("job_descriptions") or {}
+    pd = session.get("proctoring_data") or {}
+    time_limit_minutes = pd.get("time_limit_minutes")
+
     return ok(
         {
             "session_id": session.get("id"),
             "candidate_name": cand.get("full_name"),
             "job_title": job.get("title"),
             "total_questions": len(questions),
-            "estimated_duration_minutes": (len(questions) or 5) * 3,
+            "estimated_duration_minutes": time_limit_minutes or ((len(questions) or 5) * 3),
         }
     )
 

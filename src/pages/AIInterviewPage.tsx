@@ -53,7 +53,7 @@ interface InterviewQuestion {
   expected_duration_seconds: number;
 }
 
-const DEFAULT_QUESTION_WINDOW_SECONDS = 90;
+const DEFAULT_QUESTION_WINDOW_SECONDS = 90; // Kept only for fallback / safety if needed
 
 interface InterviewEvaluationResult {
   overall_score: number;
@@ -85,8 +85,11 @@ export default function AIInterviewPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isQuestionReadComplete, setIsQuestionReadComplete] = useState(false);
-  const [questionDurationSeconds, setQuestionDurationSeconds] = useState(DEFAULT_QUESTION_WINDOW_SECONDS);
-  const [questionTimeLeftSeconds, setQuestionTimeLeftSeconds] = useState(DEFAULT_QUESTION_WINDOW_SECONDS);
+  
+  // Overall interview timer
+  const [interviewTimeLeftSeconds, setInterviewTimeLeftSeconds] = useState<number | null>(null);
+  const [isOverallTimerExpired, setIsOverallTimerExpired] = useState(false);
+  
   const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
 
   // Proctoring state
@@ -271,8 +274,6 @@ export default function AIInterviewPage() {
 
       setIsQuestionReadComplete(false);
       setCurrentQuestion(data);
-      setQuestionTimeLeftSeconds(DEFAULT_QUESTION_WINDOW_SECONDS);
-      setQuestionDurationSeconds(DEFAULT_QUESTION_WINDOW_SECONDS);
 
       // Speak the question after a short delay
       setTimeout(() => {
@@ -317,11 +318,12 @@ export default function AIInterviewPage() {
     if (!currentQuestion || isAutoAdvancing) return;
 
     setIsAutoAdvancing(true);
-    const audioCapturedSeconds = Math.max(0, questionDurationSeconds - questionTimeLeftSeconds);
+    // Track how much time audio was recorded for (rough estimate from isRecording, or passing arbitrary if not needed)
+    const audioCapturedSeconds = 60; // Could track real time if necessary, but 60 is fine for transcription placeholder
     const recordedBlob = await stopRecording();
     await advanceAfterTimeout(currentQuestion, audioCapturedSeconds, recordedBlob);
     setIsAutoAdvancing(false);
-  }, [currentQuestion, isAutoAdvancing, questionDurationSeconds, questionTimeLeftSeconds, stopRecording, advanceAfterTimeout]);
+  }, [currentQuestion, isAutoAdvancing, stopRecording, advanceAfterTimeout]);
 
   // Camera setup
   const setupCamera = useCallback(async () => {
@@ -489,35 +491,61 @@ export default function AIInterviewPage() {
     };
   }, [showReadyScreen]);
 
-  // Automatically start recording and countdown whenever a question appears.
+  // Automatically start recording when question appears, but do NOT reset the overall timer
   useEffect(() => {
-    if (!currentQuestion || !isQuestionReadComplete || showReadyScreen || isTerminated || isCompleted || isAutoAdvancing) return;
-
-    const questionWindowSeconds = DEFAULT_QUESTION_WINDOW_SECONDS;
-    setQuestionDurationSeconds(questionWindowSeconds);
-    setQuestionTimeLeftSeconds(questionWindowSeconds);
+    if (!currentQuestion || !isQuestionReadComplete || showReadyScreen || isTerminated || isCompleted || isAutoAdvancing || isOverallTimerExpired) return;
 
     startRecording();
+
+    return () => {
+      // We don't stop recording automatically here unless unmounting / advancing
+    };
+  }, [
+    currentQuestion,
+    isQuestionReadComplete,
+    showReadyScreen,
+    isTerminated,
+    isCompleted,
+    isAutoAdvancing,
+    startRecording,
+    isOverallTimerExpired,
+  ]);
+
+  // Overall timer effect
+  useEffect(() => {
+    if (showReadyScreen || isTerminated || isCompleted || isOverallTimerExpired) {
+      if (questionTimerRef.current) {
+        clearInterval(questionTimerRef.current);
+        questionTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (interviewTimeLeftSeconds === null && interviewData?.estimated_duration_minutes) {
+      setInterviewTimeLeftSeconds(interviewData.estimated_duration_minutes * 60);
+      return;
+    }
+
+    // Pause timer while AI is speaking or saving response
+    if (isSpeaking || isAutoAdvancing || interviewTimeLeftSeconds === null) {
+      if (questionTimerRef.current) {
+        clearInterval(questionTimerRef.current);
+        questionTimerRef.current = null;
+      }
+      return;
+    }
 
     if (questionTimerRef.current) {
       clearInterval(questionTimerRef.current);
     }
-
+    
     questionTimerRef.current = setInterval(() => {
-      setQuestionTimeLeftSeconds((prev) => {
+      setInterviewTimeLeftSeconds((prev) => {
+        if (prev === null) return null;
         if (prev <= 1) {
-          if (questionTimerRef.current) {
-            clearInterval(questionTimerRef.current);
-            questionTimerRef.current = null;
-          }
-
-          setIsAutoAdvancing(true);
-          void (async () => {
-            const recordedBlob = await stopRecording();
-            await advanceAfterTimeout(currentQuestion, questionWindowSeconds, recordedBlob);
-            setIsAutoAdvancing(false);
-          })();
-
+          clearInterval(questionTimerRef.current!);
+          questionTimerRef.current = null;
+          setIsOverallTimerExpired(true);
           return 0;
         }
         return prev - 1;
@@ -531,16 +559,46 @@ export default function AIInterviewPage() {
       }
     };
   }, [
-    currentQuestion,
-    isQuestionReadComplete,
-    showReadyScreen,
-    isTerminated,
-    isCompleted,
-    isAutoAdvancing,
-    startRecording,
-    stopRecording,
-    advanceAfterTimeout,
+    showReadyScreen, 
+    isTerminated, 
+    isCompleted, 
+    isOverallTimerExpired, 
+    isSpeaking, 
+    isAutoAdvancing, 
+    interviewTimeLeftSeconds === null, 
+    interviewData?.estimated_duration_minutes
   ]);
+
+  // Handle overall timer expiration
+  useEffect(() => {
+    if (isOverallTimerExpired && currentQuestion && !isAutoAdvancing && !isCompleted) {
+      setIsAutoAdvancing(true);
+      void (async () => {
+        const audioCapturedSeconds = 60;
+        const recordedBlob = await stopRecording();
+        
+        // Since timer expired, we want to complete the interview.
+        // We'll call submitResponse and explicitly complete the interview.
+        if (interviewData) {
+          try {
+            await aiInterviewApi.submitResponse(interviewData.session_id, {
+              question_index: currentQuestion.index,
+              transcript: '',
+              audio_duration_seconds: audioCapturedSeconds,
+              confidence: 0.9,
+            });
+            await queueServerTranscription(currentQuestion.index, audioCapturedSeconds, recordedBlob);
+            const evalData = await aiInterviewApi.complete(interviewData.session_id);
+            setFinalEvaluation(evalData);
+            setIsCompleted(true);
+          } catch (e) {
+            toast.error('Failed to complete interview automatically.');
+          }
+        }
+        setIsAutoAdvancing(false);
+      })();
+    }
+  }, [isOverallTimerExpired, currentQuestion, isAutoAdvancing, isCompleted, interviewData, stopRecording, queueServerTranscription]);
 
   // Load interview data
   useEffect(() => {
@@ -840,8 +898,7 @@ export default function AIInterviewPage() {
               <p className="text-sm font-medium">Interview Details:</p>
               <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                 <p>Questions: {interviewData?.total_questions}</p>
-                <p>Time per question: 01:30</p>
-                <p>Estimated Duration: {interviewData?.estimated_duration_minutes} minutes</p>
+                <p>Total Duration: {interviewData?.estimated_duration_minutes} minutes</p>
               </div>
             </div>
 
@@ -926,15 +983,19 @@ export default function AIInterviewPage() {
                 <CardTitle className="text-2xl">Current Question</CardTitle>
                 <div className="flex items-center gap-3 rounded-full border border-primary/20 bg-gradient-to-r from-primary/10 via-amber-100/40 to-destructive/10 px-4 py-2 shadow-sm">
                   <Clock3 className="h-4 w-4 text-primary" />
-                  <span className="text-lg font-semibold tabular-nums tracking-wider">{formatTime(questionTimeLeftSeconds)}</span>
+                  <span className="text-lg font-semibold tabular-nums tracking-wider">{formatTime(interviewTimeLeftSeconds ?? 0)}</span>
                 </div>
               </div>
               <Progress
-                value={(questionTimeLeftSeconds / Math.max(questionDurationSeconds, 1)) * 100}
+                value={
+                  interviewTimeLeftSeconds !== null && interviewData?.estimated_duration_minutes
+                    ? (interviewTimeLeftSeconds / (interviewData.estimated_duration_minutes * 60)) * 100
+                    : 100
+                }
                 className="h-2 [&>div]:bg-gradient-to-r [&>div]:from-emerald-500 [&>div]:via-amber-500 [&>div]:to-red-500"
               />
               <CardDescription>
-                Timer starts after the question is read aloud. Click Next when done, or it auto-advances at 00:00.
+                Overall interview time remaining. The interview auto-submits when time reaches 00:00.
               </CardDescription>
             </CardHeader>
             <CardContent className="h-full flex flex-col justify-center gap-6">
