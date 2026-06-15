@@ -39,6 +39,7 @@ import { PDFExportService } from '@/lib/pdf-export';
 import { Download, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
+import ReactMarkdown from 'react-markdown';
 
 const safeRender = (val: any): string => {
   if (val == null) return '';
@@ -761,9 +762,13 @@ export default function CandidateDetailsPage() {
 
                                       {/* Description */}
                                       {ch?.description && (
-                                        <div className="space-y-1">
+                                        <div className="space-y-1.5">
                                           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Problem Statement</p>
-                                          <p className="text-sm text-foreground whitespace-pre-wrap">{safeRender(ch.description)}</p>
+                                          <div className="max-h-48 overflow-y-auto rounded-md border border-muted/30 bg-muted/10 p-3">
+                                            <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground leading-relaxed">
+                                              <ReactMarkdown>{safeRender(ch.description)}</ReactMarkdown>
+                                            </div>
+                                          </div>
                                         </div>
                                       )}
 
@@ -837,8 +842,12 @@ export default function CandidateDetailsPage() {
                                                 </div>
                                               )}
                                               {(firstResult?.error || sub?.runtime_error) && (
-                                                <div className="p-2.5 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 rounded text-xs font-mono whitespace-pre-wrap border border-red-100 dark:border-red-900/10 leading-relaxed">
-                                                  {safeRender(firstResult?.error || sub.runtime_error)}
+                                                <div className={`p-2.5 rounded text-xs font-mono whitespace-pre-wrap border leading-relaxed ${
+                                                  firstResult?.passed
+                                                    ? 'bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 border-green-100 dark:border-green-900/10'
+                                                    : 'bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 border-red-100 dark:border-red-900/10'
+                                                }`}>
+                                                  {safeRender(firstResult?.error || sub.runtime_error).replace(/Your query/g, "Candidate's query")}
                                                 </div>
                                               )}
                                             </div>

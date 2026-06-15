@@ -158,7 +158,7 @@ class SQLExecutor:
         if exp_normalized == cand_normalized:
             return {
                 "score": 100,
-                "feedback": "Accepted! Your query returned the expected results.",
+                "feedback": "Accepted! Candidate's query returned the expected results.",
                 "execution_result": "Accepted",
                 "status": "Accepted",
                 "time_taken_seconds": exec_time
