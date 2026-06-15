@@ -105,6 +105,8 @@ export interface DetailedAnalysis {
   education_analysis: string;
   career_gap_analysis: string;
   credibility_flags: string[];
+  whats_good?: string[];
+  what_lacks?: string[];
 }
 
 export interface SkillMatch {

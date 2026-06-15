@@ -1678,12 +1678,26 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
         new_pd["sql_submissions"] = existing_list
         new_pd["sql_score"] = sql_score
 
+        # Try to write sql_score as a direct column (requires migration 010).
+        # If the column doesn't exist yet, fall back to storing only in proctoring_data.
         updated_rows, db_err = await db.update_safe(
             "assessment_sessions",
-            {"proctoring_data": new_pd, "updated_at": _utc_now_iso()},
+            {"proctoring_data": new_pd, "sql_score": sql_score, "updated_at": _utc_now_iso()},
             filters={"id": session_id},
             context={"endpoint": "coding_submit", "session_id": str(session_id), "challenge_id": str(challenge_id)},
         )
+        if db_err:
+            # Column may not exist yet — retry without direct sql_score column write
+            logger.warning(
+                "[assessments.coding_submit] sql_score_column_fallback session_id=%s – retrying without sql_score column",
+                str(session_id),
+            )
+            updated_rows, db_err = await db.update_safe(
+                "assessment_sessions",
+                {"proctoring_data": new_pd, "updated_at": _utc_now_iso()},
+                filters={"id": session_id},
+                context={"endpoint": "coding_submit_fallback", "session_id": str(session_id), "challenge_id": str(challenge_id)},
+            )
         if db_err:
             logger.error("[assessments.coding_submit] db_update_error session_id=%s error=%s", str(session_id), str(db_err.message))
             return api_error(message="Failed to save code submission. Please try again.", status_code=500)
@@ -1959,19 +1973,27 @@ async def proctoring(session_id: str, event: Dict[str, Any] = Body(...)):
     if should_terminate:
         proctoring_data["terminated"] = True
         proctoring_data["termination_reason"] = termination_reason
-        await db.update(
+        # Attempt with sql_score column; if it fails (column missing), retry without it
+        terminate_payload = {
+            "proctoring_data": proctoring_data,
+            "status": "terminated",
+            "completed_at": _utc_now_iso(),
+            "mcq_score": 0,
+            "coding_score": 0,
+            "sql_score": 0,
+            "total_score": 0,
+            "updated_at": _utc_now_iso(),
+        }
+        _t_rows, _t_err = await db.update_safe(
             "assessment_sessions",
-            {
-                "proctoring_data": proctoring_data,
-                "status": "terminated",
-                "completed_at": _utc_now_iso(),
-                "mcq_score": 0,
-                "coding_score": 0,
-                "total_score": 0,
-                "updated_at": _utc_now_iso(),
-            },
+            terminate_payload,
             filters={"id": session_id},
+            context={"endpoint": "terminate"},
         )
+        if _t_err:
+            # Fallback: drop sql_score column key and retry
+            terminate_payload.pop("sql_score", None)
+            await db.update("assessment_sessions", terminate_payload, filters={"id": session_id})
         return ok({"warning": False, "terminated": True, "message": termination_reason, "violations_remaining": 0})
 
     minor = (
@@ -2063,19 +2085,34 @@ async def complete(session_id: str):
 
     total_score = sum(section_scores) / len(section_scores) if section_scores else 0.0
 
+    complete_payload: Dict[str, Any] = {
+        "status": "completed",
+        "completed_at": _utc_now_iso(),
+        "mcq_score": mcq_val,
+        "coding_score": coding_val,
+        "sql_score": sql_score,
+        "total_score": total_score,
+        "updated_at": _utc_now_iso(),
+    }
     updated_rows, db_err = await db.update_safe(
         "assessment_sessions",
-        {
-            "status": "completed",
-            "completed_at": _utc_now_iso(),
-            "mcq_score": mcq_val,
-            "coding_score": coding_val,
-            "total_score": total_score,
-            "updated_at": _utc_now_iso(),
-        },
+        complete_payload,
         filters={"id": session_id},
         context={"endpoint": "complete", "session_id": str(session_id)},
     )
+    if db_err:
+        # sql_score column may not exist yet – retry without it
+        logger.warning(
+            "[assessments.complete] sql_score_column_fallback session_id=%s – retrying without sql_score column",
+            str(session_id),
+        )
+        fallback_payload = {k: v for k, v in complete_payload.items() if k != "sql_score"}
+        updated_rows, db_err = await db.update_safe(
+            "assessment_sessions",
+            fallback_payload,
+            filters={"id": session_id},
+            context={"endpoint": "complete_fallback", "session_id": str(session_id)},
+        )
     if db_err:
         logger.error("[assessments.complete] db_update_error session_id=%s error=%s", str(session_id), str(db_err.message))
         return api_error(message="Failed to complete assessment. Please try again.", status_code=500)

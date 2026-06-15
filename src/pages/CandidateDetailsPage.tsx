@@ -29,6 +29,7 @@ import {
   MapPin,
   User,
   Briefcase,
+  Database,
 } from 'lucide-react';
 import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
 import { useProfile } from '@/hooks/useProfile';
@@ -83,10 +84,14 @@ export default function CandidateDetailsPage() {
   const [manualFeedback, setManualFeedback] = useState<string>('');
   const [manualNotes, setManualNotes] = useState<string>('');
 
+  const pd = assessmentDetails?.proctoring_data;
+  const sqlChallenges = asArray<any>(pd?.assessment_content?.sql_challenges);
+  const sqlSubs = asArray<any>(pd?.sql_submissions);
+  const hasSql = sqlChallenges.length > 0 || sqlSubs.length > 0 || assessmentDetails?.sql_score != null;
+
   const [evaluationTab, setEvaluationTab] = useState<string>(() => {
     if (initialTab === 'manual') return 'manual';
     if (initialTab === 'interview') return 'interview';
-    if (initialTab === 'assessment') return 'assessment';
     return 'assessment';
   });
 
@@ -129,7 +134,7 @@ export default function CandidateDetailsPage() {
   }, [candidateId, jobId]);
 
   useEffect(() => {
-    if (initialTab === 'manual' || initialTab === 'interview' || initialTab === 'assessment') {
+    if (initialTab === 'manual' || initialTab === 'interview' || initialTab === 'assessment' || initialTab === 'sql-assessment') {
       setEvaluationTab(initialTab);
     }
   }, [initialTab]);
@@ -455,7 +460,7 @@ export default function CandidateDetailsPage() {
                     {assessmentDetails && (
                       <TabsContent value="assessment" className="space-y-6">
                         {/* Scores Summary */}
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className={`grid gap-4 ${hasSql ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
                           <div className="text-center p-4 bg-muted/50 rounded-lg">
                             <p className="text-xs text-muted-foreground mb-1">MCQ Score</p>
                             {assessmentDetails.mcq_score != null ? (
@@ -472,6 +477,19 @@ export default function CandidateDetailsPage() {
                               <span className="text-muted-foreground">-</span>
                             )}
                           </div>
+                          {hasSql && (
+                            <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-950/20 rounded-lg border border-indigo-100 dark:border-indigo-900/30">
+                              <p className="text-xs text-indigo-600 dark:text-indigo-400 mb-1 font-medium flex items-center justify-center gap-1">
+                                <Database className="h-3 w-3" />
+                                SQL Score
+                              </p>
+                              {assessmentDetails.sql_score != null ? (
+                                <ScoreBadge score={assessmentDetails.sql_score} size="lg" />
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </div>
+                          )}
                           <div className="text-center p-4 bg-muted/50 rounded-lg">
                             <p className="text-xs text-muted-foreground mb-1">Total Score</p>
                             {assessmentDetails.total_score != null ? (
@@ -698,19 +716,20 @@ export default function CandidateDetailsPage() {
                           const sqlSubs: any[] = pd?.sql_submissions || [];
                           if (sqlChallenges.length === 0 && sqlSubs.length === 0) return null;
 
-                          // Build a lookup map: challenge_id → submission
                           const subMap = new Map<string, any>();
                           sqlSubs.forEach((s: any) => {
                             const cid = s?.challenge_id != null ? String(s.challenge_id) : '';
                             if (cid) subMap.set(cid, s);
                           });
 
-                          // If we have no challenges metadata but do have submissions, render from submissions
                           const displayList: any[] = sqlChallenges.length > 0 ? sqlChallenges : sqlSubs.map((s: any) => ({ id: s?.challenge_id, title: 'SQL Challenge', description: '' }));
 
                           return (
                             <div>
-                              <h4 className="font-semibold text-sm mb-3">SQL Responses</h4>
+                              <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                                <Database className="h-4 w-4 text-indigo-600" />
+                                SQL Responses
+                              </h4>
                               <div className="space-y-4">
                                 {displayList.map((ch: any, idx: number) => {
                                   const cid = ch?.id != null ? String(ch.id) : String(idx);
@@ -719,15 +738,20 @@ export default function CandidateDetailsPage() {
                                   const score = sub?.score_percentage ?? null;
                                   const testResults: any[] = sub?.test_results || [];
                                   const firstResult = testResults[0];
+                                  const meta = ch?.metadata || {};
+                                  const dbSchema = meta?.db_schema || '';
+                                  const sampleData = meta?.sample_data || '';
+                                  const expectedQuery = meta?.expected_query || '';
 
                                   return (
-                                    <div key={cid} className="p-4 rounded-lg border">
-                                      <div className="flex items-center justify-between mb-2 gap-3">
-                                        <h5 className="font-medium text-sm">
+                                    <div key={cid} className="p-5 rounded-lg border bg-card shadow-sm space-y-4">
+                                      {/* Header */}
+                                      <div className="flex items-center justify-between border-b pb-3 gap-3">
+                                        <h5 className="font-semibold text-sm text-foreground">
                                           {safeRender(ch?.title) || `SQL Challenge ${idx + 1}`}
                                         </h5>
                                         {attempted ? (
-                                          <Badge variant={score != null && score >= 70 ? 'default' : 'secondary'}>
+                                          <Badge variant={score != null && score >= 70 ? 'default' : 'secondary'} className="font-semibold">
                                             {score != null ? `${Math.round(score)}%` : 'Submitted'}
                                           </Badge>
                                         ) : (
@@ -735,50 +759,95 @@ export default function CandidateDetailsPage() {
                                         )}
                                       </div>
 
+                                      {/* Description */}
                                       {ch?.description && (
-                                        <p className="text-xs text-muted-foreground mb-2">{safeRender(ch.description)}</p>
+                                        <div className="space-y-1">
+                                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Problem Statement</p>
+                                          <p className="text-sm text-foreground whitespace-pre-wrap">{safeRender(ch.description)}</p>
+                                        </div>
                                       )}
 
+                                      {/* Collapsible DB reference panel */}
+                                      {(dbSchema || sampleData || expectedQuery) && (
+                                        <details className="group border rounded bg-muted/20 overflow-hidden">
+                                          <summary className="flex items-center justify-between p-2.5 text-xs font-medium cursor-pointer hover:bg-muted/40 select-none list-none">
+                                            <span className="text-muted-foreground">View Database Details &amp; Reference Query</span>
+                                            <span className="text-muted-foreground group-open:rotate-180 transition-transform duration-200">▼</span>
+                                          </summary>
+                                          <div className="p-3 border-t bg-muted/10 space-y-3">
+                                            {dbSchema && (
+                                              <div>
+                                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Database Schema</p>
+                                                <pre className="text-xs bg-muted p-2 rounded max-h-36 overflow-auto whitespace-pre font-mono text-muted-foreground leading-relaxed">{dbSchema}</pre>
+                                              </div>
+                                            )}
+                                            {sampleData && (
+                                              <div>
+                                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Sample Data</p>
+                                                <pre className="text-xs bg-muted p-2 rounded max-h-36 overflow-auto whitespace-pre font-mono text-muted-foreground leading-relaxed">{sampleData}</pre>
+                                              </div>
+                                            )}
+                                            {expectedQuery && (
+                                              <div>
+                                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Expected / Reference Query</p>
+                                                <pre className="text-xs bg-muted p-2 rounded max-h-36 overflow-auto whitespace-pre font-mono text-indigo-900 dark:text-indigo-200 leading-relaxed">{expectedQuery}</pre>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </details>
+                                      )}
+
+                                      {/* Candidate answer & result */}
                                       {attempted ? (
-                                        <>
-                                          {/* Candidate's SQL query */}
-                                          <div className="mb-3">
-                                            <p className="text-xs text-muted-foreground mb-1">Candidate's SQL Query</p>
-                                            <pre className="text-xs bg-muted p-3 rounded max-h-48 overflow-auto whitespace-pre-wrap font-mono">
+                                        <div className="space-y-3">
+                                          <div>
+                                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Candidate's SQL Query</p>
+                                            <pre className="text-xs bg-slate-950 text-slate-100 p-3 rounded font-mono whitespace-pre-wrap max-h-48 overflow-auto leading-relaxed border border-slate-800">
                                               {typeof sub?.code === 'string' && sub.code.trim()
                                                 ? sub.code
                                                 : '(no query submitted)'}
                                             </pre>
                                           </div>
 
-                                          {/* Execution result */}
                                           {firstResult && (
-                                            <div className="space-y-1">
-                                              <p className="text-xs text-muted-foreground">Execution Result</p>
-                                              <div className={`flex items-center gap-2 text-xs ${firstResult?.passed ? 'text-green-600' : 'text-destructive'}`}>
-                                                {firstResult?.passed
-                                                  ? <CheckCircle className="h-3 w-3" />
-                                                  : <XCircle className="h-3 w-3" />}
-                                                <span>{firstResult?.passed ? 'Accepted' : firstResult?.status || 'Wrong Answer'}</span>
+                                            <div className="space-y-2">
+                                              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Evaluation Result</p>
+                                              <div className="flex items-center gap-2">
+                                                {firstResult?.passed ? (
+                                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400">
+                                                    <CheckCircle className="h-3 w-3" />
+                                                    Passed / Accepted
+                                                  </span>
+                                                ) : (
+                                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400">
+                                                    <XCircle className="h-3 w-3" />
+                                                    {firstResult?.status || 'Wrong Answer'}
+                                                  </span>
+                                                )}
+                                                {firstResult?.time_used != null && (
+                                                  <span className="text-[10px] font-mono text-muted-foreground">
+                                                    Time: {Number(firstResult.time_used).toFixed(3)}s
+                                                  </span>
+                                                )}
                                               </div>
                                               {firstResult?.stdout && (
-                                                <pre className="text-xs bg-muted/50 p-2 rounded max-h-32 overflow-auto whitespace-pre-wrap mt-1">
-                                                  {firstResult.stdout}
-                                                </pre>
+                                                <div className="space-y-1">
+                                                  <p className="text-[9px] font-semibold text-muted-foreground uppercase">Query Output</p>
+                                                  <pre className="text-xs bg-muted/60 p-2 rounded max-h-32 overflow-auto whitespace-pre font-mono leading-relaxed border">{firstResult.stdout}</pre>
+                                                </div>
                                               )}
-                                              {firstResult?.error && (
-                                                <p className="text-xs text-destructive mt-1">{safeRender(firstResult.error)}</p>
+                                              {(firstResult?.error || sub?.runtime_error) && (
+                                                <div className="p-2.5 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 rounded text-xs font-mono whitespace-pre-wrap border border-red-100 dark:border-red-900/10 leading-relaxed">
+                                                  {safeRender(firstResult?.error || sub.runtime_error)}
+                                                </div>
                                               )}
                                             </div>
                                           )}
-
-                                          {/* Feedback from evaluator */}
-                                          {sub?.runtime_error && (
-                                            <p className="text-xs text-destructive mt-2">{safeRender(sub.runtime_error)}</p>
-                                          )}
-                                        </>
+                                        </div>
                                       ) : (
-                                        <div className="text-xs text-muted-foreground">Status: Not Attempted</div>
+                                        <div className="text-xs text-muted-foreground italic bg-muted/10 p-2 rounded text-center">
+                                          Status: Not Attempted
+                                        </div>
                                       )}
                                     </div>
                                   );
@@ -787,7 +856,6 @@ export default function CandidateDetailsPage() {
                             </div>
                           );
                         })()}
-
                       </TabsContent>
                     )}
 
@@ -1064,12 +1132,61 @@ export default function CandidateDetailsPage() {
                       </div>
                     )}
                   </div>
-                  {screening.shortlist_reason && (
-                    <div className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg">
-                      <p className="font-medium text-foreground mb-1">Reason</p>
-                      {screening.shortlist_reason}
-                    </div>
-                  )}
+                  {(() => {
+                    const whatsGood = screening.detailed_analysis?.whats_good?.length 
+                      ? screening.detailed_analysis.whats_good 
+                      : (screening.reason_codes || []).filter((r: any) => r.type?.toLowerCase() === 'positive').map((r: any) => r.description);
+
+                    const whatLacks = screening.detailed_analysis?.what_lacks?.length 
+                      ? screening.detailed_analysis.what_lacks 
+                      : (screening.reason_codes || []).filter((r: any) => r.type?.toLowerCase() === 'negative').map((r: any) => r.description);
+
+                    const hasNewFields = whatsGood.length > 0 || whatLacks.length > 0;
+
+                    if (hasNewFields) {
+                      return (
+                        <div className="space-y-4">
+                          {whatsGood.length > 0 && (
+                            <div className="text-sm text-muted-foreground bg-success/5 border border-success/20 p-4 rounded-lg">
+                              <p className="font-medium text-success mb-2 flex items-center gap-2">
+                                <CheckCircle className="h-4 w-4" /> What's Good
+                              </p>
+                              <ul className="space-y-1.5 list-disc pl-5">
+                                {whatsGood.map((item: string, i: number) => (
+                                  <li key={i}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <div className="text-sm text-muted-foreground bg-destructive/5 border border-destructive/20 p-4 rounded-lg">
+                            <p className="font-medium text-destructive mb-2 flex items-center gap-2">
+                              <XCircle className="h-4 w-4" /> What Lacks
+                            </p>
+                            {whatLacks.length > 0 ? (
+                              <ul className="space-y-1.5 list-disc pl-5">
+                                {whatLacks.map((item: string, i: number) => (
+                                  <li key={i}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-sm text-muted-foreground italic">No significant gaps detected for this role.</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (screening.shortlist_reason) {
+                      return (
+                        <div className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg">
+                          <p className="font-medium text-foreground mb-1">Reason</p>
+                          {screening.shortlist_reason}
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
                 </CardContent>
               </Card>
             )}

@@ -537,6 +537,7 @@ export interface AssessmentCompleteResponse {
   success: boolean;
   mcq_score: number;
   coding_score: number | null;
+  sql_score: number | null;
   total_score: number;
 }
 
@@ -948,6 +949,7 @@ export interface AssessmentDetails {
   status: string;
   mcq_score: number | null;
   coding_score: number | null;
+  sql_score: number | null;
   total_score: number | null;
   mcq_submissions: MCQSubmission[];
   coding_submissions: CodingSubmission[];

@@ -792,7 +792,13 @@ async def get_assessment_details(
 
     res = await db.run(_fetch)
     data = getattr(res, "data", None) or []
-    return ok(data[0] if data else None)
+    session = data[0] if data else None
+    if session and isinstance(session, dict):
+        if session.get("sql_score") is None:
+            pd = session.get("proctoring_data") or {}
+            if isinstance(pd, dict):
+                session["sql_score"] = pd.get("sql_score")
+    return ok(session)
 
 
 @router.get("/{candidate_id}/interview-details")

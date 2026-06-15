@@ -85,13 +85,18 @@ class ATSScreeningService:
             overall_score, skill_score, experience_score, reason_codes, job
         )
         
+        whats_good = [c.description for c in reason_codes if c.type == ReasonCodeType.POSITIVE]
+        what_lacks = [c.description for c in reason_codes if c.type == ReasonCodeType.NEGATIVE]
+
         # Build detailed analysis
         detailed_analysis = DetailedAnalysis(
             skill_match=skill_matches,
             experience_analysis=exp_analysis,
             education_analysis=edu_analysis,
             career_gap_analysis=gap_analysis,
-            credibility_flags=cred_flags
+            credibility_flags=cred_flags,
+            whats_good=whats_good,
+            what_lacks=what_lacks
         )
         
         return ATSScreeningResult(

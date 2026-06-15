@@ -981,7 +981,7 @@ export default function CandidatesPage() {
                   />
                   <div className="text-[10px] text-muted-foreground leading-tight">
                     Default: 48h from now. The link will expire after this deadline.
-                    Candidates who miss it get 0. Allowed minutes: 00, 10, 20...
+                    Candidates who miss it get 0.
                   </div>
                 </div>
               </div>
@@ -1078,7 +1078,7 @@ export default function CandidatesPage() {
                     />
                     <div className="text-xs text-muted-foreground">
                       Default: 48 hours from now, rounded to the next 10 minutes. The interview link will automatically expire after this deadline.
-                      Candidates who miss the deadline will receive a score of 0. Allowed minutes: 00, 10, 20, 30, 40, 50.
+                      Candidates who miss the deadline will receive a score of 0.
                     </div>
                   </div>
                 </>

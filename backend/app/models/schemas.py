@@ -143,6 +143,8 @@ class DetailedAnalysis(BaseModel):
     education_analysis: str = ""
     career_gap_analysis: str = ""
     credibility_flags: List[str] = Field(default_factory=list)
+    whats_good: List[str] = Field(default_factory=list)
+    what_lacks: List[str] = Field(default_factory=list)
 
 
 class ATSScreeningResult(BaseModel):

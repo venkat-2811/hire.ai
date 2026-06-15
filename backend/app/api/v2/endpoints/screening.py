@@ -70,7 +70,17 @@ Return JSON:
   \"credibility_score\": 0-100,
   \"shortlisted\": true/false,
   \"shortlist_reason\": \"...\",
-  \"reason_codes\": [{{\"code\":\"SKILL_MATCH\",\"type\":\"positive\",\"description\":\"...\",\"impact\":10}}]
+  \"reason_codes\": [{{\"code\":\"SKILL_MATCH\",\"type\":\"positive\",\"description\":\"...\",\"impact\":10}}],
+  \"detailed_analysis\": {{
+    \"whats_good\": [
+      \"Highlight strengths and matching qualifications\",
+      \"Relevant skills, technologies, experience, projects, education, certifications aligned with JD\"
+    ],
+    \"what_lacks\": [
+      \"Highlight missing or weak areas relative to the JD\",
+      \"Missing skills, technologies, certifications, or experience requirements\"
+    ]
+  }}
 }}""".strip()
 
     ai = get_ai()
@@ -90,6 +100,7 @@ Return JSON:
         "shortlisted": bool(screening_result.get("shortlisted")),
         "shortlist_reason": screening_result.get("shortlist_reason"),
         "reason_codes": screening_result.get("reason_codes") or [],
+        "detailed_analysis": screening_result.get("detailed_analysis") or {},
     }
 
     # Upsert-like behavior (match Node)

@@ -120,7 +120,15 @@ Return JSON:
         "experience_analysis": "Detailed relevance evaluation of work history",
         "education_analysis": "Educational background assessment",
         "career_gap_analysis": "Gap identification or none",
-        "credibility_flags": ["Specific issues or empty array"]
+        "credibility_flags": ["Specific issues or empty array"],
+        "whats_good": [
+            "Highlight strengths and matching qualifications",
+            "Relevant skills, technologies, experience, projects, education, certifications aligned with JD"
+        ],
+        "what_lacks": [
+            "Highlight missing or weak areas relative to the JD",
+            "Missing skills, technologies, certifications, or experience requirements"
+        ]
     }}
 }}"""
     

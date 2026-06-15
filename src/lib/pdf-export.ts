@@ -220,6 +220,7 @@ export const PDFExportService = {
                 body: [
                     ['MCQ Score', assessment.mcq_score !== null ? `${assessment.mcq_score}%` : 'N/A'],
                     ['Coding Score', assessment.coding_score !== null ? `${assessment.coding_score}%` : 'N/A'],
+                    ['SQL Score', assessment.sql_score !== null && assessment.sql_score !== undefined ? `${assessment.sql_score}%` : 'N/A'],
                     ['Total Score', assessment.total_score !== null ? `${assessment.total_score}%` : 'N/A']
                 ],
                 theme: 'striped',
