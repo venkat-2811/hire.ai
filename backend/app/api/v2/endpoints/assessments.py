@@ -2610,3 +2610,35 @@ async def send_assessment_single(
         
     asyncio.create_task(_generate_and_enqueue())
     return ok({"status": "Accepted"}, status_code=202)
+
+from fastapi import UploadFile, File
+
+@router.post("/{session_id}/screenshot")
+async def upload_screenshot(
+    session_id: str,
+    file: UploadFile = File(...)
+):
+    from app.database.supabase_client import get_supabase_admin_client
+    supabase = get_supabase_admin_client()
+    
+    file_bytes = await file.read()
+    path = f"assessment/{session_id}/latest.jpg"
+    
+    try:
+        supabase.storage.from_("session-screenshots").upload(
+            path,
+            file_bytes,
+            file_options={"content-type": "image/jpeg", "upsert": "true"}
+        )
+        return ok({"success": True, "path": path})
+    except Exception as e:
+        # Fallback to update if it already exists
+        try:
+            supabase.storage.from_("session-screenshots").update(
+                path,
+                file_bytes,
+                file_options={"content-type": "image/jpeg", "upsert": "true"}
+            )
+            return ok({"success": True, "path": path})
+        except Exception as e2:
+            return api_error(message=str(e2), status_code=500)

@@ -59,6 +59,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useScreenshotCapture } from "@/hooks/useScreenshotCapture";
 import {
   Dialog,
   DialogContent,
@@ -235,6 +236,14 @@ class AssessmentErrorBoundary extends React.Component<
 export default function AssessmentPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
+
+  const {
+    permission: screenshotPermission,
+    requestScreenShare,
+    startPeriodicCapture,
+    captureFinalAndStop,
+    stopCapture,
+  } = useScreenshotCapture();
 
   // Assessment state
   const [loading, setLoading] = useState(true);
@@ -1124,12 +1133,14 @@ export default function AssessmentPage() {
   useEffect(() => {
     if ((completed || terminated) && assessmentData?.session_id) {
       clearStateFromStorage(assessmentData.session_id);
+      stopCapture();
     }
   }, [
     completed,
     terminated,
     assessmentData?.session_id,
     clearStateFromStorage,
+    stopCapture,
   ]);
 
   const handleMcqAnswer = (questionId: string, optionIndex: number) => {
@@ -1233,6 +1244,9 @@ export default function AssessmentPage() {
           endTs,
           remaining,
         });
+        
+        // Start periodic screenshot capture
+        startPeriodicCapture(String(assessmentData.session_id), "assessment");
       } else {
         console.error("[Timer] Failed to compute end timestamp:", {
           startedAtIso,
@@ -1253,6 +1267,7 @@ export default function AssessmentPage() {
     bootstrapTimerFromStorage,
     computeEndTsFromStartedAt,
     getTimerStorageKey,
+    startPeriodicCapture,
   ]);
 
   const runCode = async (challengeId: string) => {
@@ -1573,6 +1588,7 @@ export default function AssessmentPage() {
 
       await assessmentsRuntimeApi.complete(assessmentData.session_id);
 
+      await captureFinalAndStop();
       setCompleted(true);
       stopCamera();
       if (document.fullscreenElement) {
@@ -1631,6 +1647,7 @@ export default function AssessmentPage() {
 
       await assessmentsRuntimeApi.complete(assessmentData.session_id);
 
+      await captureFinalAndStop();
       setCompleted(true);
       stopCamera();
 
@@ -1969,9 +1986,48 @@ export default function AssessmentPage() {
               )}
             </div>
 
+            {/* Screen Share Permission Section */}
+            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+              <p className="text-sm font-semibold">
+                Step 2: Grant Screen Sharing (Verification)
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Occasional screenshots will be taken during the assessment for
+                identity verification. Your privacy is respected.
+              </p>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  {screenshotPermission === "granted" ? (
+                    <Badge className="bg-success/90 text-success-foreground text-xs">
+                      <CheckCircle className="mr-1 h-3 w-3" /> Screen Shared
+                    </Badge>
+                  ) : screenshotPermission === "denied" ? (
+                    <Badge variant="destructive" className="text-xs">
+                      <XCircle className="mr-1 h-3 w-3" /> Denied (Required)
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      Not Shared
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              {screenshotPermission === "idle" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await requestScreenShare();
+                  }}
+                >
+                  Allow Screen Sharing
+                </Button>
+              )}
+            </div>
+
             <div className="bg-muted/50 rounded-lg p-4">
               <p className="text-sm">
-                <strong>Step 2: Start Assessment</strong>
+                <strong>Step 3: Start Assessment</strong>
               </p>
               <div className="flex flex-wrap gap-4 mt-2">
                 {hasMcq && (
@@ -2016,12 +2072,12 @@ export default function AssessmentPage() {
                 await beginAssessment();
                 await enterFullscreen();
               }}
-              disabled={!cameraReady}
+              disabled={!cameraReady || screenshotPermission !== "granted"}
             >
               <Maximize className="mr-2 h-4 w-4" />
-              {cameraReady
+              {cameraReady && screenshotPermission === "granted"
                 ? "Enter Fullscreen & Start"
-                : "Grant Permissions First"}
+                : "Grant All Permissions First"}
             </Button>
           </CardContent>
         </Card>

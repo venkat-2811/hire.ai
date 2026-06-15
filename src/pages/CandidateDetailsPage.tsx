@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   ArrowLeft,
   Loader2,
@@ -40,6 +41,7 @@ import { Download, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
 import ReactMarkdown from 'react-markdown';
+import { supabase } from '@/integrations/supabase/client';
 
 const safeRender = (val: any): string => {
   if (val == null) return '';
@@ -80,6 +82,12 @@ export default function CandidateDetailsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [savingManual, setSavingManual] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+
+  // Screenshot Evidence State
+  const [assessmentScreenshot, setAssessmentScreenshot] = useState<string | null>(null);
+  const [interviewScreenshot, setInterviewScreenshot] = useState<string | null>(null);
+  const [screenshotDialogOpen, setScreenshotDialogOpen] = useState(false);
+  const [selectedScreenshotUrl, setSelectedScreenshotUrl] = useState<string | null>(null);
 
   const [manualScore, setManualScore] = useState<string>('');
   const [manualFeedback, setManualFeedback] = useState<string>('');
@@ -133,6 +141,45 @@ export default function CandidateDetailsPage() {
       }
     }).finally(() => setLoadingDetails(false));
   }, [candidateId, jobId]);
+
+  // Fetch Screenshot Evidence URLs
+  // NOTE: assessment-details endpoint returns raw DB row where session id = 'id'.
+  //       interview-details endpoint explicitly maps it to 'session_id'.
+  //       We check both to be safe.
+  useEffect(() => {
+    const fetchScreenshots = async () => {
+      console.log('[Screenshot] assessmentDetails:', assessmentDetails);
+      const assessmentSessionId = (assessmentDetails as any)?.session_id || (assessmentDetails as any)?.id;
+      console.log('[Screenshot] assessmentSessionId derived:', assessmentSessionId);
+      if (assessmentSessionId) {
+        const url = `${supabase.storage.from('session-screenshots').getPublicUrl(`assessment/${assessmentSessionId}/latest.jpg`).data.publicUrl}?t=${Date.now()}`;
+        console.log('[Screenshot] Attempting to load Assessment URL:', url);
+        const img = new Image();
+        img.onload = () => {
+          console.log('[Screenshot] Assessment image loaded successfully!');
+          setAssessmentScreenshot(url);
+        };
+        img.onerror = () => console.log('[Screenshot] Assessment image not found for session:', assessmentSessionId, url);
+        img.src = url;
+      }
+      
+      console.log('[Screenshot] interviewDetails:', interviewDetails);
+      const interviewSessionId = (interviewDetails as any)?.session_id || (interviewDetails as any)?.id;
+      console.log('[Screenshot] interviewSessionId derived:', interviewSessionId);
+      if (interviewSessionId) {
+        const url = `${supabase.storage.from('session-screenshots').getPublicUrl(`ai_interview/${interviewSessionId}/latest.jpg`).data.publicUrl}?t=${Date.now()}`;
+        console.log('[Screenshot] Attempting to load Interview URL:', url);
+        const img = new Image();
+        img.onload = () => {
+          console.log('[Screenshot] Interview image loaded successfully!');
+          setInterviewScreenshot(url);
+        };
+        img.onerror = () => console.log('[Screenshot] Interview image not found for session:', interviewSessionId, url);
+        img.src = url;
+      }
+    };
+    fetchScreenshots();
+  }, [(assessmentDetails as any)?.session_id || (assessmentDetails as any)?.id, (interviewDetails as any)?.session_id || (interviewDetails as any)?.id]);
 
   useEffect(() => {
     if (initialTab === 'manual' || initialTab === 'interview' || initialTab === 'assessment' || initialTab === 'sql-assessment') {
@@ -1050,6 +1097,48 @@ export default function CandidateDetailsPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Screenshots */}
+            {(assessmentScreenshot || interviewScreenshot) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Screenshots</CardTitle>
+                  <CardDescription>Visual verification captured during the candidate's session</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {assessmentScreenshot && (
+                      <div>
+                        <h4 className="font-semibold text-sm mb-3">Technical Assessment</h4>
+                        <div 
+                          className="relative group rounded-lg overflow-hidden border cursor-pointer inline-block w-full max-w-sm" 
+                          onClick={() => { setSelectedScreenshotUrl(assessmentScreenshot); setScreenshotDialogOpen(true); }}
+                        >
+                          <img src={assessmentScreenshot} alt="Assessment Evidence" className="w-full aspect-video object-cover group-hover:opacity-90 transition-opacity" />
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-sm font-medium">
+                            Click to Expand
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {interviewScreenshot && (
+                      <div>
+                        <h4 className="font-semibold text-sm mb-3">AI Interview</h4>
+                        <div 
+                          className="relative group rounded-lg overflow-hidden border cursor-pointer inline-block w-full max-w-sm" 
+                          onClick={() => { setSelectedScreenshotUrl(interviewScreenshot); setScreenshotDialogOpen(true); }}
+                        >
+                          <img src={interviewScreenshot} alt="Interview Evidence" className="w-full aspect-video object-cover group-hover:opacity-90 transition-opacity" />
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-sm font-medium">
+                            Click to Expand
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -1210,6 +1299,20 @@ export default function CandidateDetailsPage() {
         onOpenChange={setEditModalOpen}
         onUpdated={() => refetch()}
       />
+
+      {/* Screenshot Dialog */}
+      <Dialog open={screenshotDialogOpen} onOpenChange={setScreenshotDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Screenshot Evidence</DialogTitle>
+          </DialogHeader>
+          <div className="mt-4 flex justify-center bg-muted/50 rounded-lg p-2">
+            {selectedScreenshotUrl && (
+              <img src={selectedScreenshotUrl} alt="Evidence" className="max-w-full max-h-[70vh] object-contain rounded border shadow-sm" />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

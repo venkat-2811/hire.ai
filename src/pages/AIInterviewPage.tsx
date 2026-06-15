@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { aiInterviewApi } from '@/lib/api';
+import { useScreenshotCapture } from '@/hooks/useScreenshotCapture';
 
 interface InterviewData {
   session_id: string;
@@ -69,6 +70,14 @@ interface InterviewEvaluationResult {
 export default function AIInterviewPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
+
+  const {
+    permission: screenshotPermission,
+    requestScreenShare,
+    startPeriodicCapture,
+    captureFinalAndStop,
+    stopCapture,
+  } = useScreenshotCapture();
 
   // Interview state
   const [loading, setLoading] = useState(true);
@@ -299,6 +308,7 @@ export default function AIInterviewPage() {
         // CRITICAL: await transcription before evaluating — empty transcripts cause "No responses" evaluation
         await queueServerTranscription(question.index, audioDurationSeconds, recordedBlob);
         const evalData = await aiInterviewApi.complete(interviewData.session_id);
+        await captureFinalAndStop();
         setFinalEvaluation(evalData);
         setIsCompleted(true);
       } else {
@@ -589,6 +599,7 @@ export default function AIInterviewPage() {
             });
             await queueServerTranscription(currentQuestion.index, audioCapturedSeconds, recordedBlob);
             const evalData = await aiInterviewApi.complete(interviewData.session_id);
+            await captureFinalAndStop();
             setFinalEvaluation(evalData);
             setIsCompleted(true);
           } catch (e) {
@@ -668,7 +679,8 @@ export default function AIInterviewPage() {
     setIsSpeaking(false);
     setCameraEnabled(false);
     setMicEnabled(false);
-  }, []);
+    stopCapture();
+  }, [stopCapture]);
 
   useEffect(() => {
     if (isTerminated || isCompleted) {
@@ -687,6 +699,9 @@ export default function AIInterviewPage() {
   const handleStartInterview = async () => {
     await enterFullscreen();
     setShowReadyScreen(false);
+    if (interviewData) {
+      startPeriodicCapture(interviewData.session_id, 'ai_interview');
+    }
     await loadCurrentQuestion();
   };
 
@@ -809,6 +824,39 @@ export default function AIInterviewPage() {
                   </p>
                 </div>
               </div>
+              
+              <div className="flex items-start gap-4 p-4 bg-muted/50 rounded-lg">
+                <div className="flex-shrink-0 mt-1">
+                  <Maximize className="h-6 w-6 text-primary" />
+                </div>
+                <div className="w-full">
+                  <h3 className="font-semibold mb-1">Screen Sharing (Verification)</h3>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Occasional screenshots will be taken during the interview for identity verification.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {screenshotPermission === 'granted' ? (
+                      <Badge className="bg-success/90 text-success-foreground text-xs">
+                        <CheckCircle className="mr-1 h-3 w-3" /> Screen Shared
+                      </Badge>
+                    ) : screenshotPermission === 'denied' ? (
+                      <Badge variant="destructive" className="text-xs">
+                        <XCircle className="mr-1 h-3 w-3" /> Denied (Required)
+                      </Badge>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          await requestScreenShare();
+                        }}
+                      >
+                        Allow Screen Sharing
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
@@ -827,13 +875,13 @@ export default function AIInterviewPage() {
               </div>
             </div>
 
-            <Button className="w-full" size="lg" disabled={!headsetConfirmed} onClick={async () => {
+            <Button className="w-full" size="lg" disabled={!headsetConfirmed || screenshotPermission !== 'granted'} onClick={async () => {
               const cameraOk = await setupCamera();
               if (cameraOk) {
                 setShowPermissionDialog(false);
               }
             }}>
-              Allow & Continue
+              {screenshotPermission !== 'granted' ? 'Grant All Permissions First' : 'Allow & Continue'}
             </Button>
           </CardContent>
         </Card>
