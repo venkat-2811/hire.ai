@@ -26,6 +26,7 @@ import {
   Users,
   Shield,
   Briefcase,
+  UserX,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
@@ -66,7 +67,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import type { JobRole, InterviewStatus } from '@/types/database';
-import { useCandidates, useDeleteCandidate } from '@/hooks/useCandidates';
+import { useCandidates, useDeleteCandidate, useUnassignedCandidates } from '@/hooks/useCandidates';
 import { useCreateInterview, useStartInterview, useInterviews } from '@/hooks/useInterviews';
 import { useJobs } from '@/hooks/useJobs';
 import { useCandidateAnalytics } from '@/hooks/useAnalytics';
@@ -102,7 +103,10 @@ export default function CandidatesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
 
+  const [activeTab, setActiveTab] = useState<'active' | 'unassigned'>('active');
+
   const { data: candidates, isLoading: candidatesLoading, refetch: refetchCandidates } = useCandidates();
+  const { data: unassignedCandidates, isLoading: unassignedLoading } = useUnassignedCandidates();
   const deleteCandidate = useDeleteCandidate();
   const createInterview = useCreateInterview();
   const startInterview = useStartInterview();
@@ -497,14 +501,47 @@ export default function CandidatesPage() {
               Manage and review all candidate applications
             </p>
           </div>
-          <Button asChild className="w-full sm:w-auto mt-2 sm:mt-0">
-            <Link to="/candidates/new">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Candidate
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Tab switcher */}
+            <div className="flex rounded-lg border border-border overflow-hidden">
+              <button
+                onClick={() => setActiveTab('active')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === 'active'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Active
+              </button>
+              <button
+                onClick={() => setActiveTab('unassigned')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors border-l border-border ${
+                  activeTab === 'unassigned'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <UserX className="h-3.5 w-3.5" />
+                Unassigned
+                {(unassignedCandidates?.length ?? 0) > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                    {unassignedCandidates!.length}
+                  </span>
+                )}
+              </button>
+            </div>
+            <Button asChild className="w-full sm:w-auto">
+              <Link to="/candidates/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Candidate
+              </Link>
+            </Button>
+          </div>
         </div>
 
+        {activeTab === 'active' && (
         <Card>
           <CardContent className="py-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -528,8 +565,10 @@ export default function CandidatesPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         {/* Filters */}
+        {activeTab === 'active' && (
         <Card>
           <CardContent className="py-4">
             <div className="flex flex-col gap-4">
@@ -581,9 +620,10 @@ export default function CandidatesPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         {/* Bulk Actions */}
-        {selectedIds.size > 0 && (
+        {activeTab === 'active' && selectedIds.size > 0 && (
           <Card>
             <CardContent className="py-4">
               <div className="flex flex-wrap items-center gap-2 sm:gap-4">
@@ -613,6 +653,7 @@ export default function CandidatesPage() {
         )}
 
         {/* Grouped Candidates by Job */}
+        {activeTab === 'active' && (
         <div className="space-y-4">
           {Object.entries(candidatesByJob).map(([jobId, jobCandidates]) => (
             <Collapsible key={jobId} defaultOpen className="w-full">
@@ -843,8 +884,128 @@ export default function CandidatesPage() {
             </Collapsible>
           ))}
         </div>
+        )}
 
-        {/* Assessment Invite Dialog */}
+        {/* ── Unassigned Candidates ─────────────────────────────── */}
+        {activeTab === 'unassigned' && (
+          <div className="space-y-4">
+            {unassignedLoading ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3" />
+                  Loading unassigned candidates…
+                </CardContent>
+              </Card>
+            ) : !unassignedCandidates || unassignedCandidates.length === 0 ? (
+              <Card>
+                <CardContent className="py-16 text-center">
+                  <UserX className="h-12 w-12 mx-auto mb-4 text-muted-foreground/40" />
+                  <p className="text-muted-foreground font-medium">No unassigned candidates</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Candidates from deleted jobs will appear here with their full history preserved.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-amber-500/10 rounded-lg">
+                      <UserX className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">Unassigned Candidates</CardTitle>
+                      <CardDescription>
+                        {unassignedCandidates.length} candidate(s) from deleted jobs — all assessment data preserved
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Candidate</TableHead>
+                        <TableHead>Previous Role</TableHead>
+                        <TableHead>Resume ATS Score</TableHead>
+                        <TableHead>Applied</TableHead>
+                        <TableHead className="w-12"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {unassignedCandidates.map((candidate: any, index: number) => (
+                        <motion.tr
+                          key={`${candidate.id}_${candidate.job_id}`}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.04 }}
+                          className="group"
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                                <span className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                                  {candidate.full_name.split(' ').map((n: string) => n[0]).join('')}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="font-medium">{candidate.full_name}</p>
+                                <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                {candidate.previous_job_title || 'Unknown Job'}
+                              </span>
+                              {candidate.previous_job_role && (
+                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                                  {candidate.previous_job_role}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {typeof candidate.ats_score === 'number' ? (
+                              <ScoreBadge score={candidate.ats_score} />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Not screened</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {candidate.applied_at
+                              ? new Date(candidate.applied_at).toLocaleDateString()
+                              : new Date(candidate.created_at).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <Link to={`/candidates/${candidate.id}${candidate.job_id ? `?job_id=${candidate.job_id}` : ''}`}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </Link>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </motion.tr>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
         <Dialog open={assessmentDialogOpen} onOpenChange={setAssessmentDialogOpen}>
           <DialogContent className="sm:max-w-5xl">
             <DialogHeader>

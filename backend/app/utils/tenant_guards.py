@@ -29,6 +29,9 @@ async def get_user_job_ids(db, user_id: str) -> List[str]:
     Returns an empty list if the user has no jobs.
     """
     def _fetch():
+        # IMPORTANT: We MUST include soft-deleted jobs (is_deleted=true) here 
+        # so that candidates belonging to deleted jobs (Unassigned Candidates) 
+        # still pass tenant isolation checks.
         return (
             db.client.from_("job_descriptions")
             .select("id")

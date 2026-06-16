@@ -28,11 +28,15 @@ async def list_candidates(
     limit: int = 50,
     offset: int = 0,
     job_id: Optional[str] = None,
+    unassigned: bool = False,
     user: ClerkUser = Depends(require_user),
 ):
     """Node-compatible: GET /api/candidates
 
     Returns one entry per (candidate, job) pair so the UI can group candidates per job.
+
+    When `unassigned=true`, returns candidates whose job has been soft-deleted (is_deleted=true).
+    These candidates retain all their assessment data and are shown in the Unassigned section.
     """
 
     db = get_db_admin_service()
@@ -40,19 +44,28 @@ async def list_candidates(
     limit_i = max(1, min(200, int(limit or 50)))
     offset_i = max(0, int(offset or 0))
 
+    # Fetch the user's jobs — filtering by deleted/non-deleted based on mode
     def _fetch_user_jobs():
-        return (
-            db.client.from_("job_descriptions")
-            .select("id")
-            .eq("created_by", user.id)
-            .execute()
-        )
+        q = db.client.from_("job_descriptions").select("id, title, role").eq("created_by", user.id)
+        if unassigned:
+            # Only jobs that have been soft-deleted
+            q = q.eq("is_deleted", True)
+        else:
+            # Only non-deleted jobs (is_deleted = false OR null for pre-migration rows)
+            q = q.neq("is_deleted", True)
+        return q.execute()
 
     jobs_res = await db.run(_fetch_user_jobs)
     user_jobs = getattr(jobs_res, "data", None) or []
     job_ids = [j.get("id") for j in user_jobs if isinstance(j, dict) and j.get("id")]
     if not job_ids:
         return ok([])
+
+    # Build a map of job_id -> {title, role} for unassigned display
+    job_meta: Dict[str, Dict[str, str]] = {
+        j["id"]: {"title": j.get("title", ""), "role": j.get("role", "")}
+        for j in user_jobs if isinstance(j, dict) and j.get("id")
+    }
 
     if job_id:
         job_id_str = str(job_id)
@@ -167,11 +180,16 @@ async def list_candidates(
         for jid in job_map.get(cid, []):
             key = f"{cid}:{jid}"
             # Start from the canonical candidate data …
-            item = {
+            item: Dict[str, Any] = {
                 **c,
                 "job_id": jid,
                 "applied_at": applied_at_map.get(key),
             }
+            # For unassigned candidates, surface the previous job info
+            if unassigned and jid in job_meta:
+                item["previous_job_title"] = job_meta[jid]["title"]
+                item["previous_job_role"] = job_meta[jid]["role"]
+                item["is_unassigned"] = True
             # … then layer this recruiter's private overrides on top
             tenant_overrides = overrides_map.get(key, {})
             if tenant_overrides:
@@ -183,6 +201,7 @@ async def list_candidates(
             out.append(item)
 
     return ok(out)
+
 
 
 @router.post("")
@@ -232,6 +251,7 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
 
     now = datetime.now(timezone.utc).isoformat()
     candidate_row: Optional[Dict[str, Any]] = None
+    is_new_candidate: bool = False  # True only when we INSERT a new candidate row
 
     if isinstance(existing, list) and existing and isinstance(existing[0], dict) and existing[0].get("id"):
         existing_id = existing[0]["id"]
@@ -298,16 +318,24 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
             "vendorName": payload.get("vendorName"),
             "mainSkillset": payload.get("mainSkillset"),
         }
-
         def _insert():
             return db.client.from_("candidates").insert(insert_row).execute()
 
         ins_res = await db.run(_insert)
         data = getattr(ins_res, "data", None)
         candidate_row = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else None
+        if candidate_row:
+            is_new_candidate = True  # Mark for billing counter increment below
 
     if not candidate_row or not candidate_row.get("id"):
         return api_error(message="Failed to create candidate", status_code=500)
+
+    # Increment the immutable billing counter for this recruiter.
+    # Only fires when a brand-new candidate was inserted (is_new_candidate=True),
+    # NOT when an existing candidate (same email) is added to another job.
+    if is_new_candidate:
+        from app.utils.billing_helpers import increment_candidates_consumed
+        await increment_candidates_consumed(db, user.id)
 
     if job_id:
         candidate_id = str(candidate_row["id"])

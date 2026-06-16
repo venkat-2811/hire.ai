@@ -14,6 +14,13 @@ export function useCandidates(params?: { limit?: number; offset?: number }) {
   });
 }
 
+export function useUnassignedCandidates() {
+  return useQuery({
+    queryKey: ['candidates', 'unassigned'],
+    queryFn: () => candidatesApi.list({ unassigned: true } as any),
+  });
+}
+
 export function useCandidate(id: string) {
   return useQuery({
     queryKey: ['candidates', id],

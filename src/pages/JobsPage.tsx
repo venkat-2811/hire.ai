@@ -300,7 +300,7 @@ export default function JobsPage() {
               </AlertDialogTitle>
               <AlertDialogDescription className="space-y-4 pt-2">
                 <p className="text-foreground">
-                  <strong>Warning:</strong> Deleting a job is a permanent action and may remove associated candidate applications, interviews, and assessment data.
+                  <strong>Note:</strong> Deleting a job will remove it from your active jobs list. <strong>Candidates associated with this job will be safely preserved</strong> and moved to the "Unassigned Candidates" tab with all their assessment data intact.
                 </p>
                 <div className="space-y-2">
                   <label className="text-sm">
