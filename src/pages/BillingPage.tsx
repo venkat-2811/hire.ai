@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  Calendar, ShieldCheck, RefreshCw, Phone,
+  Calendar, ShieldCheck, RefreshCw, Phone, FlaskConical
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';

@@ -11,6 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
   AlertTriangle,
+  AlertCircle,
   CheckCircle,
   XCircle,
   Loader2,
@@ -282,7 +283,7 @@ export default function AIInterviewPage() {
       }
 
       setIsQuestionReadComplete(false);
-      setCurrentQuestion(data);
+      setCurrentQuestion(data as any);
 
       // Speak the question after a short delay
       setTimeout(() => {
@@ -611,6 +612,17 @@ export default function AIInterviewPage() {
     }
   }, [isOverallTimerExpired, currentQuestion, isAutoAdvancing, isCompleted, interviewData, stopRecording, queueServerTranscription]);
 
+  // STRICT PROCTORING: Screen sharing stopped = immediate termination
+  useEffect(() => {
+    if (screenshotPermission === "denied" && !isTerminated && !isCompleted && !showReadyScreen && !showPermissionDialog) {
+      setIsTerminated(true);
+      setWarningMessage(
+        "Interview terminated: You stopped sharing your screen. Screen sharing is strictly required throughout the interview.",
+      );
+      setShowWarning(true);
+    }
+  }, [screenshotPermission, isTerminated, isCompleted, showReadyScreen, showPermissionDialog]);
+
   // Load interview data
   useEffect(() => {
     async function loadInterview() {
@@ -831,9 +843,13 @@ export default function AIInterviewPage() {
                 </div>
                 <div className="w-full">
                   <h3 className="font-semibold mb-1">Screen Sharing (Verification)</h3>
-                  <p className="text-sm text-muted-foreground mb-3">
+                  <p className="text-sm text-muted-foreground mb-1">
                     Occasional screenshots will be taken during the interview for identity verification.
                   </p>
+                  <div className="flex items-start gap-2 mb-3 bg-primary/5 border border-primary/20 p-2 rounded-md text-xs text-muted-foreground">
+                    <AlertCircle className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                    <span><strong>Tip:</strong> Click "Hide" on the native screen sharing popup to avoid accidentally stopping it. Do NOT click "Stop sharing".</span>
+                  </div>
                   <div className="flex items-center gap-3">
                     {screenshotPermission === 'granted' ? (
                       <Badge className="bg-success/90 text-success-foreground text-xs">
@@ -847,6 +863,7 @@ export default function AIInterviewPage() {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="border-primary text-primary hover:bg-primary/10"
                         onClick={async () => {
                           await requestScreenShare();
                         }}
@@ -870,7 +887,7 @@ export default function AIInterviewPage() {
                   onCheckedChange={(checked) => setHeadsetConfirmed(checked === true)}
                 />
                 <label htmlFor="headset" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-destructive">
-                  I confirm that I am using a headset (built-in microphones are STRICTLY NOT ALLOWED).
+                  I confirm that I am aware of the guidelines and I accept the terms and conditions.
                 </label>
               </div>
             </div>
@@ -935,8 +952,8 @@ export default function AIInterviewPage() {
                   <Mic className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
                   <span>Recording starts automatically the moment each question appears</span>
                 </li>
-                <li className="flex items-start gap-3">
-                  <Maximize className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
+                <li className="flex items-start gap-2">
+                  <Maximize className="h-4 w-4 mt-0.5 text-primary" />
                   <span>Fullscreen mode is <strong>mandatory</strong> throughout the entire interview</span>
                 </li>
               </ul>

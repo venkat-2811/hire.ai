@@ -351,8 +351,9 @@ export default function AssessmentPage() {
 
   // Timer
   const [timeRemaining, setTimeRemaining] = useState(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoSubmittedRef = useRef(false);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const getTimerStorageKey = useCallback((sessionId: string) => {
     return `assessment_end_ts:${sessionId}`;
@@ -745,17 +746,30 @@ export default function AssessmentPage() {
     }
   }, [terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
 
-  // STRICT PROCTORING: Window blur = immediate termination
+  // STRICT PROCTORING: Window blur = immediate termination (with 3s grace period for screen share native UI)
   const handleBlur = useCallback(() => {
     if (!terminated && !completed && !showFullscreenPrompt) {
-      setTerminated(true);
-      setWarningMessage(
-        "Assessment terminated: You clicked outside the assessment window. This is a strict proctoring violation.",
-      );
-      setShowWarning(true);
-      reportProctoringEvent("window_blur");
+      // Clear any existing timeout
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+      
+      // Give a 3 second grace period. If they return (focus), we cancel it.
+      blurTimeoutRef.current = setTimeout(() => {
+        setTerminated(true);
+        setWarningMessage(
+          "Assessment terminated: You clicked outside the assessment window. This is a strict proctoring violation.",
+        );
+        setShowWarning(true);
+        reportProctoringEvent("window_blur");
+      }, 3000);
     }
   }, [terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
+
+  const handleFocus = useCallback(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+  }, []);
 
   const handleCopyPaste = useCallback(
     (e: ClipboardEvent) => {
@@ -832,6 +846,7 @@ export default function AssessmentPage() {
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
     document.addEventListener("copy", handleCopyPaste);
     document.addEventListener("paste", handleCopyPaste);
     document.addEventListener("cut", handleCopyPaste);
@@ -842,6 +857,7 @@ export default function AssessmentPage() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
       document.removeEventListener("copy", handleCopyPaste);
       document.removeEventListener("paste", handleCopyPaste);
       document.removeEventListener("cut", handleCopyPaste);
@@ -855,7 +871,25 @@ export default function AssessmentPage() {
     showFullscreenPrompt,
     handleFullscreenChange,
     reportProctoringEvent,
+    handleBlur,
+    handleFocus,
+    handleCopyPaste,
+    handleContextMenu,
+    handleKeyDown,
+    handleVisibilityChange,
   ]);
+
+  // STRICT PROCTORING: Screen sharing stopped = immediate termination
+  useEffect(() => {
+    if (screenshotPermission === "denied" && !terminated && !completed && !showFullscreenPrompt) {
+      setTerminated(true);
+      setWarningMessage(
+        "Assessment terminated: You stopped sharing your screen. Screen sharing is strictly required throughout the assessment.",
+      );
+      setShowWarning(true);
+      reportProctoringEvent("screen_share_stopped");
+    }
+  }, [screenshotPermission, terminated, completed, showFullscreenPrompt, reportProctoringEvent]);
 
   // Timer
   useEffect(() => {
@@ -1908,7 +1942,7 @@ export default function AssessmentPage() {
                     <strong>
                       {assessmentData?.total_time_minutes} minutes
                     </strong>{" "}
-                    to complete
+                    to complete. Timer continues running even if you reload the page.
                   </span>
                 </li>
               </ul>
@@ -1995,6 +2029,10 @@ export default function AssessmentPage() {
                 Occasional screenshots will be taken during the assessment for
                 identity verification. Your privacy is respected.
               </p>
+              <div className="flex items-start gap-2 mb-3 bg-primary/5 border border-primary/20 p-2 rounded-md text-xs text-muted-foreground">
+                <AlertCircle className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                <span><strong>Tip:</strong> Click "Hide" on the native screen sharing popup to avoid accidentally stopping it. Do NOT click "Stop sharing".</span>
+              </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   {screenshotPermission === "granted" ? (
@@ -2016,6 +2054,7 @@ export default function AssessmentPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-primary text-primary hover:bg-primary/10 mt-2"
                   onClick={async () => {
                     await requestScreenShare();
                   }}

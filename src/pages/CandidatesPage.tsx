@@ -427,7 +427,6 @@ export default function CandidatesPage() {
           question_count: interviewQuestionCount,
           difficulty: interviewDifficulty,
           deadline: deadlineDate.toISOString(),
-          time_limit: interviewTimeLimit,
         });
         toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
       }
