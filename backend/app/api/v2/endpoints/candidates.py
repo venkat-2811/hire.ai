@@ -1014,6 +1014,7 @@ async def get_interview_details(
                     {
                         "question_text": str(text),
                         "question_type": str(qtype or "technical"),
+                        "expected_answer": q.get("expected_answer") or q.get("expected_response"),
                     }
                 )
 
@@ -1837,3 +1838,76 @@ async def submit_offer_acceptance(payload: dict, request: Request):
     await db.run(_update_application)
 
     return ok({"success": True, "message": "Offer accepted successfully. Welcome aboard!", "already_accepted": False})
+
+@router.post("/{candidate_id}/generate-expected-answers")
+async def generate_missing_expected_answers(
+    candidate_id: str,
+    job_id: str,
+    user: ClerkUser = Depends(require_user)
+):
+    """Generate missing expected answers for a candidate's AI interview questions using LLM."""
+    db = get_db_admin_service()
+
+    # Verify recruiter owns this job
+    user_job_ids = await get_user_job_ids(db, user.id)
+    if job_id not in user_job_ids:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Fetch the most recent interview session for this candidate+job
+    def _fetch():
+        return (
+            db.client.from_("ai_interview_sessions")
+            .select("id, questions")
+            .eq("candidate_id", candidate_id)
+            .eq("job_id", job_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+    res = await db.run(_fetch)
+    data = getattr(res, "data", None) or []
+    if not data:
+        return ok({"status": "no_session", "updated": False, "questions": []})
+
+    session = data[0]
+    questions = session.get("questions", [])
+    if not isinstance(questions, list):
+        return ok({"status": "invalid_format", "updated": False, "questions": []})
+
+    from app.services.openai_client import get_openai_service
+    ai = get_openai_service()
+
+    updated = False
+    for q in questions:
+        if not isinstance(q, dict):
+            continue
+        # Only generate if expected_answer is genuinely missing
+        if q.get("expected_answer") or q.get("expected_response"):
+            continue
+        q_text = q.get("question_text") or q.get("text") or q.get("question")
+        if not q_text:
+            continue
+        try:
+            resp = await ai.generate_text(
+                prompt=f"Interview Question: {q_text}\n\nProvide a concise, ideal expected answer in at most 2 lines. Focus on key points a strong candidate should cover.",
+                system_instruction="You are an expert technical interviewer. Write the ideal expected answer in 1-2 concise lines, mentioning key technical concepts the candidate should reference.",
+                temperature=0.5,
+                max_tokens=200,
+            )
+            q["expected_answer"] = resp.strip()
+            updated = True
+        except Exception as e:
+            print(f"[generate-expected-answers] LLM error for question: {e}")
+
+    if updated:
+        def _update():
+            return (
+                db.client.from_("ai_interview_sessions")
+                .update({"questions": questions})
+                .eq("id", session["id"])
+                .execute()
+            )
+        await db.run(_update)
+
+    return ok({"status": "success", "updated": updated, "questions": questions})

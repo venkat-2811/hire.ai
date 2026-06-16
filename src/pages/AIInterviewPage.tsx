@@ -124,6 +124,7 @@ export default function AIInterviewPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<BlobPart[]>([]);
   const stopRecordingResolverRef = useRef<((blob: Blob | null) => void) | null>(null);
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Speech synthesis - speak the question
   const speakQuestion = useCallback((text: string, onComplete?: () => void) => {
@@ -460,15 +461,26 @@ export default function AIInterviewPage() {
     }
   }, [isTerminated, isCompleted, showReadyScreen, reportProctoringEvent]);
 
-  // STRICT PROCTORING: Window blur = immediate termination
+  // STRICT PROCTORING: Window blur = immediate termination (with 3s grace period for screen share native UI)
   const handleWindowBlur = useCallback(() => {
     if (!showReadyScreen && !isTerminated && !isCompleted) {
-      setIsTerminated(true);
-      setWarningMessage('Interview terminated: You clicked outside the interview window. This is a strict proctoring violation.');
-      setShowWarning(true);
-      reportProctoringEvent('window_blur');
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+      
+      blurTimeoutRef.current = setTimeout(() => {
+        setIsTerminated(true);
+        setWarningMessage('Interview terminated: You clicked outside the interview window. This is a strict proctoring violation.');
+        setShowWarning(true);
+        reportProctoringEvent('window_blur');
+      }, 3000);
     }
   }, [showReadyScreen, isTerminated, isCompleted, reportProctoringEvent]);
+
+  const handleWindowFocus = useCallback(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+  }, []);
 
   // Proctoring listeners
   useEffect(() => {
@@ -477,13 +489,15 @@ export default function AIInterviewPage() {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
     };
-  }, [interviewData, isTerminated, isCompleted, showReadyScreen, handleFullscreenChange, handleVisibilityChange, handleWindowBlur]);
+  }, [interviewData, isTerminated, isCompleted, showReadyScreen, handleFullscreenChange, handleVisibilityChange, handleWindowBlur, handleWindowFocus]);
 
   // Ensure video stream stays attached after transitioning out of setup screen
   useEffect(() => {
@@ -955,6 +969,10 @@ export default function AIInterviewPage() {
                 <li className="flex items-start gap-2">
                   <Maximize className="h-4 w-4 mt-0.5 text-primary" />
                   <span>Fullscreen mode is <strong>mandatory</strong> throughout the entire interview</span>
+                </li>
+                <li className="flex items-start gap-2 bg-primary/5 border border-primary/20 p-3 rounded-md">
+                  <AlertCircle className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                  <span className="text-xs"><strong>Screen sharing tip:</strong> A browser popup will appear at the bottom. Click <strong>"Hide"</strong> to hide it — do <strong>NOT</strong> click <strong>"Stop sharing"</strong> as that will immediately terminate your interview.</span>
                 </li>
               </ul>
             </div>

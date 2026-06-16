@@ -1,396 +1,24 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useRequireAuth } from '@/hooks/useAuth';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  ArrowLeft,
-  Loader2,
-  Mail,
-  Phone,
-  Globe,
-  Github,
-  FileText,
-  Calendar,
-  CheckCircle,
-  XCircle,
-  Code,
-  MessageSquare,
-  ClipboardList,
-  ExternalLink,
-  Shield,
-  MapPin,
-  User,
-  Briefcase,
-  Database,
-} from 'lucide-react';
-import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
-import { useProfile } from '@/hooks/useProfile';
-import { candidatesApi, type AssessmentDetails, type InterviewDetails, type ManualInterviewDetails } from '@/lib/api';
-import { ScoreBadge } from '@/components/ui/score-badge';
-import { Award, Clock, CheckSquare, Activity, ChevronRight } from 'lucide-react';
-import { PDFExportService } from '@/lib/pdf-export';
-import { Download, Pencil } from 'lucide-react';
-import { toast } from 'sonner';
-import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
-import ReactMarkdown from 'react-markdown';
-import { supabase } from '@/integrations/supabase/client';
+import re
 
-const safeRender = (val: any): string => {
-  if (val == null) return '';
-  if (typeof val === 'object') return JSON.stringify(val);
-  return String(val);
-};
+with open('backup_CandidateDetailsPage.tsx', 'r', encoding='utf-16') as f:
+    original = f.read()
 
-const asArray = <T,>(v: any): T[] => (Array.isArray(v) ? (v as T[]) : []);
+return_start = original.find('  return (\n    <DashboardLayout>')
+if return_start == -1:
+    print("Could not find return block")
+    exit(1)
 
-const getOrdinalSuffix = (day: number): string => {
-  if (day > 3 && day < 21) return 'th';
-  switch (day % 10) {
-    case 1:  return "st";
-    case 2:  return "nd";
-    case 3:  return "rd";
-    default: return "th";
-  }
-};
+pre_return = original[:return_start]
 
-const formatDateWithOrdinal = (dateString: string | null | undefined): string => {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return '';
-  const day = date.getDate();
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const month = months[date.getMonth()];
-  const year = date.getFullYear();
-  return `${day}${getOrdinalSuffix(day)} ${month} ${year}`;
-};
+import_find = "import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';"
+import_replace = "import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';\nimport { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';"
+pre_return = pre_return.replace(import_find, import_replace)
 
-const getAssessmentContent = (assessmentDetails: any): any => {
-  if (!assessmentDetails) return {};
-  
-  const handleSaveManualInterview = async () => {
-    if (!candidateId) return;
-    setSavingManual(true);
-    try {
-      await candidatesApi.updateManualInterview(candidateId, jobId || '', {
-        manual_interview_score: manualScore ? parseFloat(manualScore) : null,
-        manual_interview_notes: manualNotes,
-        manual_interview_feedback: manualFeedback
-      });
-      toast.success('Manual interview evaluation saved successfully');
-      const [interview, manual] = await Promise.all([
-        candidatesApi.getInterviewDetails(candidateId, jobId).catch(() => null),
-        candidatesApi.getManualInterview(candidateId, jobId).catch(() => null),
-      ]);
-      setInterviewDetails(interview);
-      setManualInterviewDetails(manual);
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to save evaluation');
-    } finally {
-      setSavingManual(false);
-    }
-  };
+import_find2 = "import { ScoreBadge } from '@/components/ui/score-badge';"
+import_replace2 = "import { ScoreBadge } from '@/components/ui/score-badge';\nimport { Award, Clock, CheckSquare, Activity, ChevronRight } from 'lucide-react';"
+pre_return = pre_return.replace(import_find2, import_replace2)
 
-  const pd = assessmentDetails?.proctoring_data;
-  if (pd && typeof pd === 'object') {
-    const ac = (pd as any)?.assessment_content;
-    if (ac && typeof ac === 'object') return ac;
-  }
-  return {};
-};
-
-export default function CandidateDetailsPage() {
-  const { candidateId } = useParams<{ candidateId: string }>();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const jobId = searchParams.get('job_id') || undefined;
-  const initialTab = searchParams.get('tab') || undefined;
-  const { loading: authLoading } = useRequireAuth();
-  const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '');
-
-  const { data: profile } = useProfile();
-  const { data: screenings } = useCandidateScreenings(candidateId || '');
-  const screening = jobId
-    ? (screenings || []).find((s: any) => s.job_id === jobId)
-    : (screenings || [])[0] || null;
-
-  const [assessmentDetails, setAssessmentDetails] = useState<AssessmentDetails | null>(null);
-  const [interviewDetails, setInterviewDetails] = useState<InterviewDetails | null>(null);
-  const [manualInterviewDetails, setManualInterviewDetails] = useState<ManualInterviewDetails | null>(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [savingManual, setSavingManual] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-
-  // Screenshot Evidence State
-  const [assessmentScreenshot, setAssessmentScreenshot] = useState<string | null>(null);
-  const [interviewScreenshot, setInterviewScreenshot] = useState<string | null>(null);
-  const [screenshotDialogOpen, setScreenshotDialogOpen] = useState(false);
-  const [selectedScreenshotUrl, setSelectedScreenshotUrl] = useState<string | null>(null);
-
-  const [manualScore, setManualScore] = useState<string>('');
-  const [manualFeedback, setManualFeedback] = useState<string>('');
-  const [manualNotes, setManualNotes] = useState<string>('');
-
-  
-  const handleSaveManualInterview = async () => {
-    if (!candidateId) return;
-    setSavingManual(true);
-    try {
-      await candidatesApi.updateManualInterview(candidateId, jobId || '', {
-        manual_interview_score: manualScore ? parseFloat(manualScore) : null,
-        manual_interview_notes: manualNotes,
-        manual_interview_feedback: manualFeedback
-      });
-      toast.success('Manual interview evaluation saved successfully');
-      const [interview, manual] = await Promise.all([
-        candidatesApi.getInterviewDetails(candidateId, jobId).catch(() => null),
-        candidatesApi.getManualInterview(candidateId, jobId).catch(() => null),
-      ]);
-      setInterviewDetails(interview);
-      setManualInterviewDetails(manual);
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to save evaluation');
-    } finally {
-      setSavingManual(false);
-    }
-  };
-
-  const pd = assessmentDetails?.proctoring_data;
-  const sqlChallenges = asArray<any>(pd?.assessment_content?.sql_challenges);
-  const sqlSubs = asArray<any>(pd?.sql_submissions);
-  const hasSql = sqlChallenges.length > 0 || sqlSubs.length > 0 || assessmentDetails?.sql_score != null;
-
-  
-  const [expandedMcq, setExpandedMcq] = useState<string[]>([]);
-  const [expandedInterview, setExpandedInterview] = useState<string[]>([]);
-  const [generatingAnswers, setGeneratingAnswers] = useState(false);
-
-  const handleGenerateExpectedAnswers = async () => {
-    if (!candidateId) return;
-    setGeneratingAnswers(true);
-    try {
-      const res = await candidatesApi.generateExpectedAnswers(candidateId, jobId);
-      if (res.updated) {
-        toast.success('Expected answers generated successfully');
-        // Refresh interview details
-        const updatedInterview = await candidatesApi.getInterviewDetails(candidateId, jobId).catch(() => null);
-        setInterviewDetails(updatedInterview);
-      } else {
-        toast.info('No missing expected answers to generate');
-      }
-    } catch (e: any) {
-      toast.error('Failed to generate expected answers');
-    } finally {
-      setGeneratingAnswers(false);
-    }
-  };
-
-
-  useEffect(() => {
-    if (interviewDetails && Array.isArray(interviewDetails.questions)) {
-      const missing = interviewDetails.questions.some((q: any) => !q.expected_answer && !q.expected_response);
-      if (missing && !generatingAnswers && candidateId) {
-        setGeneratingAnswers(true);
-        candidatesApi.generateExpectedAnswers(candidateId, jobId).then((res) => {
-          if (res.updated) {
-            candidatesApi.getInterviewDetails(candidateId, jobId).then(updatedInterview => {
-              setInterviewDetails(updatedInterview);
-            }).catch(() => {});
-          }
-        }).catch(() => {}).finally(() => setGeneratingAnswers(false));
-      }
-    }
-  }, [interviewDetails, candidateId, jobId, generatingAnswers]);
-
-  const handleExpandAllMcq = () => {
-    if (!assessmentDetails) return;
-    const content = getAssessmentContent(assessmentDetails);
-    const questions = asArray<any>(assessmentDetails.mcq_questions).length > 0
-      ? asArray<any>(assessmentDetails.mcq_questions)
-      : asArray<any>((content as any)?.mcq_questions);
-    
-    if (expandedMcq.length === questions.length) {
-      setExpandedMcq([]);
-    } else {
-      setExpandedMcq(questions.map((q: any, idx: number) => `item-${q?.id != null ? q.id : idx}`));
-    }
-  };
-
-  const handleExpandAllInterview = () => {
-    if (!interviewDetails?.questions) return;
-    if (expandedInterview.length === interviewDetails.questions.length) {
-      setExpandedInterview([]);
-    } else {
-      setExpandedInterview(interviewDetails.questions.map((_, idx) => `interview-q-${idx}`));
-    }
-  };
-
-  const [evaluationTab, setEvaluationTab] = useState<string>(() => {
-    if (initialTab === 'manual') return 'manual';
-    if (initialTab === 'interview') return 'interview';
-    return 'assessment';
-  });
-
-  const handleDownloadReport = () => {
-    if (candidate) {
-      PDFExportService.generateCandidateReport(
-        candidate as any,
-        assessmentDetails,
-        interviewDetails,
-        screening,
-        manualInterviewDetails,
-        profile as any
-      );
-    }
-  };
-
-  useEffect(() => {
-    if (!candidateId) return;
-    setLoadingDetails(true);
-    Promise.all([
-      candidatesApi.getAssessmentDetails(candidateId, jobId).catch(() => null),
-      candidatesApi.getInterviewDetails(candidateId, jobId).catch(() => null),
-      jobId ? candidatesApi.getManualInterview(candidateId, jobId).catch(() => null) : Promise.resolve(null),
-    ]).then(([assessment, interview, manualInterview]) => {
-      setAssessmentDetails(assessment);
-      setInterviewDetails(interview);
-      setManualInterviewDetails(manualInterview);
-
-      if (manualInterview) {
-        setManualScore(manualInterview.manual_interview_score != null ? String(manualInterview.manual_interview_score) : '');
-        // Use feedback field (backend normalises both feedback and notes)
-        setManualFeedback(manualInterview.manual_interview_feedback || manualInterview.manual_interview_notes || '');
-        setManualNotes(manualInterview.manual_interview_notes || '');
-      } else {
-        setManualScore('');
-        setManualFeedback('');
-        setManualNotes('');
-      }
-    }).finally(() => setLoadingDetails(false));
-  }, [candidateId, jobId]);
-
-  // Fetch Screenshot Evidence URLs
-  // NOTE: assessment-details endpoint returns raw DB row where session id = 'id'.
-  //       interview-details endpoint explicitly maps it to 'session_id'.
-  //       We check both to be safe.
-  useEffect(() => {
-    const fetchScreenshots = async () => {
-      console.log('[Screenshot] assessmentDetails:', assessmentDetails);
-      const assessmentSessionId = (assessmentDetails as any)?.session_id || (assessmentDetails as any)?.id;
-      console.log('[Screenshot] assessmentSessionId derived:', assessmentSessionId);
-      if (assessmentSessionId) {
-        const url = `${supabase.storage.from('session-screenshots').getPublicUrl(`assessment/${assessmentSessionId}/latest.jpg`).data.publicUrl}?t=${Date.now()}`;
-        console.log('[Screenshot] Attempting to load Assessment URL:', url);
-        const img = new Image();
-        img.onload = () => {
-          console.log('[Screenshot] Assessment image loaded successfully!');
-          setAssessmentScreenshot(url);
-        };
-        img.onerror = () => console.log('[Screenshot] Assessment image not found for session:', assessmentSessionId, url);
-        img.src = url;
-      }
-      
-      console.log('[Screenshot] interviewDetails:', interviewDetails);
-      const interviewSessionId = (interviewDetails as any)?.session_id || (interviewDetails as any)?.id;
-      console.log('[Screenshot] interviewSessionId derived:', interviewSessionId);
-      if (interviewSessionId) {
-        const url = `${supabase.storage.from('session-screenshots').getPublicUrl(`ai_interview/${interviewSessionId}/latest.jpg`).data.publicUrl}?t=${Date.now()}`;
-        console.log('[Screenshot] Attempting to load Interview URL:', url);
-        const img = new Image();
-        img.onload = () => {
-          console.log('[Screenshot] Interview image loaded successfully!');
-          setInterviewScreenshot(url);
-        };
-        img.onerror = () => console.log('[Screenshot] Interview image not found for session:', interviewSessionId, url);
-        img.src = url;
-      }
-    };
-    fetchScreenshots();
-  }, [(assessmentDetails as any)?.session_id || (assessmentDetails as any)?.id, (interviewDetails as any)?.session_id || (interviewDetails as any)?.id]);
-
-  useEffect(() => {
-    if (initialTab === 'manual' || initialTab === 'interview' || initialTab === 'assessment' || initialTab === 'sql-assessment') {
-      setEvaluationTab(initialTab);
-    }
-  }, [initialTab]);
-
-  const saveManualInterview = async () => {
-    if (!candidateId || !jobId) {
-      toast.error('job_id is required to save manual interview details');
-      return;
-    }
-
-    const scoreValue = manualScore.trim() === '' ? null : Number(manualScore);
-    if (scoreValue != null && (!Number.isFinite(scoreValue) || scoreValue < 0 || scoreValue > 100)) {
-      toast.error('Score must be a number between 0 and 100');
-      return;
-    }
-
-    setSavingManual(true);
-    try {
-      const updated = await candidatesApi.updateManualInterview(candidateId, jobId, {
-        interview_mode: 'manual',
-        manual_interview_score: scoreValue,
-        manual_interview_feedback: manualFeedback || null,
-        manual_interview_notes: manualNotes || null,
-      });
-      setManualInterviewDetails(updated);
-      toast.success('Manual interview saved');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save manual interview');
-    } finally {
-      setSavingManual(false);
-    }
-  };
-
-  if (authLoading || isLoading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-full">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  if (candidateError || !candidate) {
-    return (
-      <DashboardLayout>
-        <div className="p-6 lg:p-8">
-          <Card>
-            <CardContent className="py-12 text-center space-y-4">
-              <p className="text-muted-foreground">
-                {candidateError
-                  ? `Error loading candidate: ${candidateError instanceof Error ? candidateError.message : 'Unknown error'}`
-                  : 'Candidate not found'}
-              </p>
-              <div className="flex items-center justify-center gap-3">
-                {candidateError && (
-                  <Button variant="outline" onClick={() => refetch()}>
-                    Retry
-                  </Button>
-                )}
-                <Button asChild>
-                  <Link to="/candidates">Back to the Candidates</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  return (
+new_page_code = pre_return + """  return (
     <DashboardLayout>
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
         
@@ -413,13 +41,8 @@ export default function CandidateDetailsPage() {
                   <Badge variant={candidate.consent_given ? 'default' : 'secondary'} className="h-6">
                     {candidate.consent_given ? 'Consent Given' : 'No Consent'}
                   </Badge>
-                  {(candidate.applied_at || screening?.created_at) && (
-                    <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 py-0.5 rounded-full border border-muted-foreground/10">
-                      Applied: {formatDateWithOrdinal(candidate.applied_at || screening?.created_at)}
-                    </span>
-                  )}
-                  
-                  
+                  {screening?.shortlisted && <Badge className="h-6" variant="default">Shortlisted</Badge>}
+                  {screening?.shortlisted === false && <Badge className="h-6" variant="destructive">Rejected</Badge>}
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground mt-2">
@@ -471,7 +94,7 @@ export default function CandidateDetailsPage() {
         </div>
 
         {/* 2. Summary Dashboard */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card className="bg-card shadow-sm border-muted">
             <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Resume Score</p>
@@ -501,21 +124,8 @@ export default function CandidateDetailsPage() {
           
           <Card className="bg-card shadow-sm border-muted">
             <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">SQL Score</p>
-              {hasSql ? (
-                <ScoreBadge score={assessmentDetails?.sql_score ?? 0} size="lg" />
-              ) : (
-                <span className="text-xl font-bold text-muted-foreground">-</span>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card shadow-sm border-muted">
-            <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Interview Score</p>
-              {manualInterviewDetails?.manual_interview_score != null ? (
-                <ScoreBadge score={manualInterviewDetails.manual_interview_score} size="lg" />
-              ) : interviewDetails?.final_evaluation?.overall_score != null ? (
+              {interviewDetails?.final_evaluation?.overall_score != null ? (
                 <ScoreBadge score={interviewDetails.final_evaluation.overall_score} size="lg" />
               ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
             </CardContent>
@@ -529,7 +139,7 @@ export default function CandidateDetailsPage() {
                 : interviewDetails?.final_evaluation?.recommendation ? "bg-destructive/10 border-destructive/20 shadow-sm" : "bg-card shadow-sm border-muted"
           }>
             <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Final Recommendation</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Final Rec</p>
               {interviewDetails?.final_evaluation?.recommendation ? (
                 <span className="text-sm font-bold uppercase tracking-wide">
                   {interviewDetails.final_evaluation.recommendation.replace(/_/g, ' ')}
@@ -546,8 +156,7 @@ export default function CandidateDetailsPage() {
               <TabsTrigger value="overview" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">Overview</TabsTrigger>
               <TabsTrigger value="resume" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">Resume Analysis</TabsTrigger>
               <TabsTrigger value="assessment" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">Assessment Results</TabsTrigger>
-              <TabsTrigger value="coding" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">Coding</TabsTrigger>
-              <TabsTrigger value="sql" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">SQL</TabsTrigger>
+              <TabsTrigger value="coding" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">Coding & SQL</TabsTrigger>
               <TabsTrigger value="interview" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">AI Interview</TabsTrigger>
               <TabsTrigger value="activity" className="px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">Activity & Timeline</TabsTrigger>
             </TabsList>
@@ -582,6 +191,67 @@ export default function CandidateDetailsPage() {
                           </div>
                         </div>
                       )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {interviewDetails?.final_evaluation && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>AI Interview Highlights</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <h5 className="font-semibold text-sm mb-3 flex items-center text-success">
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            Strengths
+                          </h5>
+                          <ul className="space-y-2">
+                            {Array.isArray(interviewDetails.final_evaluation.strengths) ? interviewDetails.final_evaluation.strengths.map((s, i) => (
+                              <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 bg-muted/30 p-2 rounded">
+                                <span className="mt-0.5">•</span>
+                                {typeof s === 'string' ? s : JSON.stringify(s)}
+                              </li>
+                            )) : (
+                              <li className="text-sm text-muted-foreground">{typeof interviewDetails.final_evaluation.strengths === 'string' ? interviewDetails.final_evaluation.strengths : 'None noted'}</li>
+                            )}
+                          </ul>
+                        </div>
+                        <div>
+                          <h5 className="font-semibold text-sm mb-3 flex items-center text-destructive">
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Weaknesses
+                          </h5>
+                          <ul className="space-y-2">
+                            {(() => {
+                              const items = (interviewDetails.final_evaluation as any).areas_for_improvement
+                                || (interviewDetails.final_evaluation as any).weaknesses;
+                              return Array.isArray(items) ? items.map((w: any, i: number) => (
+                                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 bg-muted/30 p-2 rounded">
+                                  <span className="mt-0.5">•</span>
+                                  {typeof w === 'string' ? w : JSON.stringify(w)}
+                                </li>
+                              )) : (
+                                <li className="text-sm text-muted-foreground">{typeof items === 'string' ? items : 'None noted'}</li>
+                              );
+                            })()}
+                          </ul>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {interviewDetails?.final_evaluation?.detailed_feedback && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Final Recommendation</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {typeof interviewDetails.final_evaluation.detailed_feedback === 'object' ? JSON.stringify(interviewDetails.final_evaluation.detailed_feedback, null, 2) : interviewDetails.final_evaluation.detailed_feedback}
+                      </p>
                     </CardContent>
                   </Card>
                 )}
@@ -720,33 +390,6 @@ export default function CandidateDetailsPage() {
                 <div className="lg:col-span-2 space-y-6">
                   {candidate.resume_parsed_data && typeof candidate.resume_parsed_data === 'object' ? (
                     <>
-                      {/* Added Resume Summary and Skills to Resume tab */}
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Resume Summary & Skills</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                          {typeof (candidate.resume_parsed_data as any).summary === 'string' && (candidate.resume_parsed_data as any).summary.trim() && (
-                            <div>
-                              <div className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                                {safeRender((candidate.resume_parsed_data as any).summary)}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {Array.isArray((candidate.resume_parsed_data as any).skills) && (
-                            <div>
-                              <div className="text-sm font-semibold mb-3">Key Skills</div>
-                              <div className="flex flex-wrap gap-2">
-                                {asArray<string>((candidate.resume_parsed_data as any).skills).map((s, i) => (
-                                  <Badge key={i} variant="secondary" className="px-3 py-1 font-medium">{safeRender(s)}</Badge>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-
                       {Array.isArray((candidate.resume_parsed_data as any).experience) && (
                         <Card>
                           <CardHeader>
@@ -824,14 +467,9 @@ export default function CandidateDetailsPage() {
           <TabsContent value="assessment" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
             {assessmentDetails ? (
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <div>
-                    <CardTitle>Multiple Choice Assessment</CardTitle>
-                    <CardDescription>Topic-wise performance and detailed responses</CardDescription>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={handleExpandAllMcq}>
-                    {expandedMcq.length > 0 ? 'Collapse All' : 'Expand All'}
-                  </Button>
+                <CardHeader>
+                  <CardTitle>Multiple Choice Assessment</CardTitle>
+                  <CardDescription>Topic-wise performance and detailed responses</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {(() => {
@@ -851,28 +489,18 @@ export default function CandidateDetailsPage() {
                     });
 
                     const correctCount = subs.filter((s: any) => s?.is_correct).length;
-                    const totalForScore = questions.length || subs.length;
-                    const mcqScore100 = totalForScore === 0
-                      ? 0
-                      : correctCount === 0
-                        ? 0
-                        : Math.ceil((correctCount / totalForScore) * 100);
 
                     return (
                       <div className="space-y-6">
-                        <div className="flex items-center gap-6 bg-muted/30 p-5 rounded-xl border">
-                          <div className="text-center">
-                            <div className="text-5xl font-bold text-primary">{mcqScore100}</div>
-                            <div className="text-xs text-muted-foreground mt-1 font-medium">out of 100</div>
-                          </div>
-                          <div className="h-12 w-px bg-border" />
+                        <div className="flex items-center gap-4 bg-muted/30 p-4 rounded-lg">
+                          <div className="text-4xl font-bold text-primary">{correctCount}</div>
                           <div>
-                            <div className="font-semibold text-foreground text-lg">{correctCount} / {totalForScore} Correct</div>
-                            <div className="text-sm text-muted-foreground mt-0.5">MCQ Assessment Score</div>
+                            <div className="font-semibold text-foreground">Correct Answers</div>
+                            <div className="text-sm text-muted-foreground">Out of {questions.length} total questions</div>
                           </div>
                         </div>
 
-                        <Accordion type="multiple" value={expandedMcq} onValueChange={setExpandedMcq} className="w-full space-y-3">
+                        <Accordion type="single" collapsible className="w-full space-y-3">
                           {questions.map((q: any, idx: number) => {
                             const qid = q?.id != null ? String(q.id) : String(idx);
                             const sub = subMap.get(qid);
@@ -972,6 +600,7 @@ export default function CandidateDetailsPage() {
           <TabsContent value="coding" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
             {assessmentDetails ? (
               <div className="space-y-6">
+                {/* Coding Challenges */}
                 <Card>
                   <CardHeader>
                     <CardTitle>Coding Challenges</CardTitle>
@@ -1020,6 +649,7 @@ export default function CandidateDetailsPage() {
                                 </AccordionTrigger>
                                 <AccordionContent className="px-5 py-4 border-t">
                                   <div className="space-y-6 mt-2">
+                                    {/* Question */}
                                     {ch?.description && (
                                       <div>
                                         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Problem Statement</div>
@@ -1028,6 +658,8 @@ export default function CandidateDetailsPage() {
                                         </div>
                                       </div>
                                     )}
+
+                                    {/* Candidate Solution */}
                                     <div>
                                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Candidate Solution</div>
                                       {!attempted ? (
@@ -1038,6 +670,8 @@ export default function CandidateDetailsPage() {
                                         </pre>
                                       )}
                                     </div>
+
+                                    {/* Test Results */}
                                     {attempted && Array.isArray(sub?.test_results) && sub.test_results.length > 0 && (
                                       <div>
                                         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Test Cases</div>
@@ -1070,27 +704,13 @@ export default function CandidateDetailsPage() {
                     })()}
                   </CardContent>
                 </Card>
-              </div>
-            ) : (
-              <div className="text-center p-12 bg-card rounded-lg border text-muted-foreground">
-                No coding assessment data available for this candidate.
-              </div>
-            )}
-          </TabsContent>
 
-          {/* TAB 4.5: SQL ASSESSMENT */}
-          <TabsContent value="sql" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
-            {assessmentDetails ? (
-              <div className="space-y-6">
+                {/* SQL Challenges */}
                 {(() => {
                   const pd = assessmentDetails.proctoring_data as any;
                   const sqlChallenges: any[] = pd?.assessment_content?.sql_challenges || [];
                   const sqlSubs: any[] = pd?.sql_submissions || [];
-                  if (sqlChallenges.length === 0 && sqlSubs.length === 0) return (
-                    <div className="text-center p-12 bg-card rounded-lg border text-muted-foreground">
-                      No SQL assessment data available for this candidate.
-                    </div>
-                  );
+                  if (sqlChallenges.length === 0 && sqlSubs.length === 0) return null;
 
                   const subMap = new Map<string, any>();
                   sqlSubs.forEach((s: any) => {
@@ -1187,7 +807,7 @@ export default function CandidateDetailsPage() {
               </div>
             ) : (
               <div className="text-center p-12 bg-card rounded-lg border text-muted-foreground">
-                No SQL assessment data available for this candidate.
+                No coding assessment data available for this candidate.
               </div>
             )}
           </TabsContent>
@@ -1195,206 +815,97 @@ export default function CandidateDetailsPage() {
           {/* TAB 5: AI INTERVIEW */}
           <TabsContent value="interview" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
             {interviewDetails ? (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <div className="space-y-1">
-                        <CardTitle>AI Interview Responses</CardTitle>
-                        <CardDescription>
-                          Review candidate transcripts, expected answers, and AI evaluations
-                        </CardDescription>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        
-                        <Button variant="outline" size="sm" onClick={handleExpandAllInterview}>
-                          {expandedInterview.length > 0 ? 'Collapse All' : 'Expand All'}
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {Array.isArray(interviewDetails.questions) && interviewDetails.questions.length > 0 ? (
-                        <Accordion type="multiple" value={expandedInterview} onValueChange={setExpandedInterview} className="w-full space-y-4 mt-4">
-                          {interviewDetails.questions.map((q, idx) => {
-                            const response = Array.isArray(interviewDetails.responses)
-                              ? interviewDetails.responses.find(r => r.question_index === idx)
-                              : undefined;
-                            const transcript = response
-                              ? (typeof response.transcript === 'object'
-                                  ? JSON.stringify(response.transcript)
-                                  : String(response.transcript ?? ''))
-                              : null;
-                            const hasTranscript = transcript !== null && transcript.trim().length > 0;
-                            const wasAttempted = response !== undefined;
-                            const durSecs = response?.audio_duration_seconds;
-                            const expected = (q as any).expected_answer || (q as any).expected_response;
-
-                            return (
-                              <AccordionItem value={`interview-q-${idx}`} key={idx} className="border rounded-lg bg-card shadow-sm overflow-hidden">
-                                <AccordionTrigger className="hover:no-underline px-5 py-4 bg-muted/10">
-                                  <div className="flex items-start gap-4 w-full pr-4 text-left">
-                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
-                                      Q{idx + 1}
-                                    </div>
-                                    <div className="flex-1 mt-1">
-                                      <div className="font-semibold text-[15px] leading-snug pr-4">{safeRender(q.question_text)}</div>
-                                      <div className="flex gap-2 mt-2">
-                                        <Badge variant="outline" className="text-xs bg-background">{safeRender(q.question_type)}</Badge>
-                                        {!hasTranscript && <Badge variant="secondary" className="text-xs bg-background">Not Answered</Badge>}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </AccordionTrigger>
-                                <AccordionContent className="px-5 py-6 border-t bg-background space-y-6">
-                                  {/* Candidate Response */}
-                                  <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Candidate Response</h4>
-                                      {typeof durSecs === 'number' && durSecs > 0 && (
-                                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3"/> {durSecs.toFixed(0)}s</span>
-                                      )}
-                                    </div>
-                                    {hasTranscript ? (
-                                      <div className="bg-muted/50 p-4 rounded-lg border text-sm leading-relaxed whitespace-pre-wrap">
-                                        {transcript}
-                                      </div>
-                                    ) : wasAttempted ? (
-                                      <div className="bg-muted/30 p-4 rounded-lg border text-sm text-muted-foreground italic">
-                                        No speech detected.
-                                      </div>
-                                    ) : (
-                                      <div className="bg-muted/30 p-4 rounded-lg border text-sm text-muted-foreground italic">
-                                        Not attempted.
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Expected Response */}
-                                  {expected && (
-                                    <div className="space-y-2">
-                                      <h4 className="text-sm font-semibold text-primary/80 uppercase tracking-wider">Expected Response</h4>
-                                      <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                                        {safeRender(expected)}
-                                      </div>
-                                    </div>
-                                  )}
-                                </AccordionContent>
-                              </AccordionItem>
-                            );
-                          })}
-                        </Accordion>
-                      ) : (
-                        <div className="text-center p-8 text-muted-foreground">
-                          No interview questions found.
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="space-y-6">
-                  {/* Highlights (Strengths/Weaknesses/Feedback) */}
-                  {interviewDetails.final_evaluation && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>AI Interview Highlights</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-6">
-                        <div>
-                          <h5 className="font-semibold text-sm mb-3 flex items-center text-success">
-                            <CheckCircle className="mr-2 h-4 w-4" />
-                            Strengths
-                          </h5>
-                          <ul className="space-y-2">
-                            {Array.isArray(interviewDetails.final_evaluation.strengths) ? interviewDetails.final_evaluation.strengths.map((s, i) => (
-                              <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 bg-muted/30 p-2 rounded">
-                                <span className="mt-0.5">•</span>
-                                {typeof s === 'string' ? s : JSON.stringify(s)}
-                              </li>
-                            )) : (
-                              <li className="text-sm text-muted-foreground">{typeof interviewDetails.final_evaluation.strengths === 'string' ? interviewDetails.final_evaluation.strengths : 'None noted'}</li>
-                            )}
-                          </ul>
-                        </div>
-                        <div>
-                          <h5 className="font-semibold text-sm mb-3 flex items-center text-destructive">
-                            <XCircle className="mr-2 h-4 w-4" />
-                            Areas to Improve
-                          </h5>
-                          <ul className="space-y-2">
-                            {(() => {
-                              const items = (interviewDetails.final_evaluation as any).areas_for_improvement
-                                || (interviewDetails.final_evaluation as any).weaknesses;
-                              return Array.isArray(items) ? items.map((w: any, i: number) => (
-                                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2 bg-muted/30 p-2 rounded">
-                                  <span className="mt-0.5">•</span>
-                                  {typeof w === 'string' ? w : JSON.stringify(w)}
-                                </li>
-                              )) : (
-                                <li className="text-sm text-muted-foreground">{typeof items === 'string' ? items : 'None noted'}</li>
-                              );
-                            })()}
-                          </ul>
-                        </div>
-                        {interviewDetails.final_evaluation.detailed_feedback && (
-                          <div className="bg-primary/5 border border-primary/20 rounded-xl p-6 mt-4 shadow-sm">
-                            <h5 className="font-bold text-lg mb-4 flex items-center text-primary">
-                              <MessageSquare className="mr-2 h-5 w-5" />
-                              Detailed AI Feedback
-                            </h5>
-                            <p className="text-[15px] text-foreground leading-relaxed">
-                              {typeof interviewDetails.final_evaluation.detailed_feedback === 'object' ? JSON.stringify(interviewDetails.final_evaluation.detailed_feedback, null, 2) : interviewDetails.final_evaluation.detailed_feedback}
-                            </p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <div className="space-y-1">
+                    <CardTitle>AI Interview Responses</CardTitle>
+                    <CardDescription>
+                      Review candidate transcripts, expected answers, and AI evaluations
+                    </CardDescription>
+                  </div>
+                  {interviewDetails.final_evaluation?.overall_score != null && (
+                    <div className="text-right">
+                      <div className="text-3xl font-bold text-primary">{interviewDetails.final_evaluation.overall_score}<span className="text-lg text-muted-foreground">/100</span></div>
+                    </div>
                   )}
+                </CardHeader>
+                <CardContent>
+                  {Array.isArray(interviewDetails.questions) && interviewDetails.questions.length > 0 ? (
+                    <Accordion type="single" collapsible className="w-full space-y-4 mt-4">
+                      {interviewDetails.questions.map((q, idx) => {
+                        const response = Array.isArray(interviewDetails.responses)
+                          ? interviewDetails.responses.find(r => r.question_index === idx)
+                          : undefined;
+                        const transcript = response
+                          ? (typeof response.transcript === 'object'
+                              ? JSON.stringify(response.transcript)
+                              : String(response.transcript ?? ''))
+                          : null;
+                        const hasTranscript = transcript !== null && transcript.trim().length > 0;
+                        const wasAttempted = response !== undefined;
+                        const durSecs = response?.audio_duration_seconds;
 
-                  {/* Manual Interview Card */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Manual Interview Evaluation</CardTitle>
-                      <CardDescription>Add your own score and notes</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Score (0-100)</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={manualScore}
-                          onChange={(e) => setManualScore(e.target.value)}
-                          placeholder="e.g. 85"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Detailed Feedback</Label>
-                        <Textarea
-                          value={manualFeedback}
-                          onChange={(e) => setManualFeedback(e.target.value)}
-                          placeholder="Feedback on candidate's performance..."
-                          rows={4}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Private Notes</Label>
-                        <Textarea
-                          value={manualNotes}
-                          onChange={(e) => setManualNotes(e.target.value)}
-                          placeholder="Internal notes (not visible to candidate)"
-                          rows={3}
-                        />
-                      </div>
-                      <Button onClick={handleSaveManualInterview} disabled={savingManual} className="w-full">
-                        {savingManual && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save Evaluation
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
+                        return (
+                          <AccordionItem value={`interview-q-${idx}`} key={idx} className="border rounded-lg bg-card shadow-sm overflow-hidden">
+                            <AccordionTrigger className="hover:no-underline px-5 py-4 bg-muted/10">
+                              <div className="flex items-start gap-4 w-full pr-4 text-left">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
+                                  Q{idx + 1}
+                                </div>
+                                <div className="flex-1 mt-1">
+                                  <div className="font-semibold text-[15px] leading-snug pr-4">{safeRender(q.question_text)}</div>
+                                  <div className="flex gap-2 mt-2">
+                                    <Badge variant="outline" className="text-xs bg-background">{safeRender(q.question_type)}</Badge>
+                                    {!hasTranscript && <Badge variant="secondary" className="text-xs bg-background">Not Answered</Badge>}
+                                  </div>
+                                </div>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="px-5 py-6 border-t bg-background space-y-6">
+                              {/* Candidate Response */}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Candidate Response</h4>
+                                  {typeof durSecs === 'number' && durSecs > 0 && (
+                                    <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3"/> {durSecs.toFixed(0)}s</span>
+                                  )}
+                                </div>
+                                {hasTranscript ? (
+                                  <div className="bg-muted/50 p-4 rounded-lg border text-sm leading-relaxed whitespace-pre-wrap">
+                                    {transcript}
+                                  </div>
+                                ) : wasAttempted ? (
+                                  <div className="bg-muted/30 p-4 rounded-lg border text-sm text-muted-foreground italic">
+                                    No speech detected.
+                                  </div>
+                                ) : (
+                                  <div className="bg-muted/30 p-4 rounded-lg border text-sm text-muted-foreground italic">
+                                    Not attempted.
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Expected Response */}
+                              {(q as any).expected_answer && (
+                                <div className="space-y-2">
+                                  <h4 className="text-sm font-semibold text-primary/80 uppercase tracking-wider">Expected Response</h4>
+                                  <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                                    {safeRender((q as any).expected_answer)}
+                                  </div>
+                                </div>
+                              )}
+                            </AccordionContent>
+                          </AccordionItem>
+                        );
+                      })}
+                    </Accordion>
+                  ) : (
+                    <div className="text-center p-8 text-muted-foreground">
+                      No interview questions found.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             ) : (
               <div className="text-center p-12 bg-card rounded-lg border text-muted-foreground">
                 No AI interview data available for this candidate.
@@ -1541,3 +1052,8 @@ export default function CandidateDetailsPage() {
     </DashboardLayout>
   );
 }
+"""
+
+with open('src/pages/CandidateDetailsPage.tsx', 'w', encoding='utf-8') as f:
+    f.write(new_page_code)
+print('Page completely rewritten.')

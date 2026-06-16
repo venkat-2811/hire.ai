@@ -66,7 +66,8 @@ Return JSON:
         {{
             "question_text": "Complete standalone conversational question (e.g. 'Can you explain how you implemented X in your project?')",
             "difficulty_level": 3,
-            "expected_answer": "Key points a strong verbal answer should cover",
+            "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
+            "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
             "time_limit_seconds": 180,
             "focus_area": "Specific overlapping skill or concept being discussed"
         }}
@@ -121,6 +122,7 @@ Return JSON:
             "question_text": "Complete standalone behavioral question with full context",
             "competency": "Leadership|Teamwork|Problem-solving|Communication|Adaptability|Time Management",
             "difficulty_level": 3,
+            "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
             "time_limit_seconds": 300,
             "focus_area": "Professional competency being assessed"
         }}
@@ -177,7 +179,8 @@ Return JSON:
             "question_text": "Complete standalone conversational question",
             "question_type": "technical|behavioral",
             "difficulty_level": 3,
-            "expected_answer": "Key points a strong verbal answer should cover",
+            "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
+            "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
             "time_limit_seconds": 180,
             "focus_area": "Specific domain or competency being evaluated"
         }}

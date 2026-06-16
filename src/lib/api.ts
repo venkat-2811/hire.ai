@@ -365,6 +365,12 @@ export interface Candidate {
 }
 
 export const candidatesApi = {
+  generateExpectedAnswers: (candidateId: string, jobId?: string) =>
+    request<{ status: string; updated: boolean; questions: any[] }>(
+      `/candidates/${candidateId}/generate-expected-answers${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`,
+      { method: 'POST' }
+    ),
+
   list: (params?: { limit?: number; offset?: number }) => {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set('limit', String(params.limit));
