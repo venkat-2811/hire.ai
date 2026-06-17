@@ -11,6 +11,7 @@ import {
   Trophy,
   UserCircle,
   Wallet,
+  BarChart3,
 } from "lucide-react";
 import logoFull from "@/assets/LOGO_full.png";
 import logoIcon from "@/assets/logo.png";
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
   { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Results', href: '/results', icon: Trophy },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Billing', href: '/billing', icon: Wallet },
   { name: 'Profile', href: '/profile', icon: UserCircle },
 ];

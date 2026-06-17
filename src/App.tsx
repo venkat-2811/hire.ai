@@ -26,6 +26,11 @@ import ApplyPage from "./pages/ApplyPage";
 import AssessmentPage from "./pages/AssessmentPage";
 import AIInterviewPage from "./pages/AIInterviewPage";
 import ResultsDashboardPage from "./pages/ResultsDashboardPage";
+import AnalyticsLayout from "./pages/analytics/AnalyticsLayout";
+import OverviewPage from "./pages/analytics/OverviewPage";
+import AssessmentsPage from "./pages/analytics/AssessmentsPage";
+import TopPerformersPage from "./pages/analytics/TopPerformersPage";
+import PipelinePage from "./pages/analytics/PipelinePage";
 import BillingPage from "./pages/BillingPage";
 import InvoicesHistoryPage from "./pages/InvoicesHistoryPage";
 import OfferAcceptancePage from "./pages/OfferAcceptancePage";
@@ -86,7 +91,13 @@ const App = () => (
             <Route path="/jobs/:jobId/edit" element={<EditJobPage />} />
             <Route path="/interviews" element={<InterviewsPage />} />
             <Route path="/interviews/:sessionId" element={<InterviewSessionPage />} />
-            <Route path="/analytics" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/analytics" element={<AnalyticsLayout />}>
+              <Route index element={<Navigate to="/analytics/overview" replace />} />
+              <Route path="overview" element={<OverviewPage />} />
+              <Route path="assessments" element={<AssessmentsPage />} />
+              <Route path="top-performers" element={<TopPerformersPage />} />
+              <Route path="pipeline" element={<PipelinePage />} />
+            </Route>
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/apply/:jobId" element={<ApplyPage />} />

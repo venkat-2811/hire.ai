@@ -993,6 +993,16 @@ export default function CandidatesPage() {
                                     View Details
                                   </Link>
                                 </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onClick={() => {
+                                    setCandidateToDelete({ id: candidate.id, jobId: candidate.job_id });
+                                    setDeleteDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>

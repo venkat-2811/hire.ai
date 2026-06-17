@@ -77,29 +77,6 @@ const formatDateWithOrdinal = (dateString: string | null | undefined): string =>
 const getAssessmentContent = (assessmentDetails: any): any => {
   if (!assessmentDetails) return {};
   
-  const handleSaveManualInterview = async () => {
-    if (!candidateId) return;
-    setSavingManual(true);
-    try {
-      await candidatesApi.updateManualInterview(candidateId, jobId || '', {
-        manual_interview_score: manualScore ? parseFloat(manualScore) : null,
-        manual_interview_notes: manualNotes,
-        manual_interview_feedback: manualFeedback
-      });
-      toast.success('Manual interview evaluation saved successfully');
-      const [interview, manual] = await Promise.all([
-        candidatesApi.getInterviewDetails(candidateId, jobId).catch(() => null),
-        candidatesApi.getManualInterview(candidateId, jobId).catch(() => null),
-      ]);
-      setInterviewDetails(interview);
-      setManualInterviewDetails(manual);
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to save evaluation');
-    } finally {
-      setSavingManual(false);
-    }
-  };
-
   const pd = assessmentDetails?.proctoring_data;
   if (pd && typeof pd === 'object') {
     const ac = (pd as any)?.assessment_content;

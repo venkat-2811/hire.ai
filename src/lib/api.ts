@@ -371,10 +371,11 @@ export const candidatesApi = {
       { method: 'POST' }
     ),
 
-  list: (params?: { limit?: number; offset?: number }) => {
+  list: (params?: { limit?: number; offset?: number; unassigned?: boolean }) => {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set('limit', String(params.limit));
     if (params?.offset) searchParams.set('offset', String(params.offset));
+    if (params?.unassigned !== undefined) searchParams.set('unassigned', String(params.unassigned));
     const query = searchParams.toString();
     return request<Candidate[]>(`/candidates${query ? `?${query}` : ''}`, {});
   },
