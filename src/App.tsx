@@ -31,6 +31,7 @@ import OverviewPage from "./pages/analytics/OverviewPage";
 import AssessmentsPage from "./pages/analytics/AssessmentsPage";
 import TopPerformersPage from "./pages/analytics/TopPerformersPage";
 import PipelinePage from "./pages/analytics/PipelinePage";
+import VendorsPage from "./pages/analytics/VendorsPage";
 import BillingPage from "./pages/BillingPage";
 import InvoicesHistoryPage from "./pages/InvoicesHistoryPage";
 import OfferAcceptancePage from "./pages/OfferAcceptancePage";
@@ -97,6 +98,7 @@ const App = () => (
               <Route path="assessments" element={<AssessmentsPage />} />
               <Route path="top-performers" element={<TopPerformersPage />} />
               <Route path="pipeline" element={<PipelinePage />} />
+              <Route path="vendors" element={<VendorsPage />} />
             </Route>
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />

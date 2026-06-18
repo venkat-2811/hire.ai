@@ -171,19 +171,19 @@ async def submit_application(
     import uuid
 
     application_id = str(uuid.uuid4())
-    await db.insert(
-        "job_applications",
-        [
-            {
-                "id": application_id,
-                "candidate_id": candidate_id,
-                "job_id": job_id,
-                "status": "applied",
-                "applied_at": _utc_now_iso(),
-                "created_at": _utc_now_iso(),
-            }
-        ],
-    )
+    
+    app_payload = {
+        "id": application_id,
+        "candidate_id": candidate_id,
+        "job_id": job_id,
+        "status": "applied",
+        "applied_at": _utc_now_iso(),
+        "created_at": _utc_now_iso(),
+    }
+    if vendorName:
+        app_payload["candidate_overrides"] = {"vendorName": vendorName}
+
+    await db.insert("job_applications", [app_payload])
 
     # ATS screening (best-effort) if resume parsed
     if resume_parsed_data:

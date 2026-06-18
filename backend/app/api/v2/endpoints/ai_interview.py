@@ -383,7 +383,7 @@ def _get_role_technology_hints(role: str, skills: str) -> str:
 - Cover tool/framework expertise relevant to the role."""
 
 
-async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium") -> List[dict]:
+async def generate_interview_questions(openai, job: dict, resume_data: Optional[dict], question_count: int = 5, difficulty: str = "medium", focus_areas: str = "", strict_focus: bool = False) -> List[dict]:
     """Generate personalized, technically-focused interview questions.
 
     Uses GPT-4.1-mini. Questions are generated per-candidate at invite time,
@@ -431,30 +431,25 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
 - Test problem-solving with practical scenarios tied to the role.
 - Example: 'You used [Framework] in your [Project]. Describe a specific technical challenge you hit during implementation and how you resolved it.'"""
 
-    prompt = f"""You are a senior technical interviewer with 15+ years of industry experience. Generate {request_count} highly technical, personalized interview questions for a {level} {title} candidate.
+    # ── Question generation requirements block ───────────────────────────────
+    if focus_areas and focus_areas.strip():
+        focus_mode = "strictly" if strict_focus else "primarily"
+        question_requirements_block = f"""======================================================================
+RECRUITER FOCUS AREAS (ACTIVE — Treat as Primary Evaluation Criteria)
+======================================================================
+The recruiter has specified the following focus areas for this interview:
+{focus_areas}
 
-SESSION SEED: {session_seed}
-
-======================================================================
-JOB DESCRIPTION
-======================================================================
-Title: {title} | Role: {role} | Level: {level}
-Must-Have Skills: {jd_skills or 'N/A'}
-Good-to-Have Skills: {jd_nice or 'N/A'}
-Description: {jd_desc or 'N/A'}
-
-======================================================================
-CANDIDATE RESUME DATA
-======================================================================
-{resume_context}
-
-======================================================================
-{diff_guidance}
-======================================================================
-
-{role_hints}
-
-======================================================================
+Instructions:
+- Recruiter Focus Areas are active and should be treated as the PRIMARY evaluation criteria.
+- Most interview questions should directly and deeply evaluate the specified topics.
+- Use the Job Description, Candidate Resume, and real-world technical scenarios to generate supporting and follow-up questions where appropriate.
+- Questions should remain role-relevant, technically deep, and capable of differentiating candidate skill levels.
+- Ensure questions cover various aspects of the focus areas: implementation details, design trade-offs, debugging, best practices, and real-world usage.
+- Do NOT pad with generic behavioral or unrelated questions.
+- {'Strictly limit questions to the focus areas. Only diverge if the JD or resume provides strong reason to do so.' if strict_focus else 'You may include a few resume-specific or JD-specific questions where they strongly complement the focus areas.'}"""
+    else:
+        question_requirements_block = f"""======================================================================
 QUESTION GENERATION REQUIREMENTS (STRICTLY FOLLOW)
 ======================================================================
 
@@ -495,6 +490,32 @@ You MUST generate questions in this distribution:
    GOOD examples:
    - "The role requires [Missing Skill]. What is your current understanding of it, and how would you approach getting production-ready with it?"
    - "You have [Matched Skill] experience and this role uses it heavily. Describe the most complex production issue you debugged involving it."
+"""
+
+    prompt = f"""You are a senior technical interviewer with 15+ years of industry experience. Generate {request_count} highly technical, personalized interview questions for a {level} {title} candidate.
+
+SESSION SEED: {session_seed}
+
+======================================================================
+JOB DESCRIPTION
+======================================================================
+Title: {title} | Role: {role} | Level: {level}
+Must-Have Skills: {jd_skills or 'N/A'}
+Good-to-Have Skills: {jd_nice or 'N/A'}
+Description: {jd_desc or 'N/A'}
+
+======================================================================
+CANDIDATE RESUME DATA
+======================================================================
+{resume_context}
+
+======================================================================
+{diff_guidance}
+======================================================================
+
+{role_hints}
+
+{question_requirements_block}
 
 ======================================================================
 ABSOLUTE RULES (VIOLATIONS = REJECTED QUESTIONS)
@@ -563,6 +584,8 @@ class InterviewInviteRequest(BaseModel):
     difficulty: Optional[str] = "medium"
     deadline: Optional[str] = None
     time_limit: Optional[int] = None
+    focus_areas: Optional[str] = None
+    strict_focus: Optional[bool] = False
 
 
 @router.post("/invite")
@@ -648,6 +671,8 @@ async def invite_ai_interviews(
                 c.get("resume_parsed_data") if isinstance(c, dict) else None,
                 requested_count,
                 difficulty,
+                focus_areas=body.focus_areas or "",
+                strict_focus=bool(body.strict_focus),
             )
             questions = _normalize_questions(questions_raw)
             if len(questions) == 0:
@@ -689,6 +714,9 @@ async def invite_ai_interviews(
 
             proctoring_data["difficulty"] = difficulty
             proctoring_data["time_limit_minutes"] = calculated_time_limit
+            if body.focus_areas and body.focus_areas.strip():
+                proctoring_data["focus_areas"] = body.focus_areas.strip()
+                proctoring_data["strict_focus"] = bool(body.strict_focus)
 
             insert_row = {
                 "id": session_id,

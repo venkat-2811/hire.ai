@@ -20,6 +20,7 @@ const NAV_LINKS = [
   { path: '/analytics/assessments', label: 'Assessments & Roles' },
   { path: '/analytics/top-performers', label: 'Top Performers' },
   { path: '/analytics/pipeline', label: 'Candidate Pipeline' },
+  { path: '/analytics/vendors', label: 'Vendor Tracking' },
 ];
 
 export default function AnalyticsLayout() {

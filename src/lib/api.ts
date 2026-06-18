@@ -513,6 +513,9 @@ export interface AssessmentInviteRequest {
   /** Apex fill-in-the-blanks section — only active when job.include_apex_assessment = true */
   include_apex?: boolean;
   apex_question_count?: number;
+  /** Recruiter-defined topics to prioritize during question generation (MCQ only) */
+  focus_areas?: string;
+  strict_focus?: boolean;
 }
 
 export interface AssessmentInviteResponse {
@@ -731,6 +734,9 @@ export interface AiInterviewInviteRequest {
   difficulty?: 'easy' | 'medium' | 'hard' | string;
   deadline?: string;
   scheduled_time?: string;
+  /** Recruiter-defined topics to prioritize during AI interview question generation */
+  focus_areas?: string;
+  strict_focus?: boolean;
 }
 
 export interface AiInterviewInviteResponse {
@@ -1320,6 +1326,7 @@ export interface CandidateAnalytics {
   technical_score: number | null;
   overall_score: number | null;
   recommendation: string | null;
+  vendorName?: string | null;
 }
 
 export const analyticsApi = {

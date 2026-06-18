@@ -76,7 +76,7 @@ import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { assessmentsApi } from '@/lib/api';
 import { aiInterviewApi } from '@/lib/api';
-import { candidatesWorkflowApi } from '@/lib/api';
+import { candidatesWorkflowApi, candidatesApi } from '@/lib/api';
 import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
 import { Pencil } from 'lucide-react';
 import {
@@ -135,6 +135,14 @@ export default function CandidatesPage() {
   const [interviewDifficulty, setInterviewDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [interviewMode, setInterviewMode] = useState<'ai' | 'manual'>('ai');
   const [interviewTimeLimit, setInterviewTimeLimit] = useState<number | undefined>(undefined);
+  // Focus Areas state
+  const [assessmentFocusAreas, setAssessmentFocusAreas] = useState('');
+  const [assessmentStrictFocus, setAssessmentStrictFocus] = useState(false);
+  const [interviewFocusAreas, setInterviewFocusAreas] = useState('');
+  const [interviewStrictFocus, setInterviewStrictFocus] = useState(false);
+  const [manualScore, setManualScore] = useState<string>('');
+  const [manualFeedback, setManualFeedback] = useState<string>('');
+  const [manualNotes, setManualNotes] = useState<string>('');
 
   // Deadline defaults to 48 hours from now, rounded UP to the next 10-minute interval.
   // e.g. 01:13 → 48h later at 01:20 | 01:51 → 48h later at 02:00
@@ -345,6 +353,8 @@ export default function CandidatesPage() {
         include_apex: isSalesforce ? includeApex : false,
         apex_question_count: (isSalesforce && includeApex) ? apexCount : 0,
         total_time_minutes: totalTimeMinutes || undefined,
+        focus_areas: assessmentFocusAreas.trim() || undefined,
+        strict_focus: assessmentStrictFocus || undefined,
       });
       toast.success(`Assessment invites sent to ${data.invites_sent} candidate(s)`);
       setAssessmentDialogOpen(false);
@@ -365,6 +375,7 @@ export default function CandidatesPage() {
       toast.error('Please select a job');
       return;
     }
+    setInterviewMode('ai');
     setStartJobId(selectedJobId);
     setInterviewDialogOpen(true);
   };
@@ -374,20 +385,13 @@ export default function CandidatesPage() {
       toast.error('Please select at least one candidate');
       return;
     }
-
-    if (selectedIds.size > 1) {
-      toast.error('Please select only one candidate to enter manual interview details');
+    if (!selectedJobId) {
+      toast.error('Please select a job');
       return;
     }
-
-    const onlyId = Array.from(selectedIds)[0];
-    const [candidateId, jobId] = onlyId.split('_');
-    if (!candidateId || !jobId) {
-      toast.error('Missing candidate or job context');
-      return;
-    }
-
-    navigate(`/candidates/${candidateId}?job_id=${encodeURIComponent(jobId)}&tab=manual`);
+    setStartJobId(selectedJobId);
+    setInterviewMode('manual');
+    setInterviewDialogOpen(true);
   };
 
   const sendInterviewInvites = async () => {
@@ -404,13 +408,33 @@ export default function CandidatesPage() {
     setSendingInvites(true);
     try {
       if (interviewMode === 'manual') {
-        // For manual interviews, set interview_mode to 'manual' in job_applications
-        const data = await candidatesWorkflowApi.bulkUpdateInterviewMode({
-          candidate_ids: Array.from(selectedIds).map((id) => id.split('_')[0]),
-          job_id: selectedJobId,
-          interview_mode: 'manual',
-        });
-        toast.success(`Manual interview mode set for ${data.updated_count} candidate(s). You can now enter scores in the candidate details page.`);
+        if (!manualScore || manualScore.trim() === '') {
+          toast.error('Score is required for manual interview');
+          setSendingInvites(false);
+          return;
+        }
+        const scoreVal = Number(manualScore);
+        if (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 100) {
+          toast.error('Score must be a number between 0 and 100');
+          setSendingInvites(false);
+          return;
+        }
+
+        const candidateIds = Array.from(selectedIds).map(id => id.split('_')[0]);
+        await Promise.all(
+          candidateIds.map(candidateId =>
+            candidatesApi.updateManualInterview(candidateId, selectedJobId, {
+              interview_mode: 'manual',
+              manual_interview_score: scoreVal,
+              manual_interview_feedback: manualFeedback || null,
+              manual_interview_notes: manualNotes || null,
+            })
+          )
+        );
+        toast.success(`Manual interview evaluation saved for ${candidateIds.length} candidate(s)`);
+        setManualScore('');
+        setManualFeedback('');
+        setManualNotes('');
       } else {
         // AI interview flow
         if (!interviewDeadline) {
@@ -431,6 +455,8 @@ export default function CandidatesPage() {
           question_count: interviewQuestionCount,
           difficulty: interviewDifficulty,
           deadline: deadlineDate.toISOString(),
+          focus_areas: interviewFocusAreas.trim() || undefined,
+          strict_focus: interviewStrictFocus || undefined,
         });
         toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
       }
@@ -849,13 +875,17 @@ export default function CandidatesPage() {
                                     <DropdownMenuItem onClick={() => {
                                       setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
                                       setStartJobId(jobId);
+                                      setInterviewMode('ai');
                                       setInterviewDialogOpen(true);
                                     }}>
                                       <Play className="mr-2 h-4 w-4" />
                                       Send AI Interview
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => {
-                                      navigate(`/candidates/${candidate.id}?job_id=${encodeURIComponent(jobId)}&tab=manual`);
+                                      setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
+                                      setStartJobId(jobId);
+                                      setInterviewMode('manual');
+                                      setInterviewDialogOpen(true);
                                     }}>
                                       <MessageSquare className="mr-2 h-4 w-4" />
                                       Manual Interview
@@ -1017,7 +1047,7 @@ export default function CandidatesPage() {
         )}
 
         <Dialog open={assessmentDialogOpen} onOpenChange={setAssessmentDialogOpen}>
-          <DialogContent className="sm:max-w-5xl">
+          <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Send Assessment Invites</DialogTitle>
               <DialogDescription>
@@ -1152,9 +1182,40 @@ export default function CandidatesPage() {
                     min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
                   />
                   <div className="text-[10px] text-muted-foreground leading-tight">
-                    Default: 48h from now. The link will expire after this deadline.
+                   Default: 48h from now. The link will expire after this deadline.
                     Candidates who miss it get 0.
                   </div>
+                </div>
+              </div>
+
+              {/* Focus Areas — Assessment */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  Question Focus Areas
+                  <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
+                </Label>
+                <textarea
+                  id="assessment-focus-areas"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                  maxLength={1000}
+                  placeholder={`e.g. FastAPI, REST APIs, JWT Authentication\ne.g. React Hooks, State Management, Redux\ne.g. AWS Lambda, API Gateway, DynamoDB`}
+                  value={assessmentFocusAreas}
+                  onChange={(e) => setAssessmentFocusAreas(e.target.value)}
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">Questions will be primarily generated around these topics.</p>
+                  <span className="text-xs text-muted-foreground">{assessmentFocusAreas.length}/1000</span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <Checkbox
+                    id="assessment-strict-focus"
+                    checked={assessmentStrictFocus}
+                    onCheckedChange={(v) => setAssessmentStrictFocus(!!v)}
+                  />
+                  <label htmlFor="assessment-strict-focus" className="text-sm cursor-pointer select-none">
+                    Strictly Prioritize Focus Areas
+                    <span className="ml-1.5 text-xs text-muted-foreground">(80%+ questions from focus areas)</span>
+                  </label>
                 </div>
               </div>
 
@@ -1180,7 +1241,7 @@ export default function CandidatesPage() {
 
         {/* Interview Invite Dialog */}
         <Dialog open={interviewDialogOpen} onOpenChange={setInterviewDialogOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Send Interview Invites</DialogTitle>
               <DialogDescription>
@@ -1191,86 +1252,160 @@ export default function CandidatesPage() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Interview Mode</Label>
-                <Select value={interviewMode} onValueChange={(v: 'ai' | 'manual') => setInterviewMode(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ai">AI Interview (Automated)</SelectItem>
-                    <SelectItem value="manual">Manual Interview (Outside Platform)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {interviewMode === 'ai' 
-                    ? 'Candidates will complete an AI-powered interview with speech recognition and camera proctoring.'
-                    : 'You will conduct interviews outside the platform and manually enter scores later.'}
-                </p>
-              </div>
-
-              {interviewMode === 'ai' && (
-                <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Column: Basic Settings */}
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Number of Questions (Max: 30)</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={interviewQuestionCount}
-                      onChange={(e) => setInterviewQuestionCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Candidates will answer {interviewQuestionCount} question{interviewQuestionCount !== 1 ? 's' : ''} in the interview.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Interview Time Limit (Minutes) - Optional</Label>
-                    <Input
-                      type="number"
-                      min={5}
-                      max={180}
-                      step={5}
-                      value={interviewTimeLimit || ''}
-                      onChange={(e) => setInterviewTimeLimit(e.target.value ? Number(e.target.value) : undefined)}
-                      placeholder="Calculated automatically if empty"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      If left blank, the system will allocate 2 minutes per question.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Difficulty Level</Label>
-                    <Select value={interviewDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setInterviewDifficulty(v)}>
+                    <Label>Interview Mode</Label>
+                    <Select value={interviewMode} onValueChange={(v: 'ai' | 'manual') => setInterviewMode(v)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="easy">Easy</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="hard">Hard</SelectItem>
+                        <SelectItem value="ai">AI Interview (Automated)</SelectItem>
+                        <SelectItem value="manual">Manual Interview (Outside Platform)</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {interviewMode === 'ai' 
+                        ? 'Candidates will complete an AI-powered interview with speech recognition and camera proctoring.'
+                        : 'You will conduct interviews outside the platform and manually enter scores later.'}
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Deadline (Required)</Label>
-                    <Input
-                      type="datetime-local"
-                      required
-                      step={600}
-                      value={interviewDeadline}
-                      onChange={(e) => handleStrictDeadlineChange(e.target.value, setInterviewDeadline)}
-                      min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      Default: 48 hours from now, rounded to the next 10 minutes. The interview link will automatically expire after this deadline.
-                      Candidates who miss the deadline will receive a score of 0.
+
+                  {interviewMode === 'ai' && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Questions (Max: 30)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={interviewQuestionCount}
+                            onChange={(e) => setInterviewQuestionCount(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Difficulty Level</Label>
+                          <Select value={interviewDifficulty} onValueChange={(v: 'easy' | 'medium' | 'hard') => setInterviewDifficulty(v)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="easy">Easy</SelectItem>
+                              <SelectItem value="medium">Medium</SelectItem>
+                              <SelectItem value="hard">Hard</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Interview Time Limit (Minutes)</Label>
+                        <Input
+                          type="number"
+                          min={5}
+                          max={180}
+                          step={5}
+                          value={interviewTimeLimit || ''}
+                          onChange={(e) => setInterviewTimeLimit(e.target.value ? Number(e.target.value) : undefined)}
+                          placeholder="Calculated automatically if empty"
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Default is 2 minutes per question.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Right Column: Customizations & Deadline */}
+                <div className="space-y-4">
+                  {interviewMode === 'ai' ? (
+                    <>
+                      {/* Focus Areas — Interview */}
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-1.5">
+                          Question Focus Areas
+                          <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
+                        </Label>
+                        <textarea
+                          id="interview-focus-areas"
+                          className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                          maxLength={1000}
+                          placeholder={`e.g. FastAPI, REST APIs, JWT Authentication\ne.g. React Hooks, State Management, Redux`}
+                          value={interviewFocusAreas}
+                          onChange={(e) => setInterviewFocusAreas(e.target.value)}
+                        />
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>Focus questions around these topics.</span>
+                          <span>{interviewFocusAreas.length}/1000</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Checkbox
+                            id="interview-strict-focus"
+                            checked={interviewStrictFocus}
+                            onCheckedChange={(v) => setInterviewStrictFocus(!!v)}
+                          />
+                          <label htmlFor="interview-strict-focus" className="text-xs cursor-pointer select-none font-medium leading-none">
+                            Strictly Prioritize Focus Areas
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Deadline (Required)</Label>
+                        <Input
+                          type="datetime-local"
+                          required
+                          step={600}
+                          value={interviewDeadline}
+                          onChange={(e) => handleStrictDeadlineChange(e.target.value, setInterviewDeadline)}
+                          min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                        />
+                        <p className="text-[11px] text-muted-foreground leading-tight">
+                          Default is 48 hours. The link will expire after this deadline.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Overall Score (0-100) *</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={manualScore}
+                          onChange={(e) => setManualScore(e.target.value)}
+                          placeholder="e.g. 85"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Detailed Feedback</Label>
+                        <textarea
+                          className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                          placeholder="Enter candidate evaluation feedback..."
+                          value={manualFeedback}
+                          onChange={(e) => setManualFeedback(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Internal Notes</Label>
+                        <textarea
+                          className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                          placeholder="Private notes (optional)..."
+                          value={manualNotes}
+                          onChange={(e) => setManualNotes(e.target.value)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                </>
-              )}
+                  )}
+                </div>
+              </div>
             </div>
 
             <DialogFooter>
@@ -1279,11 +1414,11 @@ export default function CandidatesPage() {
               </Button>
               <Button onClick={sendInterviewInvites} disabled={!selectedJobId || sendingInvites}>
                 {sendingInvites ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
                 ) : (
                   interviewMode === 'ai' 
                     ? <><Play className="mr-2 h-4 w-4" />Send Invites</>
-                    : <><CheckSquare className="mr-2 h-4 w-4" />Set Manual Mode</>
+                    : <><CheckSquare className="mr-2 h-4 w-4" />Save Evaluation</>
                 )}
               </Button>
             </DialogFooter>

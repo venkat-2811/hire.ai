@@ -2,7 +2,8 @@ from typing import Dict, Any, List
 
 
 def get_mcq_generation_prompt(
-    role: str, level: str, description: str, must_have_skills: str, good_to_have_skills: str, count: int, difficulty: str = "medium"
+    role: str, level: str, description: str, must_have_skills: str, good_to_have_skills: str, count: int, difficulty: str = "medium",
+    focus_areas: str = "", strict_focus: bool = False
 ) -> tuple[str, str]:
 
     difficulty_guidelines = {
@@ -24,6 +25,27 @@ def get_mcq_generation_prompt(
     }
 
     guidelines = difficulty_guidelines.get(difficulty.lower(), difficulty_guidelines["medium"])
+
+    focus_pct = "80%" if strict_focus else "60%"
+    focus_block = (
+        f"""
+
+=== RECRUITER FOCUS AREAS (HIGH PRIORITY) ===
+The recruiter has specified the following topics to be prioritized:
+{focus_areas}
+
+- At least {focus_pct} of the {count} questions MUST directly evaluate the recruiter-specified focus area technologies.
+- The remaining questions may cover related technologies, architecture concepts, or JD requirements.
+- Avoid generating unrelated or overly generic questions when Focus Areas are provided.
+- Questions still must be scenario-based and match the {difficulty.upper()} difficulty level."""
+        if focus_areas.strip() else ""
+    )
+
+    focus_user_note = (
+        f"\n\nIMPORTANT: The recruiter has specified focus areas: {focus_areas}. "
+        f"Ensure at least {focus_pct} of your questions directly test these topics."
+        if focus_areas.strip() else ""
+    )
 
     system_prompt = f"""You are an expert technical assessment designer creating high-quality multiple-choice questions for a {role} position at the {level} level.
 
@@ -79,7 +101,7 @@ Required skills to cover: {must_have_skills}
 Preferred skills to cover: {good_to_have_skills}
 
 RULE 8 — SINGLE CORRECT ANSWER:
-There must be exactly one unambiguously correct answer. The correct answer must be definitively right, not just "more correct" than others.
+There must be exactly one unambiguously correct answer. The correct answer must be definitively right, not just "more correct" than others.{focus_block}
 
 Return valid JSON with EXACTLY {count} questions:
 {{
@@ -105,7 +127,7 @@ MUST FOLLOW:
 4. RANDOMIZE correct_index across 0, 1, 2, 3 — do NOT always put the correct answer at index 0 or 1
 5. ALL 4 options must be plausible and realistic — no dummy answers
 6. Every question must be scenario-based (real work situation), never a simple definition
-7. The options array must contain EXACTLY 4 strings per question
+7. The options array must contain EXACTLY 4 strings per question{focus_user_note}
 
 Focus on real-world situations this professional encounters in their daily work."""
 

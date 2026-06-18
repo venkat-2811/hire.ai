@@ -235,7 +235,7 @@ async def get_candidate_analytics(
         return (
             db.client.from_("job_applications")
             .select(
-                "candidate_id, job_id, status, final_status, applied_at, interview_mode, manual_interview_score, interview_status"
+                "id, candidate_id, job_id, status, final_status, applied_at, interview_mode, manual_interview_score, interview_status, candidate_overrides"
             )
             .in_("job_id", effective_job_ids)
             .order("applied_at", desc=True)
@@ -247,6 +247,8 @@ async def get_candidate_analytics(
     applications = getattr(apps_res, "data", None) or []
 
     applications_map: Dict[str, Dict[str, Any]] = {}
+    oldest_app_by_candidate: Dict[str, str] = {} # candidate_id -> app_id
+
     for app in applications:
         if not isinstance(app, dict):
             continue
@@ -254,6 +256,16 @@ async def get_candidate_analytics(
         existing = applications_map.get(key)
         if not existing or _to_millis(app.get("applied_at")) > _to_millis(existing.get("applied_at")):
             applications_map[key] = app
+            
+        cid = app.get("candidate_id")
+        app_id = app.get("id")
+        if cid and app_id:
+            if cid not in oldest_app_by_candidate:
+                oldest_app_by_candidate[cid] = app_id
+            else:
+                current_oldest_app = next((a for a in applications if isinstance(a, dict) and a.get("id") == oldest_app_by_candidate[cid]), None)
+                if current_oldest_app and _to_millis(app.get("applied_at")) < _to_millis(current_oldest_app.get("applied_at")):
+                    oldest_app_by_candidate[cid] = app_id
 
     candidate_ids = list({a.get("candidate_id") for a in applications if isinstance(a, dict) and a.get("candidate_id")})
     if not candidate_ids:
@@ -262,7 +274,7 @@ async def get_candidate_analytics(
     def _fetch_candidates():
         return (
             db.client.from_("candidates")
-            .select("id, full_name, email, created_at")
+            .select("id, full_name, email, created_at, vendorName")
             .in_("id", candidate_ids)
             .execute()
         )
@@ -461,6 +473,7 @@ async def get_candidate_analytics(
                 "technical_score": technical_score,
                 "overall_score": overall_score,
                 "recommendation": recommendation,
+                "vendorName": (application.get("candidate_overrides") or {}).get("vendorName") or (candidate.get("vendorName") if application.get("id") == oldest_app_by_candidate.get(str(candidate.get("id"))) else None),
             }
         )
 

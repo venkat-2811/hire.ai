@@ -210,7 +210,9 @@ class QuestionGeneratorService:
         self,
         job: JobDescription,
         count: int = 20,
-        difficulty: str = "medium"
+        difficulty: str = "medium",
+        focus_areas: str = "",
+        strict_focus: bool = False,
     ) -> List[dict]:
         """Generate MCQ questions for technical assessment based on job description.
         
@@ -236,7 +238,9 @@ class QuestionGeneratorService:
             must_have_skills=must_have_skills,
             good_to_have_skills=good_to_have_skills,
             count=count,
-            difficulty=difficulty
+            difficulty=difficulty,
+            focus_areas=focus_areas,
+            strict_focus=strict_focus,
         )
 
         try:

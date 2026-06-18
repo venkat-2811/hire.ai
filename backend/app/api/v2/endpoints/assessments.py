@@ -238,6 +238,8 @@ class AssessmentInviteRequest(BaseModel):
     # Apex (Salesforce) section — only honoured when job.include_apex_assessment = True
     include_apex: Optional[bool] = False
     apex_question_count: Optional[int] = 3
+    focus_areas: Optional[str] = None
+    strict_focus: Optional[bool] = False
 
 
 def _calc_total_time_minutes(
@@ -484,6 +486,8 @@ async def invite_assessments(
                 "is_apex_mode": bool(include_apex),
                 # assessment_mode: 'both' when DSA + Apex, 'apex' for Apex-only, 'dsa' otherwise
                 "assessment_mode": "both" if (include_apex and include_coding) else ("apex" if include_apex else "dsa"),
+                "focus_areas": body.focus_areas or "",
+                "strict_focus": bool(body.strict_focus),
             },
             "content_generation": {
                 "status": "queued",
@@ -587,7 +591,13 @@ async def invite_assessments(
                     min_experience_years=int(job.get("min_experience_years") or 0),
                     is_active=True,
                 )
-                generated_mcqs = await qgen.generate_mcq_questions(jd, count=mcq_count, difficulty=difficulty)
+                generated_mcqs = await qgen.generate_mcq_questions(
+                        jd,
+                        count=mcq_count,
+                        difficulty=difficulty,
+                        focus_areas=body.focus_areas or "",
+                        strict_focus=bool(body.strict_focus),
+                    )
                 logger.info("[assessments.invite] mcq_generated count=%s", len(generated_mcqs))
             except Exception as e:
                 section_errors["mcq"] = str(e)
