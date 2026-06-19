@@ -455,33 +455,131 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
 async def cancel_subscription(user: ClerkUser = Depends(require_user)):
     """POST /api/v2/subscription/cancel
     
-    Cancels subscription in Stripe at period end and updates DB status immediately.
+    Sets cancel_at_period_end so the subscription continues until billing cycle end.
+    The plan is NOT reverted to free immediately — the user retains full access
+    until the billing_cycle_end date. The Stripe webhook handles the final downgrade.
     """
     db = get_db_admin_service()
 
     def _fetch():
-        return db.client.from_("profiles").select("subscription_id, subscription_status").eq("user_id", user.id).maybe_single().execute()
+        return db.client.from_("profiles").select(
+            "subscription_id, subscription_status, subscription_plan"
+        ).eq("user_id", user.id).maybe_single().execute()
 
     res = await db.run(_fetch)
     profile = getattr(res, "data", None)
-    if not isinstance(profile, dict) or not profile.get("subscription_id"):
+    if not isinstance(profile, dict):
         return api_error(message="No active subscription found", status_code=400)
 
-    sub_id = profile["subscription_id"]
-    
-    # 1. Cancel in Stripe at period end
-    try:
-        await _cancel_stripe_subscription(sub_id)
-    except Exception as e:
-        logger.error("[subscription.cancel] Stripe cancel failed: %s", e)
+    current_plan = str(profile.get("subscription_plan") or "free").lower()
+    if current_plan == "free":
+        return api_error(message="No active subscription found", status_code=400)
+
+    sub_id = profile.get("subscription_id")
+    current_status = str(profile.get("subscription_status") or "").lower()
+
+    if current_status == "cancel_at_period_end":
+        return api_error(message="Subscription is already scheduled for cancellation.", status_code=400)
+
+    # 1. Tell Stripe to cancel at period end (not immediately)
+    key = _get_stripe_key()
+    if key and sub_id and not sub_id.startswith("cs_"):
+        try:
+            async with __import__("httpx").AsyncClient() as client:
+                resp = await client.post(
+                    f"https://api.stripe.com/v1/subscriptions/{sub_id}",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    content="cancel_at_period_end=true",
+                )
+            if resp.status_code != 200:
+                logger.error("[subscription.cancel] Stripe cancel_at_period_end failed: %s", resp.text)
+        except Exception as e:
+            logger.error("[subscription.cancel] Stripe request failed: %s", e)
 
     now = datetime.now(timezone.utc).isoformat()
 
-    # 2. Update DB states immediately
+    # 2. Mark profiles as cancel_at_period_end — keep the plan and don't downgrade yet
     def _update_profile():
         return (
             db.client.from_("profiles")
-            .update({"subscription_plan": "free", "subscription_status": "active", "updated_at": now})
+            .update({"subscription_status": "cancel_at_period_end", "updated_at": now})
+            .eq("user_id", user.id)
+            .execute()
+        )
+    await db.run(_update_profile)
+
+    # 3. Mark subscriptions table the same way
+    def _update_sub():
+        return (
+            db.client.from_("subscriptions")
+            .update({"status": "cancel_at_period_end", "updated_at": now})
+            .eq("user_id", user.id)
+            .execute()
+        )
+    await db.run(_update_sub)
+
+    return ok({
+        "success": True,
+        "message": "Your subscription has been scheduled for cancellation. You will retain full access until the end of your current billing period.",
+    })
+
+@router.post("/reactivate")
+async def reactivate_subscription(user: ClerkUser = Depends(require_user)):
+    """POST /api/v2/subscription/reactivate
+    
+    Reactivates a subscription that was previously scheduled for cancellation
+    (status = cancel_at_period_end).
+    """
+    db = get_db_admin_service()
+
+    def _fetch():
+        return db.client.from_("profiles").select(
+            "subscription_id, subscription_status, subscription_plan"
+        ).eq("user_id", user.id).maybe_single().execute()
+
+    res = await db.run(_fetch)
+    profile = getattr(res, "data", None)
+    if not isinstance(profile, dict):
+        return api_error(message="No active subscription found", status_code=400)
+
+    current_plan = str(profile.get("subscription_plan") or "free").lower()
+    if current_plan == "free":
+        return api_error(message="You are already on the Free plan", status_code=400)
+
+    current_status = str(profile.get("subscription_status") or "").lower()
+    if current_status != "cancel_at_period_end":
+        return api_error(message="Subscription is not scheduled for cancellation.", status_code=400)
+
+    sub_id = profile.get("subscription_id")
+
+    # 1. Tell Stripe to remove cancel_at_period_end
+    key = _get_stripe_key()
+    if key and sub_id and not sub_id.startswith("cs_"):
+        try:
+            async with __import__("httpx").AsyncClient() as client:
+                resp = await client.post(
+                    f"https://api.stripe.com/v1/subscriptions/{sub_id}",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    content="cancel_at_period_end=false",
+                )
+            if resp.status_code != 200:
+                logger.error("[subscription.reactivate] Stripe cancel_at_period_end=false failed: %s", resp.text)
+        except Exception as e:
+            logger.error("[subscription.reactivate] Stripe request failed: %s", e)
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # 2. Update DB status back to active
+    def _update_profile():
+        return (
+            db.client.from_("profiles")
+            .update({"subscription_status": "active", "updated_at": now})
             .eq("user_id", user.id)
             .execute()
         )
@@ -490,10 +588,14 @@ async def cancel_subscription(user: ClerkUser = Depends(require_user)):
     def _update_sub():
         return (
             db.client.from_("subscriptions")
-            .update({"status": "active", "plan": "free", "updated_at": now})
+            .update({"status": "active", "updated_at": now})
             .eq("user_id", user.id)
             .execute()
         )
     await db.run(_update_sub)
 
-    return ok({"success": True, "message": "Your subscription has been cancelled successfully. Your account has been moved to the Free Plan."})
+    return ok({
+        "success": True,
+        "message": "Your subscription has been successfully reactivated.",
+    })
+

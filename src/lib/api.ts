@@ -1431,6 +1431,11 @@ export const subscriptionApi = {
     request<{ success: boolean; message: string }>('/subscription/cancel', {
       method: 'POST',
     }),
+
+  reactivate: () =>
+    request<{ success: boolean; message: string }>('/subscription/reactivate', {
+      method: 'POST',
+    }),
 };
 
 export const usageApi = {

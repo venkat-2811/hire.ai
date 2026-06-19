@@ -215,7 +215,7 @@ export default function BillingPage() {
     setBusy('cancel');
     try {
       await subscriptionApi.cancel();
-      toast.success('Your subscription has been cancelled successfully. Your account has been moved to the Free Plan.');
+      toast.success('Subscription scheduled for cancellation. You will retain full access until the end of your current billing period.');
       setCancelModalOpen(false);
       void triggerRealtimeUpdates(false);
     } catch (e: unknown) {
@@ -229,7 +229,12 @@ export default function BillingPage() {
   const handleReactivate = async () => {
     setBusy('reactivate');
     try {
-      toast.info('Please select one of our premium plans to subscribe and reactivate.');
+      const res = await subscriptionApi.reactivate();
+      toast.success(res.message || 'Subscription reactivated successfully!');
+      void triggerRealtimeUpdates(false);
+    } catch (e: unknown) {
+      const err = e as Error;
+      toast.error(err.message || 'Failed to reactivate subscription. Please subscribe to a new plan.');
     } finally {
       setBusy(null);
     }
@@ -303,8 +308,18 @@ export default function BillingPage() {
                 {activePlan?.name || 'Free'} Plan
               </CardTitle>
               <CardDescription className="text-sm font-medium mt-1">
-                Status: <span className="uppercase text-primary font-bold">{usage?.status || 'Active'}</span>
+                Status: <span className={`uppercase font-bold ${usage?.status === 'cancel_at_period_end' ? 'text-amber-500' : 'text-primary'}`}>
+                  {usage?.status === 'cancel_at_period_end' ? 'Cancellation Scheduled' : (usage?.status || 'Active')}
+                </span>
               </CardDescription>
+              {usage?.status === 'cancel_at_period_end' && usage?.billing_cycle_end && (
+                <div className="mt-2 flex items-start gap-2 text-xs bg-amber-500/10 border border-amber-500/20 text-amber-700 rounded-lg px-3 py-2">
+                  <Calendar className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                  <span>
+                    Your subscription is cancelled but <strong>remains active until {new Date(usage.billing_cycle_end).toLocaleDateString()}</strong>. You will not be charged again.
+                  </span>
+                </div>
+              )}
             </CardHeader>
 
             <CardContent className="space-y-6">
@@ -314,16 +329,25 @@ export default function BillingPage() {
                   <span className="font-bold text-sm">{usage?.validity || '1 Month'}</span>
                 </div>
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground block">Renewal Date</span>
+                  <span className="text-xs text-muted-foreground block">
+                    {usage?.status === 'cancel_at_period_end' ? 'Expiry Date' : 'Renewal Date'}
+                  </span>
                   <span className="font-bold text-sm flex items-center gap-1">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     {usage?.billing_cycle_end ? new Date(usage.billing_cycle_end).toLocaleDateString() : 'N/A'}
                   </span>
+                  {usage?.status === 'cancel_at_period_end' && (
+                    <span className="text-[10px] text-amber-500 font-medium leading-tight block">
+                      Subscription continues until this date
+                    </span>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <span className="text-xs text-muted-foreground block">Price</span>
                   <span className="font-bold text-sm">
-                    {usage?.price !== undefined ? formatPrice(usage.price, activeCurrency) : formatPrice(0, activeCurrency)}
+                    {activePlan && activePlanId !== 'free'
+                      ? formatPrice(activeCurrency === 'INR' ? (activePlan.priceINR ?? 0) : (activePlan.priceUSD ?? 0), activeCurrency)
+                      : formatPrice(0, activeCurrency)}
                   </span>
                 </div>
                 <div className="space-y-1">
@@ -638,13 +662,13 @@ export default function BillingPage() {
           <div className="space-y-4 py-4 text-sm">
             <p className="font-semibold text-foreground">By cancelling your subscription, you acknowledge and agree to the following:</p>
             <ul className="list-disc pl-5 space-y-1.5 text-muted-foreground">
-              <li>Your current subscription will be terminated immediately upon confirmation.</li>
-              <li>Your account will be reverted to the Free Plan.</li>
+              <li>Your subscription will <strong className="text-foreground">continue until the end of your current billing period</strong>. You will NOT lose access immediately.</li>
+              <li>No further charges will be made after the current period ends.</li>
+              <li>Once the billing period expires, your account will be automatically moved to the Free Plan.</li>
               <li>Any unused portion of your subscription is non-refundable.</li>
-              <li>Access to premium features associated with your current plan will be removed immediately after cancellation.</li>
-              <li>Assessment limits, candidate limits, and premium functionality will be reset according to the Free Plan.</li>
-              <li>Historical data, reports, and completed assessments will remain available unless otherwise restricted by the Free Plan.</li>
-              <li>You may purchase a new subscription plan at any time in the future.</li>
+              <li>After expiry, assessment limits and premium functionality will reset to the Free Plan limits.</li>
+              <li>Historical data, reports, and completed assessments will remain available.</li>
+              <li>You may subscribe to a new plan at any time.</li>
             </ul>
             <p className="font-medium text-foreground">By proceeding, you confirm that you understand and accept these terms.</p>
 

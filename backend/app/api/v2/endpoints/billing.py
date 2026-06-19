@@ -208,9 +208,14 @@ async def _get_or_create_subscription(db, user_id: str) -> Dict[str, Any]:
     if status not in ("active", "paused", "overdue", "cancel_at_period_end"):
         status = "active"
 
-    cfg = BILLING_PLAN_CONFIG[plan]
+    cfg = BILLING_PLAN_CONFIG.get(plan, BILLING_PLAN_CONFIG["free"])
     now = datetime.now(timezone.utc)
-    cycle_end = now + timedelta(days=30)
+    interval = cfg.get("interval", "month")
+    interval_count = cfg.get("interval_count", 1)
+    if interval == "year":
+        cycle_end = now + timedelta(days=365 * interval_count)
+    else:
+        cycle_end = now + timedelta(days=30 * interval_count)
 
     def _insert():
         return db.client.from_("subscriptions").insert(

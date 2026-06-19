@@ -4372,6 +4372,16 @@ export default function AssessmentPage() {
 
                       {/* RIGHT: Code Editor Panel */}
                       <div className="flex flex-col h-full min-h-0 border rounded-lg overflow-hidden bg-card">
+                        {/* SQL Clarification Note */}
+                        <div className="flex items-start gap-2 px-3 py-2 bg-blue-500/10 border-b border-blue-500/20 text-xs text-blue-700 dark:text-blue-400">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z" />
+                          </svg>
+                          <span>
+                            <strong>Note:</strong> The <strong>"Run"</strong> button tests your query — it is <em>not</em> considered for evaluation.
+                            Please click <strong>"Submit"</strong> for your code to be evaluated and scored.
+                          </span>
+                        </div>
                         {/* Editor Toolbar */}
                         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                           <div className="flex items-center gap-2">
