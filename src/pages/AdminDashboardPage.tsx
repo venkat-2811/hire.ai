@@ -368,7 +368,7 @@ export default function AdminDashboardPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>User</TableHead>
+                          <TableHead>Email</TableHead>
                           <TableHead>Company</TableHead>
                           <TableHead>Time</TableHead>
                           <TableHead>IP</TableHead>
@@ -512,7 +512,7 @@ export default function AdminDashboardPage() {
                     <option value="">All recruiters</option>
                     {recruiters.map((r) => (
                       <option key={r.recruiter_user_id} value={r.recruiter_user_id}>
-                        {r.company_name || r.email || r.recruiter_user_id}
+                        {r.email || r.recruiter_user_id} {r.company_name ? `(${r.company_name})` : ''}
                       </option>
                     ))}
                   </select>
@@ -562,7 +562,10 @@ export default function AdminDashboardPage() {
                   {(transactions as AdminBillingTransaction[]).map((tx) => (
                     <div key={tx.id} className="border rounded-md p-3">
                       <div className="flex items-center justify-between">
-                        <div className="font-semibold text-sm">{tx.recruiter_company_name || tx.recruiter_email || tx.user_id}</div>
+                        <div>
+                          <div className="font-semibold text-sm">{tx.recruiter_email || tx.user_id}</div>
+                          {tx.recruiter_company_name && <div className="text-xs text-muted-foreground">{tx.recruiter_company_name}</div>}
+                        </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="capitalize">{tx.plan}</Badge>
                           <Badge className="capitalize">{tx.status}</Badge>
@@ -592,8 +595,10 @@ export default function AdminDashboardPage() {
               <CardContent className="space-y-3 max-h-[420px] overflow-auto">
                 {(recruiters as AdminRecruiterCandidateCount[]).map((r) => (
                   <div key={r.recruiter_user_id} className="border rounded-md p-3">
-                    <div className="font-semibold text-sm">{r.company_name || r.email || r.recruiter_user_id}</div>
-                    <div className="text-xs text-muted-foreground">{r.recruiter_user_id}</div>
+                    <div className="font-semibold text-sm">{r.email || r.recruiter_user_id}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {r.company_name ? `${r.company_name} • ` : ''}{r.recruiter_user_id}
+                    </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
                       <Badge variant="outline">Enrolled: {r.candidates_enrolled_count}</Badge>
                       <Badge variant="outline">Consumed Counter: {r.candidates_consumed_counter}</Badge>
