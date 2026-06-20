@@ -12,6 +12,7 @@ import {
   UserCircle,
   Wallet,
   BarChart3,
+  Shield,
 } from "lucide-react";
 import logoFull from "@/assets/LOGO_full.png";
 import logoIcon from "@/assets/logo.png";
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -27,6 +29,7 @@ const navigation = [
   { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Results', href: '/results', icon: Trophy },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Admin', href: '/admin', icon: Shield, adminOnly: true },
   { name: 'Billing', href: '/billing', icon: Wallet },
   { name: 'Profile', href: '/profile', icon: UserCircle },
 ];
@@ -36,6 +39,7 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const { data: profile } = useProfile();
+  const { isAdmin } = useIsAdmin();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = async () => {
@@ -90,7 +94,7 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
 
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-1">
-        {navigation.map((item) => {
+        {navigation.filter((item) => !item.adminOnly || isAdmin).map((item) => {
           const isActive = location.pathname === item.href;
           return (
             <Link

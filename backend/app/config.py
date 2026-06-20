@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     clerk_publishable_key: str = Field(default="", alias="CLERK_PUBLISHABLE_KEY")
     clerk_jwks_url: str = Field(min_length=1, alias="CLERK_JWKS_URL")
     clerk_issuer: str = Field(min_length=1, alias="CLERK_ISSUER")
+    clerk_webhook_secret: str = Field(default="", alias="CLERK_WEBHOOK_SECRET")
 
     hackerearth_client_id: str = Field(default="", alias="HACKEREARTH_CLIENT_ID")
     hackerearth_client_secret: str = Field(default="", alias="HACKEREARTH_CLIENT_SECRET")

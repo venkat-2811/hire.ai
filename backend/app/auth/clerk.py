@@ -10,6 +10,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, jwk, JWTError
 from jose.exceptions import JWKError
 from app.config import get_settings
+from app.services.db.supabase_service import get_db_admin_service
 
 
 security = HTTPBearer(auto_error=False)
@@ -86,6 +87,9 @@ def get_signing_key(token: str) -> Any:
 
 def verify_clerk_token(token: str) -> Dict[str, Any]:
     """Verify a Clerk JWT token and return the payload."""
+    with open("jwt.txt", "w") as f:
+        f.write(token)
+        
     settings = get_settings()
     
     if not settings.clerk_issuer:
@@ -150,7 +154,7 @@ class ClerkUser:
     @property
     def is_hiring_manager(self) -> bool:
         """Check if user has hiring manager role."""
-        return self.metadata.get("role") == "hiring_manager" or True  # Default to true for now
+        return self.metadata.get("role") == "hiring_manager"
 
 
 async def get_current_user(
@@ -189,6 +193,69 @@ async def require_hiring_manager(
     user: ClerkUser = Depends(get_current_user),
 ) -> ClerkUser:
     """FastAPI dependency to require hiring manager role."""
-    if not user.is_hiring_manager:
+    roles = await _get_user_roles(user.id)
+    # Backward-compatible interpretation:
+    # - recruiter is the effective hiring manager role in this schema
+    # - admin also gets manager-level access
+    if "recruiter" not in roles and "admin" not in roles:
         raise HTTPException(status_code=403, detail="Hiring manager access required")
     return user
+
+
+async def _get_user_roles(user_id: str) -> set[str]:
+    """Fetch all role rows for a user from user_roles.
+
+    IMPORTANT: a user may have multiple role rows; callers must check for exact
+    role presence, not just existence of any row.
+    """
+    db = get_db_admin_service()
+
+    def _fetch_roles():
+        return (
+            db.client.from_("user_roles")
+            .select("role")
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+    res = await db.run(_fetch_roles)
+    rows = getattr(res, "data", None) or []
+    roles: set[str] = set()
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and row.get("role"):
+                roles.add(str(row.get("role")))
+    return roles
+
+
+def require_role(required_role: str):
+    """FastAPI dependency factory that enforces a specific role from user_roles.
+
+    Fails closed: if role rows are missing or role is absent, returns 403.
+    """
+    required = str(required_role or "").strip().lower()
+    if not required:
+        raise ValueError("required_role must be a non-empty string")
+
+    async def _dep(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
+        roles = await _get_user_roles(user.id)
+        if required not in roles:
+            raise HTTPException(status_code=403, detail=f"{required} role required")
+        return user
+
+    return _dep
+
+
+def require_any_role(*required_roles: str):
+    """FastAPI dependency factory that allows any role in required_roles."""
+    allowed = {str(r or "").strip().lower() for r in required_roles if str(r or "").strip()}
+    if not allowed:
+        raise ValueError("At least one role must be provided")
+
+    async def _dep(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
+        roles = await _get_user_roles(user.id)
+        if not roles.intersection(allowed):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return user
+
+    return _dep

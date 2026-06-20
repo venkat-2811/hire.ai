@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 
-from app.auth.clerk import ClerkUser, get_current_user
+from app.auth.clerk import ClerkUser, get_current_user, require_role as _require_role, require_any_role
 
 
 def require_user(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
     return user
 
 
-def require_roles(*allowed_roles: str):
-    async def _dep(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
-        role = (user.metadata or {}).get("role")
-        if allowed_roles and role not in set(allowed_roles):
-            raise HTTPException(status_code=403, detail="Forbidden")
-        return user
+def require_role(role: str):
+    return _require_role(role)
 
-    return _dep
+
+def require_roles(*allowed_roles: str):
+    return require_any_role(*allowed_roles)

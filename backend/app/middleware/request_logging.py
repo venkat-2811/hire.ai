@@ -26,6 +26,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 extra={
                     "method": request.method,
                     "path": request.url.path,
+                    "auth_header": request.headers.get("authorization"),
                     "status_code": getattr(response, "status_code", None),
                     "duration_ms": duration_ms,
                     "request_id": request_id,

@@ -1520,6 +1520,157 @@ export const billingApi = {
     ),
 };
 
+// ============== Admin API ==============
+
+export interface AdminOverview {
+  generated_at: string;
+  recruiters_total: number;
+  plan_distribution: Record<string, number>;
+  billing_paid_transactions_last_7d: number;
+  billing_paid_amount_last_7d: number;
+  billing_paid_transactions_prev_7d: number;
+  billing_paid_amount_prev_7d: number;
+}
+
+export interface AdminRecruiterCandidateCount {
+  recruiter_user_id: string;
+  email?: string | null;
+  company_name?: string | null;
+  subscription_plan: string;
+  subscription_status: string;
+  candidates_enrolled_count: number;
+  candidates_consumed_counter: number;
+}
+
+export interface AdminBillingTransaction {
+  id: string;
+  user_id: string;
+  recruiter_email?: string | null;
+  recruiter_company_name?: string | null;
+  plan: string;
+  status: string;
+  raw_status: string;
+  period_start: string;
+  period_end: string;
+  line_items: Array<Record<string, unknown>>;
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  due_date: string;
+  paid_at?: string | null;
+  payment_reference?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AdminActivitySummary {
+  generated_at: string;
+  active_now_count: number;
+  active_now_user_ids: string[];
+  logins_today_unique_users: number;
+  logins_7d_count: number;
+  logins_7d_unique_users: number;
+  logins_prev_7d_count: number;
+  logins_prev_7d_unique_users: number;
+}
+
+export interface AdminLoginEvent {
+  id: string;
+  user_id: string;
+  email?: string | null;
+  company_name?: string | null;
+  logged_in_at: string;
+  ip_address?: string | null;
+  user_agent?: string | null;
+}
+
+export interface AdminCandidateEntry {
+  candidate_id: string;
+  full_name: string;
+  email: string;
+  phone?: string | null;
+  job_title: string;
+  job_id?: string | null;
+  recruiter_user_id?: string | null;
+  recruiter_email: string;
+  application_status: string;
+  created_at: string;
+}
+
+export const adminApi = {
+  health: () =>
+    request<{ ok: boolean; scope: string }>('/admin/health', {
+    }),
+
+  overview: () =>
+    request<AdminOverview>('/admin/overview', {
+    }),
+
+  recruiterCandidateCounts: (params?: { limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ total_recruiters: number; recruiters: AdminRecruiterCandidateCount[] }>(
+      `/admin/recruiters/candidate-counts${q ? `?${q}` : ''}`,
+      {}
+    );
+  },
+
+  subscriptionPlanCounts: () =>
+    request<{ total_recruiters: number; by_plan: Record<string, number> }>('/admin/subscriptions/plan-counts', {
+    }),
+
+  billingTransactions: (params?: {
+    recruiter_user_id?: string;
+    plan?: string;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const sp = new URLSearchParams();
+    if (params?.recruiter_user_id) sp.set('recruiter_user_id', params.recruiter_user_id);
+    if (params?.plan) sp.set('plan', params.plan);
+    if (params?.status) sp.set('status', params.status);
+    if (params?.start_date) sp.set('start_date', params.start_date);
+    if (params?.end_date) sp.set('end_date', params.end_date);
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ total: number; transactions: AdminBillingTransaction[] }>(
+      `/admin/billing/transactions${q ? `?${q}` : ''}`,
+      {}
+    );
+  },
+
+  activitySummary: () =>
+    request<AdminActivitySummary>('/admin/activity/summary', {
+    }),
+
+  recentLogins: (limit?: number) => {
+    const sp = new URLSearchParams();
+    if (typeof limit === 'number') sp.set('limit', String(limit));
+    const q = sp.toString();
+    return request<{ logins: AdminLoginEvent[] }>(
+      `/admin/activity/recent-logins${q ? `?${q}` : ''}`,
+      {}
+    );
+  },
+
+  candidatesList: (params?: { limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ total: number; offset: number; limit: number; candidates: AdminCandidateEntry[] }>(
+      `/admin/candidates/list${q ? `?${q}` : ''}`,
+      {}
+    );
+  },
+};
+
 // ============== DSA Problems API ==============
 
 export interface DsaProblem {
