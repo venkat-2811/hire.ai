@@ -75,6 +75,31 @@ const formatDateWithOrdinal = (dateString: string | null | undefined): string =>
   return `${day}${getOrdinalSuffix(day)} ${month} ${year}`;
 };
 
+// Returns elapsed seconds between two ISO timestamps; null if either is missing or invalid.
+const calcDurationSeconds = (start?: string | null, end?: string | null): number | null => {
+  if (!start || !end) return null;
+  const diff = new Date(end).getTime() - new Date(start).getTime();
+  return diff > 0 ? Math.floor(diff / 1000) : null;
+};
+
+// Human-readable duration from seconds: '42 min 5s', '18 min', '45s'
+const formatDuration = (seconds: number | null): string => {
+  if (!seconds || seconds <= 0) return '-';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `${s}s`;
+  if (s === 0) return `${m} min`;
+  return `${m} min ${s}s`;
+};
+
+// Formats a UTC ISO string to local time like "10:30 AM"
+const formatTime = (dateString: string | null | undefined): string => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
 const getAssessmentContent = (assessmentDetails: any): any => {
   if (!assessmentDetails) return {};
   
@@ -300,33 +325,23 @@ export default function CandidateDetailsPage() {
   //       We check both to be safe.
   useEffect(() => {
     const fetchScreenshots = async () => {
-      console.log('[Screenshot] assessmentDetails:', assessmentDetails);
       const assessmentSessionId = (assessmentDetails as any)?.session_id || (assessmentDetails as any)?.id;
-      console.log('[Screenshot] assessmentSessionId derived:', assessmentSessionId);
       if (assessmentSessionId) {
         const url = `${supabase.storage.from('session-screenshots').getPublicUrl(`assessment/${assessmentSessionId}/latest.jpg`).data.publicUrl}?t=${Date.now()}`;
-        console.log('[Screenshot] Attempting to load Assessment URL:', url);
         const img = new Image();
         img.onload = () => {
-          console.log('[Screenshot] Assessment image loaded successfully!');
           setAssessmentScreenshot(url);
         };
-        img.onerror = () => console.log('[Screenshot] Assessment image not found for session:', assessmentSessionId, url);
         img.src = url;
       }
       
-      console.log('[Screenshot] interviewDetails:', interviewDetails);
       const interviewSessionId = (interviewDetails as any)?.session_id || (interviewDetails as any)?.id;
-      console.log('[Screenshot] interviewSessionId derived:', interviewSessionId);
       if (interviewSessionId) {
         const url = `${supabase.storage.from('session-screenshots').getPublicUrl(`ai_interview/${interviewSessionId}/latest.jpg`).data.publicUrl}?t=${Date.now()}`;
-        console.log('[Screenshot] Attempting to load Interview URL:', url);
         const img = new Image();
         img.onload = () => {
-          console.log('[Screenshot] Interview image loaded successfully!');
           setInterviewScreenshot(url);
         };
-        img.onerror = () => console.log('[Screenshot] Interview image not found for session:', interviewSessionId, url);
         img.src = url;
       }
     };
@@ -706,6 +721,99 @@ export default function CandidateDetailsPage() {
                     )}
                   </CardContent>
                 </Card>
+                {/* Assessment Activity Card */}
+                {assessmentDetails && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <ClipboardList className="h-4 w-4 text-primary" />
+                        Assessment Activity
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                          <Calendar className="h-4 w-4 text-muted-foreground mb-1.5" />
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Started On</p>
+                          {assessmentDetails.started_at ? (
+                            <>
+                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(assessmentDetails.started_at)}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(assessmentDetails.started_at)}</p>
+                            </>
+                          ) : (
+                            <p className="text-sm font-bold text-muted-foreground">-</p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                          <CheckCircle className="h-4 w-4 text-muted-foreground mb-1.5" />
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Completed On</p>
+                          {assessmentDetails.completed_at ? (
+                            <>
+                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(assessmentDetails.completed_at)}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(assessmentDetails.completed_at)}</p>
+                            </>
+                          ) : (
+                            <p className="text-sm font-bold text-muted-foreground">-</p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                          <Clock className="h-4 w-4 text-muted-foreground mb-1.5" />
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Duration</p>
+                          <p className="text-sm font-bold text-foreground">
+                            {formatDuration(calcDurationSeconds(assessmentDetails.started_at, assessmentDetails.completed_at))}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* AI Interview Activity Card */}
+                {interviewDetails && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <MessageSquare className="h-4 w-4 text-primary" />
+                        AI Interview Activity
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                          <Calendar className="h-4 w-4 text-muted-foreground mb-1.5" />
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Started On</p>
+                          {interviewDetails.started_at ? (
+                            <>
+                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(interviewDetails.started_at)}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(interviewDetails.started_at)}</p>
+                            </>
+                          ) : (
+                            <p className="text-sm font-bold text-muted-foreground">-</p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                          <CheckCircle className="h-4 w-4 text-muted-foreground mb-1.5" />
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Completed On</p>
+                          {interviewDetails.completed_at ? (
+                            <>
+                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(interviewDetails.completed_at)}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(interviewDetails.completed_at)}</p>
+                            </>
+                          ) : (
+                            <p className="text-sm font-bold text-muted-foreground">-</p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                          <Clock className="h-4 w-4 text-muted-foreground mb-1.5" />
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Duration</p>
+                          <p className="text-sm font-bold text-foreground">
+                            {formatDuration(calcDurationSeconds(interviewDetails.started_at, interviewDetails.completed_at))}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </div>
           </TabsContent>

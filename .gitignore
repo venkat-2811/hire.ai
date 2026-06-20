@@ -50,3 +50,7 @@ __pycache__/
 .netlify
 
 temp_*.env
+
+# Vite temporary files
+vite.config.ts.timestamp-*
+

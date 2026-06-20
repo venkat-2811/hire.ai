@@ -180,8 +180,28 @@ async def submit_application(
         "applied_at": _utc_now_iso(),
         "created_at": _utc_now_iso(),
     }
+
+    # ISOLATION FIX: Always store the applicant's submitted identity fields in
+    # candidate_overrides so their name/phone/etc. is scoped to this specific
+    # job application rather than relying on the shared candidates row (which
+    # is not overwritten when the email already exists).
+    _overrides: Dict[str, Any] = {}
+    if full_name:
+        _overrides["full_name"] = full_name
+    if phone:
+        _overrides["phone"] = phone
+    if location:
+        _overrides["location"] = location
     if vendorName:
-        app_payload["candidate_overrides"] = {"vendorName": vendorName}
+        _overrides["vendorName"] = vendorName
+    if mainSkillset:
+        _overrides["mainSkillset"] = mainSkillset
+    if portfolio_url:
+        _overrides["portfolio_url"] = portfolio_url
+    if github_url:
+        _overrides["github_url"] = github_url
+    if _overrides:
+        app_payload["candidate_overrides"] = _overrides
 
     await db.insert("job_applications", [app_payload])
 

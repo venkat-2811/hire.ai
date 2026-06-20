@@ -458,7 +458,7 @@ async def get_candidate_analytics(
         analytics.append(
             {
                 "candidate_id": candidate.get("id"),
-                "candidate_name": candidate.get("full_name"),
+                "candidate_name": (application.get("candidate_overrides") or {}).get("full_name") or candidate.get("full_name"),
                 "candidate_email": candidate.get("email"),
                 "job_title": job_title_map.get(applied_job_id) if applied_job_id else "N/A",
                 "job_id": applied_job_id,

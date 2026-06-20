@@ -375,6 +375,45 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
 
         await db.run(_insert_app)
 
+        # ISOLATION FIX: Always capture the recruiter-submitted identity fields into
+        # candidate_overrides on this specific application row.  The shared candidates
+        # table only stores the first-seen value for each field (to avoid tenant bleed),
+        # so without this step a recruiter who adds an existing email with a different
+        # name would silently see the *first* recruiter's name instead of their own.
+        _overrides: Dict[str, Any] = {}
+        if full_name:
+            _overrides["full_name"] = full_name
+        _phone = payload.get("phone")
+        if _phone:
+            _overrides["phone"] = _phone
+        _portfolio = payload.get("portfolio_url") or payload.get("portfolioUrl")
+        if _portfolio:
+            _overrides["portfolio_url"] = _portfolio
+        _github = payload.get("github_url") or payload.get("githubUrl")
+        if _github:
+            _overrides["github_url"] = _github
+        _location = payload.get("location")
+        if _location:
+            _overrides["location"] = _location
+        _vendor = payload.get("vendorName")
+        if _vendor:
+            _overrides["vendorName"] = _vendor
+        _skillset = payload.get("mainSkillset")
+        if _skillset:
+            _overrides["mainSkillset"] = _skillset
+
+        if _overrides:
+            def _write_overrides(ov=_overrides):
+                return (
+                    db.client.from_("job_applications")
+                    .update({"candidate_overrides": ov})
+                    .eq("candidate_id", candidate_id)
+                    .eq("job_id", job_id)
+                    .execute()
+                )
+            await db.run(_write_overrides)
+
+
     return ok({**candidate_row, "job_id": job_id}, status_code=201)
 
 
