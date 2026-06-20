@@ -47,6 +47,11 @@ const PLAN_FILTERS = ['free', 'starter', 'growth', 'scale', 'enterprise'] as con
 const REFRESH_INTERVAL_MS = 30_000;
 const CANDIDATES_PAGE_SIZE = 25;
 
+const getDisplayEmail = (email?: string | null) => {
+  if (!email || email.toLowerCase() === 'unknown') return null;
+  return email;
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function DeltaIndicator({ current, previous, label }: { current: number; previous: number; label?: string }) {
@@ -378,7 +383,7 @@ export default function AdminDashboardPage() {
                         {(recentLogins as AdminLoginEvent[]).map((login) => (
                           <TableRow key={login.id}>
                             <TableCell className="text-sm">
-                              {login.email || login.user_id}
+                              {getDisplayEmail(login.email) || login.user_id}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {login.company_name || '—'}
@@ -512,7 +517,7 @@ export default function AdminDashboardPage() {
                     <option value="">All recruiters</option>
                     {recruiters.map((r) => (
                       <option key={r.recruiter_user_id} value={r.recruiter_user_id}>
-                        {r.email || r.recruiter_user_id} {r.company_name ? `(${r.company_name})` : ''}
+                        {getDisplayEmail(r.email) || r.recruiter_user_id} {r.company_name ? `(${r.company_name})` : ''}
                       </option>
                     ))}
                   </select>
@@ -563,7 +568,7 @@ export default function AdminDashboardPage() {
                     <div key={tx.id} className="border rounded-md p-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-semibold text-sm">{tx.recruiter_email || tx.user_id}</div>
+                          <div className="font-semibold text-sm">{getDisplayEmail(tx.recruiter_email) || tx.user_id}</div>
                           {tx.recruiter_company_name && <div className="text-xs text-muted-foreground">{tx.recruiter_company_name}</div>}
                         </div>
                         <div className="flex items-center gap-2">
@@ -595,7 +600,7 @@ export default function AdminDashboardPage() {
               <CardContent className="space-y-3 max-h-[420px] overflow-auto">
                 {(recruiters as AdminRecruiterCandidateCount[]).map((r) => (
                   <div key={r.recruiter_user_id} className="border rounded-md p-3">
-                    <div className="font-semibold text-sm">{r.email || r.recruiter_user_id}</div>
+                    <div className="font-semibold text-sm">{getDisplayEmail(r.email) || r.recruiter_user_id}</div>
                     <div className="text-xs text-muted-foreground">
                       {r.company_name ? `${r.company_name} • ` : ''}{r.recruiter_user_id}
                     </div>
