@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown, TrendingUp, Globe } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
+import { useUser } from '@clerk/clerk-react';
 import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -108,8 +109,13 @@ export default function OnboardingPage() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
   const { country, currency: detectedCurrency, isLoading: geoLoading } = useCountryDetection(profile?.country as string | undefined);
+  const { user } = useUser();
+
+  const needsName = !profile?.first_name && !profile?.last_name && !user?.firstName && !user?.lastName;
 
   const initial = useMemo(() => ({
+    first_name: profile?.first_name ?? user?.firstName ?? '',
+    last_name: profile?.last_name ?? user?.lastName ?? '',
     organization_email: profile?.organization_email ?? '',
     company_name: profile?.company_name ?? '',
     company_website: profile?.company_website ?? '',
@@ -182,12 +188,30 @@ export default function OnboardingPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleStep1Submit = () => {
+  const handleStep1Submit = async () => {
     if (!form.organization_email.trim()) return;
     if (!form.company_name.trim()) return;
+    if (needsName && (!form.first_name.trim() || !form.last_name.trim())) {
+      toast.error('First Name and Last Name are required');
+      return;
+    }
+
+    if (needsName && user) {
+      try {
+        await user.update({
+          firstName: form.first_name.trim(),
+          lastName: form.last_name.trim(),
+        });
+      } catch (err) {
+        console.error('Failed to update name in Clerk', err);
+        // Continue anyway to sync with Supabase
+      }
+    }
 
     updateProfile.mutate(
       {
+        first_name: form.first_name.trim() || null,
+        last_name: form.last_name.trim() || null,
         organization_email: form.organization_email.trim(),
         company_name: form.company_name.trim(),
         company_website: form.company_website.trim() || null,
@@ -289,6 +313,19 @@ export default function OnboardingPage() {
                   <CardDescription>These details will appear in your profile and can be edited later.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {needsName && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2 pb-4 border-b">
+                      <div className="space-y-2">
+                        <Label htmlFor="firstName">Your First Name *</Label>
+                        <Input id="firstName" placeholder="John" value={form.first_name} onChange={(e) => onChange('first_name', e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="lastName">Your Last Name *</Label>
+                        <Input id="lastName" placeholder="Doe" value={form.last_name} onChange={(e) => onChange('last_name', e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="orgEmail">Organization Email *</Label>
@@ -344,7 +381,7 @@ export default function OnboardingPage() {
                   </div>
 
                   <div className="flex justify-end">
-                    <Button onClick={handleStep1Submit} disabled={updateProfile.isPending || !form.organization_email.trim() || !form.company_name.trim()}>
+                    <Button onClick={handleStep1Submit} disabled={updateProfile.isPending || !form.organization_email.trim() || !form.company_name.trim() || (needsName && (!form.first_name.trim() || !form.last_name.trim()))}>
                       {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Continue
                       <ArrowRight className="ml-2 h-4 w-4" />

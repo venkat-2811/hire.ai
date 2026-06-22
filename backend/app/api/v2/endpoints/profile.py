@@ -35,6 +35,9 @@ async def get_profile(user: ClerkUser = Depends(require_user)):
     # Create minimal profile
     email = str(getattr(user, "email", None) or "unknown")
     now = datetime.now(timezone.utc).isoformat()
+    
+    first = getattr(user, "raw", {}).get("first_name")
+    last = getattr(user, "raw", {}).get("last_name")
 
     def _create():
         return (
@@ -43,7 +46,9 @@ async def get_profile(user: ClerkUser = Depends(require_user)):
                 {
                     "user_id": user.id,
                     "email": email,
-                    "full_name": None,
+                    "first_name": first,
+                    "last_name": last,
+                    "full_name": user.full_name,
                     "avatar_url": None,
                     "onboarding_completed": False,
                     "created_at": now,
@@ -62,6 +67,18 @@ async def get_profile(user: ClerkUser = Depends(require_user)):
     created = getattr(res, "data", None)
     if not isinstance(created, dict):
         return api_error(message="Failed to create profile", status_code=500)
+
+    # Best-effort background sync if name differs (in case of JWT update)
+    if created.get("full_name") != user.full_name and user.full_name:
+        async def _sync_name():
+            await db.run(lambda: db.client.from_("profiles").update({
+                "first_name": first,
+                "last_name": last,
+                "full_name": user.full_name,
+                "updated_at": now
+            }).eq("user_id", user.id).execute())
+        import asyncio
+        asyncio.create_task(_sync_name())
 
     return ok(created)
 
@@ -97,6 +114,21 @@ async def update_profile(payload: Dict[str, Any], user: ClerkUser = Depends(requ
         "contact_phone": _get("contact_phone", "contactPhone"),
         "updated_at": now,
     }
+    
+    first = _get("first_name", "firstName")
+    last = _get("last_name", "lastName")
+    full = _get("full_name", "fullName")
+    if first is not None:
+        update["first_name"] = first
+    if last is not None:
+        update["last_name"] = last
+    if first is not None or last is not None:
+        if full is None:
+            f = str(first or "").strip()
+            l = str(last or "").strip()
+            full = f"{f} {l}".strip()
+    if full is not None:
+        update["full_name"] = full
 
     # boolean fields
     if "onboarding_completed" in payload or "onboardingCompleted" in payload:

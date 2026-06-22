@@ -420,10 +420,10 @@ async def admin_overview(_: ClerkUser = Depends(require_role("admin"))):
 async def admin_activity_summary(_: ClerkUser = Depends(require_role("admin"))):
     """Return login activity summary for the admin dashboard.
 
-    - active_now: users with an open session (status='active' in user_sessions,
-      meaning no session.ended/removed/revoked event has closed it yet)
-    - logins_today: unique users who logged in today
-    - logins_7d / logins_prev_7d: for week-over-week delta
+    - active_now:    users with a login event in the last 15 minutes
+    - logins_today:  unique users who triggered session.created today (UTC)
+    - logins_7d:     total session.created events in the last 7 days (+ unique users)
+    - logins_prev_7d: same for the preceding 7-day window
     """
     db = get_db_admin_service()
     now = datetime.now(timezone.utc)
@@ -431,14 +431,14 @@ async def admin_activity_summary(_: ClerkUser = Depends(require_role("admin"))):
     seven_days_ago = (now - timedelta(days=7)).isoformat()
     fourteen_days_ago = (now - timedelta(days=14)).isoformat()
 
-    # ── Active now: users with a login event in the last 15 minutes ─────────
-    # (Fallback definition since session-ended tracking isn't fully wired up yet)
+    # ── Active now: users with a session.created event in the last 15 minutes ─
     fifteen_min_ago = (now - timedelta(minutes=15)).isoformat()
 
     def _fetch_active_sessions():
         return (
             db.client.from_("user_login_events")
             .select("user_id")
+            .eq("event_type", "session.created")
             .gte("logged_in_at", fifteen_min_ago)
             .execute()
         )
@@ -452,7 +452,7 @@ async def admin_activity_summary(_: ClerkUser = Depends(require_role("admin"))):
             if uid:
                 active_now_ids.add(uid)
 
-    # ── Login event counts (from append-only event log) ─────────────────────
+    # ── Login event counts (session.created only, last 14 days) ─────────────
     def _fetch_recent_events():
         return (
             db.client.from_("user_login_events")
@@ -506,13 +506,19 @@ async def admin_recent_logins(
     limit: int = Query(default=50, ge=1, le=200),
     _: ClerkUser = Depends(require_role("admin")),
 ):
-    """Return the most recent login events, joined with profile data."""
+    """Return the most recent login events, joined with profile data.
+
+    Only session.created events are returned (not session.ended/removed/revoked).
+    The response always includes a human-readable name and email — raw Clerk IDs
+    are never surfaced in any field.
+    """
     db = get_db_admin_service()
 
     def _fetch_recent():
         return (
             db.client.from_("user_login_events")
             .select("id, user_id, logged_in_at, ip_address, user_agent")
+            .eq("event_type", "session.created")
             .order("logged_in_at", desc=True)
             .limit(limit)
             .execute()
@@ -533,7 +539,7 @@ async def admin_recent_logins(
         def _fetch_profiles():
             return (
                 db.client.from_("profiles")
-                .select("user_id, email, company_name")
+                .select("user_id, email, first_name, last_name, full_name, company_name, last_login_at")
                 .in_("user_id", user_ids)
                 .execute()
             )
@@ -543,20 +549,47 @@ async def admin_recent_logins(
             if isinstance(row, dict) and row.get("user_id"):
                 profiles_by_uid[str(row["user_id"])] = row
 
+    def _safe_name(profile: Dict[str, Any]) -> str:
+        """Build a display name, preferring full_name, then first+last, then fallback."""
+        full = str(profile.get("full_name") or "").strip()
+        if full:
+            return full
+        first = str(profile.get("first_name") or "").strip()
+        last = str(profile.get("last_name") or "").strip()
+        combined = " ".join(filter(None, [first, last]))
+        return combined if combined else "Not Provided"
+
+    def _safe_email(profile: Dict[str, Any]) -> str:
+        """Return email, never a Clerk user ID or blank string."""
+        email = str(profile.get("email") or "").strip()
+        # Clerk IDs look like 'user_abc123' — treat them as missing
+        if email and not email.lower().startswith("user_") and email.lower() != "unknown":
+            return email
+        return "Not Provided"
+
     login_entries: List[Dict[str, Any]] = []
     for e in events if isinstance(events, list) else []:
         if not isinstance(e, dict):
             continue
         uid = str(e.get("user_id") or "")
         profile = profiles_by_uid.get(uid, {})
+
+        first_name = str(profile.get("first_name") or "").strip() or None
+        last_name = str(profile.get("last_name") or "").strip() or None
+
         login_entries.append({
             "id": e.get("id"),
             "user_id": uid,
-            "email": profile.get("email"),
-            "company_name": profile.get("company_name"),
+            "first_name": first_name or "Not Provided",
+            "last_name": last_name or "",
+            "full_name": _safe_name(profile),
+            "email": _safe_email(profile),
+            "company_name": str(profile.get("company_name") or "").strip() or "Not Provided",
+            "last_login_at": profile.get("last_login_at"),
             "logged_in_at": e.get("logged_in_at"),
             "ip_address": e.get("ip_address"),
             "user_agent": e.get("user_agent"),
+            "status": "success",
         })
 
     return ok({"logins": login_entries})

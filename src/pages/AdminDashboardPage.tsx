@@ -285,7 +285,7 @@ export default function AdminDashboardPage() {
                       activity?.active_now_count ?? 0
                     )}
                   </CardTitle>
-                  <p className="text-xs text-muted-foreground">Open session (no end event)</p>
+                  <p className="text-xs text-muted-foreground">Active in last 15 minutes</p>
                 </CardHeader>
               </Card>
 
@@ -325,7 +325,7 @@ export default function AdminDashboardPage() {
                       </>
                     )}
                   </CardTitle>
-                  <p className="text-xs text-muted-foreground">Total events (7d)</p>
+                  <p className="text-xs text-muted-foreground">Login events, last 7 days</p>
                 </CardHeader>
               </Card>
 
@@ -358,7 +358,7 @@ export default function AdminDashboardPage() {
               <CardHeader>
                 <CardTitle>Recent Login Events</CardTitle>
                 <CardDescription>
-                  Last 50 login events from Clerk session.created webhook.
+                  Last 50 successful login events. Name and email are sourced from recruiter profiles.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -369,30 +369,43 @@ export default function AdminDashboardPage() {
                 ) : recentLogins.length === 0 ? (
                   <div className="text-sm text-muted-foreground">No login events recorded yet.</div>
                 ) : (
-                  <div className="max-h-[420px] overflow-auto">
+                  <div className="max-h-[480px] overflow-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead>Name</TableHead>
                           <TableHead>Email</TableHead>
                           <TableHead>Company</TableHead>
-                          <TableHead>Time</TableHead>
-                          <TableHead>IP</TableHead>
+                          <TableHead>Login Time</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {(recentLogins as AdminLoginEvent[]).map((login) => (
                           <TableRow key={login.id}>
+                            <TableCell className="font-medium text-sm">
+                              {login.full_name || login.first_name || 'Not Provided'}
+                            </TableCell>
                             <TableCell className="text-sm">
-                              {getDisplayEmail(login.email) || login.user_id}
+                              <PIICell value={login.email === 'Not Provided' ? null : login.email} type="email" />
+                              {(!login.email || login.email === 'Not Provided') && (
+                                <span className="text-xs text-muted-foreground italic">Not Provided</span>
+                              )}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
-                              {login.company_name || '—'}
+                              {login.company_name === 'Not Provided' ? (
+                                <span className="italic">Not Provided</span>
+                              ) : (
+                                login.company_name || <span className="italic">Not Provided</span>
+                              )}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {new Date(login.logged_in_at).toLocaleString()}
                             </TableCell>
-                            <TableCell className="text-xs font-mono text-muted-foreground">
-                              {login.ip_address || '—'}
+                            <TableCell>
+                              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5">
+                                {login.status || 'Success'}
+                              </Badge>
                             </TableCell>
                           </TableRow>
                         ))}

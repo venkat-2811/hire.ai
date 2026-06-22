@@ -234,6 +234,8 @@ export interface Profile {
   id: string;
   user_id: string;
   email: string;
+  first_name: string | null;
+  last_name: string | null;
   full_name: string | null;
   avatar_url: string | null;
   organization_email: string | null;
@@ -1582,11 +1584,16 @@ export interface AdminActivitySummary {
 export interface AdminLoginEvent {
   id: string;
   user_id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
   email?: string | null;
   company_name?: string | null;
+  last_login_at?: string | null;
   logged_in_at: string;
   ip_address?: string | null;
   user_agent?: string | null;
+  status?: string | null;
 }
 
 export interface AdminCandidateEntry {
