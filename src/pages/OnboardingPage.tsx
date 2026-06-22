@@ -16,7 +16,7 @@ import { subscriptionApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
-import { formatPrice, type Currency } from '@/lib/pricing';
+import { formatPrice, getPlansForCurrency, type Currency, type PlanId } from '@/lib/pricing';
 
 const COMPANY_SIZES = ['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'];
 
@@ -25,77 +25,46 @@ const TIMEZONES = [
   'Europe/London', 'Europe/Berlin', 'Asia/Singapore', 'Australia/Sydney',
 ];
 
-const ONBOARDING_PLANS = [
-  {
-    id: 'free',
-    name: 'Free',
-    priceUSD: 0,
-    priceINR: 0,
-    validity: '1 Month',
+const COUNTRY_OPTIONS = [
+  { code: 'IN', label: 'India' },
+  { code: 'US', label: 'United States' },
+  { code: 'GB', label: 'United Kingdom' },
+  { code: 'CA', label: 'Canada' },
+  { code: 'AU', label: 'Australia' },
+  { code: 'SG', label: 'Singapore' },
+  { code: 'AE', label: 'United Arab Emirates' },
+  { code: 'DE', label: 'Germany' },
+  { code: 'FR', label: 'France' },
+  { code: 'NL', label: 'Netherlands' },
+];
+
+const PLAN_UI_META: Record<PlanId, { icon: typeof Sparkles; gradient: string; cardBg: string; cta: string; popular?: boolean }> = {
+  free: {
     icon: Sparkles,
     gradient: 'from-slate-500 to-slate-600',
     cardBg: 'bg-slate-500/5 border-slate-500/20',
-    features: [
-      { text: '5 Candidate Assessments', highlight: false },
-      { text: 'Dynamic AI Interview Prep', highlight: false },
-      { text: 'Robust Resume Text Parsing', highlight: false },
-      { text: 'Tailored MCQ Generation', highlight: false },
-    ],
     cta: 'Start Free',
   },
-  {
-    id: 'starter',
-    name: 'Starter',
-    priceUSD: 300,
-    priceINR: 27000,
-    validity: '6 Months',
+  starter: {
     icon: Zap,
     gradient: 'from-blue-500 to-cyan-500',
     cardBg: 'bg-blue-500/5 border-blue-500/20',
-    features: [
-      { text: '50 Candidate Assessments', highlight: true },
-      { text: 'AI Assessment MCQ + Coding', highlight: true },
-      { text: 'Priority Customer Support', highlight: false },
-      { text: 'Valid for 6 Full Months', highlight: false },
-    ],
     cta: 'Choose Starter',
+    popular: true,
   },
-  {
-    id: 'growth',
-    name: 'Growth',
-    priceUSD: 500,
-    priceINR: 45000,
-    validity: '6 Months',
+  professional: {
     icon: Crown,
     gradient: 'from-purple-500 to-pink-500',
     cardBg: 'bg-purple-500/5 border-purple-500/30',
-    popular: true,
-    features: [
-      { text: '100 Candidate Assessments', highlight: true },
-      { text: 'Everything in Starter Plan', highlight: true },
-      { text: 'Priority Customer Support', highlight: false },
-      { text: 'Valid for 6 Full Months', highlight: false },
-    ],
-    cta: 'Choose Growth',
+    cta: 'Choose Professional',
   },
-  {
-    id: 'scale',
-    name: 'Scale',
-    priceUSD: 2000,
-    priceINR: 180000,
-    validity: '1 Year',
+  enterprise: {
     icon: TrendingUp,
     gradient: 'from-amber-500 to-orange-500',
     cardBg: 'bg-amber-500/5 border-amber-500/30',
-    features: [
-      { text: '500 Candidate Assessments', highlight: true },
-      { text: 'Everything in Growth Plan', highlight: true },
-      { text: 'Priority Customer Support', highlight: false },
-      { text: 'Valid for 1 Full Year', highlight: false },
-    ],
-    cta: 'Choose Scale',
+    cta: 'Choose Enterprise',
   },
-];
+};
 
 const formatCurrency = (amount: number, currency: Currency) => formatPrice(amount, currency);
 
@@ -108,7 +77,6 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
-  const { country, currency: detectedCurrency, isLoading: geoLoading } = useCountryDetection(profile?.country as string | undefined);
   const { user } = useUser();
 
   const needsName = !profile?.first_name && !profile?.last_name && !user?.firstName && !user?.lastName;
@@ -125,10 +93,27 @@ export default function OnboardingPage() {
     hiring_regions: profile?.hiring_regions ?? '',
     hiring_roles: profile?.hiring_roles ?? '',
     preferred_timezone: profile?.preferred_timezone ?? 'Asia/Kolkata',
+    country: profile?.country ?? '',
     contact_phone: profile?.contact_phone ?? '',
   }), [profile]);
 
   const [form, setForm] = useState(initial);
+
+  const { country, currency: detectedCurrency, isLoading: geoLoading } = useCountryDetection({
+    explicitCountry: form.country,
+    profileCountry: profile?.country,
+  });
+
+  const onboardingPlans = useMemo(() => {
+    return getPlansForCurrency(detectedCurrency).map((plan) => {
+      const meta = PLAN_UI_META[plan.id];
+      return {
+        ...plan,
+        ...meta,
+        features: plan.features.map((text, idx) => ({ text, highlight: idx === 0 })),
+      };
+    });
+  }, [detectedCurrency]);
 
   useEffect(() => { setForm(initial); }, [initial]);
 
@@ -221,6 +206,7 @@ export default function OnboardingPage() {
         hiring_regions: form.hiring_regions.trim() || null,
         hiring_roles: form.hiring_roles.trim() || null,
         preferred_timezone: form.preferred_timezone || null,
+        country: form.country || null,
         contact_phone: form.contact_phone.trim() || null,
       },
       {
@@ -353,6 +339,15 @@ export default function OnboardingPage() {
                       <Input id="industry" placeholder="SaaS, FinTech, Healthcare..." value={form.industry} onChange={(e) => onChange('industry', e.target.value)} />
                     </div>
                     <div className="space-y-2">
+                      <Label>Country</Label>
+                      <Select value={form.country} onValueChange={(v) => onChange('country', v)}>
+                        <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
+                        <SelectContent>
+                          {COUNTRY_OPTIONS.map((c) => (<SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="hq">Headquarters Location</Label>
                       <Input id="hq" placeholder="Bengaluru, India" value={form.headquarters_location} onChange={(e) => onChange('headquarters_location', e.target.value)} />
                     </div>
@@ -410,13 +405,13 @@ export default function OnboardingPage() {
 
               {geoLoading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-7 items-stretch">
-                  {ONBOARDING_PLANS.map((plan) => (
+                  {onboardingPlans.map((plan) => (
                     <div key={plan.id} className="h-[520px] rounded-2xl bg-muted/30 animate-pulse" />
                   ))}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-7 items-stretch">
-                  {ONBOARDING_PLANS.map((plan) => {
+                  {onboardingPlans.map((plan) => {
                     const price = detectedCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
 
                     return (
@@ -458,7 +453,7 @@ export default function OnboardingPage() {
 
                         <Button
                           className="w-full mt-auto font-bold"
-                          variant={plan.popular || plan.id === 'scale' ? 'default' : 'outline'}
+                          variant={plan.popular || plan.id === 'enterprise' ? 'default' : 'outline'}
                           disabled={processingPlan}
                           onClick={(e) => {
                             e.stopPropagation();

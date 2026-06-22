@@ -49,6 +49,7 @@ class Settings(BaseSettings):
         return v
 
     clerk_publishable_key: str = Field(default="", alias="CLERK_PUBLISHABLE_KEY")
+    clerk_secret_key: str = Field(default="", alias="CLERK_SECRET_KEY")
     clerk_jwks_url: str = Field(min_length=1, alias="CLERK_JWKS_URL")
     clerk_issuer: str = Field(min_length=1, alias="CLERK_ISSUER")
     clerk_webhook_secret: str = Field(default="", alias="CLERK_WEBHOOK_SECRET")
@@ -71,24 +72,23 @@ class Settings(BaseSettings):
     stripe_mode: str = Field(default="test", alias="STRIPE_MODE")
     deployment_date: str = Field(default="2026-05-29T22:35:00+05:30", alias="DEPLOYMENT_DATE")
 
-    # Test mode flag — allows temp plan checkout
-    test_mode: bool = Field(default=False, alias="TEST_MODE")
-
     # ── Stripe Price IDs (USA / USD) — Free plan excluded (no payment needed) ─
     stripe_us_starter_price_id: str = Field(default="", alias="STRIPE_US_STARTER_PRICE_ID")
+    # Professional plan — reads STRIPE_US_PROFESSIONAL_PRICE_ID, falls back to
+    # legacy STRIPE_US_GROWTH_PRICE_ID via billing_helpers mapping.
     stripe_us_growth_price_id: str = Field(default="", alias="STRIPE_US_GROWTH_PRICE_ID")
+    stripe_us_professional_price_id: str = Field(default="", alias="STRIPE_US_PROFESSIONAL_PRICE_ID")
+    # Enterprise plan — reads STRIPE_US_ENTERPRISE_PRICE_ID, falls back to
+    # legacy STRIPE_US_SCALE_PRICE_ID via billing_helpers mapping.
     stripe_us_scale_price_id: str = Field(default="", alias="STRIPE_US_SCALE_PRICE_ID")
+    stripe_us_enterprise_price_id: str = Field(default="", alias="STRIPE_US_ENTERPRISE_PRICE_ID")
 
     # ── Stripe Price IDs (India / INR) ────────────────────────────────────────
     stripe_ind_starter_price_id: str = Field(default="", alias="STRIPE_IND_STARTER_PRICE_ID")
     stripe_ind_growth_price_id: str = Field(default="", alias="STRIPE_IND_GROWTH_PRICE_ID")
+    stripe_ind_professional_price_id: str = Field(default="", alias="STRIPE_IND_PROFESSIONAL_PRICE_ID")
     stripe_ind_scale_price_id: str = Field(default="", alias="STRIPE_IND_SCALE_PRICE_ID")
-
-    # ── Stripe Price IDs (Test / Temp plans) ─────────────────────────────────
-    stripe_temp_us_1_price_id: str = Field(default="", alias="STRIPE_TEMP_US_1_PRICE_ID")
-    stripe_temp_us_2_price_id: str = Field(default="", alias="STRIPE_TEMP_US_2_PRICE_ID")
-    stripe_temp_ind_1_price_id: str = Field(default="", alias="STRIPE_TEMP_IND_1_PRICE_ID")
-    stripe_temp_ind_2_price_id: str = Field(default="", alias="STRIPE_TEMP_IND_2_PRICE_ID")
+    stripe_ind_enterprise_price_id: str = Field(default="", alias="STRIPE_IND_ENTERPRISE_PRICE_ID")
 
 
 def _format_settings_validation_error(exc: ValidationError) -> str:

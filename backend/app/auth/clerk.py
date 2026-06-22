@@ -3,6 +3,7 @@ Clerk JWT authentication for FastAPI backend.
 Verifies JWT tokens issued by Clerk using JWKS.
 """
 import httpx
+import logging
 from typing import Optional, Dict, Any
 from functools import lru_cache
 from fastapi import HTTPException, Depends, Request
@@ -10,10 +11,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, jwk, JWTError
 from jose.exceptions import JWKError
 from app.config import get_settings
+from app.services.clerk_profile_sync import recover_profile_if_incomplete
 from app.services.db.supabase_service import get_db_admin_service
 
 
 security = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -171,7 +174,18 @@ async def get_current_user(
         raise
     except Exception:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return ClerkUser(payload)
+
+    user = ClerkUser(payload)
+
+    # Legacy recovery safeguard:
+    # if profile identity fields are missing for an older user,
+    # refresh from Clerk and patch Supabase profile.
+    try:
+        await recover_profile_if_incomplete(user.id)
+    except Exception as exc:
+        logger.warning("[auth.clerk] profile recovery skipped user=%s error=%s", user.id, exc)
+
+    return user
 
 
 async def get_optional_user(

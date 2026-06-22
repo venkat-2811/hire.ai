@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 # ─── Billing Plan Configuration ───────────────────────────────────────────────
 # Single source of truth for all plans.
 # INR prices updated per requirements:
-#   Starter: ₹15,000 | Growth: ₹27,000 | Scale: ₹99,000
+#   Starter: ₹15,000 | Professional: ₹27,000 | Enterprise: ₹99,000
 # ─────────────────────────────────────────────────────────────────────────────
 
 BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
@@ -31,8 +31,8 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "interval": "month",
         "interval_count": 6,
     },
-    "growth": {
-        "name": "Growth",
+    "professional": {
+        "name": "Professional",
         "candidates": 100,
         "validity": "6 Months",
         "USD": {"price": 500, "currency_symbol": "$"},
@@ -40,65 +40,14 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "interval": "month",
         "interval_count": 6,
     },
-    "scale": {
-        "name": "Scale",
+    "enterprise": {
+        "name": "Enterprise",
         "candidates": 500,
         "validity": "1 Year",
         "USD": {"price": 2000, "currency_symbol": "$"},
         "INR": {"price": 99000, "currency_symbol": "₹"},   # ₹99,000
         "interval": "year",
         "interval_count": 1,
-    },
-    # Enterprise is handled manually via sales — no Stripe checkout
-    "enterprise": {
-        "name": "Enterprise",
-        "candidates": 999999,
-        "validity": "Custom",
-        "USD": {"price": 0, "currency_symbol": "$"},
-        "INR": {"price": 0, "currency_symbol": "₹"},
-        "interval": "year",
-        "interval_count": 1,
-    },
-    # ── Test / Temp Plans (only accessible when TEST_MODE=true) ──────────────
-    "tempusa1": {
-        "name": "Temp USA 1",
-        "candidates": 2,
-        "validity": "1 Month",
-        "USD": {"price": 1, "currency_symbol": "$"},
-        "INR": {"price": 0, "currency_symbol": "₹"},
-        "interval": "month",
-        "interval_count": 1,
-        "test_only": True,
-    },
-    "tempusa2": {
-        "name": "Temp USA 2",
-        "candidates": 5,
-        "validity": "1 Month",
-        "USD": {"price": 2, "currency_symbol": "$"},
-        "INR": {"price": 0, "currency_symbol": "₹"},
-        "interval": "month",
-        "interval_count": 1,
-        "test_only": True,
-    },
-    "tempind1": {
-        "name": "Temp IND 1",
-        "candidates": 2,
-        "validity": "1 Month",
-        "USD": {"price": 0, "currency_symbol": "$"},
-        "INR": {"price": 20, "currency_symbol": "₹"},
-        "interval": "month",
-        "interval_count": 1,
-        "test_only": True,
-    },
-    "tempind2": {
-        "name": "Temp IND 2",
-        "candidates": 5,
-        "validity": "1 Month",
-        "USD": {"price": 0, "currency_symbol": "$"},
-        "INR": {"price": 30, "currency_symbol": "₹"},
-        "interval": "month",
-        "interval_count": 1,
-        "test_only": True,
     },
 }
 
@@ -108,22 +57,16 @@ def _normalize_plan(raw: Optional[str]) -> str:
     p = str(raw or "free").lower().strip()
     if p in BILLING_PLAN_CONFIG:
         return p
+    if p in ("professional", "growth"):
+        return "professional"
+    if p in ("enterprise", "scale"):
+        return "enterprise"
     if "starter" in p:
         return "starter"
-    if "scale" in p:
-        return "scale"
-    if "growth" in p:
-        return "growth"
-    if "enterprise" in p:
+    if "professional" in p or "growth" in p:
+        return "professional"
+    if "enterprise" in p or "scale" in p:
         return "enterprise"
-    if "tempusa1" in p or "temp_usa_1" in p or "temp-usa-1" in p:
-        return "tempusa1"
-    if "tempusa2" in p or "temp_usa_2" in p or "temp-usa-2" in p:
-        return "tempusa2"
-    if "tempind1" in p or "temp_ind_1" in p or "temp-ind-1" in p:
-        return "tempind1"
-    if "tempind2" in p or "temp_ind_2" in p or "temp-ind-2" in p:
-        return "tempind2"
     return "free"
 
 # ── Stripe Price ID Lookup ─────────────────────────────────────────────────────
@@ -131,6 +74,7 @@ def _normalize_plan(raw: Optional[str]) -> str:
 def get_stripe_price_id(plan: str, currency: str) -> str:
     """
     Look up the configured Stripe Price ID for a given plan + currency.
+    Prefers production-named env vars, falls back to legacy names.
     Returns empty string if not configured (falls back to dynamic price_data).
     """
     from app.config import get_settings
@@ -140,21 +84,18 @@ def get_stripe_price_id(plan: str, currency: str) -> str:
     mapping: Dict[str, Dict[str, str]] = {
         # Free plan intentionally excluded — no payment, no Stripe checkout
         "starter":  {"USD": settings.stripe_us_starter_price_id, "INR": settings.stripe_ind_starter_price_id},
-        "growth":   {"USD": settings.stripe_us_growth_price_id,  "INR": settings.stripe_ind_growth_price_id},
-        "scale":    {"USD": settings.stripe_us_scale_price_id,   "INR": settings.stripe_ind_scale_price_id},
-        "tempusa1": {"USD": settings.stripe_temp_us_1_price_id,  "INR": ""},
-        "tempusa2": {"USD": settings.stripe_temp_us_2_price_id,  "INR": ""},
-        "tempind1": {"USD": "",                                   "INR": settings.stripe_temp_ind_1_price_id},
-        "tempind2": {"USD": "",                                   "INR": settings.stripe_temp_ind_2_price_id},
+        "professional": {
+            "USD": settings.stripe_us_professional_price_id or settings.stripe_us_growth_price_id,
+            "INR": settings.stripe_ind_professional_price_id or settings.stripe_ind_growth_price_id,
+        },
+        "enterprise": {
+            "USD": settings.stripe_us_enterprise_price_id or settings.stripe_us_scale_price_id,
+            "INR": settings.stripe_ind_enterprise_price_id or settings.stripe_ind_scale_price_id,
+        },
     }
     return (mapping.get(plan, {}).get(currency) or "").strip()
 
 # ── Plan Validation ───────────────────────────────────────────────────────────
-
-def is_test_plan(plan: str) -> bool:
-    """Returns True if the plan is a test/temp plan."""
-    cfg = BILLING_PLAN_CONFIG.get(plan, {})
-    return bool(cfg.get("test_only", False))
 
 def validate_plan_currency(plan: str, currency: str) -> Optional[str]:
     """
@@ -164,12 +105,6 @@ def validate_plan_currency(plan: str, currency: str) -> Optional[str]:
     currency = currency.upper()
     if currency not in ("USD", "INR"):
         return f"Invalid currency: {currency}. Supported: USD, INR"
-
-    # Temp plans are currency-specific
-    if plan in ("tempusa1", "tempusa2") and currency != "USD":
-        return f"Plan '{plan}' is only available for USD checkout."
-    if plan in ("tempind1", "tempind2") and currency != "INR":
-        return f"Plan '{plan}' is only available for INR checkout."
 
     return None
 

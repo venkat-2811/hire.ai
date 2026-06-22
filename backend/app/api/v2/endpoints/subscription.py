@@ -185,17 +185,16 @@ async def create_order(payload: Dict[str, Any], request: Request, user: ClerkUse
     """POST /api/v2/subscription/create-order"""
     plan = _normalize_plan(payload.get("plan"))
     currency = str(payload.get("currency") or "USD").upper()
-    if currency not in ("USD", "INR"):
-        currency = "USD"
+    country = str(payload.get("country") or "US").upper()
+    expected_currency = "INR" if country == "IN" else "USD"
+    if currency not in ("USD", "INR") or currency != expected_currency:
+        currency = expected_currency
 
     if plan == "free":
         return api_error(message="Free plan does not require payment", status_code=400)
 
-    if plan == "enterprise":
-        return api_error(
-            message="Enterprise subscriptions are handled manually. Please contact our sales team at sales@hire.ai.",
-            status_code=400,
-        )
+    if plan not in BILLING_PLAN_CONFIG:
+        return api_error(message=f"Unknown plan: {plan}", status_code=400)
 
     cfg = BILLING_PLAN_CONFIG[plan]
     price = cfg[currency]["price"]
@@ -216,7 +215,13 @@ async def create_order(payload: Dict[str, Any], request: Request, user: ClerkUse
             currency=currency,
             interval=interval,
             interval_count=interval_count,
-            metadata={"action": "subscribe", "user_id": user.id, "plan": plan, "currency": currency},
+            metadata={
+                "action": "subscribe",
+                "user_id": user.id,
+                "plan": plan,
+                "currency": currency,
+                "country": country,
+            },
         )
     except Exception as exc:
         return api_error(message=str(exc), status_code=500)
@@ -391,6 +396,7 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
                             "stripe_customer_id": session.get("customer"),
                             "stripe_subscription_id": session.get("subscription"),
                             "currency": session.get("currency", "usd").upper(),
+                            "country": str((session.get("metadata") or {}).get("country") or "").upper() or None,
                         }
                     })
                     .eq("id", existing_sub["id"])
@@ -414,6 +420,7 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
                         "stripe_customer_id": session.get("customer"),
                         "stripe_subscription_id": session.get("subscription"),
                         "currency": session.get("currency", "usd").upper(),
+                        "country": str((session.get("metadata") or {}).get("country") or "").upper() or None,
                     },
                 }).execute()
             await db.run(_insert_sub)
@@ -432,7 +439,11 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
                 "due_date": now_iso,
                 "paid_at": now_iso,
                 "payment_reference": session.get("payment_intent") or session_id,
-                "metadata": {"source": "verify-session", "currency": session.get("currency", "usd").upper()}
+                "metadata": {
+                    "source": "verify-session",
+                    "currency": session.get("currency", "usd").upper(),
+                    "country": str((session.get("metadata") or {}).get("country") or "").upper() or None,
+                }
             }).execute()
         await db.run(_insert_invoice)
         

@@ -1376,7 +1376,7 @@ export const analyticsApi = {
 // ============== Subscription API ==============
 
 export interface SubscriptionInfo {
-  plan: 'free' | 'starter' | 'growth' | 'enterprise';
+  plan: 'free' | 'starter' | 'professional' | 'enterprise';
   status: string;
   subscription_id: string | null;
   plan_selected_at: string | null;
@@ -1449,10 +1449,11 @@ export const usageApi = {
 // ============== Billing API ==============
 
 export interface BillingUsageResponse {
-  plan: 'free' | 'starter' | 'growth' | 'scale' | 'enterprise' | 'tempusa1' | 'tempusa2' | 'tempind1' | 'tempind2';
+  plan: 'free' | 'starter' | 'professional' | 'enterprise';
   status: string;
   billing_cycle_end: string;
   currency: string;
+  country: string;
   validity: string;
   candidates_limit: number;
   candidates_count: number;
@@ -1479,13 +1480,8 @@ export interface BillingInvoice {
 
 export type BillingPlanId =
   | 'starter'
-  | 'growth'
-  | 'scale'
-  | 'enterprise'
-  | 'tempusa1'
-  | 'tempusa2'
-  | 'tempind1'
-  | 'tempind2';
+  | 'professional'
+  | 'enterprise';
 
 export const billingApi = {
   /**
@@ -1541,17 +1537,20 @@ export interface AdminOverview {
 
 export interface AdminRecruiterCandidateCount {
   recruiter_user_id: string;
+  full_name?: string | null;
   email?: string | null;
   company_name?: string | null;
   subscription_plan: string;
   subscription_status: string;
+  subscription_start_date?: string | null;
   candidates_enrolled_count: number;
   candidates_consumed_counter: number;
 }
 
 export interface AdminBillingTransaction {
   id: string;
-  user_id: string;
+  recruiter_user_id?: string;
+  recruiter_full_name?: string | null;
   recruiter_email?: string | null;
   recruiter_company_name?: string | null;
   plan: string;
@@ -1568,6 +1567,23 @@ export interface AdminBillingTransaction {
   payment_reference?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+export interface AdminBillingTransactionsSummary {
+  transactions_count: number;
+  total_amount: number;
+  paid_transactions_count: number;
+  paid_amount: number;
+}
+
+export interface AdminPlanRecruiter {
+  recruiter_user_id: string;
+  full_name: string;
+  email: string;
+  company_name: string;
+  subscription_start_date?: string | null;
+  subscription_status: string;
+  subscription_plan: string;
 }
 
 export interface AdminActivitySummary {
@@ -1604,7 +1620,9 @@ export interface AdminCandidateEntry {
   job_title: string;
   job_id?: string | null;
   recruiter_user_id?: string | null;
-  recruiter_email: string;
+  recruiter_full_name?: string | null;
+  recruiter_email?: string | null;
+  recruiter_company_name?: string | null;
   application_status: string;
   created_at: string;
 }
@@ -1637,6 +1655,9 @@ export const adminApi = {
     recruiter_user_id?: string;
     plan?: string;
     status?: string;
+    user?: string;
+    company?: string;
+    search?: string;
     start_date?: string;
     end_date?: string;
     limit?: number;
@@ -1646,15 +1667,39 @@ export const adminApi = {
     if (params?.recruiter_user_id) sp.set('recruiter_user_id', params.recruiter_user_id);
     if (params?.plan) sp.set('plan', params.plan);
     if (params?.status) sp.set('status', params.status);
+    if (params?.user) sp.set('user', params.user);
+    if (params?.company) sp.set('company', params.company);
+    if (params?.search) sp.set('search', params.search);
     if (params?.start_date) sp.set('start_date', params.start_date);
     if (params?.end_date) sp.set('end_date', params.end_date);
     if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
     if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
     const q = sp.toString();
-    return request<{ total: number; transactions: AdminBillingTransaction[] }>(
+    return request<{
+      total: number;
+      offset: number;
+      limit: number;
+      transactions: AdminBillingTransaction[];
+      summary: AdminBillingTransactionsSummary;
+    }>(
       `/admin/billing/transactions${q ? `?${q}` : ''}`,
       {}
     );
+  },
+
+  planRecruiters: (params: { plan: string; search?: string; limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    sp.set('plan', params.plan);
+    if (params.search) sp.set('search', params.search);
+    if (typeof params.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params.offset === 'number') sp.set('offset', String(params.offset));
+    return request<{
+      plan: string;
+      total: number;
+      offset: number;
+      limit: number;
+      recruiters: AdminPlanRecruiter[];
+    }>(`/admin/subscriptions/plan-recruiters?${sp.toString()}`, {});
   },
 
   activitySummary: () =>

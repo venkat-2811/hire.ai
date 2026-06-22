@@ -22,7 +22,6 @@ from app.utils.billing_helpers import (
     get_candidate_count_after_deployment,
     check_candidate_limit,
     get_stripe_price_id,
-    is_test_plan,
     validate_plan_currency,
 )
 
@@ -41,13 +40,6 @@ def _get_webhook_secret() -> str:
     from app.config import get_settings
     settings = get_settings()
     return str(settings.stripe_webhook_secret or os.environ.get("STRIPE_WEBHOOK_SECRET", "") or "").strip()
-
-def _get_test_mode() -> bool:
-    from app.config import get_settings
-    settings = get_settings()
-    # Enable test mode if explicitly configured, or if using a Stripe test key (sk_test_...)
-    is_test_key = settings.stripe_secret_key.startswith("sk_test_") if settings.stripe_secret_key else True
-    return settings.test_mode or is_test_key
 
 def _verify_stripe_signature(payload: bytes, sig_header: str, secret: str) -> bool:
     """
@@ -362,6 +354,8 @@ async def billing_webhook(request: Request):
                 )
             await db.run(_update_profile)
 
+            country = str(metadata.get("country") or ("IN" if currency == "INR" else "US")).upper()
+
             # Sync subscriptions table
             def _update_sub():
                 return (
@@ -378,6 +372,7 @@ async def billing_webhook(request: Request):
                             "stripe_customer_id": obj.get("customer"),
                             "stripe_subscription_id": obj.get("subscription"),
                             "currency": currency,
+                            "country": country,
                         }
                     })
                     .eq("id", sub["id"])
@@ -401,7 +396,7 @@ async def billing_webhook(request: Request):
                     "due_date": now.isoformat(),
                     "paid_at": now.isoformat(),
                     "payment_reference": obj.get("payment_intent") or obj.get("id"),
-                    "metadata": {"source": "webhook", "currency": currency}
+                    "metadata": {"source": "webhook", "currency": currency, "country": country}
                 }).execute()
             await db.run(_insert_invoice)
 
@@ -515,7 +510,6 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
 
     Security:
     - Plan and currency validated server-side
-    - Test/temp plans only allowed when TEST_MODE=true
     - Never exposes Stripe secrets or internal errors to client
     """
     plan = _normalize_plan(payload.get("plan"))
@@ -533,12 +527,6 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
     if plan == "free":
         return api_error(message="Free plan does not require payment", status_code=400)
 
-    if plan == "enterprise":
-        return api_error(
-            message="Enterprise subscriptions are handled manually. Please contact our sales team at sales@hire.ai.",
-            status_code=400,
-        )
-
     if plan not in BILLING_PLAN_CONFIG:
         return api_error(message=f"Unknown plan: {plan}", status_code=400)
 
@@ -546,13 +534,6 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
     currency_error = validate_plan_currency(plan, currency)
     if currency_error:
         return api_error(message=currency_error, status_code=400)
-
-    # Test plan access control
-    if is_test_plan(plan) and not _get_test_mode():
-        return api_error(
-            message="Test plans are not available in this environment.",
-            status_code=403,
-        )
 
     cfg = BILLING_PLAN_CONFIG[plan]
     price = cfg[currency]["price"]
@@ -687,6 +668,7 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
                         "stripe_customer_id": stripe_session.get("customer"),
                         "stripe_subscription_id": stripe_session.get("subscription"),
                         "currency": session_currency,
+                        "country": str((stripe_session.get("metadata") or {}).get("country") or "").upper() or None,
                     }
                 })
                 .eq("id", sub["id"])
@@ -724,7 +706,11 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
                     "due_date": now.isoformat(),
                     "paid_at": now.isoformat(),
                     "payment_reference": payment_ref,
-                    "metadata": {"source": "verify-session", "currency": session_currency}
+                    "metadata": {
+                        "source": "verify-session",
+                        "currency": session_currency,
+                        "country": str((stripe_session.get("metadata") or {}).get("country") or "").upper() or None,
+                    }
                 }).execute()
             await db.run(_insert_invoice)
 
@@ -759,8 +745,9 @@ async def billing_usage(user: ClerkUser = Depends(require_user)):
     candidate_limit = cfg["candidates"]
     candidate_count = await get_candidate_count_after_deployment(db, user.id)
 
-    # Determine currency from subscription metadata
+    # Determine currency and billing country from subscription metadata
     currency = "USD"
+    billing_country = ""
     try:
         sub = await _get_or_create_subscription(db, user.id)
         cycle_end = sub.get("billing_cycle_end")
@@ -768,8 +755,16 @@ async def billing_usage(user: ClerkUser = Depends(require_user)):
             currency = str(sub["metadata"].get("currency") or "USD").upper()
             if currency not in ("USD", "INR"):
                 currency = "USD"
+            billing_country = str(sub["metadata"].get("country") or "").upper()
     except Exception:
         cycle_end = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
+    if not billing_country or len(billing_country) != 2:
+        profile_country = str(profile.get("country") or "").upper()
+        if profile_country and len(profile_country) == 2:
+            billing_country = profile_country
+        else:
+            billing_country = "IN" if currency == "INR" else "US"
 
     price = cfg[currency]["price"] if currency in cfg else cfg["USD"]["price"]
 
@@ -778,6 +773,7 @@ async def billing_usage(user: ClerkUser = Depends(require_user)):
         "status": status,
         "billing_cycle_end": cycle_end,
         "currency": currency,
+        "country": billing_country,
         "validity": cfg["validity"],
         "candidates_limit": candidate_limit,
         "candidates_count": candidate_count,

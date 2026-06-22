@@ -8,10 +8,63 @@ from fastapi import APIRouter, Depends, Query
 
 from app.auth.clerk import ClerkUser
 from app.auth.dependencies import require_role
+from app.services.clerk_profile_sync import backfill_profiles_from_clerk
 from app.services.db.supabase_service import get_db_admin_service
+from app.utils.billing_helpers import _normalize_plan
 from app.utils.responses import ok
 
 router = APIRouter(prefix="/admin")
+
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _is_internal_user_id(value: Any) -> bool:
+    return _clean_text(value).lower().startswith("user_")
+
+
+def _resolve_profile_name(profile: Dict[str, Any]) -> str:
+    full = _clean_text(profile.get("full_name"))
+    if full and not _is_internal_user_id(full):
+        return full
+    first = _clean_text(profile.get("first_name"))
+    last = _clean_text(profile.get("last_name"))
+    combined = " ".join([part for part in [first, last] if part]).strip()
+    if combined and not _is_internal_user_id(combined):
+        return combined
+    return "Not Provided"
+
+
+def _resolve_profile_email(profile: Dict[str, Any]) -> str:
+    email = _clean_text(profile.get("email"))
+    if not email or email.lower() == "unknown" or _is_internal_user_id(email):
+        return "Not Provided"
+    return email
+
+
+def _resolve_profile_company(profile: Dict[str, Any]) -> str:
+    company_name = _clean_text(profile.get("company_name"))
+    return company_name or "Not Provided"
+
+
+def _build_user_identity(profile: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "full_name": _resolve_profile_name(profile),
+        "email": _resolve_profile_email(profile),
+        "company_name": _resolve_profile_company(profile),
+    }
+
+
+def _to_float(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except Exception:
+        return 0.0
+
+
+def _to_matchable(value: Any) -> str:
+    return _clean_text(value).lower()
 
 
 def _to_iso_start_of_day(value: str) -> str:
@@ -42,10 +95,23 @@ def _extract_plan_from_invoice(invoice: Dict[str, Any]) -> str:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "")
-            m = re.search(r"\b(free|starter|growth|scale|enterprise|tempusa1|tempusa2|tempind1|tempind2)\b", name.lower())
+            m = re.search(r"\b(free|starter|professional|growth|enterprise|scale)\b", name.lower())
             if m:
                 return m.group(1)
     return "unknown"
+
+
+def _normalize_admin_plan(value: Any, *, default: str = "") -> str:
+    raw = _clean_text(value).lower()
+    if not raw:
+        return default
+    if raw in ("growth", "professional"):
+        return "professional"
+    if raw in ("scale", "enterprise"):
+        return "enterprise"
+    if raw in ("starter", "free"):
+        return raw
+    return _normalize_plan(raw)
 
 
 def _derive_billing_status(invoice: Dict[str, Any]) -> str:
@@ -120,7 +186,7 @@ async def recruiter_candidate_counts(
     def _fetch_profiles():
         return (
             db.client.from_("profiles")
-            .select("user_id, email, company_name, subscription_plan, subscription_status, candidates_consumed")
+            .select("user_id, first_name, last_name, full_name, email, company_name, subscription_plan, subscription_status, plan_selected_at, candidates_consumed")
             .in_("user_id", page_ids)
             .execute()
         )
@@ -182,13 +248,16 @@ async def recruiter_candidate_counts(
     recruiters_payload: List[Dict[str, Any]] = []
     for uid in page_ids:
         profile = profiles_by_uid.get(uid, {})
+        identity = _build_user_identity(profile)
         recruiters_payload.append(
             {
                 "recruiter_user_id": uid,
-                "email": profile.get("email"),
-                "company_name": profile.get("company_name"),
+                "full_name": identity["full_name"],
+                "email": identity["email"],
+                "company_name": identity["company_name"],
                 "subscription_plan": profile.get("subscription_plan") or "free",
                 "subscription_status": profile.get("subscription_status") or "active",
+                "subscription_start_date": profile.get("plan_selected_at"),
                 "candidates_enrolled_count": len(candidate_sets.get(uid, set())),
                 "candidates_consumed_counter": int(profile.get("candidates_consumed") or 0),
             }
@@ -224,7 +293,7 @@ async def recruiter_plan_counts(_: ClerkUser = Depends(require_role("admin"))):
         if not uid or uid in seen:
             continue
         seen.add(uid)
-        plan = str(row.get("subscription_plan") or "free").strip().lower()
+        plan = _normalize_admin_plan(row.get("subscription_plan"), default="free")
         by_plan[plan] = by_plan.get(plan, 0) + 1
 
     # Recruiters with no profile row still count under free.
@@ -240,6 +309,9 @@ async def admin_billing_transactions(
     recruiter_user_id: Optional[str] = Query(default=None),
     plan: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
+    user: Optional[str] = Query(default=None),
+    company: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
     start_date: Optional[str] = Query(default=None),
     end_date: Optional[str] = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -262,7 +334,7 @@ async def admin_billing_transactions(
     def _fetch_profiles():
         return (
             db.client.from_("profiles")
-            .select("user_id, email, company_name")
+            .select("user_id, first_name, last_name, full_name, email, company_name, subscription_plan, subscription_status, plan_selected_at, updated_at")
             .in_("user_id", scope_ids)
             .execute()
         )
@@ -281,7 +353,7 @@ async def admin_billing_transactions(
             .select("id, user_id, period_start, period_end, line_items, subtotal, tax_amount, total, status, due_date, paid_at, payment_reference, metadata, created_at")
             .in_("user_id", scope_ids)
             .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
+            .range(0, 4999)
         )
         if start_date:
             q = q.gte("created_at", _to_iso_start_of_day(start_date))
@@ -292,30 +364,137 @@ async def admin_billing_transactions(
     inv_res = await db.run(_fetch_invoices)
     invoices = getattr(inv_res, "data", None) or []
 
-    plan_filter = (plan or "").strip().lower()
+    plan_filter = _normalize_admin_plan(plan)
     status_filter = (status or "").strip().lower()
+    user_filter = _to_matchable(user)
+    company_filter = _to_matchable(company)
+    search_filter = _to_matchable(search)
 
-    transactions: List[Dict[str, Any]] = []
+    # Root-cause fix: plan filter now uses actual subscription plan from profiles
+    # (source of truth), not invoice line-item heuristics.
+    if plan_filter == "free":
+        free_rows: List[Dict[str, Any]] = []
+        for uid in scope_ids:
+            profile = profile_by_uid.get(uid, {})
+            current_plan = _normalize_admin_plan(profile.get("subscription_plan"), default="free")
+            current_status = _clean_text(profile.get("subscription_status") or "active").lower() or "active"
+            if current_plan != "free" or current_status != "active":
+                continue
+
+            identity = _build_user_identity(profile)
+            if user_filter and user_filter not in _to_matchable(identity["full_name"]) and user_filter not in _to_matchable(identity["email"]):
+                continue
+            if company_filter and company_filter not in _to_matchable(identity["company_name"]):
+                continue
+
+            row_created_at = profile.get("plan_selected_at") or profile.get("updated_at")
+            if start_date and row_created_at and _clean_text(row_created_at) < _to_iso_start_of_day(start_date):
+                continue
+            if end_date and row_created_at and _clean_text(row_created_at) > _to_iso_end_of_day(end_date):
+                continue
+
+            status_for_filter = "active"
+            if status_filter and status_for_filter != status_filter:
+                continue
+
+            search_haystack = " ".join(
+                [
+                    _to_matchable(identity["full_name"]),
+                    _to_matchable(identity["email"]),
+                    _to_matchable(identity["company_name"]),
+                    "free",
+                    "active",
+                ]
+            )
+            if search_filter and search_filter not in search_haystack:
+                continue
+
+            free_rows.append(
+                {
+                    "id": f"free-plan-{len(free_rows) + 1}",
+                    "recruiter_user_id": uid,
+                    "recruiter_full_name": identity["full_name"],
+                    "recruiter_email": identity["email"],
+                    "recruiter_company_name": identity["company_name"],
+                    "plan": "free",
+                    "status": "active",
+                    "raw_status": "active",
+                    "period_start": row_created_at,
+                    "period_end": None,
+                    "line_items": [{"name": "Hire.AI Free Plan", "amount": 0, "currency": "USD"}],
+                    "subtotal": 0,
+                    "tax_amount": 0,
+                    "total": 0,
+                    "due_date": row_created_at,
+                    "paid_at": row_created_at,
+                    "payment_reference": None,
+                    "metadata": {"source": "profiles", "type": "free-plan-activation"},
+                    "created_at": row_created_at,
+                }
+            )
+
+        transactions_page = free_rows[offset: offset + limit]
+        return ok(
+            {
+                "total": len(free_rows),
+                "offset": offset,
+                "limit": limit,
+                "transactions": transactions_page,
+                "summary": {
+                    "transactions_count": len(free_rows),
+                    "total_amount": 0,
+                    "paid_transactions_count": 0,
+                    "paid_amount": 0,
+                },
+            }
+        )
+
+    filtered_transactions: List[Dict[str, Any]] = []
     for inv in invoices if isinstance(invoices, list) else []:
         if not isinstance(inv, dict):
             continue
         derived_plan = _extract_plan_from_invoice(inv)
         derived_status = _derive_billing_status(inv)
 
-        if plan_filter and derived_plan != plan_filter:
+        uid = str(inv.get("user_id") or "")
+        profile = profile_by_uid.get(uid, {})
+        current_plan = _normalize_admin_plan(profile.get("subscription_plan"), default=derived_plan)
+
+        if plan_filter and current_plan != plan_filter:
             continue
         if status_filter and derived_status != status_filter:
             continue
+        identity = _build_user_identity(profile)
 
-        uid = str(inv.get("user_id") or "")
-        profile = profile_by_uid.get(uid, {})
-        transactions.append(
+        if user_filter and user_filter not in _to_matchable(identity["full_name"]) and user_filter not in _to_matchable(identity["email"]):
+            continue
+        if company_filter and company_filter not in _to_matchable(identity["company_name"]):
+            continue
+
+        payment_reference = inv.get("payment_reference")
+        search_haystack = " ".join(
+            [
+                _to_matchable(identity["full_name"]),
+                _to_matchable(identity["email"]),
+                _to_matchable(identity["company_name"]),
+                _to_matchable(current_plan),
+                _to_matchable(derived_plan),
+                _to_matchable(derived_status),
+                _to_matchable(inv.get("id")),
+                _to_matchable(payment_reference),
+            ]
+        )
+        if search_filter and search_filter not in search_haystack:
+            continue
+
+        filtered_transactions.append(
             {
                 "id": inv.get("id"),
-                "user_id": uid,
-                "recruiter_email": profile.get("email"),
-                "recruiter_company_name": profile.get("company_name"),
-                "plan": derived_plan,
+                "recruiter_user_id": uid,
+                "recruiter_full_name": identity["full_name"],
+                "recruiter_email": identity["email"],
+                "recruiter_company_name": identity["company_name"],
+                "plan": current_plan,
                 "status": derived_status,
                 "raw_status": inv.get("status"),
                 "period_start": inv.get("period_start"),
@@ -326,13 +505,186 @@ async def admin_billing_transactions(
                 "total": inv.get("total"),
                 "due_date": inv.get("due_date"),
                 "paid_at": inv.get("paid_at"),
-                "payment_reference": inv.get("payment_reference"),
+                "payment_reference": payment_reference,
                 "metadata": inv.get("metadata") or {},
                 "created_at": inv.get("created_at"),
             }
         )
 
-    return ok({"total": len(transactions), "transactions": transactions})
+    # Ensure plan-specific filter returns subscribed users even if invoices are absent.
+    if plan_filter:
+        existing_uid_rows = {
+            _clean_text(row.get("recruiter_user_id"))
+            for row in filtered_transactions
+            if isinstance(row, dict)
+        }
+        synthetic_rows: List[Dict[str, Any]] = []
+
+        for uid in scope_ids:
+            profile = profile_by_uid.get(uid, {})
+            current_plan = _normalize_admin_plan(profile.get("subscription_plan"), default="free")
+            if current_plan != plan_filter:
+                continue
+
+            current_status = _clean_text(profile.get("subscription_status") or "active").lower() or "active"
+            if plan_filter == "free" and current_status != "active":
+                continue
+            if status_filter and current_status != status_filter:
+                continue
+
+            identity = _build_user_identity(profile)
+            if user_filter and user_filter not in _to_matchable(identity["full_name"]) and user_filter not in _to_matchable(identity["email"]):
+                continue
+            if company_filter and company_filter not in _to_matchable(identity["company_name"]):
+                continue
+
+            row_created_at = profile.get("plan_selected_at") or profile.get("updated_at")
+            if start_date and row_created_at and _clean_text(row_created_at) < _to_iso_start_of_day(start_date):
+                continue
+            if end_date and row_created_at and _clean_text(row_created_at) > _to_iso_end_of_day(end_date):
+                continue
+
+            search_haystack = " ".join(
+                [
+                    _to_matchable(identity["full_name"]),
+                    _to_matchable(identity["email"]),
+                    _to_matchable(identity["company_name"]),
+                    _to_matchable(current_plan),
+                    _to_matchable(current_status),
+                ]
+            )
+            if search_filter and search_filter not in search_haystack:
+                continue
+
+            if uid in existing_uid_rows:
+                continue
+
+            synthetic_rows.append(
+                {
+                    "id": f"plan-{plan_filter}-{len(synthetic_rows) + 1}",
+                    "recruiter_user_id": uid,
+                    "recruiter_full_name": identity["full_name"],
+                    "recruiter_email": identity["email"],
+                    "recruiter_company_name": identity["company_name"],
+                    "plan": current_plan,
+                    "status": current_status,
+                    "raw_status": current_status,
+                    "period_start": row_created_at,
+                    "period_end": None,
+                    "line_items": [{"name": f"Hire.AI {current_plan.capitalize()} Plan", "amount": 0, "currency": "USD"}],
+                    "subtotal": 0,
+                    "tax_amount": 0,
+                    "total": 0,
+                    "due_date": row_created_at,
+                    "paid_at": row_created_at,
+                    "payment_reference": None,
+                    "metadata": {"source": "profiles", "type": "plan-activation"},
+                    "created_at": row_created_at,
+                }
+            )
+
+        filtered_transactions.extend(synthetic_rows)
+
+    transactions_page = filtered_transactions[offset: offset + limit]
+    total_amount = sum(_to_float(tx.get("total")) for tx in filtered_transactions)
+    paid_transactions = [tx for tx in filtered_transactions if _clean_text(tx.get("status")) == "paid"]
+    paid_amount = sum(_to_float(tx.get("total")) for tx in paid_transactions)
+
+    return ok(
+        {
+            "total": len(filtered_transactions),
+            "offset": offset,
+            "limit": limit,
+            "transactions": transactions_page,
+            "summary": {
+                "transactions_count": len(filtered_transactions),
+                "total_amount": round(total_amount, 2),
+                "paid_transactions_count": len(paid_transactions),
+                "paid_amount": round(paid_amount, 2),
+            },
+        }
+    )
+
+
+@router.post("/profiles/backfill-clerk")
+async def admin_backfill_clerk_profiles(
+    limit: int = Query(default=0, ge=0, le=50000),
+    dry_run: bool = Query(default=False),
+    _: ClerkUser = Depends(require_role("admin")),
+):
+    db = get_db_admin_service()
+    result = await backfill_profiles_from_clerk(
+        db=db,
+        max_users=(limit or None),
+        dry_run=dry_run,
+    )
+    return ok(result)
+
+
+@router.get("/subscriptions/plan-recruiters")
+async def admin_plan_recruiters(
+    plan: str = Query(..., min_length=1),
+    search: Optional[str] = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _: ClerkUser = Depends(require_role("admin")),
+):
+    db = get_db_admin_service()
+    plan_normalized = _normalize_admin_plan(plan, default="free")
+    search_filter = _to_matchable(search)
+
+    def _fetch_profiles_for_plan():
+        q = (
+            db.client.from_("profiles")
+            .select("user_id, first_name, last_name, full_name, email, company_name, subscription_plan, subscription_status, plan_selected_at")
+            .order("plan_selected_at", desc=True)
+            .order("created_at", desc=True)
+        )
+        return q.execute()
+
+    res = await db.run(_fetch_profiles_for_plan)
+    rows = getattr(res, "data", None) or []
+
+    filtered_rows: List[Dict[str, Any]] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        row_plan = _normalize_admin_plan(row.get("subscription_plan"), default="free")
+        if row_plan != plan_normalized:
+            continue
+        identity = _build_user_identity(row)
+        if search_filter:
+            haystack = " ".join(
+                [
+                    _to_matchable(identity["full_name"]),
+                    _to_matchable(identity["email"]),
+                    _to_matchable(identity["company_name"]),
+                ]
+            )
+            if search_filter not in haystack:
+                continue
+        filtered_rows.append(
+            {
+                "recruiter_user_id": _clean_text(row.get("user_id")),
+                "full_name": identity["full_name"],
+                "email": identity["email"],
+                "company_name": identity["company_name"],
+                "subscription_start_date": row.get("plan_selected_at"),
+                "subscription_status": _clean_text(row.get("subscription_status")) or "active",
+                "subscription_plan": plan_normalized,
+            }
+        )
+
+    page = filtered_rows[offset: offset + limit]
+    return ok(
+        {
+            "plan": plan_normalized,
+            "total": len(filtered_rows),
+            "offset": offset,
+            "limit": limit,
+            "recruiters": page,
+        }
+    )
 
 
 @router.get("/overview")
@@ -549,30 +901,13 @@ async def admin_recent_logins(
             if isinstance(row, dict) and row.get("user_id"):
                 profiles_by_uid[str(row["user_id"])] = row
 
-    def _safe_name(profile: Dict[str, Any]) -> str:
-        """Build a display name, preferring full_name, then first+last, then fallback."""
-        full = str(profile.get("full_name") or "").strip()
-        if full:
-            return full
-        first = str(profile.get("first_name") or "").strip()
-        last = str(profile.get("last_name") or "").strip()
-        combined = " ".join(filter(None, [first, last]))
-        return combined if combined else "Not Provided"
-
-    def _safe_email(profile: Dict[str, Any]) -> str:
-        """Return email, never a Clerk user ID or blank string."""
-        email = str(profile.get("email") or "").strip()
-        # Clerk IDs look like 'user_abc123' — treat them as missing
-        if email and not email.lower().startswith("user_") and email.lower() != "unknown":
-            return email
-        return "Not Provided"
-
     login_entries: List[Dict[str, Any]] = []
     for e in events if isinstance(events, list) else []:
         if not isinstance(e, dict):
             continue
         uid = str(e.get("user_id") or "")
         profile = profiles_by_uid.get(uid, {})
+        identity = _build_user_identity(profile)
 
         first_name = str(profile.get("first_name") or "").strip() or None
         last_name = str(profile.get("last_name") or "").strip() or None
@@ -582,9 +917,9 @@ async def admin_recent_logins(
             "user_id": uid,
             "first_name": first_name or "Not Provided",
             "last_name": last_name or "",
-            "full_name": _safe_name(profile),
-            "email": _safe_email(profile),
-            "company_name": str(profile.get("company_name") or "").strip() or "Not Provided",
+            "full_name": identity["full_name"],
+            "email": identity["email"],
+            "company_name": identity["company_name"],
             "last_login_at": profile.get("last_login_at"),
             "logged_in_at": e.get("logged_in_at"),
             "ip_address": e.get("ip_address"),
@@ -693,13 +1028,14 @@ async def admin_candidates_list(
             recruiter_ids_needed.add(rid)
 
     recruiter_emails: Dict[str, str] = {}
+    recruiter_identity_by_uid: Dict[str, Dict[str, str]] = {}
     if recruiter_ids_needed:
         rids_list = list(recruiter_ids_needed)
 
         def _fetch_recruiter_profiles():
             return (
                 db.client.from_("profiles")
-                .select("user_id, email")
+                .select("user_id, first_name, last_name, full_name, email, company_name")
                 .in_("user_id", rids_list)
                 .execute()
             )
@@ -707,7 +1043,10 @@ async def admin_candidates_list(
         rp_res = await db.run(_fetch_recruiter_profiles)
         for row in getattr(rp_res, "data", None) or []:
             if isinstance(row, dict) and row.get("user_id"):
-                recruiter_emails[str(row["user_id"])] = str(row.get("email") or "")
+                uid = str(row["user_id"])
+                identity = _build_user_identity(row)
+                recruiter_emails[uid] = identity["email"]
+                recruiter_identity_by_uid[uid] = identity
 
     # ── Build response ──────────────────────────────────────────────────────
     candidates_payload: List[Dict[str, Any]] = []
@@ -718,6 +1057,10 @@ async def admin_candidates_list(
         app = apps_by_cid.get(cid, {})
         jid = str(app.get("job_id") or "").strip()
         rid = str(app.get("recruiter_id") or "").strip()
+        recruiter_identity = recruiter_identity_by_uid.get(
+            rid,
+            {"full_name": "Not Provided", "email": recruiter_emails.get(rid, "Not Provided"), "company_name": "Not Provided"},
+        )
         candidates_payload.append({
             "candidate_id": cid,
             "full_name": row.get("full_name"),
@@ -726,7 +1069,9 @@ async def admin_candidates_list(
             "job_title": jobs_by_id.get(jid, ""),
             "job_id": jid or None,
             "recruiter_user_id": rid or None,
-            "recruiter_email": recruiter_emails.get(rid, ""),
+            "recruiter_full_name": recruiter_identity.get("full_name"),
+            "recruiter_email": recruiter_identity.get("email"),
+            "recruiter_company_name": recruiter_identity.get("company_name"),
             "application_status": app.get("status", ""),
             "created_at": row.get("created_at"),
         })

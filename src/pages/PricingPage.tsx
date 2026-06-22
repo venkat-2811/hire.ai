@@ -2,13 +2,14 @@ import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Check, Phone } from 'lucide-react';
+import { Check } from 'lucide-react';
 import Footer from '@/components/layout/Footer';
 import Navbar from '@/components/layout/Navbar';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import {
   PRODUCTION_PLANS,
   formatPrice,
+  getPlanPrice,
   type Currency,
   type PricingPlan,
 } from '@/lib/pricing';
@@ -17,13 +18,15 @@ import {
 
 /** Plan comparison table rows — dynamic based on active currency */
 function getPlanComparisonRows(currency: Currency) {
-  return [
-    { name: 'Free',       price: formatPrice(0, currency),     duration: '1 Month',  limit: '5' },
-    { name: 'Starter',    price: formatPrice(currency === 'INR' ? 15000 : 300, currency), duration: '6 Months', limit: '50' },
-    { name: 'Growth',     price: formatPrice(currency === 'INR' ? 27000 : 500, currency), duration: '6 Months', limit: '100' },
-    { name: 'Scale',      price: formatPrice(currency === 'INR' ? 99000 : 2000, currency), duration: '1 Year',  limit: '500' },
-    { name: 'Enterprise', price: 'Contact Sales',              duration: 'Custom',   limit: 'Custom' },
-  ];
+  return PRODUCTION_PLANS.map((plan) => {
+    const amount = getPlanPrice(plan, currency) ?? 0;
+    return {
+      name: plan.name,
+      price: formatPrice(amount, currency),
+      duration: plan.validity,
+      limit: String(plan.candidates ?? 'Custom'),
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +45,7 @@ const PricingPage = () => {
   }, []);
 
   // Geo-based country + currency detection (no-flicker strategy)
-  const { currency: detectedCurrency, country, isLoading: geoLoading } = useCountryDetection();
+  const { currency: detectedCurrency, isLoading: geoLoading } = useCountryDetection();
 
   // Allow manual override via toggle; fall back to detected currency
   const activeCurrency: Currency = manualCurrency ?? detectedCurrency;
@@ -50,8 +53,7 @@ const PricingPage = () => {
   const productionPlans = PRODUCTION_PLANS;
 
   const getPriceDisplay = (plan: PricingPlan): { symbol: string; amount: string } => {
-    if (plan.isEnterprise) return { symbol: '', amount: '' };
-    const price = activeCurrency === 'INR' ? (plan.priceINR ?? 0) : (plan.priceUSD ?? 0);
+    const price = getPlanPrice(plan, activeCurrency) ?? 0;
     return {
       symbol: activeCurrency === 'INR' ? '₹' : '$',
       amount: formatPrice(price, activeCurrency),
@@ -72,8 +74,6 @@ const PricingPage = () => {
         className={`relative rounded-3xl overflow-hidden transition-all duration-300 ${
           isHighlighted
             ? 'ring-2 ring-primary shadow-2xl md:scale-105'
-            : plan.isEnterprise
-            ? 'ring-2 ring-purple-500/30 bg-card border border-purple-500/20 hover:shadow-lg'
             : 'bg-card border hover:shadow-lg'
         }`}
       >
@@ -82,8 +82,6 @@ const PricingPage = () => {
           className={`p-8 h-full flex flex-col ${
             isHighlighted
               ? 'bg-gradient-to-br from-primary/10 via-card to-card border border-primary/20'
-              : plan.isEnterprise
-              ? 'bg-gradient-to-br from-purple-500/5 via-card to-card'
               : 'bg-card'
           }`}
         >
@@ -96,59 +94,36 @@ const PricingPage = () => {
 
           <div className={isHighlighted ? 'mt-10' : ''}>
             {/* Plan Name */}
-            <h3 className={`text-2xl font-bold mb-2 ${
-              plan.isEnterprise ? 'text-purple-600'
-              : 'text-foreground'
-            }`}>
+            <h3 className="text-2xl font-bold mb-2 text-foreground">
               {plan.name}
             </h3>
 
             {/* Price */}
             <div className="mb-6">
-              {plan.isEnterprise ? (
-                <>
-                  <span className="text-3xl font-bold text-purple-600">Contact Sales</span>
-                  <p className="text-muted-foreground mt-2 text-sm">Custom pricing</p>
-                </>
-              ) : (
-                <>
-                  <span className={`text-4xl font-bold text-foreground`}>
-                    {amount}
-                  </span>
-                  <p className="text-muted-foreground mt-2 text-sm">
-                    {plan.candidates} Candidate{typeof plan.candidates === 'number' && plan.candidates !== 1 ? 's' : ''}
-                  </p>
-                </>
-              )}
+              <>
+                <span className="text-4xl font-bold text-foreground">
+                  {amount}
+                </span>
+                <p className="text-muted-foreground mt-2 text-sm">
+                  {plan.candidates} Candidate{typeof plan.candidates === 'number' && plan.candidates !== 1 ? 's' : ''}
+                </p>
+              </>
               <p className="text-muted-foreground text-sm">
-                {plan.isEnterprise ? 'Custom duration' : `Valid for ${plan.validity}`}
+                {`Valid for ${plan.validity}`}
               </p>
             </div>
 
             {/* CTA Button */}
-            {plan.isEnterprise ? (
-              <Button
-                size="lg"
-                className="w-full rounded-lg mb-8 font-semibold bg-purple-600 hover:bg-purple-700 text-white border-0"
-                asChild
-              >
-                <Link to="/contact">
-                  <Phone className="mr-2 h-4 w-4" />
-                  Contact Sales
-                </Link>
-              </Button>
-            ) : (
-              <Button
-                size="lg"
-                className={`w-full rounded-lg mb-8 font-semibold ${
-                  isHighlighted ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''
-                }`}
-                variant={isHighlighted ? 'default' : 'outline'}
-                asChild
-              >
-                <Link to="/sign-up">{plan.id === 'free' ? 'Get Started' : 'Choose Plan'}</Link>
-              </Button>
-            )}
+            <Button
+              size="lg"
+              className={`w-full rounded-lg mb-8 font-semibold ${
+                isHighlighted ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''
+              }`}
+              variant={isHighlighted ? 'default' : 'outline'}
+              asChild
+            >
+              <Link to="/sign-up">{plan.id === 'free' ? 'Get Started' : 'Choose Plan'}</Link>
+            </Button>
 
             {/* Divider */}
             <div className="border-t border-border mb-6" />
@@ -156,18 +131,12 @@ const PricingPage = () => {
             {/* Features */}
             <div className="space-y-4">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                {plan.isEnterprise ? 'Enterprise Features' : 'Included Features'}
+                Included Features
               </p>
               {plan.features.map((feature, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    plan.isEnterprise ? 'bg-purple-500/20'
-                    : 'bg-primary/20'
-                  }`}>
-                    <Check className={`h-3 w-3 ${
-                      plan.isEnterprise ? 'text-purple-500'
-                      : 'text-primary'
-                    }`} />
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-primary/20">
+                    <Check className="h-3 w-3 text-primary" />
                   </div>
                   <span className="text-sm text-muted-foreground">{feature}</span>
                 </div>
@@ -298,7 +267,7 @@ const PricingPage = () => {
                 { q: 'Can I change plans anytime?', a: 'Yes, you can upgrade your plan at any time. Changes will be reflected immediately upon payment.' },
                 { q: 'Is there a free trial?', a: 'Absolutely! Our Free plan gives you 5 candidate assessments valid for 1 month to test our platform.' },
                 { q: 'What payment methods do you accept?', a: 'We accept all major credit cards, debit cards, and digital payment methods for your convenience.' },
-                { q: 'How do I get an Enterprise plan?', a: 'Enterprise plans have custom pricing and candidate limits. Click "Contact Sales" to connect with our team.' },
+                { q: 'How does Enterprise billing work?', a: 'Enterprise uses the same secure checkout flow as all paid plans, with the highest candidate limits.' },
               ].map((item, i) => (
                 <div key={i} className="bg-card border rounded-2xl p-6 hover:shadow-lg transition-shadow">
                   <h3 className="font-semibold text-foreground mb-3">{item.q}</h3>

@@ -10,13 +10,10 @@
 export type PlanId =
   | 'free'
   | 'starter'
-  | 'growth'
-  | 'scale'
-  | 'enterprise'
-  | 'tempusa1'
-  | 'tempusa2'
-  | 'tempind1'
-  | 'tempind2';
+  | 'professional'
+  | 'enterprise';
+
+export type LegacyPlanAlias = 'growth' | 'scale';
 
 export type Currency = 'USD' | 'INR';
 
@@ -30,8 +27,6 @@ export interface PricingPlan {
   tagline: string;
   features: string[];
   highlighted?: boolean;
-  isEnterprise?: boolean;
-  isTestPlan?: boolean;
 }
 
 // ─── Country Detection ────────────────────────────────────────────────────────
@@ -129,6 +124,37 @@ export function getCurrencyForCountry(country: string): Currency {
   return isIndiaCountry(country) ? 'INR' : 'USD';
 }
 
+function _normalizeCountryCode(raw?: string | null): string {
+  const c = String(raw || '').trim().toUpperCase();
+  return c.length === 2 ? c : '';
+}
+
+export function resolvePricingCountry(options?: {
+  explicitCountry?: string | null;
+  billingCountry?: string | null;
+  profileCountry?: string | null;
+  fallbackCountry?: string | null;
+}): string {
+  const explicit = _normalizeCountryCode(options?.explicitCountry);
+  if (explicit) return explicit;
+
+  const billing = _normalizeCountryCode(options?.billingCountry);
+  if (billing) return billing;
+
+  const profile = _normalizeCountryCode(options?.profileCountry);
+  if (profile) return profile;
+
+  return _normalizeCountryCode(options?.fallbackCountry) || 'US';
+}
+
+export function normalizePlanId(raw?: string | null): PlanId {
+  const p = String(raw || 'free').trim().toLowerCase();
+  if (p === 'growth' || p === 'professional') return 'professional';
+  if (p === 'scale' || p === 'enterprise') return 'enterprise';
+  if (p === 'starter') return 'starter';
+  return 'free';
+}
+
 // ─── Plans ────────────────────────────────────────────────────────────────────
 
 /** Core production plans (always visible) */
@@ -165,8 +191,8 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     highlighted: true,
   },
   {
-    id: 'growth',
-    name: 'Growth',
+    id: 'professional',
+    name: 'Professional',
     priceUSD: 500,
     priceINR: 27000,      // ₹27,000 per requirements
     candidates: 100,
@@ -180,8 +206,8 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     ],
   },
   {
-    id: 'scale',
-    name: 'Scale',
+    id: 'enterprise',
+    name: 'Enterprise',
     priceUSD: 2000,
     priceINR: 99000,      // ₹99,000 per requirements
     candidates: 500,
@@ -189,107 +215,22 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     tagline: 'Advanced capacity for rapidly expanding talent pipelines.',
     features: [
       '500 Candidate Assessments',
-      'Everything in Growth Plan',
+      'Everything in Professional Plan',
       'Valid for 1 Full Year',
       'Priority Customer Support',
       'Advanced Assessment Capacity',
     ],
   },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    priceUSD: null,
-    priceINR: null,
-    candidates: null,
-    validity: 'Custom',
-    tagline: 'Custom volume, dedicated support, and enterprise SLA.',
-    features: [
-      'Custom Candidate Limits',
-      'Custom Assessment Volume',
-      'Dedicated Account Manager',
-      'Priority Support',
-      'Custom Integrations',
-      'Enterprise SLA',
-    ],
-    isEnterprise: true,
-  },
 ];
-
-/**
- * Test/temp plans — ONLY rendered in development builds.
- * Never visible in production.
- */
-export const TEST_PLANS: PricingPlan[] = [
-  {
-    id: 'tempusa1',
-    name: 'Temp USA 1',
-    priceUSD: 1,
-    priceINR: null,
-    candidates: 2,
-    validity: '1 Month',
-    tagline: '[TEST] $1 plan for QA testing. Not visible in production.',
-    features: ['2 Candidate Assessments', 'QA Testing Only'],
-    isTestPlan: true,
-  },
-  {
-    id: 'tempusa2',
-    name: 'Temp USA 2',
-    priceUSD: 2,
-    priceINR: null,
-    candidates: 5,
-    validity: '1 Month',
-    tagline: '[TEST] $2 plan for QA testing. Not visible in production.',
-    features: ['5 Candidate Assessments', 'QA Testing Only'],
-    isTestPlan: true,
-  },
-  {
-    id: 'tempind1',
-    name: 'Temp IND 1',
-    priceUSD: null,
-    priceINR: 20,
-    candidates: 2,
-    validity: '1 Month',
-    tagline: '[TEST] ₹20 plan for QA testing. Not visible in production.',
-    features: ['2 Candidate Assessments', 'QA Testing Only'],
-    isTestPlan: true,
-  },
-  {
-    id: 'tempind2',
-    name: 'Temp IND 2',
-    priceUSD: null,
-    priceINR: 30,
-    candidates: 5,
-    validity: '1 Month',
-    tagline: '[TEST] ₹30 plan for QA testing. Not visible in production.',
-    features: ['5 Candidate Assessments', 'QA Testing Only'],
-    isTestPlan: true,
-  },
-];
-
-/** Returns true if test plans should be visible — always false; test plans are dev-only. */
-export function shouldShowTestPlans(): boolean {
-  return false;
-}
 
 /**
  * Get the plans to display based on currency.
  * Test plans are filtered based on currency region.
  */
 export function getPlansForCurrency(
-  currency: Currency,
-  includeTestPlans = false,
+  _currency: Currency,
 ): PricingPlan[] {
-  const plans = [...PRODUCTION_PLANS];
-
-  if (includeTestPlans && shouldShowTestPlans()) {
-    const testPlans =
-      currency === 'INR'
-        ? TEST_PLANS.filter((p) => p.priceINR !== null)
-        : TEST_PLANS.filter((p) => p.priceUSD !== null);
-    plans.push(...testPlans);
-  }
-
-  return plans;
+  return [...PRODUCTION_PLANS];
 }
 
 // ─── Candidate Credits ────────────────────────────────────────────────────────
@@ -298,13 +239,8 @@ export function getPlansForCurrency(
 export const PLAN_CREDITS: Record<PlanId, number> = {
   free: 5,
   starter: 50,
-  growth: 100,
-  scale: 500,
-  enterprise: 999999,
-  tempusa1: 2,
-  tempusa2: 5,
-  tempind1: 2,
-  tempind2: 5,
+  professional: 100,
+  enterprise: 500,
 };
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
@@ -350,12 +286,8 @@ export function getStripePriceEnvKey(planId: PlanId, currency: Currency): string
   const map: Partial<Record<PlanId, Partial<Record<Currency, string>>>> = {
     // Free plan excluded — no Stripe product needed (no payment)
     starter:  { USD: 'VITE_STRIPE_US_STARTER_PRICE_ID',  INR: 'VITE_STRIPE_IND_STARTER_PRICE_ID' },
-    growth:   { USD: 'VITE_STRIPE_US_GROWTH_PRICE_ID',   INR: 'VITE_STRIPE_IND_GROWTH_PRICE_ID' },
-    scale:    { USD: 'VITE_STRIPE_US_SCALE_PRICE_ID',    INR: 'VITE_STRIPE_IND_SCALE_PRICE_ID' },
-    tempusa1: { USD: 'VITE_STRIPE_TEMP_US_1_PRICE_ID' },
-    tempusa2: { USD: 'VITE_STRIPE_TEMP_US_2_PRICE_ID' },
-    tempind1: { INR: 'VITE_STRIPE_TEMP_IND_1_PRICE_ID' },
-    tempind2: { INR: 'VITE_STRIPE_TEMP_IND_2_PRICE_ID' },
+    professional: { USD: 'VITE_STRIPE_US_PROFESSIONAL_PRICE_ID', INR: 'VITE_STRIPE_IND_PROFESSIONAL_PRICE_ID' },
+    enterprise:   { USD: 'VITE_STRIPE_US_ENTERPRISE_PRICE_ID',   INR: 'VITE_STRIPE_IND_ENTERPRISE_PRICE_ID' },
   };
   return map[planId]?.[currency] ?? '';
 }

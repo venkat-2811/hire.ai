@@ -14,6 +14,7 @@ import {
   getCachedCountry,
   getCurrencyForCountry,
   isIndiaCountry,
+  resolvePricingCountry,
   type Currency,
 } from '@/lib/pricing';
 
@@ -26,6 +27,12 @@ export interface CountryDetectionResult {
   isIndia: boolean;
   /** True while detection is in progress (first render only, if no cache) */
   isLoading: boolean;
+}
+
+export interface CountryDetectionOptions {
+  explicitCountry?: string | null;
+  billingCountry?: string | null;
+  profileCountry?: string | null;
 }
 
 // Read synchronously from storage to avoid any flicker on re-renders
@@ -42,16 +49,24 @@ function getStoredCountry(): { country: string; source: string } | null {
  * 3. Async IP geolocation via ipapi.co
  * 4. Timezone-based fallback
  *
- * @param profileCountry - Optional: user's saved country from their profile
+ * @param options - Optional country sources with explicit > billing > profile priority
  */
-export function useCountryDetection(profileCountry?: string | null): CountryDetectionResult {
+export function useCountryDetection(options?: CountryDetectionOptions): CountryDetectionResult {
   // Synchronously resolve initial state to prevent flicker
   const storedCountry = getStoredCountry();
 
+  const explicitCountry = options?.explicitCountry || null;
+  const billingCountry = options?.billingCountry || null;
+  const profileCountry = options?.profileCountry || null;
+
   const resolveInitial = (): { country: string; isLoading: boolean; source: string } => {
-    // Profile country takes highest priority (user explicitly set this)
-    if (profileCountry && profileCountry.length === 2) {
-      return { country: profileCountry.toUpperCase(), isLoading: false, source: 'profile' };
+    const resolved = resolvePricingCountry({
+      explicitCountry,
+      billingCountry,
+      profileCountry,
+    });
+    if (resolved && resolved.length === 2 && (explicitCountry || billingCountry || profileCountry)) {
+      return { country: resolved, isLoading: false, source: 'priority' };
     }
     // Cached country — instant, no loading state needed
     if (storedCountry && storedCountry.country.length === 2) {
@@ -67,9 +82,13 @@ export function useCountryDetection(profileCountry?: string | null): CountryDete
   const detectionRan = useRef(false);
 
   useEffect(() => {
-    // If profile country is set, it overrides everything — no async needed
-    if (profileCountry && profileCountry.length === 2) {
-      const code = profileCountry.toUpperCase();
+    const resolved = resolvePricingCountry({
+      explicitCountry,
+      billingCountry,
+      profileCountry,
+    });
+    if (resolved && resolved.length === 2 && (explicitCountry || billingCountry || profileCountry)) {
+      const code = resolved.toUpperCase();
       setCountry(code);
       setIsLoading(false);
       return;
@@ -106,7 +125,7 @@ export function useCountryDetection(profileCountry?: string | null): CountryDete
       cancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileCountry]);
+  }, [explicitCountry, billingCountry, profileCountry]);
 
   return {
     country,

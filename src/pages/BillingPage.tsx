@@ -12,15 +12,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  Calendar, ShieldCheck, RefreshCw, Phone, FlaskConical
+  Calendar, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
+import { useProfile } from '@/hooks/useProfile';
 import {
   PRODUCTION_PLANS,
   formatPrice,
-  getPlanPrice,
+  normalizePlanId,
   type PricingPlan,
   type Currency,
 } from '@/lib/pricing';
@@ -37,8 +38,6 @@ interface PlanDetail {
   validity: string;
   tagline: string;
   features: string[];
-  isEnterprise?: boolean;
-  isTestPlan?: boolean;
 }
 
 function toPlanDetail(p: PricingPlan): PlanDetail {
@@ -51,8 +50,6 @@ function toPlanDetail(p: PricingPlan): PlanDetail {
     validity: p.validity,
     tagline: p.tagline,
     features: p.features,
-    isEnterprise: p.isEnterprise,
-    isTestPlan: p.isTestPlan,
   };
 }
 
@@ -76,8 +73,7 @@ export default function BillingPage() {
   const [cancelChecked, setCancelChecked] = useState(false);
   const [cancelConfirmText, setCancelConfirmText] = useState('');
 
-  // Geo-based currency detection (no flicker — reads from cache first)
-  const { country, currency, isLoading: geoLoading } = useCountryDetection();
+  const profileQuery = useProfile();
 
   const usageQuery = useQuery({
     queryKey: ['billing-usage'],
@@ -91,9 +87,17 @@ export default function BillingPage() {
   });
 
   const usage = usageQuery.data;
+  const profile = profileQuery.data;
+
+  // Geo-based currency detection with priority:
+  // billing country > stored profile country > geolocation fallback.
+  const { country, currency, isLoading: geoLoading } = useCountryDetection({
+    billingCountry: usage?.country ?? null,
+    profileCountry: profile?.country ?? null,
+  });
   const invoices = (invoicesQuery.data || []) as BillingInvoice[];
 
-  const activePlanId = usage?.plan || 'free';
+  const activePlanId = normalizePlanId(usage?.plan);
   // STRICT REQUIREMENT: Geo-detected currency is the single source of truth.
   // Never default to the auto-bootstrapped backend currency (which defaults to USD).
   const activeCurrency: Currency = currency;
@@ -455,80 +459,56 @@ export default function BillingPage() {
 
                 const planIndex = VISIBLE_PLANS.findIndex(p => p.id === plan.id);
                 const activePlanIndex = VISIBLE_PLANS.findIndex(p => p.id === activePlanId);
-                const isDowngrade = !plan.isTestPlan && planIndex < activePlanIndex && planIndex > 0;
+                const isDowngrade = planIndex < activePlanIndex && planIndex > 0;
 
                 let ctaLabel = 'Subscribe';
                 if (isActive) ctaLabel = 'Active Plan';
                 else if (activePlanId === 'free') ctaLabel = `Select ${plan.name}`;
                 else ctaLabel = 'Upgrade';
 
-                // Skip temp plans that don't match the current currency
-                if (plan.isTestPlan) {
-                  if (activeCurrency === 'INR' && plan.priceINR === null) return null;
-                  if (activeCurrency === 'USD' && plan.priceUSD === null) return null;
-                }
-
                 return (
                   <Card
                     key={plan.id}
                     className={`flex flex-col transition-all duration-300 relative overflow-hidden ${
-                      plan.isTestPlan
-                        ? 'border-2 border-dashed border-yellow-500/40 bg-yellow-500/5 hover:shadow-md'
-                        : isActive
+                      isActive
                         ? 'border-primary ring-2 ring-primary/20 bg-gradient-to-b from-primary/5 via-card to-card shadow-lg scale-[1.02]'
-                        : plan.isEnterprise
+                        : plan.id === 'enterprise'
                         ? 'border-purple-500/30 bg-gradient-to-b from-purple-500/5 to-card hover:shadow-md'
                         : 'hover:shadow-md border-border hover:border-border/80'
                     }`}
                   >
-                    {/* Test plan badge */}
-                    {plan.isTestPlan && (
-                      <div className="absolute top-0 left-0 right-0 bg-yellow-500/20 border-b border-yellow-500/30 px-3 py-1 flex items-center gap-1.5">
-                        <FlaskConical className="h-3.5 w-3.5 text-yellow-600" />
-                        <span className="text-xs font-semibold text-yellow-700">DEV / TEST ONLY</span>
-                      </div>
-                    )}
-
-                    <CardHeader className={`pb-4 ${plan.isTestPlan ? 'pt-8' : ''}`}>
+                    <CardHeader className="pb-4">
                       <div className="flex justify-between items-center">
                         <h3 className="text-xl font-bold tracking-tight">{plan.name}</h3>
                         {isActive && <Badge variant="default" className="text-[10px] tracking-wide uppercase px-2 py-0.5">Current</Badge>}
-                        {plan.isEnterprise && !isActive && (
+                        {plan.id === 'enterprise' && !isActive && (
                           <Badge className="text-[10px] tracking-wide uppercase px-2 py-0.5 bg-purple-500/20 text-purple-600 border-purple-500/30">
-                            Custom
+                            Premium
                           </Badge>
                         )}
                       </div>
                       <CardDescription className="text-xs min-h-[32px] mt-1.5">
-                        {plan.isTestPlan ? 'Testing only — not visible in production' : plan.tagline}
+                        {plan.tagline}
                       </CardDescription>
                     </CardHeader>
 
                     <CardContent className="flex-grow space-y-6 flex flex-col justify-between">
                       <div>
-                        {plan.isEnterprise ? (
-                          <div className="mb-2">
-                            <span className="text-3xl font-black text-purple-600">Contact Sales</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-baseline gap-1 mb-2">
-                            <span className={`text-3xl font-black ${plan.isTestPlan ? 'text-yellow-700' : ''}`}>
-                              {formatPrice(price ?? 0, activeCurrency)}
-                            </span>
-                            <span className="text-xs text-muted-foreground font-semibold">/ {plan.validity}</span>
-                          </div>
-                        )}
+                        <div className="flex items-baseline gap-1 mb-2">
+                          <span className="text-3xl font-black">
+                            {formatPrice(price ?? 0, activeCurrency)}
+                          </span>
+                          <span className="text-xs text-muted-foreground font-semibold">/ {plan.validity}</span>
+                        </div>
                         <Badge
                           variant="secondary"
                           className={`font-semibold text-xs tracking-wider uppercase ${
-                            plan.isTestPlan
-                              ? 'bg-yellow-500/10 text-yellow-700'
-                              : plan.isEnterprise
+                            plan.id === 'enterprise'
                               ? 'bg-purple-500/10 text-purple-600'
                               : 'bg-primary/10 text-primary'
                           }`}
                         >
-                          {plan.candidates !== null ? `${plan.candidates} Candidates` : 'Custom Limit'}
+                          {`${plan.candidates} Candidates`}
                         </Badge>
                       </div>
 
@@ -536,8 +516,7 @@ export default function BillingPage() {
                         {plan.features.map((feature, i) => (
                           <div key={i} className="flex items-start gap-2.5 text-xs text-muted-foreground">
                             <Check className={`h-4 w-4 flex-shrink-0 mt-0.5 ${
-                              plan.isTestPlan ? 'text-yellow-600'
-                              : plan.isEnterprise ? 'text-purple-500'
+                              plan.id === 'enterprise' ? 'text-purple-500'
                               : 'text-primary'
                             }`} />
                             <span>{feature}</span>
@@ -550,29 +529,15 @@ export default function BillingPage() {
                           <Button className="w-full font-bold uppercase text-xs tracking-wider" variant="outline" disabled>
                             Current Active Plan
                           </Button>
-                        ) : plan.isEnterprise ? (
-                          <Button
-                            className="w-full font-bold uppercase text-xs tracking-wider bg-purple-600 hover:bg-purple-700 text-white border-0"
-                            asChild
-                          >
-                            <Link to="/contact">
-                              <Phone className="mr-2 h-3.5 w-3.5" />
-                              Contact Sales
-                            </Link>
-                          </Button>
                         ) : isDowngrade ? null : (
                           <Button
-                            className={`w-full font-bold uppercase text-xs tracking-wider ${
-                              plan.isTestPlan
-                                ? 'bg-yellow-500 hover:bg-yellow-600 text-white border-0'
-                                : ''
-                            }`}
-                            variant={plan.isTestPlan ? 'default' : 'default'}
+                            className="w-full font-bold uppercase text-xs tracking-wider"
+                            variant="default"
                             onClick={() => handleSubscribe(plan.id as BillingPlanId)}
                             disabled={busy !== null}
                           >
                             {busy === `subscribe-${plan.id}` && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {plan.isTestPlan ? '⚗ Test Checkout' : ctaLabel}
+                            {ctaLabel}
                           </Button>
                         )}
                       </div>

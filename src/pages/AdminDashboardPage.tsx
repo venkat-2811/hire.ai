@@ -26,6 +26,18 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  getAdminDisplayName,
+  getAdminDisplayEmail,
+  getAdminDisplayCompany,
+} from '@/lib/adminIdentity';
+import {
   Loader2,
   Activity,
   TrendingUp,
@@ -43,14 +55,11 @@ import {
 } from 'lucide-react';
 
 const REQUIRED_TRANSACTION_STATUSES = ['paid', 'failed', 'refunded'] as const;
-const PLAN_FILTERS = ['free', 'starter', 'growth', 'scale', 'enterprise'] as const;
+const PLAN_FILTERS = ['free', 'starter', 'professional', 'enterprise'] as const;
 const REFRESH_INTERVAL_MS = 30_000;
 const CANDIDATES_PAGE_SIZE = 25;
-
-const getDisplayEmail = (email?: string | null) => {
-  if (!email || email.toLowerCase() === 'unknown') return null;
-  return email;
-};
+const BILLING_PAGE_SIZE = 25;
+const PLAN_RECRUITERS_PAGE_SIZE = 20;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -127,8 +136,18 @@ export default function AdminDashboardPage() {
   const [recruiterFilter, setRecruiterFilter] = useState('');
   const [planFilter, setPlanFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [billingUserFilter, setBillingUserFilter] = useState('');
+  const [billingCompanyFilter, setBillingCompanyFilter] = useState('');
+  const [billingSearchFilter, setBillingSearchFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [billingOffset, setBillingOffset] = useState(0);
+
+  // Plan recruiters modal
+  const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
+  const [planDetailsPlan, setPlanDetailsPlan] = useState('');
+  const [planDetailsSearch, setPlanDetailsSearch] = useState('');
+  const [planDetailsOffset, setPlanDetailsOffset] = useState(0);
 
   // Candidates pagination (People tab)
   const [candidatesOffset, setCandidatesOffset] = useState(0);
@@ -182,18 +201,46 @@ export default function AdminDashboardPage() {
   });
 
   const transactionsQuery = useQuery({
-    queryKey: ['admin-billing-transactions', recruiterFilter, planFilter, statusFilter, startDate, endDate],
+    queryKey: [
+      'admin-billing-transactions',
+      recruiterFilter,
+      planFilter,
+      statusFilter,
+      billingUserFilter,
+      billingCompanyFilter,
+      billingSearchFilter,
+      startDate,
+      endDate,
+      billingOffset,
+    ],
     queryFn: () =>
       adminApi.billingTransactions({
         recruiter_user_id: recruiterFilter || undefined,
         plan: planFilter || undefined,
         status: statusFilter || undefined,
+        user: billingUserFilter || undefined,
+        company: billingCompanyFilter || undefined,
+        search: billingSearchFilter || undefined,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
-        limit: 200,
-        offset: 0,
+        limit: BILLING_PAGE_SIZE,
+        offset: billingOffset,
       }),
     enabled: isAdmin,
+    retry: false,
+    refetchInterval: REFRESH_INTERVAL_MS,
+  });
+
+  const planRecruitersQuery = useQuery({
+    queryKey: ['admin-plan-recruiters', planDetailsPlan, planDetailsSearch, planDetailsOffset],
+    queryFn: () =>
+      adminApi.planRecruiters({
+        plan: planDetailsPlan,
+        search: planDetailsSearch || undefined,
+        limit: PLAN_RECRUITERS_PAGE_SIZE,
+        offset: planDetailsOffset,
+      }),
+    enabled: isAdmin && planDetailsOpen && !!planDetailsPlan,
     retry: false,
     refetchInterval: REFRESH_INTERVAL_MS,
   });
@@ -208,14 +255,42 @@ export default function AdminDashboardPage() {
 
   const recruiters = recruitersQuery.data?.recruiters ?? [];
   const transactions = transactionsQuery.data?.transactions ?? [];
+  const transactionsTotal = transactionsQuery.data?.total ?? 0;
+  const transactionsSummary = transactionsQuery.data?.summary;
   const recentLogins = recentLoginsQuery.data?.logins ?? [];
   const candidates = candidatesQuery.data?.candidates ?? [];
   const candidatesTotal = candidatesQuery.data?.total ?? 0;
+  const planRecruiters = planRecruitersQuery.data?.recruiters ?? [];
+  const planRecruitersTotal = planRecruitersQuery.data?.total ?? 0;
 
   const sortedPlanCounts = useMemo(() => {
     const byPlan = planCountsQuery.data?.by_plan ?? {};
     return Object.entries(byPlan).sort((a, b) => b[1] - a[1]);
   }, [planCountsQuery.data]);
+
+  useEffect(() => {
+    setBillingOffset(0);
+  }, [
+    recruiterFilter,
+    planFilter,
+    statusFilter,
+    billingUserFilter,
+    billingCompanyFilter,
+    billingSearchFilter,
+    startDate,
+    endDate,
+  ]);
+
+  useEffect(() => {
+    setPlanDetailsOffset(0);
+  }, [planDetailsSearch, planDetailsPlan]);
+
+  const openPlanDetails = (plan: string) => {
+    setPlanDetailsPlan(plan);
+    setPlanDetailsSearch('');
+    setPlanDetailsOffset(0);
+    setPlanDetailsOpen(true);
+  };
 
   if (authLoading || adminLoading) {
     return (
@@ -477,8 +552,13 @@ export default function AdminDashboardPage() {
                 <CardContent className="space-y-3">
                   {sortedPlanCounts.map(([plan, count]) => (
                     <div key={plan} className="flex items-center justify-between border rounded-md px-3 py-2">
-                      <span className="font-medium capitalize">{plan}</span>
-                      <Badge>{count}</Badge>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium capitalize">{plan}</span>
+                        <Badge>{count}</Badge>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => openPlanDetails(plan)}>
+                        View All
+                      </Button>
                     </div>
                   ))}
                   {!sortedPlanCounts.length && <div className="text-sm text-muted-foreground">No plan data available.</div>}
@@ -521,7 +601,7 @@ export default function AdminDashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-3">
                   <select
                     className="h-10 rounded-md border bg-background px-3 text-sm"
                     value={recruiterFilter}
@@ -530,7 +610,7 @@ export default function AdminDashboardPage() {
                     <option value="">All recruiters</option>
                     {recruiters.map((r) => (
                       <option key={r.recruiter_user_id} value={r.recruiter_user_id}>
-                        {getDisplayEmail(r.email) || r.recruiter_user_id} {r.company_name ? `(${r.company_name})` : ''}
+                        {getAdminDisplayName(r)} • {getAdminDisplayEmail(r.email)}
                       </option>
                     ))}
                   </select>
@@ -554,6 +634,21 @@ export default function AdminDashboardPage() {
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
+                  <Input
+                    placeholder="User name/email"
+                    value={billingUserFilter}
+                    onChange={(e) => setBillingUserFilter(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Company"
+                    value={billingCompanyFilter}
+                    onChange={(e) => setBillingCompanyFilter(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Search invoice/ref/plan/status"
+                    value={billingSearchFilter}
+                    onChange={(e) => setBillingSearchFilter(e.target.value)}
+                  />
                   <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                   <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                   <Button
@@ -562,12 +657,43 @@ export default function AdminDashboardPage() {
                       setRecruiterFilter('');
                       setPlanFilter('');
                       setStatusFilter('');
+                      setBillingUserFilter('');
+                      setBillingCompanyFilter('');
+                      setBillingSearchFilter('');
                       setStartDate('');
                       setEndDate('');
+                      setBillingOffset(0);
                     }}
                   >
                     Reset
                   </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <Card className="border-dashed">
+                    <CardContent className="py-3">
+                      <div className="text-xs text-muted-foreground">Filtered Transactions</div>
+                      <div className="text-lg font-semibold">{transactionsSummary?.transactions_count ?? 0}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-dashed">
+                    <CardContent className="py-3">
+                      <div className="text-xs text-muted-foreground">Filtered Total Amount</div>
+                      <div className="text-lg font-semibold">{transactionsSummary?.total_amount ?? 0}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-dashed">
+                    <CardContent className="py-3">
+                      <div className="text-xs text-muted-foreground">Filtered Paid Transactions</div>
+                      <div className="text-lg font-semibold">{transactionsSummary?.paid_transactions_count ?? 0}</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-dashed">
+                    <CardContent className="py-3">
+                      <div className="text-xs text-muted-foreground">Filtered Paid Amount</div>
+                      <div className="text-lg font-semibold">{transactionsSummary?.paid_amount ?? 0}</div>
+                    </CardContent>
+                  </Card>
                 </div>
 
                 {transactionsQuery.isLoading && (
@@ -581,8 +707,9 @@ export default function AdminDashboardPage() {
                     <div key={tx.id} className="border rounded-md p-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-semibold text-sm">{getDisplayEmail(tx.recruiter_email) || tx.user_id}</div>
-                          {tx.recruiter_company_name && <div className="text-xs text-muted-foreground">{tx.recruiter_company_name}</div>}
+                          <div className="font-semibold text-sm">{getAdminDisplayName({ full_name: tx.recruiter_full_name })}</div>
+                          <div className="text-xs text-muted-foreground">{getAdminDisplayEmail(tx.recruiter_email)}</div>
+                          <div className="text-xs text-muted-foreground">{getAdminDisplayCompany(tx.recruiter_company_name)}</div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="capitalize">{tx.plan}</Badge>
@@ -597,6 +724,32 @@ export default function AdminDashboardPage() {
                   {!transactions.length && !transactionsQuery.isLoading && (
                     <div className="text-sm text-muted-foreground">No transactions match the selected filters.</div>
                   )}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <div className="text-xs text-muted-foreground">
+                    Showing {transactionsTotal === 0 ? 0 : billingOffset + 1}–{Math.min(billingOffset + BILLING_PAGE_SIZE, transactionsTotal)} of {transactionsTotal}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={billingOffset === 0}
+                      onClick={() => setBillingOffset(Math.max(0, billingOffset - BILLING_PAGE_SIZE))}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={billingOffset + BILLING_PAGE_SIZE >= transactionsTotal}
+                      onClick={() => setBillingOffset(billingOffset + BILLING_PAGE_SIZE)}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -613,9 +766,9 @@ export default function AdminDashboardPage() {
               <CardContent className="space-y-3 max-h-[420px] overflow-auto">
                 {(recruiters as AdminRecruiterCandidateCount[]).map((r) => (
                   <div key={r.recruiter_user_id} className="border rounded-md p-3">
-                    <div className="font-semibold text-sm">{getDisplayEmail(r.email) || r.recruiter_user_id}</div>
+                    <div className="font-semibold text-sm">{getAdminDisplayName(r)}</div>
                     <div className="text-xs text-muted-foreground">
-                      {r.company_name ? `${r.company_name} • ` : ''}{r.recruiter_user_id}
+                      {getAdminDisplayEmail(r.email)} • {getAdminDisplayCompany(r.company_name)}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
                       <Badge variant="outline">Enrolled: {r.candidates_enrolled_count}</Badge>
@@ -699,7 +852,11 @@ export default function AdminDashboardPage() {
                                 {c.job_title || '—'}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">
-                                {c.recruiter_email || c.recruiter_user_id || '—'}
+                                <div className="font-medium text-foreground">
+                                  {getAdminDisplayName({ full_name: c.recruiter_full_name })}
+                                </div>
+                                <div>{getAdminDisplayEmail(c.recruiter_email)}</div>
+                                <div>{getAdminDisplayCompany(c.recruiter_company_name)}</div>
                               </TableCell>
                               <TableCell>
                                 {c.application_status ? (
@@ -751,6 +908,91 @@ export default function AdminDashboardPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <Dialog open={planDetailsOpen} onOpenChange={setPlanDetailsOpen}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle className="capitalize">{planDetailsPlan} Plan Recruiters</DialogTitle>
+              <DialogDescription>
+                Recruiters currently subscribed to the {planDetailsPlan || 'selected'} plan.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Input
+                  placeholder="Search name/email/company"
+                  value={planDetailsSearch}
+                  onChange={(e) => setPlanDetailsSearch(e.target.value)}
+                />
+                <Badge variant="outline">{planRecruitersTotal} recruiters</Badge>
+              </div>
+
+              {planRecruitersQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading recruiters…
+                </div>
+              ) : !planRecruiters.length ? (
+                <div className="text-sm text-muted-foreground">No recruiters found for this plan.</div>
+              ) : (
+                <div className="overflow-auto max-h-[420px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Full Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead>Subscription Start</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {planRecruiters.map((item) => (
+                        <TableRow key={`${item.recruiter_user_id}-${item.email}`}>
+                          <TableCell className="font-medium">{getAdminDisplayName(item)}</TableCell>
+                          <TableCell>{getAdminDisplayEmail(item.email)}</TableCell>
+                          <TableCell>{getAdminDisplayCompany(item.company_name)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {item.subscription_start_date ? new Date(item.subscription_start_date).toLocaleDateString() : 'Not Provided'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="capitalize">{item.subscription_status || 'active'}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between border-t pt-3">
+                <div className="text-xs text-muted-foreground">
+                  Showing {planRecruitersTotal === 0 ? 0 : planDetailsOffset + 1}–{Math.min(planDetailsOffset + PLAN_RECRUITERS_PAGE_SIZE, planRecruitersTotal)} of {planRecruitersTotal}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={planDetailsOffset === 0}
+                    onClick={() => setPlanDetailsOffset(Math.max(0, planDetailsOffset - PLAN_RECRUITERS_PAGE_SIZE))}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={planDetailsOffset + PLAN_RECRUITERS_PAGE_SIZE >= planRecruitersTotal}
+                    onClick={() => setPlanDetailsOffset(planDetailsOffset + PLAN_RECRUITERS_PAGE_SIZE)}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
