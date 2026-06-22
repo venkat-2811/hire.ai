@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
 import logoIcon from '@/assets/logo.png';
-import { Twitter, Linkedin, Github, Youtube, Mail, ArrowUpRight } from 'lucide-react';
+import { Linkedin, Mail, ArrowUpRight } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="bg-card text-card-foreground border-t border-border/60 py-12 px-6 mt-auto">
+    <footer className="bg-card text-card-foreground border-t border-border/60 py-8 px-6 mt-auto">
       <div className="container mx-auto max-w-7xl">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
           
@@ -88,15 +88,6 @@ export default function Footer() {
             </p>
             <div className="flex items-center gap-3">
               <a 
-                href="https://twitter.com" 
-                target="_blank" 
-                rel="noreferrer" 
-                className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                aria-label="Twitter"
-              >
-                <Twitter className="h-4 w-4" />
-              </a>
-              <a 
                 href="https://linkedin.com" 
                 target="_blank" 
                 rel="noreferrer" 
@@ -105,31 +96,15 @@ export default function Footer() {
               >
                 <Linkedin className="h-4 w-4" />
               </a>
-              <a 
-                href="https://github.com" 
-                target="_blank" 
-                rel="noreferrer" 
-                className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                aria-label="GitHub"
-              >
-                <Github className="h-4 w-4" />
-              </a>
-              <a 
-                href="https://youtube.com" 
-                target="_blank" 
-                rel="noreferrer" 
-                className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-                aria-label="YouTube"
-              >
-                <Youtube className="h-4 w-4" />
-              </a>
             </div>
           </div>
 
         </div>
 
         <div className="border-t border-border/60 mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
-          <p>© 2026 Rekshift. All rights reserved.</p>
+          <p>
+            © 2026 Rekshift. All rights reserved. <span className="mx-2">|</span> Powered by <a href="https://bvitsolutions.com" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors font-semibold">BVIT Solutions</a>
+          </p>
           <div className="flex gap-6">
             <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>
             <a href="#" className="hover:text-foreground transition-colors">Terms of Service</a>

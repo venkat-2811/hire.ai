@@ -278,7 +278,8 @@ export default function CandidateDetailsPage() {
   const [evaluationTab, setEvaluationTab] = useState<string>(() => {
     if (initialTab === 'manual') return 'manual';
     if (initialTab === 'interview') return 'interview';
-    return 'assessment';
+    if (initialTab) return initialTab;
+    return 'overview';
   });
 
   const handleDownloadReport = () => {
@@ -381,6 +382,102 @@ export default function CandidateDetailsPage() {
     } finally {
       setSavingManual(false);
     }
+  };
+
+  const renderUnifiedActivity = () => {
+    if (!assessmentDetails && !interviewDetails) return null;
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Activity className="h-5 w-5 text-primary" />
+            Candidate Activity
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {assessmentDetails && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground/80">
+                <ClipboardList className="h-4 w-4 text-primary" /> Technical Assessment
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                  <Calendar className="h-4 w-4 text-muted-foreground mb-1.5" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Started On</p>
+                  {assessmentDetails.started_at ? (
+                    <>
+                      <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(assessmentDetails.started_at)}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(assessmentDetails.started_at)}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm font-bold text-muted-foreground">-</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                  <CheckCircle className="h-4 w-4 text-muted-foreground mb-1.5" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Completed On</p>
+                  {assessmentDetails.completed_at ? (
+                    <>
+                      <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(assessmentDetails.completed_at)}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(assessmentDetails.completed_at)}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm font-bold text-muted-foreground">-</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                  <Clock className="h-4 w-4 text-muted-foreground mb-1.5" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Duration</p>
+                  <p className="text-sm font-bold text-foreground">
+                    {formatDuration(calcDurationSeconds(assessmentDetails.started_at, assessmentDetails.completed_at))}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          {interviewDetails && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground/80">
+                <MessageSquare className="h-4 w-4 text-primary" /> AI Interview
+              </h4>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                  <Calendar className="h-4 w-4 text-muted-foreground mb-1.5" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Started On</p>
+                  {interviewDetails.started_at ? (
+                    <>
+                      <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(interviewDetails.started_at)}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(interviewDetails.started_at)}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm font-bold text-muted-foreground">-</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                  <CheckCircle className="h-4 w-4 text-muted-foreground mb-1.5" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Completed On</p>
+                  {interviewDetails.completed_at ? (
+                    <>
+                      <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(interviewDetails.completed_at)}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(interviewDetails.completed_at)}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm font-bold text-muted-foreground">-</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
+                  <Clock className="h-4 w-4 text-muted-foreground mb-1.5" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Duration</p>
+                  <p className="text-sm font-bold text-foreground">
+                    {formatDuration(calcDurationSeconds(interviewDetails.started_at, interviewDetails.completed_at))}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
   };
 
   if (authLoading || isLoading) {
@@ -623,6 +720,7 @@ export default function CandidateDetailsPage() {
                     </CardContent>
                   </Card>
                 )}
+                {renderUnifiedActivity()}
               </div>
 
               <div className="space-y-6">
@@ -721,99 +819,8 @@ export default function CandidateDetailsPage() {
                     )}
                   </CardContent>
                 </Card>
-                {/* Assessment Activity Card */}
-                {assessmentDetails && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <ClipboardList className="h-4 w-4 text-primary" />
-                        Assessment Activity
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
-                          <Calendar className="h-4 w-4 text-muted-foreground mb-1.5" />
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Started On</p>
-                          {assessmentDetails.started_at ? (
-                            <>
-                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(assessmentDetails.started_at)}</p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(assessmentDetails.started_at)}</p>
-                            </>
-                          ) : (
-                            <p className="text-sm font-bold text-muted-foreground">-</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
-                          <CheckCircle className="h-4 w-4 text-muted-foreground mb-1.5" />
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Completed On</p>
-                          {assessmentDetails.completed_at ? (
-                            <>
-                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(assessmentDetails.completed_at)}</p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(assessmentDetails.completed_at)}</p>
-                            </>
-                          ) : (
-                            <p className="text-sm font-bold text-muted-foreground">-</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
-                          <Clock className="h-4 w-4 text-muted-foreground mb-1.5" />
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Duration</p>
-                          <p className="text-sm font-bold text-foreground">
-                            {formatDuration(calcDurationSeconds(assessmentDetails.started_at, assessmentDetails.completed_at))}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
 
-                {/* AI Interview Activity Card */}
-                {interviewDetails && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <MessageSquare className="h-4 w-4 text-primary" />
-                        AI Interview Activity
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
-                          <Calendar className="h-4 w-4 text-muted-foreground mb-1.5" />
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Started On</p>
-                          {interviewDetails.started_at ? (
-                            <>
-                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(interviewDetails.started_at)}</p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(interviewDetails.started_at)}</p>
-                            </>
-                          ) : (
-                            <p className="text-sm font-bold text-muted-foreground">-</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
-                          <CheckCircle className="h-4 w-4 text-muted-foreground mb-1.5" />
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Completed On</p>
-                          {interviewDetails.completed_at ? (
-                            <>
-                              <p className="text-xs font-semibold text-foreground leading-tight">{formatDateWithOrdinal(interviewDetails.completed_at)}</p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5">{formatTime(interviewDetails.completed_at)}</p>
-                            </>
-                          ) : (
-                            <p className="text-sm font-bold text-muted-foreground">-</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-center text-center p-3 bg-muted/30 rounded-lg">
-                          <Clock className="h-4 w-4 text-muted-foreground mb-1.5" />
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Duration</p>
-                          <p className="text-sm font-bold text-foreground">
-                            {formatDuration(calcDurationSeconds(interviewDetails.started_at, interviewDetails.completed_at))}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+
               </div>
             </div>
           </TabsContent>
@@ -1749,75 +1756,7 @@ export default function CandidateDetailsPage() {
 
           {/* TAB 6: ACTIVITY & TIMELINE */}
           <TabsContent value="activity" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
-            <Card>
-              <CardHeader>
-                <CardTitle>Candidate Activity</CardTitle>
-                <CardDescription>Timeline of events and sessions</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-muted before:to-transparent">
-                  
-                  {/* Applied Event */}
-                  <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-background bg-primary text-primary-foreground shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                      <User className="h-4 w-4" />
-                    </div>
-                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-lg border bg-card shadow-sm">
-                      <div className="flex items-center justify-between space-x-2 mb-1">
-                        <div className="font-bold text-foreground">Candidate Applied</div>
-                        <div className="text-xs font-medium text-muted-foreground">
-                          {candidate.applied_at ? new Date(candidate.applied_at).toLocaleDateString() : 'Unknown'}
-                        </div>
-                      </div>
-                      <div className="text-sm text-muted-foreground">Profile created in the system.</div>
-                    </div>
-                  </div>
-
-                  {/* Assessment Event */}
-                  {assessmentDetails && (
-                    <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-background bg-indigo-500 text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                        <CheckSquare className="h-4 w-4" />
-                      </div>
-                      <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-lg border bg-card shadow-sm">
-                        <div className="flex items-center justify-between space-x-2 mb-1">
-                          <div className="font-bold text-foreground">Assessment Completed</div>
-                          <div className="text-xs font-medium text-muted-foreground">
-                            {assessmentDetails.completed_at ? new Date(assessmentDetails.completed_at).toLocaleDateString() : 'Done'}
-                          </div>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          Scored {assessmentDetails.total_score}% overall.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* AI Interview Event */}
-                  {interviewDetails && (
-                    <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-background bg-teal-500 text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                        <Activity className="h-4 w-4" />
-                      </div>
-                      <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-lg border bg-card shadow-sm">
-                        <div className="flex items-center justify-between space-x-2 mb-1">
-                          <div className="font-bold text-foreground">AI Interview Completed</div>
-                          <div className="text-xs font-medium text-muted-foreground">
-                            {interviewDetails.completed_at ? new Date(interviewDetails.completed_at).toLocaleDateString() : 'Done'}
-                          </div>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {interviewDetails.final_evaluation?.recommendation 
-                            ? `AI recommended: ${interviewDetails.final_evaluation.recommendation.replace(/_/g, ' ')}` 
-                            : 'Interview session completed.'}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-              </CardContent>
-            </Card>
+            {renderUnifiedActivity()}
 
             {/* Screenshots section moved here for evidence */}
             {(assessmentScreenshot || interviewScreenshot) && (
