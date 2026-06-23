@@ -2,14 +2,11 @@
 -- Migration: Rename plan IDs to new canonical names (June 2026)
 --
 -- Renames:
---   'growth'     → 'professional'   (100-candidate Growth plan)
---   'enterprise' → 'scale'          (500-candidate Scale plan, paid Stripe)
---   'custom'     → 'enterprise'     (Contact Sales tier, no Stripe)
+--   'professional' → 'growth'         (100-candidate Growth plan)
+--   'enterprise'   → 'scale'          (500-candidate Scale plan, paid Stripe)
+--   'custom'       → 'enterprise'     (Contact Sales tier, no Stripe)
 --
--- Legacy values (professional, tempusa1/2, tempind1/2) are also remapped.
--- Old rows with 'enterprise' (paid) become 'scale'.
--- Old rows with 'growth' become 'professional'.
--- Old rows with 'custom' become 'enterprise'.
+-- Legacy values (tempusa1/2, tempind1/2) are also remapped.
 -- =====================================================
 
 -- ─── Step 1: Temporarily drop all plan constraints ───────────────────────────
@@ -27,10 +24,10 @@ UPDATE public.subscriptions
   SET plan = 'scale'
   WHERE plan = 'enterprise';
 
--- 'growth' (old Growth plan) → 'professional'
+-- 'professional' (old ID) → 'growth'
 UPDATE public.subscriptions
-  SET plan = 'professional'
-  WHERE plan = 'growth';
+  SET plan = 'growth'
+  WHERE plan = 'professional';
 
 -- 'custom' (old Contact Sales tier) → 'enterprise'
 UPDATE public.subscriptions
@@ -39,7 +36,7 @@ UPDATE public.subscriptions
 
 -- Temp/test plan IDs → normalise to canonical names
 UPDATE public.subscriptions
-  SET plan = 'professional'
+  SET plan = 'growth'
   WHERE plan IN ('tempusa2', 'tempind2');
 
 UPDATE public.subscriptions
@@ -53,10 +50,10 @@ UPDATE public.profiles
   SET subscription_plan = 'scale'
   WHERE subscription_plan = 'enterprise';
 
--- 'growth' (old Growth plan) → 'professional'
+-- 'professional' (old ID) → 'growth'
 UPDATE public.profiles
-  SET subscription_plan = 'professional'
-  WHERE subscription_plan = 'growth';
+  SET subscription_plan = 'growth'
+  WHERE subscription_plan = 'professional';
 
 -- 'custom' (old Contact Sales tier) → 'enterprise'
 UPDATE public.profiles
@@ -70,7 +67,7 @@ ALTER TABLE public.subscriptions
     plan IN (
       'free',
       'starter',
-      'professional',
+      'growth',
       'scale',
       'enterprise'
     )
@@ -81,7 +78,7 @@ ALTER TABLE public.profiles
     subscription_plan IN (
       'free',
       'starter',
-      'professional',
+      'growth',
       'scale',
       'enterprise'
     )

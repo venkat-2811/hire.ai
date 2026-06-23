@@ -7,12 +7,12 @@
  * Plan structure (as of June 2026):
  *   free         → Free (₹0 / $0, 5 candidates, 1 month)
  *   starter      → Starter (₹15,000 / $300, 50 candidates, 6 months)
- *   professional → Growth (₹27,000 / $500, 100 candidates, 6 months)
+ *   growth       → Growth (₹27,000 / $500, 100 candidates, 6 months)
  *   scale        → Scale (₹99,000 / $2,000, 500 candidates, 1 year)
  *   enterprise   → Enterprise – Contact Sales (custom volume/pricing)
  *
  * Legacy aliases handled in normalizePlanId():
- *   'growth'             → 'professional'  (renamed June 2026)
+ *   'professional'       → 'growth'
  *   old 'enterprise'     → 'scale'         (renamed June 2026; paid Stripe plan)
  *   'custom'             → 'enterprise'    (the Contact Sales tier)
  */
@@ -22,7 +22,7 @@
 export type PlanId =
   | 'free'
   | 'starter'
-  | 'professional'
+  | 'growth'
   | 'scale'
   | 'enterprise';
 
@@ -166,22 +166,22 @@ export function resolvePricingCountry(options?: {
  * Handles legacy aliases so that old DB values continue to work.
  *
  * Canonical plan IDs (as of June 2026):
- *   free, starter, professional, scale, enterprise
+ *   free, starter, growth, scale, enterprise
  *
  * Legacy aliases:
- *   'growth'    → 'professional'  (renamed; 100-candidate plan)
+ *   'professional' → 'growth'
  *   'enterprise' (old paid plan) → 'scale'  (500-candidate plan)
  *   'custom'    → 'enterprise'    (Contact Sales tier)
  */
 export function normalizePlanId(raw?: string | null): PlanId {
   const p = String(raw || 'free').trim().toLowerCase();
   // Canonical new names
-  if (p === 'professional') return 'professional';
+  if (p === 'growth') return 'growth';
   if (p === 'scale') return 'scale';
   if (p === 'enterprise') return 'enterprise';
   if (p === 'starter') return 'starter';
   // Legacy aliases
-  if (p === 'growth') return 'professional';  // renamed June 2026
+  if (p === 'professional') return 'growth';
   if (p === 'custom') return 'enterprise';    // contact-sales tier renamed
   return 'free';
 }
@@ -222,7 +222,7 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     highlighted: true,
   },
   {
-    id: 'professional',
+    id: 'growth',
     name: 'Growth',
     priceUSD: 500,
     priceINR: 27000,
@@ -287,7 +287,7 @@ export function getPlansForCurrency(
 export const PLAN_CREDITS: Record<PlanId, number> = {
   free: 5,
   starter: 50,
-  professional: 100,
+  growth: 100,
   scale: 500,
   enterprise: 0, // Contact Sales — handled manually
 };
@@ -336,7 +336,7 @@ export function getStripePriceEnvKey(planId: PlanId, currency: Currency): string
   const map: Partial<Record<PlanId, Partial<Record<Currency, string>>>> = {
     // Free plan excluded — no Stripe product needed (no payment)
     starter:      { USD: 'VITE_STRIPE_US_STARTER_PRICE_ID',  INR: 'VITE_STRIPE_IND_STARTER_PRICE_ID' },
-    professional: { USD: 'VITE_STRIPE_US_GROWTH_PRICE_ID',   INR: 'VITE_STRIPE_IND_GROWTH_PRICE_ID' },
+    growth:       { USD: 'VITE_STRIPE_US_GROWTH_PRICE_ID',   INR: 'VITE_STRIPE_IND_GROWTH_PRICE_ID' },
     scale:        { USD: 'VITE_STRIPE_US_SCALE_PRICE_ID',    INR: 'VITE_STRIPE_IND_SCALE_PRICE_ID' },
     // enterprise is contact-sales only — no Stripe price ID
   };

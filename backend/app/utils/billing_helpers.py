@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 # Single source of truth for all plans (backend).
 #
 # Plan rename history (June 2026):
-#   growth (100-candidate plan)   → professional
+#   'growth' (100-candidate plan)
 #   enterprise (500-candidate paid Stripe plan) → scale
 #   custom (Contact Sales)        → enterprise
 #
 # INR prices:
-#   Starter: ₹15,000 | Professional/Growth: ₹27,000 | Scale: ₹99,000
+#   Starter: ₹15,000 | Growth: ₹27,000 | Scale: ₹99,000
 # ─────────────────────────────────────────────────────────────────────────────
 
 BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
@@ -37,7 +37,7 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "interval": "month",
         "interval_count": 6,
     },
-    "professional": {
+    "growth": {
         "name": "Growth",
         "candidates": 100,
         "validity": "6 Months",
@@ -72,7 +72,7 @@ def _normalize_plan(raw: Optional[str]) -> str:
     """Normalize a raw plan string to a canonical plan key.
 
     Handles legacy aliases so that old database values continue to work:
-      growth        → professional  (renamed June 2026)
+      professional  → growth
       enterprise    → scale         (old paid Stripe plan, renamed June 2026)
       custom        → enterprise    (Contact Sales tier, renamed June 2026)
     """
@@ -80,8 +80,8 @@ def _normalize_plan(raw: Optional[str]) -> str:
     if p in BILLING_PLAN_CONFIG:
         return p
     # Legacy aliases
-    if p == "growth":
-        return "professional"
+    if p == "professional":
+        return "growth"
     if p in ("enterprise", "enterprise_paid"):
         return "scale"
     if p == "custom":
@@ -89,7 +89,7 @@ def _normalize_plan(raw: Optional[str]) -> str:
     if "starter" in p:
         return "starter"
     if "growth" in p or "professional" in p:
-        return "professional"
+        return "growth"
     if "scale" in p or "enterprise" in p:
         return "scale"
     return "free"
@@ -113,7 +113,7 @@ def get_stripe_price_id(plan: str, currency: str) -> str:
             "USD": settings.stripe_us_starter_price_id,
             "INR": settings.stripe_ind_starter_price_id,
         },
-        "professional": {
+        "growth": {
             # Prefer new growth price IDs, fall back to legacy professional IDs
             "USD": settings.stripe_us_growth_price_id or settings.stripe_us_professional_price_id,
             "INR": settings.stripe_ind_growth_price_id or settings.stripe_ind_professional_price_id,

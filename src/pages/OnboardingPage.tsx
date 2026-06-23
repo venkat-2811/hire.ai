@@ -52,7 +52,7 @@ const PLAN_UI_META: Record<PlanId, { icon: typeof Sparkles; gradient: string; ca
     cta: 'Choose Starter',
     popular: true,
   },
-  professional: {
+  growth: {
     icon: TrendingUp,
     gradient: 'from-purple-500 to-pink-500',
     cardBg: 'bg-purple-500/5 border-purple-500/30',
