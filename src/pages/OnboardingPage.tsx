@@ -52,7 +52,7 @@ const PLAN_UI_META: Record<PlanId, { icon: typeof Sparkles; gradient: string; ca
     cta: 'Choose Starter',
     popular: true,
   },
-  growth: {
+  professional: {
     icon: TrendingUp,
     gradient: 'from-purple-500 to-pink-500',
     cardBg: 'bg-purple-500/5 border-purple-500/30',
@@ -465,9 +465,9 @@ export default function OnboardingPage() {
 
                         <Button
                           className="w-full mt-auto font-bold"
-                          variant={plan.popular || plan.id === 'enterprise' ? 'default' : plan.id === 'custom' ? 'default' : 'outline'}
+                          variant={plan.popular || plan.id === 'scale' ? 'default' : plan.id === 'enterprise' ? 'default' : 'outline'}
                           disabled={processingPlan}
-                          style={plan.id === 'custom' ? { background: 'linear-gradient(135deg, #7c3aed, #9333ea)' } : undefined}
+                          style={plan.id === 'enterprise' ? { background: 'linear-gradient(135deg, #7c3aed, #9333ea)' } : undefined}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (plan.isContactPlan) {

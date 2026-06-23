@@ -99,8 +99,8 @@ def _extract_plan_from_invoice(invoice: Dict[str, Any]) -> str:
             if m:
                 raw = m.group(1)
                 # Normalize legacy names in invoices
-                if raw == "professional":
-                    return "growth"
+                if raw in ("professional", "growth"):
+                    return "professional"
                 if raw == "enterprise":
                     return "scale"
                 return raw
@@ -110,22 +110,22 @@ def _extract_plan_from_invoice(invoice: Dict[str, Any]) -> str:
 def _normalize_admin_plan(value: Any, *, default: str = "") -> str:
     """Normalize a plan value to a canonical display name for admin views.
     
-    Maps legacy 'professional' → 'growth'.
-    Maps legacy 'enterprise' (paid) → 'scale'.
-    Maps 'custom' → 'enterprise' (contact sales).
+    Maps legacy 'growth' → 'professional' (renamed June 2026).
+    Maps legacy 'enterprise' (paid Stripe) → 'scale' (renamed June 2026).
+    Maps legacy 'custom' → 'enterprise' (Contact Sales tier, renamed June 2026).
     """
     raw = _clean_text(value).lower()
     if not raw:
         return default
-    # Legacy alias: professional → growth
-    if raw == "professional":
-        return "growth"
+    # Legacy aliases
+    if raw == "growth":
+        return "professional"
     if raw == "enterprise":
         return "scale"
     if raw == "custom":
         return "enterprise"
     
-    if raw in ("free", "starter", "growth", "scale"):
+    if raw in ("free", "starter", "professional", "scale"):
         return raw
     return _normalize_plan(raw)
 

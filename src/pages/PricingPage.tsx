@@ -197,9 +197,14 @@ const PricingPage = () => {
             className="text-center mb-12"
           >
             <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4">Simple, Transparent Pricing</h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-4">
               Choose the perfect plan for your hiring needs. All plans include our core AI-powered assessment features.
             </p>
+            {!geoLoading && (
+              <p className="text-sm text-muted-foreground">
+                Showing {activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing for your location.
+              </p>
+            )}
 
             {/* Auto-detected pricing loaded in background */}
           </motion.div>

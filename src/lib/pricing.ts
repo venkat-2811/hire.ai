@@ -5,15 +5,16 @@
  * Never hardcode prices, plan IDs, or currency symbols anywhere else.
  *
  * Plan structure (as of June 2026):
- *   free       → Free (₹0 / $0, 5 candidates, 1 month)
- *   starter    → Starter (₹15,000 / $300, 50 candidates, 6 months)
- *   growth     → Growth (₹27,000 / $500, 100 candidates, 6 months)
- *   scale      → Scale (₹99,000 / $2,000, 500 candidates, 1 year)
- *   enterprise → Enterprise – Contact Sales (custom volume/pricing)
+ *   free         → Free (₹0 / $0, 5 candidates, 1 month)
+ *   starter      → Starter (₹15,000 / $300, 50 candidates, 6 months)
+ *   professional → Growth (₹27,000 / $500, 100 candidates, 6 months)
+ *   scale        → Scale (₹99,000 / $2,000, 500 candidates, 1 year)
+ *   enterprise   → Enterprise – Contact Sales (custom volume/pricing)
  *
  * Legacy aliases handled in normalizePlanId():
- *   'professional' → 'growth'
- *   old 'enterprise' before rename → now 'scale'
+ *   'growth'             → 'professional'  (renamed June 2026)
+ *   old 'enterprise'     → 'scale'         (renamed June 2026; paid Stripe plan)
+ *   'custom'             → 'enterprise'    (the Contact Sales tier)
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -21,9 +22,9 @@
 export type PlanId =
   | 'free'
   | 'starter'
-  | 'growth'
-  | 'enterprise'
-  | 'custom';
+  | 'professional'
+  | 'scale'
+  | 'enterprise';
 
 export type Currency = 'USD' | 'INR';
 
@@ -162,25 +163,26 @@ export function resolvePricingCountry(options?: {
 
 /**
  * Normalize a raw plan string to a canonical PlanId.
- * Handles legacy aliases ('professional' → 'growth', old 'enterprise' stored
- * before the rename is kept as 'scale' when the value stored was the old enterprise).
+ * Handles legacy aliases so that old DB values continue to work.
  *
- * NOTE: Because the DB may still have 'professional' or 'enterprise' stored
- * for recruiters on the old plans, we map:
- *   professional → growth
- *   (The new enterprise is "Contact Sales" so DB values of 'enterprise'
- *    that were previously paid Stripe plans are treated as 'scale')
+ * Canonical plan IDs (as of June 2026):
+ *   free, starter, professional, scale, enterprise
+ *
+ * Legacy aliases:
+ *   'growth'    → 'professional'  (renamed; 100-candidate plan)
+ *   'enterprise' (old paid plan) → 'scale'  (500-candidate plan)
+ *   'custom'    → 'enterprise'    (Contact Sales tier)
  */
 export function normalizePlanId(raw?: string | null): PlanId {
   const p = String(raw || 'free').trim().toLowerCase();
   // Canonical new names
-  if (p === 'growth') return 'growth';
+  if (p === 'professional') return 'professional';
+  if (p === 'scale') return 'scale';
   if (p === 'enterprise') return 'enterprise';
-  if (p === 'custom') return 'custom';
   if (p === 'starter') return 'starter';
   // Legacy aliases
-  if (p === 'professional') return 'growth';
-  if (p === 'scale') return 'enterprise'; // If anyone used scale temporarily
+  if (p === 'growth') return 'professional';  // renamed June 2026
+  if (p === 'custom') return 'enterprise';    // contact-sales tier renamed
   return 'free';
 }
 
@@ -220,7 +222,7 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     highlighted: true,
   },
   {
-    id: 'growth',
+    id: 'professional',
     name: 'Growth',
     priceUSD: 500,
     priceINR: 27000,
@@ -235,7 +237,7 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     ],
   },
   {
-    id: 'enterprise',
+    id: 'scale',
     name: 'Scale',
     priceUSD: 2000,
     priceINR: 99000,
@@ -251,7 +253,7 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     ],
   },
   {
-    id: 'custom',
+    id: 'enterprise',
     name: 'Enterprise',
     priceUSD: null,
     priceINR: null,
@@ -285,9 +287,9 @@ export function getPlansForCurrency(
 export const PLAN_CREDITS: Record<PlanId, number> = {
   free: 5,
   starter: 50,
-  growth: 100,
-  enterprise: 500,
-  custom: 0, // Handled manually for custom enterprise deals
+  professional: 100,
+  scale: 500,
+  enterprise: 0, // Contact Sales — handled manually
 };
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
@@ -333,10 +335,10 @@ export function getPlanPrice(plan: PricingPlan, currency: Currency): number | nu
 export function getStripePriceEnvKey(planId: PlanId, currency: Currency): string {
   const map: Partial<Record<PlanId, Partial<Record<Currency, string>>>> = {
     // Free plan excluded — no Stripe product needed (no payment)
-    starter:    { USD: 'VITE_STRIPE_US_STARTER_PRICE_ID',  INR: 'VITE_STRIPE_IND_STARTER_PRICE_ID' },
-    growth:     { USD: 'VITE_STRIPE_US_GROWTH_PRICE_ID',   INR: 'VITE_STRIPE_IND_GROWTH_PRICE_ID' },
-    enterprise: { USD: 'VITE_STRIPE_US_SCALE_PRICE_ID',    INR: 'VITE_STRIPE_IND_SCALE_PRICE_ID' },
-    // custom is contact-sales only — no Stripe price ID
+    starter:      { USD: 'VITE_STRIPE_US_STARTER_PRICE_ID',  INR: 'VITE_STRIPE_IND_STARTER_PRICE_ID' },
+    professional: { USD: 'VITE_STRIPE_US_GROWTH_PRICE_ID',   INR: 'VITE_STRIPE_IND_GROWTH_PRICE_ID' },
+    scale:        { USD: 'VITE_STRIPE_US_SCALE_PRICE_ID',    INR: 'VITE_STRIPE_IND_SCALE_PRICE_ID' },
+    // enterprise is contact-sales only — no Stripe price ID
   };
   return map[planId]?.[currency] ?? '';
 }

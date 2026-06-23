@@ -409,8 +409,8 @@ export default function BillingPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Candidate Limits</span>
                   <span className="font-bold text-sm">
-                    {activePlanId === 'enterprise' || activePlanId === 'custom' ? (
-                      activePlanId === 'custom' ? 'Custom' : `${usage?.candidates_limit || 500} Candidates`
+                    {activePlanId === 'scale' || activePlanId === 'enterprise' ? (
+                      activePlanId === 'enterprise' ? 'Custom' : `${usage?.candidates_limit || 500} Candidates`
                     ) : (
                       `${usage?.candidates_limit || 5} Candidates`
                     )}

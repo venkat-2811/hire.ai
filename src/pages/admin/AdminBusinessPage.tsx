@@ -13,7 +13,7 @@ import { DeltaIndicator } from './components/AdminHelpers';
 
 const REFRESH_INTERVAL_MS = 60_000;
 const REQUIRED_TRANSACTION_STATUSES = ['paid', 'failed', 'refunded'] as const;
-const PLAN_FILTERS = ['free', 'starter', 'growth', 'enterprise'] as const;
+const PLAN_FILTERS = ['free', 'starter', 'professional', 'scale', 'enterprise'] as const;
 const BILLING_PAGE_SIZE = 25;
 const PLAN_RECRUITERS_PAGE_SIZE = 20;
 

@@ -1481,7 +1481,7 @@ export interface BillingInvoice {
 export type BillingPlanId =
   | 'starter'
   | 'professional'
-  | 'enterprise';
+  | 'scale';
 
 export const billingApi = {
   /**

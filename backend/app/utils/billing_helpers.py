@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 # Single source of truth for all plans (backend).
 #
 # Plan rename history (June 2026):
-#   professional → growth
-#   enterprise (paid Stripe plan) → scale
-#   enterprise (new) → Contact Sales custom tier, no Stripe
+#   growth (100-candidate plan)   → professional
+#   enterprise (500-candidate paid Stripe plan) → scale
+#   custom (Contact Sales)        → enterprise
 #
 # INR prices:
-#   Starter: ₹15,000 | Growth: ₹27,000 | Scale: ₹99,000
+#   Starter: ₹15,000 | Professional/Growth: ₹27,000 | Scale: ₹99,000
 # ─────────────────────────────────────────────────────────────────────────────
 
 BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
@@ -37,7 +37,7 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "interval": "month",
         "interval_count": 6,
     },
-    "growth": {
+    "professional": {
         "name": "Growth",
         "candidates": 100,
         "validity": "6 Months",
@@ -46,7 +46,7 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "interval": "month",
         "interval_count": 6,
     },
-    "enterprise": {
+    "scale": {
         "name": "Scale",
         "candidates": 500,
         "validity": "1 Year",
@@ -55,13 +55,13 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "USD": {"price": 2000, "currency_symbol": "$"},
         "INR": {"price": 99000, "currency_symbol": "₹"},
     },
-    "custom": {
+    "enterprise": {
         "name": "Enterprise",
-        "candidates": None,  # Unlimited or custom
+        "candidates": None,  # Custom / contact sales
         "validity": "Custom",
         "interval": "month",
         "interval_count": 1,
-        "USD": {"price": 0, "currency_symbol": "$"}, # Contact sales
+        "USD": {"price": 0, "currency_symbol": "$"},  # Contact sales
         "INR": {"price": 0, "currency_symbol": "₹"},
     },
 }
@@ -72,29 +72,26 @@ def _normalize_plan(raw: Optional[str]) -> str:
     """Normalize a raw plan string to a canonical plan key.
 
     Handles legacy aliases so that old database values continue to work:
-      professional → growth  (renamed June 2026)
-      Any old 'enterprise' Stripe-paid plan stored pre-rename is treated
-      as 'scale' (the new paid tier that was previously called enterprise).
-    
-    The new 'enterprise' key is the Contact Sales tier (not a Stripe plan).
+      growth        → professional  (renamed June 2026)
+      enterprise    → scale         (old paid Stripe plan, renamed June 2026)
+      custom        → enterprise    (Contact Sales tier, renamed June 2026)
     """
     p = str(raw or "free").lower().strip()
     if p in BILLING_PLAN_CONFIG:
         return p
     # Legacy aliases
-    if p in ("professional", "growth"):
-        return "growth"
-    if p == "scale":
-        return "enterprise"
-    # Old paid enterprise → now 'enterprise' (Scale)
-    if p in ("enterprise_paid",):
+    if p == "growth":
+        return "professional"
+    if p in ("enterprise", "enterprise_paid"):
+        return "scale"
+    if p == "custom":
         return "enterprise"
     if "starter" in p:
         return "starter"
     if "growth" in p or "professional" in p:
-        return "growth"
-    if "scale" in p:
-        return "enterprise"
+        return "professional"
+    if "scale" in p or "enterprise" in p:
+        return "scale"
     return "free"
 
 # ── Stripe Price ID Lookup ─────────────────────────────────────────────────────
@@ -116,17 +113,17 @@ def get_stripe_price_id(plan: str, currency: str) -> str:
             "USD": settings.stripe_us_starter_price_id,
             "INR": settings.stripe_ind_starter_price_id,
         },
-        "growth": {
+        "professional": {
             # Prefer new growth price IDs, fall back to legacy professional IDs
             "USD": settings.stripe_us_growth_price_id or settings.stripe_us_professional_price_id,
             "INR": settings.stripe_ind_growth_price_id or settings.stripe_ind_professional_price_id,
         },
-        "enterprise": {
+        "scale": {
             # Prefer new scale price IDs, fall back to legacy enterprise IDs
             "USD": settings.stripe_us_scale_price_id or settings.stripe_us_enterprise_price_id,
             "INR": settings.stripe_ind_scale_price_id or settings.stripe_ind_enterprise_price_id,
         },
-        # custom (contact sales) intentionally excluded — no Stripe checkout
+        # enterprise (contact sales) intentionally excluded — no Stripe checkout
     }
     return (mapping.get(plan, {}).get(currency) or "").strip()
 
@@ -141,8 +138,8 @@ def validate_plan_currency(plan: str, currency: str) -> Optional[str]:
     if currency not in ("USD", "INR"):
         return f"Invalid currency: {currency}. Supported: USD, INR"
 
-    if plan == "custom":
-        return "Enterprise is a custom plan. Please contact sales."
+    if plan == "enterprise":
+        return "Enterprise is a contact sales plan. Please contact our team for pricing."
 
     return None
 
