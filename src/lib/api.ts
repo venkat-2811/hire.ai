@@ -1627,6 +1627,41 @@ export interface AdminCandidateEntry {
   created_at: string;
 }
 
+export interface AdminAllRecruiterEntry {
+  recruiter_user_id: string;
+  full_name: string;
+  email: string;
+  company_name: string;
+  subscription_plan: string;
+  jobs_count: number;
+  candidates_count: number;
+  assessments_count: number;
+  interviews_count: number;
+}
+
+export interface AdminRecruiterDetails {
+  recruiter_user_id: string;
+  full_name: string;
+  email: string;
+  company_name: string;
+  subscription_plan: string;
+  subscription_status: string;
+  plan_selected_at: string | null;
+  created_at: string | null;
+  jobs_count: number;
+  candidates_count: number;
+  assessments_count: number;
+  interviews_count: number;
+  recent_jobs: {
+    id: string;
+    title: string;
+    role: string;
+    level: string;
+    created_at: string;
+    is_active: boolean;
+  }[];
+}
+
 export const adminApi = {
   health: () =>
     request<{ ok: boolean; scope: string }>('/admin/health', {
@@ -1687,6 +1722,17 @@ export const adminApi = {
     );
   },
 
+  loginsToday: (params?: { limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ total: number; offset: number; limit: number; logins: AdminLoginEvent[] }>(
+      `/admin/activity/logins-today${q ? `?${q}` : ''}`,
+      {}
+    );
+  },
+
   planRecruiters: (params: { plan: string; search?: string; limit?: number; offset?: number }) => {
     const sp = new URLSearchParams();
     sp.set('plan', params.plan);
@@ -1700,6 +1746,22 @@ export const adminApi = {
       limit: number;
       recruiters: AdminPlanRecruiter[];
     }>(`/admin/subscriptions/plan-recruiters?${sp.toString()}`, {});
+  },
+
+  allRecruiters: (params?: { search?: string; limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.search) sp.set('search', params.search);
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ total: number; offset: number; limit: number; recruiters: AdminAllRecruiterEntry[] }>(
+      `/admin/recruiters/all${q ? `?${q}` : ''}`,
+      {}
+    );
+  },
+
+  recruiterDetails: (recruiterId: string) => {
+    return request<AdminRecruiterDetails>(`/admin/recruiters/${recruiterId}`, {});
   },
 
   activitySummary: () =>

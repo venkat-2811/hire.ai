@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  Calendar, ShieldCheck, RefreshCw
+  Calendar, ShieldCheck, RefreshCw, Phone
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -408,8 +408,12 @@ export default function BillingPage() {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Candidate Limits</span>
-                  <span className="font-bold text-foreground">
-                    {activePlanId === 'enterprise' ? 'Custom' : `${usage?.candidates_limit || 5} Candidates`}
+                  <span className="font-bold text-sm">
+                    {activePlanId === 'enterprise' || activePlanId === 'custom' ? (
+                      activePlanId === 'custom' ? 'Custom' : `${usage?.candidates_limit || 500} Candidates`
+                    ) : (
+                      `${usage?.candidates_limit || 5} Candidates`
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
@@ -483,7 +487,7 @@ export default function BillingPage() {
                         {isActive && <Badge variant="default" className="text-[10px] tracking-wide uppercase px-2 py-0.5">Current</Badge>}
                         {plan.id === 'enterprise' && !isActive && (
                           <Badge className="text-[10px] tracking-wide uppercase px-2 py-0.5 bg-purple-500/20 text-purple-600 border-purple-500/30">
-                            Premium
+                            Custom
                           </Badge>
                         )}
                       </div>
@@ -494,12 +498,18 @@ export default function BillingPage() {
 
                     <CardContent className="flex-grow space-y-6 flex flex-col justify-between">
                       <div>
-                        <div className="flex items-baseline gap-1 mb-2">
-                          <span className="text-3xl font-black">
-                            {formatPrice(price ?? 0, activeCurrency)}
-                          </span>
-                          <span className="text-xs text-muted-foreground font-semibold">/ {plan.validity}</span>
-                        </div>
+                        {plan.isContactPlan ? (
+                          <div className="mb-2">
+                            <span className="text-3xl font-black text-purple-600">Contact Sales</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-baseline gap-1 mb-2">
+                            <span className="text-3xl font-black">
+                              {formatPrice(price ?? 0, activeCurrency)}
+                            </span>
+                            <span className="text-xs text-muted-foreground font-semibold">/ {plan.validity}</span>
+                          </div>
+                        )}
                         <Badge
                           variant="secondary"
                           className={`font-semibold text-xs tracking-wider uppercase ${
@@ -508,7 +518,7 @@ export default function BillingPage() {
                               : 'bg-primary/10 text-primary'
                           }`}
                         >
-                          {`${plan.candidates} Candidates`}
+                          {plan.candidates != null ? `${plan.candidates} Candidates` : 'Custom Limit'}
                         </Badge>
                       </div>
 
@@ -528,6 +538,16 @@ export default function BillingPage() {
                         {isActive ? (
                           <Button className="w-full font-bold uppercase text-xs tracking-wider" variant="outline" disabled>
                             Current Active Plan
+                          </Button>
+                        ) : plan.isContactPlan ? (
+                          <Button
+                            className="w-full font-bold uppercase text-xs tracking-wider bg-purple-600 hover:bg-purple-700 text-white"
+                            asChild
+                          >
+                            <Link to="/contact">
+                              <Phone className="h-4 w-4 mr-2" />
+                              Contact Sales
+                            </Link>
                           </Button>
                         ) : isDowngrade ? null : (
                           <Button

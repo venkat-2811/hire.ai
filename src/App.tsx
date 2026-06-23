@@ -34,7 +34,13 @@ import PipelinePage from "./pages/analytics/PipelinePage";
 import VendorsPage from "./pages/analytics/VendorsPage";
 import BillingPage from "./pages/BillingPage";
 import InvoicesHistoryPage from "./pages/InvoicesHistoryPage";
-import AdminDashboardPage from "./pages/AdminDashboardPage";
+import AdminLayout from "./pages/admin/AdminLayout";
+import AdminOperationalPage from "./pages/admin/AdminOperationalPage";
+import AdminBusinessPage from "./pages/admin/AdminBusinessPage";
+import AdminPeoplePage from "./pages/admin/AdminPeoplePage";
+import AdminLoginsTodayPage from "./pages/admin/AdminLoginsTodayPage";
+import AdminAllRecruitersPage from "./pages/admin/AdminAllRecruitersPage";
+import AdminRecruiterDetailPage from "./pages/admin/AdminRecruiterDetailPage";
 import OfferAcceptancePage from "./pages/OfferAcceptancePage";
 import NotFound from "./pages/NotFound";
 
@@ -109,7 +115,15 @@ const App = () => (
             <Route path="/results" element={<ResultsDashboardPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/history" element={<InvoicesHistoryPage />} />
-            <Route path="/admin" element={<AdminDashboardPage />} />
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to="/admin/operational" replace />} />
+              <Route path="operational" element={<AdminOperationalPage />} />
+              <Route path="business" element={<AdminBusinessPage />} />
+              <Route path="people" element={<AdminPeoplePage />} />
+              <Route path="logins-today" element={<AdminLoginsTodayPage />} />
+              <Route path="people/recruiters" element={<AdminAllRecruitersPage />} />
+              <Route path="people/recruiters/:id" element={<AdminRecruiterDetailPage />} />
+            </Route>
             <Route path="/offer-acceptance" element={<OfferAcceptancePage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

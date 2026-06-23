@@ -764,7 +764,8 @@ async def billing_usage(user: ClerkUser = Depends(require_user)):
         if profile_country and len(profile_country) == 2:
             billing_country = profile_country
         else:
-            billing_country = "IN" if currency == "INR" else "US"
+            # Leave billing_country empty so frontend useCountryDetection can fall back to IP/timezone
+            billing_country = ""
 
     price = cfg[currency]["price"] if currency in cfg else cfg["USD"]["price"]
 

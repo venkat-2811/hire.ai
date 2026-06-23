@@ -7,9 +7,15 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # ─── Billing Plan Configuration ───────────────────────────────────────────────
-# Single source of truth for all plans.
-# INR prices updated per requirements:
-#   Starter: ₹15,000 | Professional: ₹27,000 | Enterprise: ₹99,000
+# Single source of truth for all plans (backend).
+#
+# Plan rename history (June 2026):
+#   professional → growth
+#   enterprise (paid Stripe plan) → scale
+#   enterprise (new) → Contact Sales custom tier, no Stripe
+#
+# INR prices:
+#   Starter: ₹15,000 | Growth: ₹27,000 | Scale: ₹99,000
 # ─────────────────────────────────────────────────────────────────────────────
 
 BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
@@ -27,45 +33,67 @@ BILLING_PLAN_CONFIG: Dict[str, Dict[str, Any]] = {
         "candidates": 50,
         "validity": "6 Months",
         "USD": {"price": 300, "currency_symbol": "$"},
-        "INR": {"price": 15000, "currency_symbol": "₹"},   # ₹15,000
+        "INR": {"price": 15000, "currency_symbol": "₹"},
         "interval": "month",
         "interval_count": 6,
     },
-    "professional": {
-        "name": "Professional",
+    "growth": {
+        "name": "Growth",
         "candidates": 100,
         "validity": "6 Months",
         "USD": {"price": 500, "currency_symbol": "$"},
-        "INR": {"price": 27000, "currency_symbol": "₹"},   # ₹27,000
+        "INR": {"price": 27000, "currency_symbol": "₹"},
         "interval": "month",
         "interval_count": 6,
     },
     "enterprise": {
-        "name": "Enterprise",
+        "name": "Scale",
         "candidates": 500,
         "validity": "1 Year",
-        "USD": {"price": 2000, "currency_symbol": "$"},
-        "INR": {"price": 99000, "currency_symbol": "₹"},   # ₹99,000
         "interval": "year",
         "interval_count": 1,
+        "USD": {"price": 2000, "currency_symbol": "$"},
+        "INR": {"price": 99000, "currency_symbol": "₹"},
+    },
+    "custom": {
+        "name": "Enterprise",
+        "candidates": None,  # Unlimited or custom
+        "validity": "Custom",
+        "interval": "month",
+        "interval_count": 1,
+        "USD": {"price": 0, "currency_symbol": "$"}, # Contact sales
+        "INR": {"price": 0, "currency_symbol": "₹"},
     },
 }
 
 # ── Plan ID normalization ──────────────────────────────────────────────────────
 
 def _normalize_plan(raw: Optional[str]) -> str:
+    """Normalize a raw plan string to a canonical plan key.
+
+    Handles legacy aliases so that old database values continue to work:
+      professional → growth  (renamed June 2026)
+      Any old 'enterprise' Stripe-paid plan stored pre-rename is treated
+      as 'scale' (the new paid tier that was previously called enterprise).
+    
+    The new 'enterprise' key is the Contact Sales tier (not a Stripe plan).
+    """
     p = str(raw or "free").lower().strip()
     if p in BILLING_PLAN_CONFIG:
         return p
+    # Legacy aliases
     if p in ("professional", "growth"):
-        return "professional"
-    if p in ("enterprise", "scale"):
+        return "growth"
+    if p == "scale":
+        return "enterprise"
+    # Old paid enterprise → now 'enterprise' (Scale)
+    if p in ("enterprise_paid",):
         return "enterprise"
     if "starter" in p:
         return "starter"
-    if "professional" in p or "growth" in p:
-        return "professional"
-    if "enterprise" in p or "scale" in p:
+    if "growth" in p or "professional" in p:
+        return "growth"
+    if "scale" in p:
         return "enterprise"
     return "free"
 
@@ -76,6 +104,7 @@ def get_stripe_price_id(plan: str, currency: str) -> str:
     Look up the configured Stripe Price ID for a given plan + currency.
     Prefers production-named env vars, falls back to legacy names.
     Returns empty string if not configured (falls back to dynamic price_data).
+    Enterprise is a contact-sales plan — no Stripe price ID.
     """
     from app.config import get_settings
     settings = get_settings()
@@ -83,15 +112,21 @@ def get_stripe_price_id(plan: str, currency: str) -> str:
     currency = currency.upper()
     mapping: Dict[str, Dict[str, str]] = {
         # Free plan intentionally excluded — no payment, no Stripe checkout
-        "starter":  {"USD": settings.stripe_us_starter_price_id, "INR": settings.stripe_ind_starter_price_id},
-        "professional": {
-            "USD": settings.stripe_us_professional_price_id or settings.stripe_us_growth_price_id,
-            "INR": settings.stripe_ind_professional_price_id or settings.stripe_ind_growth_price_id,
+        "starter": {
+            "USD": settings.stripe_us_starter_price_id,
+            "INR": settings.stripe_ind_starter_price_id,
+        },
+        "growth": {
+            # Prefer new growth price IDs, fall back to legacy professional IDs
+            "USD": settings.stripe_us_growth_price_id or settings.stripe_us_professional_price_id,
+            "INR": settings.stripe_ind_growth_price_id or settings.stripe_ind_professional_price_id,
         },
         "enterprise": {
-            "USD": settings.stripe_us_enterprise_price_id or settings.stripe_us_scale_price_id,
-            "INR": settings.stripe_ind_enterprise_price_id or settings.stripe_ind_scale_price_id,
+            # Prefer new scale price IDs, fall back to legacy enterprise IDs
+            "USD": settings.stripe_us_scale_price_id or settings.stripe_us_enterprise_price_id,
+            "INR": settings.stripe_ind_scale_price_id or settings.stripe_ind_enterprise_price_id,
         },
+        # custom (contact sales) intentionally excluded — no Stripe checkout
     }
     return (mapping.get(plan, {}).get(currency) or "").strip()
 
@@ -105,6 +140,9 @@ def validate_plan_currency(plan: str, currency: str) -> Optional[str]:
     currency = currency.upper()
     if currency not in ("USD", "INR"):
         return f"Invalid currency: {currency}. Supported: USD, INR"
+
+    if plan == "custom":
+        return "Enterprise is a custom plan. Please contact sales."
 
     return None
 
@@ -222,7 +260,13 @@ async def check_candidate_limit(db, recruiter_id: str) -> Optional[str]:
     profile = getattr(p_res, "data", None) or {}
     plan = _normalize_plan(profile.get("subscription_plan"))
 
-    plan_limit = BILLING_PLAN_CONFIG.get(plan, BILLING_PLAN_CONFIG["free"])["candidates"]
+    plan_config = BILLING_PLAN_CONFIG.get(plan, BILLING_PLAN_CONFIG["free"])
+    plan_limit = plan_config.get("candidates")
+
+    # Enterprise plan has custom/unlimited limits — never blocked here
+    if plan_limit is None:
+        return None
+
     count = await get_candidate_count_after_deployment(db, recruiter_id)
 
     if count >= plan_limit:

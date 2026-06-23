@@ -1,8 +1,19 @@
 /**
  * pricing.ts — Single source of truth for all pricing plans.
  *
- * Used by PricingPage, BillingPage, and backend billing helpers.
+ * Used by PricingPage, BillingPage, OnboardingPage and backend billing helpers.
  * Never hardcode prices, plan IDs, or currency symbols anywhere else.
+ *
+ * Plan structure (as of June 2026):
+ *   free       → Free (₹0 / $0, 5 candidates, 1 month)
+ *   starter    → Starter (₹15,000 / $300, 50 candidates, 6 months)
+ *   growth     → Growth (₹27,000 / $500, 100 candidates, 6 months)
+ *   scale      → Scale (₹99,000 / $2,000, 500 candidates, 1 year)
+ *   enterprise → Enterprise – Contact Sales (custom volume/pricing)
+ *
+ * Legacy aliases handled in normalizePlanId():
+ *   'professional' → 'growth'
+ *   old 'enterprise' before rename → now 'scale'
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -10,23 +21,27 @@
 export type PlanId =
   | 'free'
   | 'starter'
-  | 'professional'
-  | 'enterprise';
-
-export type LegacyPlanAlias = 'growth' | 'scale';
+  | 'growth'
+  | 'enterprise'
+  | 'custom';
 
 export type Currency = 'USD' | 'INR';
 
 export interface PricingPlan {
   id: PlanId;
   name: string;
+  /** null = "Contact Sales" — no Stripe checkout */
   priceUSD: number | null;
+  /** null = "Contact Sales" — no Stripe checkout */
   priceINR: number | null;
+  /** null = custom */
   candidates: number | null;
   validity: string;
   tagline: string;
   features: string[];
   highlighted?: boolean;
+  /** If true, clicking CTA goes to /contact instead of Stripe */
+  isContactPlan?: boolean;
 }
 
 // ─── Country Detection ────────────────────────────────────────────────────────
@@ -51,18 +66,16 @@ export function getCachedCountry(): { country: string; source: string } | null {
 }
 
 /**
- * Detect user country using a 4-tier priority:
+ * Detect user country using a multi-tier priority:
  * 1. Cache (instant, with timestamp)
  * 2. IP geolocation via ipapi.co
  * 3. Browser timezone/locale fallback
- *
- * @returns object with country code and detection source
  */
 export async function detectUserCountry(): Promise<{ country: string; source: string }> {
   const cached = getCachedCountry();
   if (cached) return cached;
 
-  // 3. IP geolocation via ipapi.co
+  // IP geolocation via ipapi.co
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
@@ -83,7 +96,7 @@ export async function detectUserCountry(): Promise<{ country: string; source: st
     // Silently fall through to timezone fallback
   }
 
-  // 4. Timezone-based fallback — works without network
+  // Timezone-based fallback — works without network
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const country = _countryFromTimezone(tz);
   _cacheCountry(country);
@@ -147,11 +160,27 @@ export function resolvePricingCountry(options?: {
   return _normalizeCountryCode(options?.fallbackCountry) || 'US';
 }
 
+/**
+ * Normalize a raw plan string to a canonical PlanId.
+ * Handles legacy aliases ('professional' → 'growth', old 'enterprise' stored
+ * before the rename is kept as 'scale' when the value stored was the old enterprise).
+ *
+ * NOTE: Because the DB may still have 'professional' or 'enterprise' stored
+ * for recruiters on the old plans, we map:
+ *   professional → growth
+ *   (The new enterprise is "Contact Sales" so DB values of 'enterprise'
+ *    that were previously paid Stripe plans are treated as 'scale')
+ */
 export function normalizePlanId(raw?: string | null): PlanId {
   const p = String(raw || 'free').trim().toLowerCase();
-  if (p === 'growth' || p === 'professional') return 'professional';
-  if (p === 'scale' || p === 'enterprise') return 'enterprise';
+  // Canonical new names
+  if (p === 'growth') return 'growth';
+  if (p === 'enterprise') return 'enterprise';
+  if (p === 'custom') return 'custom';
   if (p === 'starter') return 'starter';
+  // Legacy aliases
+  if (p === 'professional') return 'growth';
+  if (p === 'scale') return 'enterprise'; // If anyone used scale temporarily
   return 'free';
 }
 
@@ -178,7 +207,7 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     id: 'starter',
     name: 'Starter',
     priceUSD: 300,
-    priceINR: 15000,      // ₹15,000 per requirements
+    priceINR: 15000,
     candidates: 50,
     validity: '6 Months',
     tagline: 'Perfect for small teams starting with AI-powered hiring.',
@@ -191,10 +220,10 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
     highlighted: true,
   },
   {
-    id: 'professional',
-    name: 'Professional',
+    id: 'growth',
+    name: 'Growth',
     priceUSD: 500,
-    priceINR: 27000,      // ₹27,000 per requirements
+    priceINR: 27000,
     candidates: 100,
     validity: '6 Months',
     tagline: 'Ideal for growing teams with steady recruitment needs.',
@@ -207,25 +236,42 @@ export const PRODUCTION_PLANS: PricingPlan[] = [
   },
   {
     id: 'enterprise',
-    name: 'Enterprise',
+    name: 'Scale',
     priceUSD: 2000,
-    priceINR: 99000,      // ₹99,000 per requirements
+    priceINR: 99000,
     candidates: 500,
     validity: '1 Year',
     tagline: 'Advanced capacity for rapidly expanding talent pipelines.',
     features: [
       '500 Candidate Assessments',
-      'Everything in Professional Plan',
+      'Everything in Growth Plan',
       'Valid for 1 Full Year',
       'Priority Customer Support',
       'Advanced Assessment Capacity',
     ],
   },
+  {
+    id: 'custom',
+    name: 'Enterprise',
+    priceUSD: null,
+    priceINR: null,
+    candidates: null,
+    validity: 'Custom',
+    tagline: 'Custom volume, dedicated support, and enterprise SLA.',
+    features: [
+      'Custom Candidate Limits',
+      'Custom Assessment Volume',
+      'Dedicated Account Manager',
+      'Priority Support',
+      'Custom Integrations',
+      'Enterprise SLA',
+    ],
+    isContactPlan: true,
+  },
 ];
 
 /**
  * Get the plans to display based on currency.
- * Test plans are filtered based on currency region.
  */
 export function getPlansForCurrency(
   _currency: Currency,
@@ -239,8 +285,9 @@ export function getPlansForCurrency(
 export const PLAN_CREDITS: Record<PlanId, number> = {
   free: 5,
   starter: 50,
-  professional: 100,
+  growth: 100,
   enterprise: 500,
+  custom: 0, // Handled manually for custom enterprise deals
 };
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
@@ -269,7 +316,7 @@ export function formatPrice(amount: number, currency: Currency): string {
 
 /**
  * Get the display price for a plan in the given currency.
- * Returns null for enterprise or currency-unavailable test plans.
+ * Returns null for enterprise (contact plan) or currency-unavailable plans.
  */
 export function getPlanPrice(plan: PricingPlan, currency: Currency): number | null {
   if (currency === 'INR') return plan.priceINR;
@@ -281,13 +328,15 @@ export function getPlanPrice(plan: PricingPlan, currency: Currency): number | nu
 /**
  * Returns the VITE_ env var name for a given plan+currency.
  * Price IDs are created in Stripe Dashboard and stored in .env.
+ * Enterprise has no Stripe price (contact sales).
  */
 export function getStripePriceEnvKey(planId: PlanId, currency: Currency): string {
   const map: Partial<Record<PlanId, Partial<Record<Currency, string>>>> = {
     // Free plan excluded — no Stripe product needed (no payment)
-    starter:  { USD: 'VITE_STRIPE_US_STARTER_PRICE_ID',  INR: 'VITE_STRIPE_IND_STARTER_PRICE_ID' },
-    professional: { USD: 'VITE_STRIPE_US_PROFESSIONAL_PRICE_ID', INR: 'VITE_STRIPE_IND_PROFESSIONAL_PRICE_ID' },
-    enterprise:   { USD: 'VITE_STRIPE_US_ENTERPRISE_PRICE_ID',   INR: 'VITE_STRIPE_IND_ENTERPRISE_PRICE_ID' },
+    starter:    { USD: 'VITE_STRIPE_US_STARTER_PRICE_ID',  INR: 'VITE_STRIPE_IND_STARTER_PRICE_ID' },
+    growth:     { USD: 'VITE_STRIPE_US_GROWTH_PRICE_ID',   INR: 'VITE_STRIPE_IND_GROWTH_PRICE_ID' },
+    enterprise: { USD: 'VITE_STRIPE_US_SCALE_PRICE_ID',    INR: 'VITE_STRIPE_IND_SCALE_PRICE_ID' },
+    // custom is contact-sales only — no Stripe price ID
   };
   return map[planId]?.[currency] ?? '';
 }

@@ -72,21 +72,23 @@ class Settings(BaseSettings):
     stripe_mode: str = Field(default="test", alias="STRIPE_MODE")
     deployment_date: str = Field(default="2026-05-29T22:35:00+05:30", alias="DEPLOYMENT_DATE")
 
-    # ── Stripe Price IDs (USA / USD) — Free plan excluded (no payment needed) ─
+    # ── Stripe Price IDs (USA / USD) — Free & Enterprise plans excluded (no Stripe) ─
     stripe_us_starter_price_id: str = Field(default="", alias="STRIPE_US_STARTER_PRICE_ID")
-    # Professional plan — reads STRIPE_US_PROFESSIONAL_PRICE_ID, falls back to
-    # legacy STRIPE_US_GROWTH_PRICE_ID via billing_helpers mapping.
+    # Growth plan (renamed from Professional June 2026)
+    # Reads STRIPE_US_GROWTH_PRICE_ID; falls back to legacy STRIPE_US_PROFESSIONAL_PRICE_ID.
     stripe_us_growth_price_id: str = Field(default="", alias="STRIPE_US_GROWTH_PRICE_ID")
     stripe_us_professional_price_id: str = Field(default="", alias="STRIPE_US_PROFESSIONAL_PRICE_ID")
-    # Enterprise plan — reads STRIPE_US_ENTERPRISE_PRICE_ID, falls back to
-    # legacy STRIPE_US_SCALE_PRICE_ID via billing_helpers mapping.
+    # Scale plan (renamed from Enterprise June 2026)
+    # Reads STRIPE_US_SCALE_PRICE_ID; falls back to legacy STRIPE_US_ENTERPRISE_PRICE_ID.
     stripe_us_scale_price_id: str = Field(default="", alias="STRIPE_US_SCALE_PRICE_ID")
     stripe_us_enterprise_price_id: str = Field(default="", alias="STRIPE_US_ENTERPRISE_PRICE_ID")
 
     # ── Stripe Price IDs (India / INR) ────────────────────────────────────────
     stripe_ind_starter_price_id: str = Field(default="", alias="STRIPE_IND_STARTER_PRICE_ID")
+    # Growth plan — reads STRIPE_IND_GROWTH_PRICE_ID; falls back to legacy STRIPE_IND_PROFESSIONAL_PRICE_ID.
     stripe_ind_growth_price_id: str = Field(default="", alias="STRIPE_IND_GROWTH_PRICE_ID")
     stripe_ind_professional_price_id: str = Field(default="", alias="STRIPE_IND_PROFESSIONAL_PRICE_ID")
+    # Scale plan — reads STRIPE_IND_SCALE_PRICE_ID; falls back to legacy STRIPE_IND_ENTERPRISE_PRICE_ID.
     stripe_ind_scale_price_id: str = Field(default="", alias="STRIPE_IND_SCALE_PRICE_ID")
     stripe_ind_enterprise_price_id: str = Field(default="", alias="STRIPE_IND_ENTERPRISE_PRICE_ID")
 

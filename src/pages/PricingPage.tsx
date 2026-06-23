@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Check } from 'lucide-react';
+import { Check, Phone } from 'lucide-react';
 import Footer from '@/components/layout/Footer';
 import Navbar from '@/components/layout/Navbar';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
@@ -19,12 +19,12 @@ import {
 /** Plan comparison table rows — dynamic based on active currency */
 function getPlanComparisonRows(currency: Currency) {
   return PRODUCTION_PLANS.map((plan) => {
-    const amount = getPlanPrice(plan, currency) ?? 0;
+    const amount = getPlanPrice(plan, currency);
     return {
       name: plan.name,
-      price: formatPrice(amount, currency),
+      price: amount === null ? 'Contact Sales' : formatPrice(amount, currency),
       duration: plan.validity,
-      limit: String(plan.candidates ?? 'Custom'),
+      limit: plan.candidates !== null ? String(plan.candidates) : 'Custom',
     };
   });
 }
@@ -64,6 +64,7 @@ const PricingPage = () => {
   const renderPlanCard = (plan: PricingPlan, index: number) => {
     const { amount } = getPriceDisplay(plan);
     const isHighlighted = !!plan.highlighted;
+    const isEnterprise = plan.id === 'enterprise';
 
     return (
       <motion.div
@@ -74,6 +75,8 @@ const PricingPage = () => {
         className={`relative rounded-3xl overflow-hidden transition-all duration-300 ${
           isHighlighted
             ? 'ring-2 ring-primary shadow-2xl md:scale-105'
+            : isEnterprise
+            ? 'ring-2 ring-purple-500/40 bg-gradient-to-br from-purple-500/5 to-card border border-purple-500/30'
             : 'bg-card border hover:shadow-lg'
         }`}
       >
@@ -91,8 +94,14 @@ const PricingPage = () => {
               Most Popular
             </div>
           )}
+          {/* Enterprise Custom badge */}
+          {isEnterprise && (
+            <div className="absolute top-0 right-0 left-0 bg-purple-600 text-white text-center py-2 text-sm font-semibold">
+              Custom Plan
+            </div>
+          )}
 
-          <div className={isHighlighted ? 'mt-10' : ''}>
+          <div className={isHighlighted || isEnterprise ? 'mt-10' : ''}>
             {/* Plan Name */}
             <h3 className="text-2xl font-bold mb-2 text-foreground">
               {plan.name}
@@ -100,30 +109,52 @@ const PricingPage = () => {
 
             {/* Price */}
             <div className="mb-6">
-              <>
-                <span className="text-4xl font-bold text-foreground">
-                  {amount}
-                </span>
-                <p className="text-muted-foreground mt-2 text-sm">
-                  {plan.candidates} Candidate{typeof plan.candidates === 'number' && plan.candidates !== 1 ? 's' : ''}
-                </p>
-              </>
+              {plan.isContactPlan ? (
+                <>
+                  <span className="text-4xl font-bold text-purple-600">
+                    Contact Sales
+                  </span>
+                  <p className="text-muted-foreground mt-2 text-sm">Custom volume &amp; pricing</p>
+                </>
+              ) : (
+                <>
+                  <span className="text-4xl font-bold text-foreground">
+                    {amount}
+                  </span>
+                  <p className="text-muted-foreground mt-2 text-sm">
+                    {plan.candidates} Candidate{typeof plan.candidates === 'number' && plan.candidates !== 1 ? 's' : ''}
+                  </p>
+                </>
+              )}
               <p className="text-muted-foreground text-sm">
-                {`Valid for ${plan.validity}`}
+                {plan.isContactPlan ? 'Custom SLA & Integrations' : `Valid for ${plan.validity}`}
               </p>
             </div>
 
             {/* CTA Button */}
-            <Button
-              size="lg"
-              className={`w-full rounded-lg mb-8 font-semibold ${
-                isHighlighted ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''
-              }`}
-              variant={isHighlighted ? 'default' : 'outline'}
-              asChild
-            >
-              <Link to="/sign-up">{plan.id === 'free' ? 'Get Started' : 'Choose Plan'}</Link>
-            </Button>
+            {plan.isContactPlan ? (
+              <Button
+                size="lg"
+                className="w-full rounded-lg mb-8 font-semibold bg-purple-600 hover:bg-purple-700 text-white"
+                asChild
+              >
+                <Link to="/contact">
+                  <Phone className="h-4 w-4 mr-2" />
+                  Contact Sales
+                </Link>
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                className={`w-full rounded-lg mb-8 font-semibold ${
+                  isHighlighted ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''
+                }`}
+                variant={isHighlighted ? 'default' : 'outline'}
+                asChild
+              >
+                <Link to="/sign-up">{plan.id === 'free' ? 'Get Started' : 'Choose Plan'}</Link>
+              </Button>
+            )}
 
             {/* Divider */}
             <div className="border-t border-border mb-6" />
@@ -135,8 +166,10 @@ const PricingPage = () => {
               </p>
               {plan.features.map((feature, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-primary/20">
-                    <Check className="h-3 w-3 text-primary" />
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                    isEnterprise ? 'bg-purple-500/20' : 'bg-primary/20'
+                  }`}>
+                    <Check className={`h-3 w-3 ${isEnterprise ? 'text-purple-500' : 'text-primary'}`} />
                   </div>
                   <span className="text-sm text-muted-foreground">{feature}</span>
                 </div>

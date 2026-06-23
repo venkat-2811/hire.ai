@@ -97,19 +97,35 @@ def _extract_plan_from_invoice(invoice: Dict[str, Any]) -> str:
             name = str(item.get("name") or "")
             m = re.search(r"\b(free|starter|professional|growth|enterprise|scale)\b", name.lower())
             if m:
-                return m.group(1)
+                raw = m.group(1)
+                # Normalize legacy names in invoices
+                if raw == "professional":
+                    return "growth"
+                if raw == "enterprise":
+                    return "scale"
+                return raw
     return "unknown"
 
 
 def _normalize_admin_plan(value: Any, *, default: str = "") -> str:
+    """Normalize a plan value to a canonical display name for admin views.
+    
+    Maps legacy 'professional' → 'growth'.
+    Maps legacy 'enterprise' (paid) → 'scale'.
+    Maps 'custom' → 'enterprise' (contact sales).
+    """
     raw = _clean_text(value).lower()
     if not raw:
         return default
-    if raw in ("growth", "professional"):
-        return "professional"
-    if raw in ("scale", "enterprise"):
+    # Legacy alias: professional → growth
+    if raw == "professional":
+        return "growth"
+    if raw == "enterprise":
+        return "scale"
+    if raw == "custom":
         return "enterprise"
-    if raw in ("starter", "free"):
+    
+    if raw in ("free", "starter", "growth", "scale"):
         return raw
     return _normalize_plan(raw)
 
@@ -264,6 +280,218 @@ async def recruiter_candidate_counts(
         )
 
     return ok({"total_recruiters": len(recruiter_ids), "recruiters": recruiters_payload})
+
+
+@router.get("/recruiters/all")
+async def admin_all_recruiters(
+    search: Optional[str] = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    _: ClerkUser = Depends(require_role("admin")),
+):
+    db = get_db_admin_service()
+    recruiter_ids = await _get_recruiter_ids(db)
+    if not recruiter_ids:
+        return ok({"total": 0, "offset": offset, "limit": limit, "recruiters": []})
+
+    def _fetch_profiles():
+        return (
+            db.client.from_("profiles")
+            .select("user_id, email, first_name, last_name, full_name, company_name, subscription_plan")
+            .in_("user_id", recruiter_ids)
+            .execute()
+        )
+
+    res = await db.run(_fetch_profiles)
+    profiles = getattr(res, "data", None) or []
+
+    # Search filtering
+    filtered_profiles = []
+    search_lower = search.lower() if search else None
+    for p in profiles:
+        if not isinstance(p, dict):
+            continue
+        if search_lower:
+            fn = str(p.get("full_name") or "").lower()
+            em = str(p.get("email") or "").lower()
+            co = str(p.get("company_name") or "").lower()
+            if search_lower not in fn and search_lower not in em and search_lower not in co:
+                continue
+        filtered_profiles.append(p)
+
+    total_count = len(filtered_profiles)
+    page_profiles = filtered_profiles[offset : offset + limit]
+    page_ids = [p.get("user_id") for p in page_profiles if p.get("user_id")]
+
+    if not page_ids:
+        return ok({"total": total_count, "offset": offset, "limit": limit, "recruiters": []})
+
+    def _fetch_jobs():
+        return (
+            db.client.from_("job_descriptions")
+            .select("id, created_by")
+            .in_("created_by", page_ids)
+            .eq("is_active", True)
+            .execute()
+        )
+
+    jobs_res = await db.run(_fetch_jobs)
+    jobs = getattr(jobs_res, "data", None) or []
+
+    job_to_recruiter: Dict[str, str] = {}
+    recruiter_jobs: Dict[str, int] = {uid: 0 for uid in page_ids}
+    for j in jobs:
+        if not isinstance(j, dict):
+            continue
+        jid = str(j.get("id") or "")
+        rid = str(j.get("created_by") or "")
+        if jid and rid:
+            job_to_recruiter[jid] = rid
+            recruiter_jobs[rid] += 1
+
+    job_ids = list(job_to_recruiter.keys())
+
+    recruiter_candidates: Dict[str, int] = {uid: 0 for uid in page_ids}
+    recruiter_assessments: Dict[str, int] = {uid: 0 for uid in page_ids}
+    recruiter_interviews: Dict[str, int] = {uid: 0 for uid in page_ids}
+
+    if job_ids:
+        # Fetch ats_screenings (resume screened)
+        def _fetch_screenings():
+            return db.client.from_("ats_screenings").select("id, job_id").in_("job_id", job_ids).execute()
+
+        # Fetch assessment_sessions
+        def _fetch_assessments():
+            return db.client.from_("assessment_sessions").select("id, job_id").in_("job_id", job_ids).execute()
+
+        # Fetch ai_interview_sessions
+        def _fetch_interviews():
+            return db.client.from_("ai_interview_sessions").select("id, job_id").in_("job_id", job_ids).execute()
+
+        scr_res = await db.run(_fetch_screenings)
+        ass_res = await db.run(_fetch_assessments)
+        int_res = await db.run(_fetch_interviews)
+
+        for s in getattr(scr_res, "data", None) or []:
+            if isinstance(s, dict) and s.get("job_id"):
+                rid = job_to_recruiter.get(str(s["job_id"]))
+                if rid: recruiter_candidates[rid] += 1
+
+        for a in getattr(ass_res, "data", None) or []:
+            if isinstance(a, dict) and a.get("job_id"):
+                rid = job_to_recruiter.get(str(a["job_id"]))
+                if rid: recruiter_assessments[rid] += 1
+
+        for i in getattr(int_res, "data", None) or []:
+            if isinstance(i, dict) and i.get("job_id"):
+                rid = job_to_recruiter.get(str(i["job_id"]))
+                if rid: recruiter_interviews[rid] += 1
+
+    result_payload = []
+    for p in page_profiles:
+        uid = p.get("user_id")
+        identity = _build_user_identity(p)
+        result_payload.append({
+            "recruiter_user_id": uid,
+            "full_name": identity["full_name"],
+            "email": identity["email"],
+            "company_name": identity["company_name"],
+            "subscription_plan": _normalize_admin_plan(p.get("subscription_plan"), default="free"),
+            "jobs_count": recruiter_jobs.get(uid, 0),
+            "candidates_count": recruiter_candidates.get(uid, 0),
+            "assessments_count": recruiter_assessments.get(uid, 0),
+            "interviews_count": recruiter_interviews.get(uid, 0),
+        })
+
+    return ok({
+        "total": total_count,
+        "offset": offset,
+        "limit": limit,
+        "recruiters": result_payload
+    })
+
+
+@router.get("/recruiters/{recruiter_id}")
+async def admin_recruiter_details(
+    recruiter_id: str,
+    _: ClerkUser = Depends(require_role("admin")),
+):
+    db = get_db_admin_service()
+    
+    def _fetch_profile():
+        return (
+            db.client.from_("profiles")
+            .select("*")
+            .eq("user_id", recruiter_id)
+            .single()
+            .execute()
+        )
+
+    try:
+        prof_res = await db.run(_fetch_profile)
+        profile = getattr(prof_res, "data", None)
+    except Exception:
+        profile = None
+
+    if not profile:
+        return api_error("Recruiter not found", 404)
+
+    identity = _build_user_identity(profile)
+
+    def _fetch_jobs():
+        return (
+            db.client.from_("job_descriptions")
+            .select("id, title, role, level, created_at, is_active")
+            .eq("created_by", recruiter_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+
+    jobs_res = await db.run(_fetch_jobs)
+    jobs = getattr(jobs_res, "data", None) or []
+    job_ids = [str(j.get("id")) for j in jobs if j.get("id")]
+
+    # Fetch total candidates (from ats_screenings linked to these jobs)
+    candidates_count = 0
+    assessments_count = 0
+    interviews_count = 0
+
+    if job_ids:
+        def _fetch_screenings_count():
+            return db.client.from_("ats_screenings").select("id", count="exact").in_("job_id", job_ids).execute()
+        
+        def _fetch_assessments_count():
+            return db.client.from_("assessment_sessions").select("id", count="exact").in_("job_id", job_ids).execute()
+
+        def _fetch_interviews_count():
+            return db.client.from_("ai_interview_sessions").select("id", count="exact").in_("job_id", job_ids).execute()
+
+        scr_res = await db.run(_fetch_screenings_count)
+        ass_res = await db.run(_fetch_assessments_count)
+        int_res = await db.run(_fetch_interviews_count)
+
+        candidates_count = getattr(scr_res, "count", None) or 0
+        assessments_count = getattr(ass_res, "count", None) or 0
+        interviews_count = getattr(int_res, "count", None) or 0
+
+    payload = {
+        "recruiter_user_id": recruiter_id,
+        "full_name": identity["full_name"],
+        "email": identity["email"],
+        "company_name": identity["company_name"],
+        "subscription_plan": _normalize_admin_plan(profile.get("subscription_plan"), default="free"),
+        "subscription_status": profile.get("subscription_status") or "active",
+        "plan_selected_at": profile.get("plan_selected_at"),
+        "created_at": profile.get("created_at"),
+        "jobs_count": len(jobs),
+        "candidates_count": candidates_count,
+        "assessments_count": assessments_count,
+        "interviews_count": interviews_count,
+        "recent_jobs": jobs[:10]  # Return up to 10 recent jobs for detail view
+    }
+
+    return ok(payload)
+
 
 
 @router.get("/subscriptions/plan-counts")
@@ -928,6 +1156,101 @@ async def admin_recent_logins(
         })
 
     return ok({"logins": login_entries})
+
+
+@router.get("/activity/logins-today")
+async def admin_logins_today(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _: ClerkUser = Depends(require_role("admin")),
+):
+    """Return all login events for today (UTC), joined with profile data."""
+    db = get_db_admin_service()
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    def _fetch_today_logins():
+        return (
+            db.client.from_("user_login_events")
+            .select("id, user_id, logged_in_at, ip_address, user_agent")
+            .eq("event_type", "session.created")
+            .gte("logged_in_at", today_start)
+            .order("logged_in_at", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+
+    res = await db.run(_fetch_today_logins)
+    events = getattr(res, "data", None) or []
+
+    # Fetch total count
+    def _fetch_today_count():
+        return (
+            db.client.from_("user_login_events")
+            .select("id", count="exact")
+            .eq("event_type", "session.created")
+            .gte("logged_in_at", today_start)
+            .execute()
+        )
+
+    count_res = await db.run(_fetch_today_count)
+    total_count = getattr(count_res, "count", None) or 0
+
+    # Collect unique user_ids to join with profiles
+    user_ids = list({
+        str(e.get("user_id", "")).strip()
+        for e in (events if isinstance(events, list) else [])
+        if isinstance(e, dict) and str(e.get("user_id", "")).strip()
+    })
+
+    profiles_by_uid: Dict[str, Dict[str, Any]] = {}
+    if user_ids:
+        def _fetch_profiles():
+            return (
+                db.client.from_("profiles")
+                .select("user_id, email, first_name, last_name, full_name, company_name, last_login_at")
+                .in_("user_id", user_ids)
+                .execute()
+            )
+
+        prof_res = await db.run(_fetch_profiles)
+        for row in getattr(prof_res, "data", None) or []:
+            if isinstance(row, dict) and row.get("user_id"):
+                profiles_by_uid[str(row["user_id"])] = row
+
+    login_entries: List[Dict[str, Any]] = []
+    for e in events if isinstance(events, list) else []:
+        if not isinstance(e, dict):
+            continue
+        uid = str(e.get("user_id") or "")
+        profile = profiles_by_uid.get(uid, {})
+        identity = _build_user_identity(profile)
+
+        first_name = str(profile.get("first_name") or "").strip() or None
+        last_name = str(profile.get("last_name") or "").strip() or None
+
+        login_entries.append({
+            "id": e.get("id"),
+            "user_id": uid,
+            "first_name": first_name or "Not Provided",
+            "last_name": last_name or "",
+            "full_name": identity["full_name"],
+            "email": identity["email"],
+            "company_name": identity["company_name"],
+            "last_login_at": profile.get("last_login_at"),
+            "logged_in_at": e.get("logged_in_at"),
+            "ip_address": e.get("ip_address"),
+            "user_agent": e.get("user_agent"),
+            "status": "success",
+        })
+
+    return ok({
+        "total": total_count,
+        "offset": offset,
+        "limit": limit,
+        "logins": login_entries
+    })
+
 
 
 # ── Full Candidate Listing (PII) ────────────────────────────────────────────

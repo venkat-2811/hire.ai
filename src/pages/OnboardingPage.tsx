@@ -52,17 +52,23 @@ const PLAN_UI_META: Record<PlanId, { icon: typeof Sparkles; gradient: string; ca
     cta: 'Choose Starter',
     popular: true,
   },
-  professional: {
-    icon: Crown,
+  growth: {
+    icon: TrendingUp,
     gradient: 'from-purple-500 to-pink-500',
     cardBg: 'bg-purple-500/5 border-purple-500/30',
-    cta: 'Choose Professional',
+    cta: 'Choose Growth',
   },
-  enterprise: {
-    icon: TrendingUp,
+  scale: {
+    icon: Crown,
     gradient: 'from-amber-500 to-orange-500',
     cardBg: 'bg-amber-500/5 border-amber-500/30',
-    cta: 'Choose Enterprise',
+    cta: 'Choose Scale',
+  },
+  enterprise: {
+    icon: Globe,
+    gradient: 'from-violet-600 to-purple-700',
+    cardBg: 'bg-violet-500/5 border-violet-500/40',
+    cta: 'Contact Sales',
   },
 };
 
@@ -404,13 +410,13 @@ export default function OnboardingPage() {
               </div>
 
               {geoLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-7 items-stretch">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 lg:gap-7 items-stretch">
                   {onboardingPlans.map((plan) => (
                     <div key={plan.id} className="h-[520px] rounded-2xl bg-muted/30 animate-pulse" />
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-7 items-stretch">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 lg:gap-7 items-stretch">
                   {onboardingPlans.map((plan) => {
                     const price = detectedCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
 
@@ -437,8 +443,14 @@ export default function OnboardingPage() {
                           </div>
                           <h3 className="text-lg font-bold">{plan.name}</h3>
                           <div className="mt-1 flex items-baseline justify-center gap-1">
-                            <span className="text-3xl font-extrabold">{formatCurrency(price, detectedCurrency)}</span>
-                            <span className="text-sm text-muted-foreground font-semibold">/ {plan.validity}</span>
+                            {plan.isContactPlan ? (
+                              <span className="text-2xl font-extrabold text-purple-600">Contact Sales</span>
+                            ) : (
+                              <>
+                                <span className="text-3xl font-extrabold">{formatCurrency(price ?? 0, detectedCurrency)}</span>
+                                <span className="text-sm text-muted-foreground font-semibold">/ {plan.validity}</span>
+                              </>
+                            )}
                           </div>
                         </div>
 
@@ -453,17 +465,26 @@ export default function OnboardingPage() {
 
                         <Button
                           className="w-full mt-auto font-bold"
-                          variant={plan.popular || plan.id === 'enterprise' ? 'default' : 'outline'}
+                          variant={plan.popular || plan.id === 'enterprise' ? 'default' : plan.id === 'custom' ? 'default' : 'outline'}
                           disabled={processingPlan}
+                          style={plan.id === 'custom' ? { background: 'linear-gradient(135deg, #7c3aed, #9333ea)' } : undefined}
                           onClick={(e) => {
                             e.stopPropagation();
-                            handlePlanSelect(plan.id);
+                            if (plan.isContactPlan) {
+                              window.open('/contact', '_blank');
+                            } else {
+                              handlePlanSelect(plan.id);
+                            }
                           }}
                         >
                           {processingPlan && selectedPlan === plan.id ? (
                             <Loader2 className="h-4 w-4 animate-spin mr-2" />
                           ) : null}
-                          {plan.id === 'free' ? plan.cta : `${plan.cta} — ${formatCurrency(price, detectedCurrency)}`}
+                          {plan.id === 'free'
+                            ? plan.cta
+                            : plan.isContactPlan
+                            ? 'Contact Sales'
+                            : `${plan.cta} — ${formatCurrency(price, detectedCurrency)}`}
                         </Button>
                       </motion.div>
                     );
