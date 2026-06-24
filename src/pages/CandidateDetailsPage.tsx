@@ -45,6 +45,7 @@ import { toast } from 'sonner';
 import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '@/integrations/supabase/client';
+import { ResumeOptimizationPanel } from '@/components/resume/ResumeOptimizationPanel';
 
 const safeRender = (val: any): string => {
   if (val == null) return '';
@@ -118,7 +119,7 @@ export default function CandidateDetailsPage() {
   const jobId = searchParams.get('job_id') || undefined;
   const initialTab = searchParams.get('tab') || undefined;
   const { loading: authLoading } = useRequireAuth();
-  const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '');
+  const { data: candidate, isLoading, error: candidateError, refetch } = useCandidate(candidateId || '', jobId);
 
   const { data: profile } = useProfile();
   const { data: screenings } = useCandidateScreenings(candidateId || '');
@@ -831,8 +832,23 @@ export default function CandidateDetailsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 space-y-6">
                   <Card>
-                    <CardHeader>
-                      <CardTitle>ATS Screening Scores</CardTitle>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle>ATS Screening Scores</CardTitle>
+                        {candidate.resume_url && (
+                          <a
+                            href={candidate.resume_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/8 hover:bg-primary/15 border border-primary/20 px-2.5 py-1.5 rounded-lg transition-all"
+                            title="Download original resume used for screening"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Original Resume
+                          </a>
+                        )}
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="grid grid-cols-2 gap-3">
@@ -1021,6 +1037,17 @@ export default function CandidateDetailsPage() {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* AI Resume Optimization — Optional feature, triggered only when recruiter clicks */}
+            {screening && candidate?.resume_text && jobId && (
+              <ResumeOptimizationPanel
+                candidateId={candidateId!}
+                jobId={jobId}
+                screening={screening}
+                resumeText={candidate.resume_text}
+                resumeUrl={candidate.resume_url || undefined}
+              />
             )}
           </TabsContent>
 

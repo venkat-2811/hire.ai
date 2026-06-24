@@ -677,7 +677,11 @@ async def offer_details(token: str):
 
 
 @router.get("/{candidate_id}")
-async def get_candidate(candidate_id: str, user: ClerkUser = Depends(require_user)):
+async def get_candidate(
+    candidate_id: str,
+    job_id: Optional[str] = None,
+    user: ClerkUser = Depends(require_user)
+):
     """GET /api/v2/candidates/{candidate_id}"""
     db = get_db_admin_service()
 
@@ -701,14 +705,13 @@ async def get_candidate(candidate_id: str, user: ClerkUser = Depends(require_use
 
     # Merge the calling recruiter's per-tenant overrides on top of the
     # canonical candidate row so they see their private version of this record.
-    user_job_ids = await get_user_job_ids(db, user.id)
-    if user_job_ids:
+    if job_id:
         def _fetch_ov():
             return (
                 db.client.from_("job_applications")
                 .select("candidate_overrides")
                 .eq("candidate_id", candidate_id)
-                .in_("job_id", user_job_ids)
+                .eq("job_id", job_id)
                 .limit(1)
                 .execute()
             )
@@ -718,6 +721,25 @@ async def get_candidate(candidate_id: str, user: ClerkUser = Depends(require_use
             overrides = ov_rows[0].get("candidate_overrides") or {}
             if isinstance(overrides, dict) and overrides:
                 candidate = {**candidate, **overrides}
+    else:
+        # Fallback if no job_id is provided: just pick the first override we find for this user
+        user_job_ids = await get_user_job_ids(db, user.id)
+        if user_job_ids:
+            def _fetch_ov_fallback():
+                return (
+                    db.client.from_("job_applications")
+                    .select("candidate_overrides")
+                    .eq("candidate_id", candidate_id)
+                    .in_("job_id", user_job_ids)
+                    .limit(1)
+                    .execute()
+                )
+            ov_res = await db.run(_fetch_ov_fallback)
+            ov_rows = getattr(ov_res, "data", None) or []
+            if ov_rows and isinstance(ov_rows[0], dict):
+                overrides = ov_rows[0].get("candidate_overrides") or {}
+                if isinstance(overrides, dict) and overrides:
+                    candidate = {**candidate, **overrides}
 
     return ok(candidate)
 

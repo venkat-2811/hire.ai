@@ -382,7 +382,8 @@ export const candidatesApi = {
     return request<Candidate[]>(`/candidates${query ? `?${query}` : ''}`, {});
   },
 
-  get: (id: string) => request<Candidate>(`/candidates/${id}`, {}),
+  get: (id: string, jobId?: string) => 
+    request<Candidate>(`/candidates/${id}${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`, {}),
 
   create: (data: CandidateCreatePayload) =>
     request<Candidate>('/candidates', { method: 'POST', body: data }),
@@ -410,6 +411,90 @@ export const candidatesApi = {
   delete: (id: string, jobId?: string) =>
     request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`, { method: 'DELETE' }),
 };
+
+// ============== Resume Optimization API ==============
+
+export interface ResumeOptimizationChange {
+  change_id: string;
+  section: string;
+  section_label: string;
+  original: string;
+  improved: string;
+  reason: string;
+  change_type: 'wording' | 'ats_keyword' | 'jd_alignment' | 'formatting' | 'gap_caution' | 'missing_skill_notice';
+  score_impact: number;
+}
+
+export interface ResumeOptimizationRecord {
+  id: string;
+  candidate_id: string;
+  job_id: string;
+  recruiter_id: string;
+  status: 'draft' | 'finalized';
+  before_score: number;
+  after_score: number;
+  optimization_summary: string;
+  changes: ResumeOptimizationChange[];
+  gap_cautions?: Array<{ reason: string }>;
+  optimized_resume: Record<string, any>;
+  accepted_change_ids: string[];
+  rejected_change_ids: string[];
+  final_resume?: Record<string, any> | null;
+  candidate_name?: string;
+  job_title?: string;
+  created_at: string;
+  updated_at: string;
+  finalized_at?: string | null;
+}
+
+export const resumeOptimizationApi = {
+  optimize: (candidateId: string, jobId: string, screeningData: any) =>
+    request<ResumeOptimizationRecord>(
+      `/resume-optimization/candidates/${candidateId}/optimize`,
+      {
+        method: 'POST',
+        body: { job_id: jobId, screening_data: screeningData },
+        timeoutMs: 120000,  // 2 min — AI generation can be slow
+      }
+    ),
+
+  getHistory: (candidateId: string, jobId?: string) => {
+    const qs = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
+    return request<ResumeOptimizationRecord[]>(
+      `/resume-optimization/candidates/${candidateId}/history${qs}`,
+      {}
+    );
+  },
+
+  get: (optimizationId: string) =>
+    request<ResumeOptimizationRecord>(`/resume-optimization/${optimizationId}`, {}),
+
+  finalize: (
+    optimizationId: string,
+    body: {
+      accepted_change_ids: string[];
+      rejected_change_ids: string[];
+      final_resume?: Record<string, any>;  // legacy-compat; backend ignores and rebuilds from text
+    }
+  ) =>
+    request<{ success: boolean; optimization_id: string; status: string }>(
+      `/resume-optimization/${optimizationId}/finalize`,
+      { method: 'POST', body }
+    ),
+
+  deploy: (optimizationId: string) =>
+    request<{ success: boolean; url: string; screening_score: number }>(
+      `/resume-optimization/${optimizationId}/deploy`,
+      { method: 'POST' }
+    ),
+
+  getDownloadUrl: (optimizationId: string, format: 'pdf' | 'docx', version: 'optimized' | 'original' = 'optimized') => {
+    const base = `${(import.meta as any)?.env?.VITE_API_BASE_URL ?? ''}/api/v2`;
+    return `${base}/resume-optimization/${optimizationId}/download/${format}?version=${version}`;
+  },
+};
+
+
 
 export interface BulkEmailActionResponse {
   success: boolean;

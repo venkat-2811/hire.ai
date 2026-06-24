@@ -17,6 +17,7 @@ from app.api.v2.endpoints.screening import router as screening_router
 from app.api.v2.endpoints.subscription import router as subscription_router
 from app.api.v2.endpoints.test import router as test_router
 from app.api.v2.endpoints.usage import router as usage_router
+from app.api.v2.endpoints.resume_optimization import router as resume_optimization_router
 
 api_router = APIRouter()
 
@@ -37,3 +38,4 @@ api_router.include_router(billing_router, tags=["billing"])
 api_router.include_router(interviews_router, tags=["interviews"])
 api_router.include_router(dsa_problems_router, tags=["dsa-problems"])
 api_router.include_router(clerk_webhooks_router, tags=["clerk-webhooks"])
+api_router.include_router(resume_optimization_router, tags=["resume-optimization"])

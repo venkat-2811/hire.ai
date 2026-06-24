@@ -21,10 +21,10 @@ export function useUnassignedCandidates() {
   });
 }
 
-export function useCandidate(id: string) {
+export function useCandidate(id: string, jobId?: string) {
   return useQuery({
-    queryKey: ['candidates', id],
-    queryFn: () => candidatesApi.get(id),
+    queryKey: ['candidates', id, jobId],
+    queryFn: () => candidatesApi.get(id, jobId),
     enabled: !!id,
   });
 }
