@@ -1584,6 +1584,7 @@ export interface AdminPlanRecruiter {
   subscription_start_date?: string | null;
   subscription_status: string;
   subscription_plan: string;
+  created_at?: string | null;
 }
 
 export interface AdminActivitySummary {

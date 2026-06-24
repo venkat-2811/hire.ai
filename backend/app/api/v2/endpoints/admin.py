@@ -864,8 +864,7 @@ async def admin_plan_recruiters(
     def _fetch_profiles_for_plan():
         q = (
             db.client.from_("profiles")
-            .select("user_id, first_name, last_name, full_name, email, company_name, subscription_plan, subscription_status, plan_selected_at")
-            .order("plan_selected_at", desc=True)
+            .select("user_id, first_name, last_name, full_name, email, company_name, subscription_plan, subscription_status, plan_selected_at, created_at")
             .order("created_at", desc=True)
         )
         return q.execute()
@@ -900,6 +899,7 @@ async def admin_plan_recruiters(
                 "subscription_start_date": row.get("plan_selected_at"),
                 "subscription_status": _clean_text(row.get("subscription_status")) or "active",
                 "subscription_plan": plan_normalized,
+                "created_at": row.get("created_at"),
             }
         )
 

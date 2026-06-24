@@ -106,9 +106,12 @@ export default function AdminBusinessPage() {
   const planRecruiters = planRecruitersQuery.data?.recruiters ?? [];
   const planRecruitersTotal = planRecruitersQuery.data?.total ?? 0;
 
-  const sortedPlanCounts = useMemo(() => {
+  const orderedPlanCounts = useMemo(() => {
     const byPlan = planCountsQuery.data?.by_plan ?? {};
-    return Object.entries(byPlan).sort((a, b) => b[1] - a[1]);
+    return ['free', 'starter', 'growth', 'scale'].map((plan) => ({
+      plan,
+      count: byPlan[plan] ?? 0,
+    }));
   }, [planCountsQuery.data]);
 
   useEffect(() => {
@@ -193,18 +196,20 @@ export default function AdminBusinessPage() {
             <CardDescription>Distribution of recruiter accounts by current plan.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {sortedPlanCounts.map(([plan, count]) => (
+            {orderedPlanCounts.map(({ plan, count }) => (
               <div key={plan} className="flex items-center justify-between border rounded-md px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="font-medium capitalize">{plan}</span>
                   <Badge>{count}</Badge>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => openPlanDetails(plan)}>
-                  View All
-                </Button>
+                {count > 0 && (
+                  <Button size="sm" variant="outline" onClick={() => openPlanDetails(plan)}>
+                    View All
+                  </Button>
+                )}
               </div>
             ))}
-            {!sortedPlanCounts.length && <div className="text-sm text-muted-foreground">No plan data available.</div>}
+            {!orderedPlanCounts.length && <div className="text-sm text-muted-foreground">No plan data available.</div>}
           </CardContent>
         </Card>
 
@@ -430,7 +435,7 @@ export default function AdminBusinessPage() {
                       <TableHead>Email</TableHead>
                       <TableHead>Company</TableHead>
                       <TableHead>Subscription Start</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Joined Date</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -442,8 +447,8 @@ export default function AdminBusinessPage() {
                         <TableCell className="text-xs text-muted-foreground">
                           {item.subscription_start_date ? new Date(item.subscription_start_date).toLocaleDateString() : 'Not Provided'}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">{item.subscription_status || 'active'}</Badge>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Not Provided'}
                         </TableCell>
                       </TableRow>
                     ))}
