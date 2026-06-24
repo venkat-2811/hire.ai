@@ -187,6 +187,240 @@ class ResumeOptimizerService:
         return result
 
     @staticmethod
+    def synchronize_candidate_details(resume_text: str, candidate_profile: Dict[str, Any]) -> str:
+        """
+        Keep the optimized resume aligned with canonical candidate details shown in UI.
+
+        Ensures top-of-resume identity/contact uses the candidate record (with tenant overrides).
+        """
+        import re
+
+        text = str(resume_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        lines = text.split("\n")
+
+        def _clean(v: Any) -> str:
+            return str(v or "").strip()
+
+        full_name = _clean(candidate_profile.get("full_name"))
+        email = _clean(candidate_profile.get("email"))
+        phone = _clean(candidate_profile.get("phone"))
+        location = _clean(candidate_profile.get("location"))
+        portfolio = _clean(candidate_profile.get("portfolio_url"))
+        github = _clean(candidate_profile.get("github_url"))
+        linkedin = _clean(candidate_profile.get("linkedin_url"))
+
+        # Build contact info line
+        contact_parts = []
+        if email:
+            contact_parts.append(email)
+        if phone:
+            contact_parts.append(phone)
+        if location:
+            contact_parts.append(location)
+        
+        # Build links line separately for cleaner formatting
+        link_parts = []
+        if linkedin:
+            link_parts.append(linkedin)
+        if portfolio:
+            link_parts.append(portfolio)
+        if github:
+            link_parts.append(github)
+
+        # Remove noisy auto-generated header/contact lines from the first block.
+        body_lines: List[str] = []
+        skip_patterns = ["@", "linkedin", "github.com", "http://", "https://", "portfolio"]
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if idx <= 10:
+                # Skip lines that look like name/contact info
+                if full_name and stripped.lower() == full_name.lower():
+                    continue
+                if stripped and any(tok in stripped.lower() for tok in skip_patterns):
+                    continue
+                if phone and re.sub(r"\D", "", phone) and re.sub(r"\D", "", phone) in re.sub(r"\D", "", stripped):
+                    continue
+                # Skip lines that are just contact info separators
+                if stripped and "|" in stripped and len(stripped.split("|")) >= 2:
+                    has_contact = any(p.lower() in stripped.lower() for p in [email, phone] if p)
+                    if has_contact:
+                        continue
+            body_lines.append(line)
+
+        # Trim leading empty lines after header cleanup.
+        while body_lines and not body_lines[0].strip():
+            body_lines.pop(0)
+
+        # Assemble clean header
+        assembled: List[str] = []
+        if full_name:
+            assembled.append(full_name)
+        if contact_parts:
+            assembled.append(" | ".join(contact_parts))
+        if link_parts:
+            assembled.append(" | ".join(link_parts))
+        if assembled:
+            assembled.append("")  # Blank line after header
+        assembled.extend(body_lines)
+
+        synced = "\n".join(assembled).strip()
+        return ResumeOptimizerService.to_ats_friendly_text(synced)
+
+    @staticmethod
+    def to_ats_friendly_text(resume_text: str) -> str:
+        """
+        Normalize raw resume text into a consistent ATS-friendly plain-text structure.
+        
+        Produces clean, well-structured text with:
+        - Standardized section headers
+        - Consistent bullet formatting
+        - Proper spacing between sections
+        - Clean line breaks
+        """
+        import re
+
+        text = str(resume_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        lines = text.split("\n")
+
+        # Comprehensive section header mappings
+        section_aliases = {
+            # Summary variations
+            "summary": "PROFESSIONAL SUMMARY",
+            "professional summary": "PROFESSIONAL SUMMARY",
+            "executive summary": "PROFESSIONAL SUMMARY",
+            "career summary": "PROFESSIONAL SUMMARY",
+            "profile": "PROFESSIONAL SUMMARY",
+            "about me": "PROFESSIONAL SUMMARY",
+            "objective": "CAREER OBJECTIVE",
+            "career objective": "CAREER OBJECTIVE",
+            
+            # Skills variations
+            "skills": "TECHNICAL SKILLS",
+            "technical skills": "TECHNICAL SKILLS",
+            "core skills": "TECHNICAL SKILLS",
+            "key skills": "TECHNICAL SKILLS",
+            "competencies": "TECHNICAL SKILLS",
+            "core competencies": "TECHNICAL SKILLS",
+            "technologies": "TECHNICAL SKILLS",
+            "tools & technologies": "TECHNICAL SKILLS",
+            "technical proficiencies": "TECHNICAL SKILLS",
+            
+            # Experience variations
+            "experience": "PROFESSIONAL EXPERIENCE",
+            "work experience": "PROFESSIONAL EXPERIENCE",
+            "professional experience": "PROFESSIONAL EXPERIENCE",
+            "employment history": "PROFESSIONAL EXPERIENCE",
+            "work history": "PROFESSIONAL EXPERIENCE",
+            "career history": "PROFESSIONAL EXPERIENCE",
+            
+            # Projects
+            "projects": "PROJECTS",
+            "key projects": "PROJECTS",
+            "personal projects": "PROJECTS",
+            "notable projects": "PROJECTS",
+            
+            # Education
+            "education": "EDUCATION",
+            "academic background": "EDUCATION",
+            "educational background": "EDUCATION",
+            "qualifications": "EDUCATION",
+            
+            # Certifications
+            "certifications": "CERTIFICATIONS",
+            "certificates": "CERTIFICATIONS",
+            "professional certifications": "CERTIFICATIONS",
+            "licenses & certifications": "CERTIFICATIONS",
+            
+            # Achievements
+            "achievements": "ACHIEVEMENTS",
+            "accomplishments": "ACHIEVEMENTS",
+            "awards": "AWARDS & ACHIEVEMENTS",
+            "awards & achievements": "AWARDS & ACHIEVEMENTS",
+            "honors": "AWARDS & ACHIEVEMENTS",
+            
+            # Additional sections
+            "publications": "PUBLICATIONS",
+            "languages": "LANGUAGES",
+            "interests": "INTERESTS",
+            "hobbies": "INTERESTS",
+            "references": "REFERENCES",
+            "volunteer": "VOLUNTEER EXPERIENCE",
+            "volunteer experience": "VOLUNTEER EXPERIENCE",
+        }
+
+        out: List[str] = []
+        blank_streak = 0
+        in_header_block = True  # Track if we're still in the name/contact header
+        header_line_count = 0
+
+        for idx, raw in enumerate(lines):
+            stripped = raw.strip()
+            
+            # Handle blank lines
+            if not stripped:
+                blank_streak += 1
+                # Allow max 1 blank line between content
+                if blank_streak <= 1 and out and out[-1] != "":
+                    out.append("")
+                continue
+
+            blank_streak = 0
+            normalized = re.sub(r"\s+", " ", stripped)
+            key = normalized.lower().rstrip(":")
+            mapped_header = section_aliases.get(key)
+
+            # Detect section headers
+            is_section_header = bool(mapped_header)
+            if not is_section_header:
+                # Check if it looks like a header (short, uppercase, no bullet)
+                is_section_header = (
+                    len(normalized) <= 45
+                    and normalized.upper() == normalized
+                    and not normalized.startswith(("-", "•", "*", "–", "·"))
+                    and not any(c.isdigit() for c in normalized[:3])  # Avoid dates
+                    and not normalized.endswith((",", ";", "."))
+                    and len(normalized.split()) <= 5  # Max 5 words for headers
+                )
+
+            # First section header ends the header block
+            if is_section_header and in_header_block:
+                in_header_block = False
+
+            # Handle header block (name, contact info)
+            if in_header_block and idx <= 5:
+                header_line_count += 1
+                out.append(normalized)
+                if header_line_count >= 3:  # After 3 header lines, add spacing
+                    in_header_block = False
+                continue
+
+            if is_section_header:
+                header_text = mapped_header or normalized.upper().rstrip(":")
+                # Ensure blank line before section header
+                if out and out[-1] != "":
+                    out.append("")
+                out.append(header_text)
+                continue
+
+            # Handle bullet points - normalize to consistent format
+            if normalized.startswith(("•", "-", "*", "–", "·", ">", "►", "▪", "○")):
+                bullet_content = re.sub(r"^[•\-*–·>►▪○]+\s*", "", normalized).strip()
+                if bullet_content:
+                    out.append(f"• {bullet_content}")
+            else:
+                out.append(normalized)
+
+        # Clean up trailing empty lines
+        while out and not out[-1]:
+            out.pop()
+            
+        # Clean up leading empty lines
+        while out and not out[0]:
+            out.pop(0)
+            
+        return "\n".join(out)
+
+    @staticmethod
     def _apply_changes(resume_text: str, changes: List[Dict]) -> str:
         """Apply ALL actionable changes to produce a fully optimized text."""
         result = resume_text
@@ -214,126 +448,148 @@ class ResumeOptimizerService:
         accepted_ids: Optional[List[str]] = None
     ) -> bytes:
         """
-        Generate a DOCX from the optimized (or original) resume text.
-
-        If a resume_url is provided and it's a .docx file, we attempt to download
-        it and modify it in-place using python-docx, preserving all styles.
-        Otherwise, we generate a clean, standard DOCX from the text.
+        Generate a professional ATS-friendly DOCX from the resume text.
+        
+        Creates a clean, consistently formatted document with:
+        - Professional header with name and contact info
+        - Clear section headers with subtle styling
+        - Consistent bullet formatting
+        - Proper spacing and margins
         """
-        import io
-        import httpx
         from docx import Document
-
-        # 1. Attempt in-place modification if it's a DOCX
-        if resume_url and resume_url.lower().endswith(".docx") and changes and accepted_ids is not None:
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(resume_url, timeout=10.0)
-                if resp.status_code == 200:
-                    doc_bytes = io.BytesIO(resp.content)
-                    doc = Document(doc_bytes)
-
-                    accepted_set = set(accepted_ids)
-                    
-                    # Iterate through accepted changes and do find/replace across paragraphs
-                    for ch in changes:
-                        if ch.get("change_id") not in accepted_set:
-                            continue
-                        
-                        original = ch.get("original", "")
-                        improved = ch.get("improved", "")
-                        if not original or ch.get("change_type") == "missing_skill_notice":
-                            continue
-
-                        # Simple paragraph-level replacement for python-docx
-                        # Note: This is a best-effort replacement. Text split across runs might not match,
-                        # but often it works if the text is contiguous in a run, or we replace the paragraph text.
-                        # For a robust replacement, we replace paragraph.text, which clears run-level formatting
-                        # for that specific paragraph, but keeps paragraph styles.
-                        for p in doc.paragraphs:
-                            if original in p.text:
-                                p.text = p.text.replace(original, improved)
-                        
-                        # Also check tables
-                        for table in doc.tables:
-                            for row in table.rows:
-                                for cell in row.cells:
-                                    for p in cell.paragraphs:
-                                        if original in p.text:
-                                            p.text = p.text.replace(original, improved)
-
-                    out_buf = io.BytesIO()
-                    doc.save(out_buf)
-                    return out_buf.getvalue()
-            except Exception as exc:
-                logger.warning(f"Failed to modify DOCX in-place from {resume_url}: {exc}. Falling back to standard generation.")
-
-        # 2. Fallback: Generate a standard template DOCX
-        from docx.shared import Pt, RGBColor
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Pt, RGBColor, Inches, Twips
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+        from docx.enum.style import WD_STYLE_TYPE
         from docx.oxml.ns import qn
         from docx.oxml import OxmlElement
 
+        ats_text = self.to_ats_friendly_text(resume_text)
         doc = Document()
+        
+        # Set document margins
+        for section in doc.sections:
+            section.top_margin = Inches(0.6)
+            section.bottom_margin = Inches(0.6)
+            section.left_margin = Inches(0.75)
+            section.right_margin = Inches(0.75)
 
-        # Set default style
+        # Configure default Normal style
         style = doc.styles["Normal"]
         style.font.name = "Calibri"
-        style.font.size = Pt(11)
+        style.font.size = Pt(10.5)
+        style.paragraph_format.space_after = Pt(0)
+        style.paragraph_format.space_before = Pt(0)
+        style.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
 
-        def _add_section_divider(text: str):
-            """Bold blue section header with bottom border."""
+        # Colors
+        DARK_BLUE = RGBColor(0x1A, 0x36, 0x5D)  # Professional dark blue
+        MEDIUM_BLUE = RGBColor(0x2B, 0x57, 0x9A)
+        DARK_GRAY = RGBColor(0x33, 0x33, 0x33)
+        LIGHT_GRAY = RGBColor(0x66, 0x66, 0x66)
+
+        def _add_section_header(text: str):
+            """Add a professional section header with bottom border."""
             p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(12)
+            p.paragraph_format.space_after = Pt(4)
             run = p.add_run(text.upper())
             run.bold = True
             run.font.size = Pt(11)
-            run.font.color.rgb = RGBColor(0x1E, 0x40, 0xAF)
-            p.paragraph_format.space_before = Pt(10)
-            p.paragraph_format.space_after = Pt(3)
+            run.font.color.rgb = DARK_BLUE
+            # Add bottom border
             pPr = p._p.get_or_add_pPr()
             pBdr = OxmlElement("w:pBdr")
             bottom = OxmlElement("w:bottom")
             bottom.set(qn("w:val"), "single")
-            bottom.set(qn("w:sz"), "4")
-            bottom.set(qn("w:color"), "1E40AF")
+            bottom.set(qn("w:sz"), "6")
+            bottom.set(qn("w:color"), "1A365D")
             pBdr.append(bottom)
             pPr.append(pBdr)
 
-        # Candidate name header
-        name_p = doc.add_paragraph()
-        name_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        name_run = name_p.add_run(candidate_name)
-        name_run.bold = True
-        name_run.font.size = Pt(20)
+        def _add_bullet_point(text: str):
+            """Add a properly formatted bullet point."""
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.25)
+            p.paragraph_format.first_line_indent = Inches(-0.15)
+            p.paragraph_format.space_after = Pt(2)
+            run = p.add_run("• ")
+            run.font.color.rgb = MEDIUM_BLUE
+            content_run = p.add_run(text)
+            content_run.font.color.rgb = DARK_GRAY
 
-        doc.add_paragraph()
+        def _add_body_text(text: str, is_contact: bool = False):
+            """Add regular body text."""
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(2)
+            if is_contact:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run(text)
+                run.font.size = Pt(10)
+                run.font.color.rgb = LIGHT_GRAY
+            else:
+                run = p.add_run(text)
+                run.font.color.rgb = DARK_GRAY
 
-        # Parse the resume text into lines and render
-        lines = resume_text.splitlines()
-        for line in lines:
+        # Parse lines
+        lines = ats_text.splitlines()
+        in_header = True
+        header_lines_added = 0
+        skip_next_blank = False
+
+        for idx, line in enumerate(lines):
             stripped = line.strip()
 
+            # Handle blank lines
             if not stripped:
-                doc.add_paragraph()
+                if skip_next_blank:
+                    skip_next_blank = False
+                    continue
+                if in_header and header_lines_added > 0:
+                    in_header = False
+                    # Add a small spacer after header
+                    spacer = doc.add_paragraph()
+                    spacer.paragraph_format.space_after = Pt(4)
                 continue
 
-            # Detect likely section headers
+            # Detect section headers
             is_section_header = (
-                len(stripped) < 60
-                and not stripped.startswith(("•", "-", "–", "*", "·"))
+                len(stripped) <= 50
                 and stripped == stripped.upper()
+                and not stripped.startswith(("•", "-", "–", "*", "·"))
                 and not stripped.endswith((",", ";", "."))
+                and len(stripped.split()) <= 5
             )
 
+            # First section header ends the header block
+            if is_section_header and in_header:
+                in_header = False
+
+            # Handle header block (name, contact info)
+            if in_header:
+                if header_lines_added == 0:
+                    # Name - large and centered
+                    name_p = doc.add_paragraph()
+                    name_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    name_p.paragraph_format.space_after = Pt(2)
+                    name_run = name_p.add_run(stripped)
+                    name_run.bold = True
+                    name_run.font.size = Pt(18)
+                    name_run.font.color.rgb = DARK_BLUE
+                else:
+                    # Contact info - smaller, centered, gray
+                    _add_body_text(stripped, is_contact=True)
+                header_lines_added += 1
+                continue
+
             if is_section_header:
-                _add_section_divider(stripped)
+                _add_section_header(stripped)
+                skip_next_blank = True
             elif stripped.startswith(("•", "-", "–", "*", "·")):
-                # Bullet point
-                p = doc.add_paragraph(style="List Bullet")
-                p.add_run(stripped.lstrip("•-–*· ").strip())
+                bullet_text = stripped.lstrip("•-–*· ").strip()
+                if bullet_text:
+                    _add_bullet_point(bullet_text)
             else:
-                p = doc.add_paragraph()
-                p.add_run(stripped)
+                _add_body_text(stripped)
 
         buf = io.BytesIO()
         doc.save(buf)
@@ -341,65 +597,125 @@ class ResumeOptimizerService:
 
     def generate_pdf(self, resume_text: str, candidate_name: str, job_title: str) -> bytes:
         """
-        Generate a PDF from the optimized (or original) resume text using ReportLab.
-        Preserves the natural structure of the resume text.
+        Generate a professional ATS-friendly PDF from the resume text.
+        
+        Creates a clean, consistently formatted document with:
+        - Professional header with name and contact info
+        - Clear section headers with subtle styling
+        - Consistent bullet formatting
+        - Proper spacing and margins
         """
-        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.pagesizes import A4, letter
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import mm
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+        from reportlab.lib.units import mm, inch
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, ListFlowable, ListItem
         from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
+        ats_text = self.to_ats_friendly_text(resume_text)
+        
         buf = io.BytesIO()
         doc = SimpleDocTemplate(
             buf,
-            pagesize=A4,
-            rightMargin=20 * mm,
-            leftMargin=20 * mm,
-            topMargin=20 * mm,
-            bottomMargin=20 * mm,
+            pagesize=letter,
+            rightMargin=0.75 * inch,
+            leftMargin=0.75 * inch,
+            topMargin=0.6 * inch,
+            bottomMargin=0.6 * inch,
         )
 
-        BLUE = colors.HexColor("#1E40AF")
-        GREY = colors.HexColor("#6B7280")
+        # Professional colors
+        DARK_BLUE = colors.HexColor("#1A365D")
+        MEDIUM_BLUE = colors.HexColor("#2B579A")
+        DARK_GRAY = colors.HexColor("#333333")
+        LIGHT_GRAY = colors.HexColor("#666666")
 
-        name_style = ParagraphStyle("Name", fontSize=22, fontName="Helvetica-Bold",
-                                    alignment=TA_CENTER, spaceAfter=2)
-        subtitle_style = ParagraphStyle("Subtitle", fontSize=9, textColor=GREY,
-                                        alignment=TA_CENTER, spaceAfter=8)
-        section_style = ParagraphStyle("Section", fontSize=11, fontName="Helvetica-Bold",
-                                       textColor=BLUE, spaceBefore=12, spaceAfter=2)
-        body_style = ParagraphStyle("Body", fontSize=10, spaceAfter=3, alignment=TA_LEFT)
-        bullet_style = ParagraphStyle("Bullet", fontSize=10, leftIndent=12, spaceAfter=2, bulletIndent=4)
+        # Define styles
+        name_style = ParagraphStyle(
+            "Name", 
+            fontSize=18, 
+            fontName="Helvetica-Bold",
+            alignment=TA_CENTER, 
+            spaceAfter=2,
+            textColor=DARK_BLUE
+        )
+        contact_style = ParagraphStyle(
+            "Contact", 
+            fontSize=10, 
+            textColor=LIGHT_GRAY,
+            alignment=TA_CENTER, 
+            spaceAfter=4
+        )
+        section_style = ParagraphStyle(
+            "Section", 
+            fontSize=11, 
+            fontName="Helvetica-Bold",
+            textColor=DARK_BLUE, 
+            spaceBefore=12, 
+            spaceAfter=4
+        )
+        body_style = ParagraphStyle(
+            "Body", 
+            fontSize=10, 
+            spaceAfter=3, 
+            alignment=TA_LEFT,
+            textColor=DARK_GRAY
+        )
+        bullet_style = ParagraphStyle(
+            "Bullet", 
+            fontSize=10, 
+            leftIndent=15, 
+            spaceAfter=2, 
+            bulletIndent=5,
+            textColor=DARK_GRAY
+        )
 
         story = []
+        lines = ats_text.splitlines()
+        in_header = True
+        header_lines_added = 0
 
-        # Name
-        story.append(Paragraph(candidate_name, name_style))
-        story.append(Spacer(1, 6))
-
-        lines = resume_text.splitlines()
-        for line in lines:
+        for idx, line in enumerate(lines):
             stripped = line.strip()
 
+            # Handle blank lines
             if not stripped:
-                story.append(Spacer(1, 4))
+                if in_header and header_lines_added > 0:
+                    in_header = False
+                    story.append(Spacer(1, 8))
+                else:
+                    story.append(Spacer(1, 4))
                 continue
 
+            # Detect section headers
             is_section_header = (
-                len(stripped) < 60
-                and not stripped.startswith(("•", "-", "–", "*", "·"))
+                len(stripped) <= 50
                 and stripped == stripped.upper()
+                and not stripped.startswith(("•", "-", "–", "*", "·"))
                 and not stripped.endswith((",", ";", "."))
+                and len(stripped.split()) <= 5
             )
+
+            # First section header ends header block
+            if is_section_header and in_header:
+                in_header = False
+
+            # Handle header block (name, contact info)
+            if in_header:
+                if header_lines_added == 0:
+                    story.append(Paragraph(stripped, name_style))
+                else:
+                    story.append(Paragraph(stripped, contact_style))
+                header_lines_added += 1
+                continue
 
             if is_section_header:
                 story.append(Paragraph(stripped, section_style))
-                story.append(HRFlowable(width="100%", thickness=1, color=BLUE, spaceAfter=3))
+                story.append(HRFlowable(width="100%", thickness=1, color=DARK_BLUE, spaceAfter=4))
             elif stripped.startswith(("•", "-", "–", "*", "·")):
                 content = stripped.lstrip("•-–*· ").strip()
-                story.append(Paragraph(f"• {content}", bullet_style))
+                if content:
+                    story.append(Paragraph(f"• {content}", bullet_style))
             else:
                 story.append(Paragraph(stripped, body_style))
 

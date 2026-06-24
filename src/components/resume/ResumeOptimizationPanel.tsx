@@ -173,14 +173,16 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
     if (!optimization) return;
     setDeploying(true);
     try {
-      await resumeOptimizationApi.deploy(optimization.id);
-      toast.success('Resume accepted and overwritten successfully!');
+      const deployed = await resumeOptimizationApi.deploy(optimization.id);
+      const scoreText = typeof deployed?.screening_score === 'number'
+        ? ` ATS score updated to ${deployed.screening_score}%.`
+        : '';
+      toast.success(`Resume accepted and overwritten successfully!${scoreText}`);
       
       // Auto close panel to show updated screening
       setPanelState('idle');
       setOptimization(null);
       setChangeStates({});
-      await import('@/lib/api').then(({ screeningApi }) => screeningApi.run(candidateId, jobId));
       setTimeout(() => {
         window.location.reload();
       }, 1500);

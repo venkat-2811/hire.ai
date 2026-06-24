@@ -287,7 +287,7 @@ async def finalize_optimization(
     def _fetch_opt():
         return (
             db.client.from_("candidate_resume_optimizations")
-            .select("id, original_resume_text, changes")
+            .select("id, before_score, original_resume_text, changes")
             .eq("id", optimization_id)
             .eq("recruiter_id", user.id)
             .maybe_single()
@@ -314,6 +314,17 @@ async def finalize_optimization(
     from app.services.resume_optimizer import ResumeOptimizerService
     final_text = ResumeOptimizerService.apply_accepted_changes(original_text, changes_raw, accepted_ids)
 
+    before_score = int(opt_row.get("before_score") or 0)
+    accepted_set = set(accepted_ids)
+    accepted_impact = 0
+    for ch in changes_raw:
+        if not isinstance(ch, dict):
+            continue
+        if ch.get("change_id") not in accepted_set:
+            continue
+        accepted_impact += int(ch.get("score_impact") or 0)
+    accepted_after_score = min(100, max(0, before_score + accepted_impact))
+
     now = datetime.now(timezone.utc).isoformat()
 
     def _update_opt():
@@ -324,6 +335,7 @@ async def finalize_optimization(
                 "accepted_change_ids": json.dumps(accepted_ids),
                 "rejected_change_ids": json.dumps(rejected_ids),
                 "final_resume_text": final_text,
+                "after_score": accepted_after_score,
                 "finalized_at": now,
                 "updated_at": now,
             })
@@ -347,9 +359,11 @@ async def download_pdf(
     """Download the optimized or original resume as a PDF."""
     db = get_db_admin_service()
 
-    opt_row, candidate_name, job_title, _ = await _fetch_opt_meta(db, optimization_id, user.id)
+    opt_row, candidate_profile, job_title, _ = await _fetch_opt_meta(db, optimization_id, user.id)
     if not opt_row:
         return api_error(message="Optimization record not found", status_code=404)
+
+    candidate_name = (candidate_profile or {}).get("full_name") or "Candidate"
 
     resume_text = _pick_text_version(opt_row, version)
     if not resume_text:
@@ -380,9 +394,11 @@ async def download_docx(
     """Download the optimized or original resume as a DOCX."""
     db = get_db_admin_service()
 
-    opt_row, candidate_name, job_title, resume_url = await _fetch_opt_meta(db, optimization_id, user.id)
+    opt_row, candidate_profile, job_title, resume_url = await _fetch_opt_meta(db, optimization_id, user.id)
     if not opt_row:
         return api_error(message="Optimization record not found", status_code=404)
+
+    candidate_name = (candidate_profile or {}).get("full_name") or "Candidate"
 
     resume_text = _pick_text_version(opt_row, version)
     if not resume_text:
@@ -437,9 +453,11 @@ async def deploy_optimization(
     """
     db = get_db_admin_service()
 
-    opt_row, candidate_name, job_title, original_url = await _fetch_opt_meta(db, optimization_id, user.id)
+    opt_row, candidate_profile, job_title, original_url = await _fetch_opt_meta(db, optimization_id, user.id)
     if not opt_row:
         return api_error(message="Optimization record not found", status_code=404)
+
+    candidate_name = (candidate_profile or {}).get("full_name") or "Candidate"
 
     final_text = opt_row.get("final_resume_text")
     if not final_text:
@@ -447,8 +465,13 @@ async def deploy_optimization(
     
     candidate_id = opt_row.get("candidate_id")
 
-    from app.services.resume_optimizer import get_resume_optimizer
-    # Generate the new DOCX file bytes
+    from app.services.resume_optimizer import ResumeOptimizerService, get_resume_optimizer
+    normalized_final_text = ResumeOptimizerService.synchronize_candidate_details(
+        final_text,
+        candidate_profile or {},
+    )
+
+    # Generate the new DOCX file bytes from the finalized text (already accepted-only)
     changes_raw = opt_row.get("changes") or []
     if isinstance(changes_raw, str):
         try:
@@ -464,7 +487,7 @@ async def deploy_optimization(
             accepted_ids = []
 
     docx_bytes = await get_resume_optimizer().generate_docx(
-        resume_text=opt_row.get("original_resume_text") or "",
+        resume_text=normalized_final_text,
         candidate_name=candidate_name,
         job_title=job_title,
         resume_url=original_url,
@@ -509,7 +532,7 @@ async def deploy_optimization(
         return (
             db.client.from_("candidates")
             .update({
-                "resume_text": final_text,
+                "resume_text": normalized_final_text,
                 "resume_url": resume_url
             })
             .eq("id", candidate_id)
@@ -518,7 +541,74 @@ async def deploy_optimization(
     
     await db.run(_update_cand)
 
-    return ok({"success": True, "url": resume_url})
+    # Update ATS score for this candidate+job so dashboards reflect accepted optimization immediately
+    optimized_score = int(opt_row.get("after_score") or 0)
+
+    def _fetch_job_cutoff():
+        return (
+            db.client.from_("job_descriptions")
+            .select("resume_cutoff")
+            .eq("id", opt_row.get("job_id", ""))
+            .eq("created_by", user.id)
+            .maybe_single()
+            .execute()
+        )
+
+    job_cutoff_res = await db.run(_fetch_job_cutoff)
+    job_cutoff = (getattr(job_cutoff_res, "data", None) or {}).get("resume_cutoff")
+    shortlisted = bool(job_cutoff is not None and optimized_score >= int(job_cutoff))
+
+    def _fetch_existing_screenings():
+        return (
+            db.client.from_("ats_screenings")
+            .select("id, created_at")
+            .eq("candidate_id", candidate_id)
+            .eq("job_id", opt_row.get("job_id", ""))
+            .execute()
+        )
+
+    screening_res = await db.run(_fetch_existing_screenings)
+    screening_rows = getattr(screening_res, "data", None) or []
+
+    def _ts(val: Any) -> str:
+        return str(val or "")
+
+    latest_screening = None
+    if isinstance(screening_rows, list) and screening_rows:
+        latest_screening = sorted(
+            [r for r in screening_rows if isinstance(r, dict) and r.get("id")],
+            key=lambda r: _ts(r.get("created_at")),
+            reverse=True,
+        )[0] if screening_rows else None
+
+    screening_payload = {
+        "candidate_id": candidate_id,
+        "job_id": opt_row.get("job_id", ""),
+        "overall_score": optimized_score,
+        "shortlisted": shortlisted,
+        "shortlist_reason": "Updated after accepted resume optimization changes.",
+        "screened_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if latest_screening and latest_screening.get("id"):
+        sid = latest_screening.get("id")
+
+        def _update_screening():
+            return (
+                db.client.from_("ats_screenings")
+                .update(screening_payload)
+                .eq("id", sid)
+                .execute()
+            )
+
+        await db.run(_update_screening)
+    else:
+        def _insert_screening():
+            return db.client.from_("ats_screenings").insert(screening_payload).execute()
+
+        await db.run(_insert_screening)
+
+    return ok({"success": True, "url": resume_url, "screening_score": optimized_score})
 
 
 # ---------------------------------------------------------------------------
@@ -531,7 +621,7 @@ async def _fetch_opt_meta(db, optimization_id: str, recruiter_id: str):
     def _fetch_opt():
         return (
             db.client.from_("candidate_resume_optimizations")
-            .select("id, candidate_id, job_id, original_resume_text, optimized_text, final_resume_text, status, changes, accepted_change_ids")
+            .select("id, candidate_id, job_id, original_resume_text, optimized_text, final_resume_text, status, changes, accepted_change_ids, after_score")
             .eq("id", optimization_id)
             .eq("recruiter_id", recruiter_id)
             .maybe_single()
@@ -546,9 +636,19 @@ async def _fetch_opt_meta(db, optimization_id: str, recruiter_id: str):
     def _fetch_cand():
         return (
             db.client.from_("candidates")
-            .select("full_name, resume_url")
+            .select("full_name, email, phone, location, portfolio_url, github_url, mainSkillset, vendorName, resume_url")
             .eq("id", opt_row.get("candidate_id", ""))
             .maybe_single()
+            .execute()
+        )
+
+    def _fetch_overrides():
+        return (
+            db.client.from_("job_applications")
+            .select("candidate_overrides")
+            .eq("candidate_id", opt_row.get("candidate_id", ""))
+            .eq("job_id", opt_row.get("job_id", ""))
+            .limit(1)
             .execute()
         )
 
@@ -562,12 +662,22 @@ async def _fetch_opt_meta(db, optimization_id: str, recruiter_id: str):
         )
 
     cand_res = await db.run(_fetch_cand)
+    ov_res = await db.run(_fetch_overrides)
     job_res = await db.run(_fetch_job)
     cand_data = getattr(cand_res, "data", None) or {}
-    candidate_name = cand_data.get("full_name", "Candidate")
+    ov_rows = getattr(ov_res, "data", None) or []
+    overrides = {}
+    if isinstance(ov_rows, list) and ov_rows and isinstance(ov_rows[0], dict):
+        ov = ov_rows[0].get("candidate_overrides") or {}
+        if isinstance(ov, dict):
+            overrides = ov
+
+    candidate_profile = {**cand_data, **overrides}
+    candidate_name = candidate_profile.get("full_name", "Candidate")
     resume_url = cand_data.get("resume_url", "")
     job_title = (getattr(job_res, "data", None) or {}).get("title", "")
-    return opt_row, candidate_name, job_title, resume_url
+    candidate_profile.setdefault("full_name", candidate_name)
+    return opt_row, candidate_profile, job_title, resume_url
 
 
 def _pick_text_version(opt_row: dict, version: str) -> str:
