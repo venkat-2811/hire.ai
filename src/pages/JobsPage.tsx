@@ -6,9 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { 
-  Search, 
-  Plus, 
+import {
+  Search,
+  Plus,
   MoreHorizontal,
   Users,
   Eye,
@@ -19,17 +19,18 @@ import {
   Link as LinkIcon,
   Copy,
   Check,
+  Briefcase,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { RoleBadge } from '@/components/ui/role-badge';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger 
+  DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -117,12 +118,13 @@ export default function JobsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <motion.h1 
+            <motion.h1
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-2xl lg:text-3xl font-bold"
+              className="text-2xl lg:text-3xl font-bold flex items-center gap-2"
             >
               Job Positions
+              <Briefcase className="h-6 w-6 lg:h-8 lg:w-8 text-primary" />
             </motion.h1>
             <p className="text-muted-foreground mt-1">
               Manage job descriptions and requirements
@@ -140,109 +142,129 @@ export default function JobsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search jobs..."
-              className="pl-10 w-full"
+              className="pl-10 w-full border-slate-400 dark:border-slate-800 shadow-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button asChild variant="outline" className="w-full sm:w-auto">
+          <Button asChild variant="outline" className="w-full sm:w-auto border-slate-500 dark:border-slate-800 shadow-sm">
             <Link to="/jobs/archived">Archived Jobs</Link>
           </Button>
         </div>
 
-        {/* Jobs Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredJobs.map((job, index) => (
-            <motion.div
-              key={job.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
-              <Card className={`hover:shadow-md transition-shadow ${!job.is_active && 'opacity-60'}`}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <CardTitle className="text-lg">{job.title}</CardTitle>
-                      <div className="flex items-center gap-2">
-                        <RoleBadge role={job.role as JobRole} size="sm" showIcon={false} />
-                        <span className="text-sm text-muted-foreground">
-                          {LEVEL_CONFIG[job.level as RoleLevel]?.label || job.level}
+        {jobs && jobs.length === 0 ? (
+          <div className="text-center py-20 bg-card rounded-2xl border border-border/80 shadow-sm flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto mt-8">
+            <div className="p-3 bg-primary/10 rounded-2xl">
+              <Briefcase className="h-10 w-10 text-primary" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-xl font-bold text-foreground">No Jobs are created yet.</h3>
+              <p className="text-sm text-muted-foreground">Create your first job posting to start onboarding candidates.</p>
+            </div>
+            <Button onClick={handleCreateJobClick} className="w-48 font-semibold shadow-sm mt-2">
+              <Plus className="mr-2 h-4 w-4" />
+              Add JOB
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredJobs.length === 0 ? (
+              <div className="col-span-full text-center py-10 text-muted-foreground">
+                No jobs found matching your search.
+              </div>
+            ) : (
+              filteredJobs.map((job, index) => (
+                <motion.div
+                  key={job.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                >
+                  <Card className={`hover:shadow-md transition-shadow ${!job.is_active && 'opacity-60'}`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <CardTitle className="text-lg">{job.title}</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <RoleBadge role={job.role as JobRole} size="sm" showIcon={false} />
+                            <span className="text-sm text-muted-foreground">
+                              {LEVEL_CONFIG[job.level as RoleLevel]?.label || job.level}
+                            </span>
+                          </div>
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => copyApplicationLink(job.id)}>
+                              {copiedId === job.id ? (
+                                <Check className="mr-2 h-4 w-4 text-success" />
+                              ) : (
+                                <LinkIcon className="mr-2 h-4 w-4" />
+                              )}
+                              Copy Application Link
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link to={`/jobs/${job.id}`}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Details
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link to={`/jobs/${job.id}/edit`}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit Job
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              if (job.is_active) {
+                                setArchiveJobId(job.id);
+                                setArchiveChecked(false);
+                              } else {
+                                handleToggleArchive(job.id, job.is_active);
+                              }
+                            }}>
+                              <Archive className="mr-2 h-4 w-4" />
+                              {job.is_active ? 'Archive Job' : 'Activate Job'}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteId(job.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete Permanently
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Users className="h-4 w-4" />
+                          <span className="text-sm">{job.min_experience_years}+ years exp</span>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded-full ${job.is_active
+                          ? 'bg-success/10 text-success'
+                          : 'bg-muted text-muted-foreground'
+                          }`}>
+                          {job.is_active ? 'Active' : 'Archived'}
                         </span>
                       </div>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => copyApplicationLink(job.id)}>
-                          {copiedId === job.id ? (
-                            <Check className="mr-2 h-4 w-4 text-success" />
-                          ) : (
-                            <LinkIcon className="mr-2 h-4 w-4" />
-                          )}
-                          Copy Application Link
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link to={`/jobs/${job.id}`}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Details
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link to={`/jobs/${job.id}/edit`}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit Job
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => {
-                          if (job.is_active) {
-                            setArchiveJobId(job.id);
-                            setArchiveChecked(false);
-                          } else {
-                            handleToggleArchive(job.id, job.is_active);
-                          }
-                        }}>
-                          <Archive className="mr-2 h-4 w-4" />
-                          {job.is_active ? 'Archive Job' : 'Activate Job'}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteId(job.id)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete Permanently
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Users className="h-4 w-4" />
-                      <span className="text-sm">{job.min_experience_years}+ years exp</span>
-                    </div>
-                    <span className={`text-xs px-2 py-1 rounded-full ${
-                      job.is_active 
-                        ? 'bg-success/10 text-success' 
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {job.is_active ? 'Active' : 'Archived'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    Created {new Date(job.created_at).toLocaleDateString()}
-                  </p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
+                      <p className="text-xs text-muted-foreground mt-3">
+                        Created {new Date(job.created_at).toLocaleDateString()}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))
+            )}
+          </div>
+        )}
 
         {/* Archive Confirmation Dialog */}
         <AlertDialog open={!!archiveJobId} onOpenChange={(open) => !open && setArchiveJobId(null)}>
@@ -254,8 +276,8 @@ export default function JobsPage() {
                   This job will be moved to the archived state and will no longer appear as an active job.
                 </p>
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="archive-confirm" 
+                  <Checkbox
+                    id="archive-confirm"
                     checked={archiveChecked}
                     onCheckedChange={(checked) => setArchiveChecked(!!checked)}
                   />
@@ -270,7 +292,7 @@ export default function JobsPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction 
+              <AlertDialogAction
                 onClick={() => {
                   if (archiveJobId) {
                     handleToggleArchive(archiveJobId, true);
@@ -306,7 +328,7 @@ export default function JobsPage() {
                   <label className="text-sm">
                     Please type <strong>Delete the job</strong> to confirm.
                   </label>
-                  <Input 
+                  <Input
                     value={deleteConfirmText}
                     onChange={(e) => setDeleteConfirmText(e.target.value)}
                     placeholder="Delete the job"
@@ -316,7 +338,7 @@ export default function JobsPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction 
+              <AlertDialogAction
                 onClick={handlePermanentDelete}
                 disabled={deleteConfirmText !== 'Delete the job'}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

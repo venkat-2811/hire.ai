@@ -43,24 +43,24 @@ export default function ArchivedJobsPage() {
             </motion.h1>
             <p className="text-muted-foreground mt-1">Jobs you archived. Reactivate them to move back to active jobs.</p>
           </div>
-          <Button asChild variant="outline" className="shrink-0">
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search archived jobs..."
+              className="pl-10 w-full border-slate-400 dark:border-slate-800 shadow-sm"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <Button asChild variant="outline" className="w-full sm:w-auto shrink-0 border-slate-400 dark:border-slate-800 shadow-sm">
             <Link to="/jobs">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Jobs
             </Link>
           </Button>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search archived jobs..."
-              className="pl-10 w-full"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
         </div>
 
         {filteredJobs.length === 0 ? (

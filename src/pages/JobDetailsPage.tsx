@@ -157,7 +157,9 @@ export default function JobDetailsPage() {
                 <CardTitle>Description</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="whitespace-pre-wrap">{job.description}</p>
+                <div className="max-h-[300px] overflow-y-auto pr-2">
+                  <p className="whitespace-pre-wrap">{job.description}</p>
+                </div>
               </CardContent>
             </Card>
 
@@ -244,10 +246,10 @@ export default function JobDetailsPage() {
                 <CardDescription>Share this link with candidates</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="p-3 bg-muted rounded-lg text-sm break-all">
+                <div className="p-3 bg-muted rounded-lg text-sm break-all border border-slate-200 dark:border-slate-800 shadow-sm">
                   {getApplicationLink()}
                 </div>
-                <Button className="w-full mt-3" onClick={copyApplicationLink}>
+                <Button className="w-full mt-3 shadow-sm" onClick={copyApplicationLink}>
                   {copiedLink ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                   Copy Link
                 </Button>

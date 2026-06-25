@@ -5,14 +5,13 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { billingApi, subscriptionApi, type BillingInvoice, type BillingPlanId } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  Calendar, ShieldCheck, RefreshCw, Phone
+  ShieldCheck, RefreshCw, Phone, Users, Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -25,6 +24,7 @@ import {
   type PricingPlan,
   type Currency,
 } from '@/lib/pricing';
+import SpotlightCard from '@/components/ui/spotlight-card';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ export default function BillingPage() {
         void triggerRealtimeUpdates(false);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const triggerRealtimeUpdates = async (isManual = false) => {
@@ -253,13 +253,27 @@ export default function BillingPage() {
 
   const activePlan = VISIBLE_PLANS.find(p => p.id === activePlanId);
 
+  const getTierColors = (planId: string) => {
+    switch (planId) {
+      case 'free': return 'border-slate-200/80 bg-gradient-to-b from-slate-100/60 to-transparent hover:shadow-lg hover:border-slate-300 dark:border-slate-700/60 dark:from-slate-800/40';
+      case 'starter': return 'border-blue-300/80 bg-gradient-to-b from-blue-100/60 to-transparent hover:shadow-lg hover:border-blue-400 dark:border-blue-800/60 dark:from-blue-900/30';
+      case 'growth': return 'border-purple-300/80 bg-gradient-to-b from-purple-100/60 to-transparent hover:shadow-lg hover:border-purple-400 dark:border-purple-800/60 dark:from-purple-900/30';
+      case 'scale': return 'border-emerald-300/80 bg-gradient-to-b from-emerald-100/60 to-transparent hover:shadow-lg hover:border-emerald-400 dark:border-emerald-800/60 dark:from-emerald-900/30';
+      case 'enterprise': return 'border-indigo-500/20 bg-gradient-to-b from-indigo-500/5 to-transparent hover:shadow-lg hover:border-indigo-500/40';
+      default: return 'border-border/60 bg-gradient-to-b from-muted/20 to-transparent hover:shadow-lg hover:border-border/80';
+    }
+  };
+
   if (usageQuery.isLoading || busy === 'verifying' || geoLoading) {
     return (
       <DashboardLayout>
-        <div className="min-h-[80vh] flex flex-col items-center justify-center gap-4">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground font-medium animate-pulse">
-            {geoLoading ? 'Detecting your region for correct pricing...' : 'Syncing subscription with Stripe...'}
+        <div className="min-h-[80vh] flex flex-col items-center justify-center gap-5">
+          <div className="relative flex items-center justify-center">
+            <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full" />
+            <Loader2 className="h-10 w-10 animate-spin text-primary relative z-10" />
+          </div>
+          <p className="text-sm text-muted-foreground font-medium animate-pulse tracking-wide">
+            {geoLoading ? 'Detecting your region for secure pricing...' : 'Syncing subscription securely...'}
           </p>
         </div>
       </DashboardLayout>
@@ -268,123 +282,128 @@ export default function BillingPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-6 lg:p-8 space-y-6 max-w-[1400px] mx-auto pb-24">
+
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-border/50 pb-6">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight">Billing &amp; Subscriptions</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Manage active plans, view usage limits, and Stripe payment transactions.
+            <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Billing &amp; Subscriptions</h1>
+            <p className="text-sm text-muted-foreground mt-2 max-w-xl leading-relaxed">
+              Manage your active plans, monitor usage limits, and view secure payment transactions.
               {geoLoading && (
-                <span className="ml-2 text-xs opacity-60">(Detecting your region...)</span>
+                <span className="ml-2 text-xs font-medium text-primary/70 animate-pulse">(Detecting your region...)</span>
               )}
             </p>
           </div>
-          <div className="flex items-center gap-3 self-start sm:self-auto">
-            {/* Country and currency auto-detected under the hood */}
+          <div className="flex items-center gap-3">
             <Button
               variant="outline"
               size="sm"
               onClick={() => void triggerRealtimeUpdates(true)}
               disabled={busy !== null}
-              className="gap-2"
+              className="gap-2 border-border/60 shadow-sm hover:bg-muted/40 transition-all font-medium"
             >
-              <RefreshCw className={`h-4 w-4 ${busy === 'refreshing' ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 text-muted-foreground ${busy === 'refreshing' ? 'animate-spin text-primary' : ''}`} />
               {busy === 'refreshing' ? 'Refreshing...' : 'Refresh Status'}
             </Button>
           </div>
         </div>
 
-        {/* 1. Active Plan Display */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2 overflow-hidden border-2 border-primary/20 shadow-xl bg-gradient-to-br from-primary/5 via-card to-card relative">
-            <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-              <ShieldCheck className="h-32 w-32 text-primary" />
-            </div>
+        {/* 1. Active Plan & Limits Overview */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
 
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <Badge className="px-3 py-1 font-bold text-xs uppercase bg-primary text-primary-foreground tracking-wider">
-                  Active Plan
-                </Badge>
-                {/* Active subscription status */}
-              </div>
-              <CardTitle className="text-3xl font-black mt-2 tracking-tight flex items-baseline gap-2">
-                {activePlan?.name || 'Free'} Plan
-              </CardTitle>
-              <CardDescription className="text-sm font-medium mt-1">
-                Status: <span className={`uppercase font-bold ${usage?.status === 'cancel_at_period_end' ? 'text-amber-500' : 'text-primary'}`}>
+          {/* Active Plan Premium Card */}
+          <SpotlightCard className="lg:col-span-2 overflow-hidden p-0 border-border/60 shadow-md relative bg-card transition-all group" spotlightColor="rgba(237, 154, 0, 0.15)">
+            <CardHeader className="pb-2 relative z-10 pt-4 px-6">
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <CardTitle className="text-3xl font-black tracking-tight text-foreground flex items-center gap-2">
+                  {activePlan?.name || 'Free'} Plan
+                </CardTitle>
+
+                {/* Status indicator */}
+                <div className={`px-3 py-1.5 text-xs font-bold tracking-wide uppercase rounded-full border shadow-sm ${usage?.status === 'cancel_at_period_end' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'} flex items-center gap-2`}>
+                  <div className={`h-2 w-2 rounded-full shadow-inner ${usage?.status === 'cancel_at_period_end' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                   {usage?.status === 'cancel_at_period_end' ? 'Cancellation Scheduled' : (usage?.status || 'Active')}
-                </span>
-              </CardDescription>
+                </div>
+              </div>
+
               {usage?.status === 'cancel_at_period_end' && usage?.billing_cycle_end && (
-                <div className="mt-2 flex items-start gap-2 text-xs bg-amber-500/10 border border-amber-500/20 text-amber-700 rounded-lg px-3 py-2">
-                  <Calendar className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                  <span>
-                    Your subscription is cancelled but <strong>remains active until {new Date(usage.billing_cycle_end).toLocaleDateString()}</strong>. You will not be charged again.
+                <div className="mt-2 flex items-start gap-2 text-sm bg-amber-500/5 border border-amber-500/20 text-amber-700 dark:text-amber-400 rounded-xl px-3 py-2.5 shadow-sm">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-500" />
+                  <span className="leading-relaxed font-medium text-sm">
+                    Your subscription is scheduled to cancel. You retain full access until <strong className="font-bold underline decoration-amber-500/30 underline-offset-2">{new Date(usage.billing_cycle_end).toLocaleDateString()}</strong>. You will not be charged again.
                   </span>
                 </div>
               )}
             </CardHeader>
 
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+            <CardContent className="space-y-4 px-6 pb-5 relative z-10">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1">
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground block">Validity</span>
-                  <span className="font-bold text-sm">{usage?.validity || '1 Month'}</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">Billing Cycle</span>
+                  <span className="font-bold text-sm text-foreground">{usage?.validity || '1 Month'}</span>
                 </div>
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground block">
-                    {usage?.status === 'cancel_at_period_end' ? 'Expiry Date' : 'Renewal Date'}
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                    {usage?.status === 'cancel_at_period_end' ? 'Expires On' : 'Renews On'}
                   </span>
-                  <span className="font-bold text-sm flex items-center gap-1">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-bold text-sm text-foreground flex items-center gap-2">
                     {usage?.billing_cycle_end ? new Date(usage.billing_cycle_end).toLocaleDateString() : 'N/A'}
                   </span>
-                  {usage?.status === 'cancel_at_period_end' && (
-                    <span className="text-[10px] text-amber-500 font-medium leading-tight block">
-                      Subscription continues until this date
-                    </span>
-                  )}
                 </div>
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground block">Price</span>
-                  <span className="font-bold text-sm">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">Current Rate</span>
+                  <span className="font-bold text-sm text-foreground">
                     {activePlan && activePlanId !== 'free'
                       ? formatPrice(activeCurrency === 'INR' ? (activePlan.priceINR ?? 0) : (activePlan.priceUSD ?? 0), activeCurrency)
                       : formatPrice(0, activeCurrency)}
                   </span>
                 </div>
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground block">Currency</span>
-                  <span className="font-bold text-sm flex items-center gap-1">
-                    <Badge variant="outline" className="text-xs font-mono">{activeCurrency}</Badge>
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">Currency</span>
+                  <span className="font-bold text-sm text-foreground flex items-center gap-1">
+                    <Badge variant="outline" className="text-[10px] font-mono border-border/80 bg-background/50 shadow-sm py-0">{activeCurrency}</Badge>
                   </span>
                 </div>
               </div>
 
-              {/* Candidate assessments progress */}
-              <div className="space-y-2 pt-2 border-t">
-                <div className="flex justify-between text-sm font-semibold">
-                  <span className="flex items-center gap-2">Onboarded &amp; Assessed Candidates</span>
-                  <span className="text-primary font-bold">{usage?.candidates_count || 0} / {usage?.candidates_limit || 5}</span>
+              {/* Animated usage progress */}
+              <div className="space-y-2.5 pt-4 border-t border-border/60">
+                <div className="flex justify-between items-end">
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-sm text-foreground font-bold flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-primary" /> Candidate Usage Limit</span>
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Current Billing Period</span>
+                  </span>
+                  <div className="text-right">
+                    <span className="text-xl font-black text-primary">{usage?.candidates_count || 0}</span>
+                    <span className="text-sm text-muted-foreground font-medium mx-1">/</span>
+                    <span className="text-sm font-bold text-foreground">{usage?.candidates_limit || 5}</span>
+                  </div>
                 </div>
-                <Progress value={quotaPercent} className="h-3.5 bg-muted rounded-full overflow-hidden" />
-                <p className="text-xs text-muted-foreground">
-                  Your candidate assessment limit resets at each subscription billing period.
-                  Only new candidate activity initiated after May 29, 2026 contributes to the limit.
+                <div className="relative h-2.5 bg-muted rounded-full overflow-hidden shadow-inner border border-border/40">
+                  <div
+                    className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-primary/80 rounded-full transition-all duration-1000 ease-out"
+                    style={{ width: `${quotaPercent}%` }}
+                  />
+                  {/* Subtle shine overlay */}
+                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
+                </div>
+                <p className="text-[11px] font-medium text-muted-foreground pt-1 flex items-center gap-1.5">
+                  <span className="h-1 w-1 rounded-full bg-muted-foreground/40 block" />
+                  Assessment limits reset automatically at the start of your next billing cycle.
                 </p>
               </div>
 
               {/* Action buttons */}
               {activePlanId !== 'free' && (
-                <div className="flex gap-4 pt-4">
+                <div className="flex gap-4 pt-4 border-t border-border/60">
                   {usage?.status === 'cancel_at_period_end' ? (
-                    <Button variant="outline" size="sm" onClick={handleReactivate} disabled={busy === 'reactivate'} className="border-primary/50 text-primary hover:bg-primary/5">
+                    <Button variant="outline" size="sm" onClick={handleReactivate} disabled={busy === 'reactivate'} className="border-primary/30 text-primary hover:bg-primary/5 hover:text-primary font-bold tracking-wide transition-all shadow-sm">
                       {busy === 'reactivate' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Reactivate Subscription
                     </Button>
                   ) : (
-                    <Button variant="destructive" size="sm" onClick={openCancelModal} disabled={busy === 'cancel'}>
+                    <Button variant="outline" size="sm" onClick={openCancelModal} disabled={busy === 'cancel'} className="text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5 font-medium transition-all">
                       {busy === 'cancel' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Cancel Subscription
                     </Button>
@@ -392,71 +411,80 @@ export default function BillingPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
+          </SpotlightCard>
 
           {/* Subscription Limits Sidebar */}
-          <Card className="bg-card border-2 border-border shadow-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg"><Wallet className="h-5 w-5 text-primary" /> Subscription Limits</CardTitle>
-              <CardDescription>Entitlements associated with the active plan.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Job Postings Limit</span>
-                  <span className="font-semibold text-foreground flex items-center gap-1"><Check className="h-4 w-4 text-green-500" /> Unlimited</span>
+          <SpotlightCard className="p-0 border-border/60 shadow-md flex flex-col h-full bg-card" spotlightColor="rgba(139, 92, 246, 0.15)">
+            {/* Top accent line */}
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-slate-400 via-slate-500 to-slate-400 opacity-30 dark:opacity-20" />
+            <div className="pb-4 pt-6 px-6">
+              <h3 className="flex items-center gap-3 text-lg font-bold text-foreground">
+                <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <ShieldCheck className="h-4 w-4 text-slate-600 dark:text-slate-300" />
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Candidate Limits</span>
-                  <span className="font-bold text-sm">
-                    {activePlanId === 'scale' || activePlanId === 'enterprise' ? (
-                      activePlanId === 'enterprise' ? 'Custom' : `${usage?.candidates_limit || 500} Candidates`
-                    ) : (
-                      `${usage?.candidates_limit || 5} Candidates`
-                    )}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">AI MCQ Generation</span>
-                  <span className="font-semibold text-foreground flex items-center gap-1"><Check className="h-4 w-4 text-green-500" /> Fully Included</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">AI Adaptable Interview</span>
-                  <span className="font-semibold text-foreground flex items-center gap-1"><Check className="h-4 w-4 text-green-500" /> Fully Included</span>
-                </div>
+                Plan Entitlements
+              </h3>
+              <p className="text-xs font-medium text-muted-foreground mt-1.5">Included features for your active tier.</p>
+            </div>
+            <div className="flex-1 space-y-4 px-6 pb-6 relative z-10">
+              <div className="flex items-center justify-between text-sm py-1 border-b border-border/40 pb-3">
+                <span className="text-muted-foreground font-medium">Job Postings</span>
+                <span className="font-bold text-foreground flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> Unlimited</span>
+              </div>
+              <div className="flex items-center justify-between text-sm py-1 border-b border-border/40 pb-3">
+                <span className="text-muted-foreground font-medium">Candidate Invites</span>
+                <span className="font-bold text-foreground">
+                  {activePlanId === 'scale' || activePlanId === 'enterprise' ? (
+                    activePlanId === 'enterprise' ? 'Custom Volume' : `${usage?.candidates_limit || 500} Included`
+                  ) : (
+                    `${usage?.candidates_limit || 5} Included`
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm py-1 border-b border-border/40 pb-3">
+                <span className="text-muted-foreground font-medium">AI MCQ Engine</span>
+                <span className="font-bold text-foreground flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> Full Access</span>
+              </div>
+              <div className="flex items-center justify-between text-sm py-1">
+                <span className="text-muted-foreground font-medium">AI Interviews</span>
+                <span className="font-bold text-foreground flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> Full Access</span>
               </div>
 
               {usage?.status === 'overdue' && (
-                <div className="p-3 border border-amber-500/30 rounded-lg bg-amber-500/5 text-amber-600 text-xs flex gap-2">
-                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                  <span>Payment is past due. Please subscribe to reactivate and avoid service disruption.</span>
+                <div className="pt-2">
+                  <div className="p-3 border border-red-500/30 rounded-xl bg-red-500/5 text-red-600 dark:text-red-400 text-xs flex gap-2.5 shadow-sm">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <span className="font-medium leading-relaxed">Payment is past due. Please update your billing method to reactivate services.</span>
+                  </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </SpotlightCard>
         </div>
 
         {/* 2. Upgrade / Plan Selection Section */}
-        <div>
-          <div className="mb-6">
-            <h2 className="text-2xl font-extrabold tracking-tight">Available Subscription Plans</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Upgrade or downgrade your plan in real time via secure Stripe Checkout.
+        <div className="pt-6">
+          <div className="mb-8 border-b border-border/50 pb-5">
+            <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <Zap className="h-5 w-5 text-primary" /> Subscription Tiers
+            </h2>
+            <p className="text-sm text-muted-foreground mt-2 font-medium">
+              Upgrade or modify your plan securely via Stripe Checkout.
               {geoLoading
-                ? ' Detecting your region...'
-                : ` Showing ${activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing for your location.`
+                ? ' Detecting location...'
+                : ` Displaying ${activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing based on your region.`
               }
             </p>
           </div>
 
           {geoLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
               {[...Array(5)].map((_, i) => (
-                <div key={i} className="h-72 rounded-xl bg-muted/30 animate-pulse" />
+                <div key={i} className="h-96 rounded-2xl bg-muted/40 animate-pulse border border-border/30" />
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-stretch">
               {VISIBLE_PLANS.map((plan) => {
                 const isActive = activePlanId === plan.id;
                 const price = activeCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
@@ -468,95 +496,85 @@ export default function BillingPage() {
                 let ctaLabel = 'Subscribe';
                 if (isActive) ctaLabel = 'Active Plan';
                 else if (activePlanId === 'free') ctaLabel = `Select ${plan.name}`;
-                else ctaLabel = 'Upgrade';
+                else ctaLabel = 'Upgrade Plan';
 
                 return (
                   <Card
                     key={plan.id}
-                    className={`flex flex-col transition-all duration-300 relative overflow-hidden ${
-                      isActive
-                        ? 'border-primary ring-2 ring-primary/20 bg-gradient-to-b from-primary/5 via-card to-card shadow-lg scale-[1.02]'
-                        : plan.id === 'enterprise'
-                        ? 'border-purple-500/30 bg-gradient-to-b from-purple-500/5 to-card hover:shadow-md'
-                        : 'hover:shadow-md border-border hover:border-border/80'
-                    }`}
+                    className={`flex flex-col relative transition-all duration-300 rounded-2xl ${getTierColors(plan.id)}`}
                   >
-                    <CardHeader className="pb-4">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-xl font-bold tracking-tight">{plan.name}</h3>
-                        {isActive && <Badge variant="default" className="text-[10px] tracking-wide uppercase px-2 py-0.5">Current</Badge>}
+                    <CardHeader className="pb-5 pt-6 px-5">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-lg font-bold tracking-tight text-foreground">{plan.name}</h3>
                         {plan.id === 'enterprise' && !isActive && (
-                          <Badge className="text-[10px] tracking-wide uppercase px-2 py-0.5 bg-purple-500/20 text-purple-600 border-purple-500/30">
+                          <Badge className="text-[9px] tracking-widest uppercase px-2 py-0.5 bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 shadow-sm">
                             Custom
                           </Badge>
                         )}
                       </div>
-                      <CardDescription className="text-xs min-h-[32px] mt-1.5">
+                      <CardDescription className="text-xs min-h-[32px] mt-1 font-medium leading-relaxed">
                         {plan.tagline}
                       </CardDescription>
                     </CardHeader>
 
-                    <CardContent className="flex-grow space-y-6 flex flex-col justify-between">
+                    <CardContent className="flex-grow space-y-6 flex flex-col justify-between px-5 pb-6">
                       <div>
-                        {plan.isContactPlan ? (
+                        {plan.id === 'enterprise' ? (
                           <div className="mb-2">
-                            <span className="text-3xl font-black text-purple-600">Contact Sales</span>
+                            <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">Contact Sales</span>
                           </div>
                         ) : (
                           <div className="flex items-baseline gap-1 mb-2">
-                            <span className="text-3xl font-black">
+                            <span className="text-3xl font-black text-foreground tracking-tight">
                               {formatPrice(price ?? 0, activeCurrency)}
                             </span>
-                            <span className="text-xs text-muted-foreground font-semibold">/ {plan.validity}</span>
+                            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">/ {plan.validity}</span>
                           </div>
                         )}
                         <Badge
                           variant="secondary"
-                          className={`font-semibold text-xs tracking-wider uppercase ${
-                            plan.id === 'enterprise'
-                              ? 'bg-purple-500/10 text-purple-600'
-                              : 'bg-primary/10 text-primary'
-                          }`}
+                          className={`font-bold text-[10px] tracking-wider uppercase shadow-sm ${plan.id === 'enterprise'
+                            ? 'bg-indigo-500/10 text-indigo-600 border border-indigo-500/20'
+                            : 'bg-background border border-border/80'
+                            }`}
                         >
                           {plan.candidates != null ? `${plan.candidates} Candidates` : 'Custom Limit'}
                         </Badge>
                       </div>
 
-                      <div className="space-y-3.5 border-t pt-4">
+                      <div className="space-y-3.5 border-t border-border/50 pt-5">
                         {plan.features.map((feature, i) => (
-                          <div key={i} className="flex items-start gap-2.5 text-xs text-muted-foreground">
-                            <Check className={`h-4 w-4 flex-shrink-0 mt-0.5 ${
-                              plan.id === 'enterprise' ? 'text-purple-500'
-                              : 'text-primary'
-                            }`} />
-                            <span>{feature}</span>
+                          <div key={i} className="flex items-start gap-2.5 text-xs text-muted-foreground font-medium">
+                            <Check className={`h-3.5 w-3.5 flex-shrink-0 mt-0.5 ${plan.id === 'enterprise' ? 'text-indigo-500' : 'text-primary'}`} />
+                            <span className="leading-snug">{feature}</span>
                           </div>
                         ))}
                       </div>
 
-                      <div className="pt-4 mt-auto">
+                      <div className="pt-6 mt-auto">
                         {isActive ? (
-                          <Button className="w-full font-bold uppercase text-xs tracking-wider" variant="outline" disabled>
-                            Current Active Plan
-                          </Button>
-                        ) : plan.isContactPlan ? (
+                          <div className="w-full py-2.5 flex items-center justify-center gap-2 rounded-xl bg-primary/10 text-primary font-bold text-[11px] tracking-wider uppercase border border-primary/20 shadow-sm">
+                            <Check className="h-3.5 w-3.5" /> Current Plan
+                          </div>
+                        ) : plan.id === 'enterprise' ? (
                           <Button
-                            className="w-full font-bold uppercase text-xs tracking-wider bg-purple-600 hover:bg-purple-700 text-white"
+                            className="w-full font-bold uppercase text-[11px] tracking-wider bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg transition-all rounded-xl"
                             asChild
                           >
                             <Link to="/contact">
-                              <Phone className="h-4 w-4 mr-2" />
+                              <Phone className="h-3.5 w-3.5 mr-2" />
                               Contact Sales
                             </Link>
                           </Button>
                         ) : isDowngrade ? null : (
                           <Button
-                            className="w-full font-bold uppercase text-xs tracking-wider"
-                            variant="default"
+                            className={`w-full font-bold uppercase text-[11px] tracking-wider shadow-md hover:shadow-lg transition-all rounded-xl ${activePlanId === 'free' ? 'bg-foreground text-background hover:bg-foreground/90' : ''
+                              }`}
+                            variant={activePlanId === 'free' ? "default" : "default"}
                             onClick={() => handleSubscribe(plan.id as BillingPlanId)}
                             disabled={busy !== null}
                           >
-                            {busy === `subscribe-${plan.id}` && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {busy === `subscribe-${plan.id}` && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
                             {ctaLabel}
                           </Button>
                         )}
@@ -570,46 +588,54 @@ export default function BillingPage() {
         </div>
 
         {/* 3. Invoice History */}
-        <Card className="border-border shadow-md">
-          <CardHeader className="border-b pb-4">
-            <CardTitle className="flex items-center gap-2 text-xl"><Receipt className="h-5 w-5 text-primary" /> Invoice &amp; Subscription History</CardTitle>
-            <CardDescription>View and download receipts for complete subscription billing records.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {invoices.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl border-border">
-                <Receipt className="h-10 w-10 mx-auto opacity-20 mb-3" />
-                <p className="text-sm font-medium">No completed Stripe invoice transactions found.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
+        <div className="pt-6">
+          <Card className="border border-border/60 shadow-md bg-card rounded-2xl overflow-hidden">
+            <CardHeader className="border-b border-border/50 pb-5 pt-6 px-6 bg-muted/20">
+              <CardTitle className="flex items-center gap-2.5 text-lg font-bold text-foreground">
+                <div className="p-1.5 rounded-md bg-background border border-border shadow-sm">
+                  <Receipt className="h-4 w-4 text-foreground/70" />
+                </div>
+                Billing History
+              </CardTitle>
+              <CardDescription className="text-xs font-medium">Download secure receipts for past transactions.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {invoices.length === 0 ? (
+                <div className="text-center py-16 px-4">
+                  <div className="h-16 w-16 mx-auto bg-muted rounded-full flex items-center justify-center mb-4 border border-border/50 shadow-sm">
+                    <Receipt className="h-7 w-7 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">No billing history</p>
+                  <p className="text-xs text-muted-foreground mt-1">You haven't made any payments yet.</p>
+                </div>
+              ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-sm">
                     <thead>
-                      <tr className="border-b text-muted-foreground font-semibold">
-                        <th className="pb-3 text-left">Invoice ID</th>
-                        <th className="pb-3 text-left">Period</th>
-                        <th className="pb-3 text-left">Reference ID</th>
-                        <th className="pb-3 text-left">Status</th>
-                        <th className="pb-3 text-right">Total Amount</th>
+                      <tr className="border-b border-border/50 text-muted-foreground bg-muted/10">
+                        <th className="py-4 px-6 text-[11px] font-bold uppercase tracking-wider text-left">Invoice ID</th>
+                        <th className="py-4 px-6 text-[11px] font-bold uppercase tracking-wider text-left">Billing Period</th>
+                        <th className="py-4 px-6 text-[11px] font-bold uppercase tracking-wider text-left">Reference</th>
+                        <th className="py-4 px-6 text-[11px] font-bold uppercase tracking-wider text-left">Status</th>
+                        <th className="py-4 px-6 text-[11px] font-bold uppercase tracking-wider text-right">Amount</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-border/40">
                       {invoices.slice(0, 5).map((invoice) => {
                         const invCurrency = String(invoice.metadata?.currency || activeCurrency).toUpperCase() as Currency;
                         return (
-                          <tr key={invoice.id} className="border-b hover:bg-muted/10 transition-colors">
-                            <td className="py-4 font-semibold text-foreground">#{invoice.id.slice(0, 8).toUpperCase()}</td>
-                            <td className="py-4 text-muted-foreground">
+                          <tr key={invoice.id} className="hover:bg-muted/30 transition-colors group">
+                            <td className="py-4 px-6 font-semibold text-foreground font-mono text-xs">#{invoice.id.slice(0, 8).toUpperCase()}</td>
+                            <td className="py-4 px-6 text-muted-foreground font-medium text-xs">
                               {new Date(invoice.period_start).toLocaleDateString()} - {new Date(invoice.period_end).toLocaleDateString()}
                             </td>
-                            <td className="py-4 text-xs font-mono text-muted-foreground">{invoice.payment_reference || 'Stripe Sync'}</td>
-                            <td className="py-4">
-                              <Badge variant={invoice.status === 'paid' ? 'default' : 'secondary'} className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5">
+                            <td className="py-4 px-6 text-xs font-mono text-muted-foreground/70">{invoice.payment_reference || 'Stripe Sync'}</td>
+                            <td className="py-4 px-6">
+                              <Badge variant={invoice.status === 'paid' ? 'default' : 'secondary'} className={`text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 shadow-sm ${invoice.status === 'paid' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20' : ''}`}>
                                 {invoice.status}
                               </Badge>
                             </td>
-                            <td className="py-4 text-right font-bold text-foreground">
+                            <td className="py-4 px-6 text-right font-bold text-foreground">
                               {formatPrice(Number(invoice.total || 0), invCurrency)}
                             </td>
                           </tr>
@@ -617,82 +643,107 @@ export default function BillingPage() {
                       })}
                     </tbody>
                   </table>
+                  {invoices.length > 5 && (
+                    <div className="flex justify-center p-4 border-t border-border/40 bg-muted/5">
+                      <Button variant="outline" size="sm" className="font-semibold text-xs rounded-xl shadow-sm hover:shadow transition-all" asChild>
+                        <Link to="/billing/history">View all records</Link>
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                {invoices.length > 5 && (
-                  <div className="flex justify-center pt-2">
-                    <Button variant="outline" asChild>
-                      <Link to="/billing/history">View Full records</Link>
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Cancellation Modal */}
       <Dialog open={cancelModalOpen} onOpenChange={(open) => !open && setCancelModalOpen(false)}>
-        <DialogContent className="sm:max-w-[500px]" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl text-destructive">
-              <AlertTriangle className="h-6 w-6" />
-              Cancel Subscription
-            </DialogTitle>
-            <DialogDescription>
-              Current Active Plan: <span className="font-bold text-foreground">{activePlan?.name || 'Starter'}</span>
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[500px] rounded-2xl overflow-hidden p-0 border-border/60 shadow-2xl" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <div className="h-1.5 w-full bg-gradient-to-r from-red-500 to-rose-600" />
+          <div className="px-5 pt-5 pb-1">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-foreground">
+                <div className="p-1.5 rounded-full bg-red-500/10 border border-red-500/20">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                </div>
+                Cancel Subscription
+              </DialogTitle>
+              <DialogDescription className="pt-1 font-medium text-sm">
+                Current Plan: <span className="font-bold text-foreground px-1.5 py-0.5 rounded-md bg-muted border border-border">{activePlan?.name || 'Starter'}</span>
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="space-y-4 py-4 text-sm">
-            <p className="font-semibold text-foreground">By cancelling your subscription, you acknowledge and agree to the following:</p>
-            <ul className="list-disc pl-5 space-y-1.5 text-muted-foreground">
-              <li>Your subscription will <strong className="text-foreground">continue until the end of your current billing period</strong>. You will NOT lose access immediately.</li>
-              <li>No further charges will be made after the current period ends.</li>
-              <li>Once the billing period expires, your account will be automatically moved to the Free Plan.</li>
-              <li>Any unused portion of your subscription is non-refundable.</li>
-              <li>After expiry, assessment limits and premium functionality will reset to the Free Plan limits.</li>
-              <li>Historical data, reports, and completed assessments will remain available.</li>
-              <li>You may subscribe to a new plan at any time.</li>
+          <div className="px-5 py-3 text-sm bg-muted/20 border-y border-border/40">
+            <p className="font-semibold text-foreground mb-2">By cancelling, you acknowledge the following:</p>
+            <ul className="space-y-1 text-muted-foreground font-medium">
+              <li className="flex items-start gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-foreground/40 mt-1.5 shrink-0" />
+                <span>Your subscription will continue until the end of your current billing period. You will NOT lose access immediately.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-foreground/40 mt-1.5 shrink-0" />
+                <span>Your account defaults to the Free Plan after expiry.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-foreground/40 mt-1.5 shrink-0" />
+                <span>Any unused portion of your subscription is non-refundable.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-foreground/40 mt-1.5 shrink-0" />
+                <span>After expiry, assessment limits and premium functionality will reset to the Free Plan limits.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-foreground/40 mt-1.5 shrink-0" />
+                <span>Historical data, reports, and completed assessments will remain available.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-foreground/40 mt-1.5 shrink-0" />
+                <span>You may subscribe to a new plan at any time.</span>
+              </li>
             </ul>
-            <p className="font-medium text-foreground">By proceeding, you confirm that you understand and accept these terms.</p>
 
-            <div className="flex items-start space-x-2 pt-2 border-t mt-4">
-              <Checkbox id="cancel-terms" checked={cancelChecked} onCheckedChange={(checked) => setCancelChecked(!!checked)} />
-              <label htmlFor="cancel-terms" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 mt-0.5 cursor-pointer">
-                I have read and agree to the cancellation terms and conditions
+            <div className="flex items-start space-x-3 pt-3 mt-3 border-t border-border/50">
+              <Checkbox id="cancel-terms" checked={cancelChecked} onCheckedChange={(checked) => setCancelChecked(!!checked)} className="mt-0.5 rounded-[4px]" />
+              <label htmlFor="cancel-terms" className="text-sm font-semibold leading-snug cursor-pointer text-foreground">
+                I understand and agree to the cancellation terms
               </label>
             </div>
+          </div>
 
-            <div className="space-y-2 pt-2">
-              <label className="text-sm font-medium">
-                To confirm, type <span className="font-bold font-mono bg-muted px-1 py-0.5 rounded text-destructive">{`Cancel ${activePlan?.name || 'Starter'} Plan`}</span> below:
+          <div className="px-5 py-3 bg-background">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-semibold text-foreground block">
+                Type <span className="font-bold font-mono bg-red-500/10 text-red-600 border border-red-500/20 px-1.5 py-0.5 rounded mx-0.5">{`Cancel ${activePlan?.name || 'Starter'} Plan`}</span> to confirm (Case Sensitive):
               </label>
               <Input
                 placeholder={`Cancel ${activePlan?.name || 'Starter'} Plan`}
                 value={cancelConfirmText}
                 onChange={(e) => setCancelConfirmText(e.target.value)}
+                className="font-mono text-sm border-border/70 focus-visible:ring-red-500/20 focus-visible:border-red-500 rounded-xl"
               />
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setCancelModalOpen(false)} disabled={busy === 'cancel'}>
-              Keep Subscription
+          <div className="px-5 py-3 bg-muted/30 border-t border-border/50 flex items-center justify-end gap-3 rounded-b-2xl">
+            <Button variant="secondary" onClick={() => setCancelModalOpen(false)} disabled={busy === 'cancel'} className="font-semibold shadow-sm rounded-xl border border-border/50 hover:bg-secondary/80">
+              Keep Plan
             </Button>
             <Button
               variant="destructive"
               disabled={
                 !cancelChecked ||
-                cancelConfirmText.trim().toLowerCase() !== `cancel ${activePlan?.name?.toLowerCase() || 'starter'} plan` ||
+                cancelConfirmText.trim() !== `Cancel ${activePlan?.name || 'Starter'} Plan` ||
                 busy === 'cancel'
               }
               onClick={handleCancelSubscription}
+              className="font-bold shadow-md rounded-xl"
             >
               {busy === 'cancel' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirm Cancellation
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </DashboardLayout>

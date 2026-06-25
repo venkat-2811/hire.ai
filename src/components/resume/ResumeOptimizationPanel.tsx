@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, Loader2, ChevronDown, ChevronUp, CheckCircle,
   XCircle, RotateCcw, Download, AlertTriangle, Info,
   ClipboardCheck, History, FileText, ArrowUpRight,
-  Check, X, Zap, Eye, EyeOff,
+  Check, X, Zap, Eye, EyeOff, Wand2, BrainCircuit
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,12 +34,12 @@ interface ChangeState { [changeId: string]: ChangeDecision; }
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const CHANGE_TYPE_META: Record<string, { label: string; color: string }> = {
-  wording:              { label: 'Wording',       color: 'bg-blue-100 text-blue-700 border-blue-200' },
-  ats_keyword:          { label: 'ATS Keyword',    color: 'bg-purple-100 text-purple-700 border-purple-200' },
-  jd_alignment:         { label: 'JD Alignment',  color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  formatting:           { label: 'Formatting',    color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
-  missing_skill_notice: { label: 'Gap Notice',    color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  gap_caution:          { label: 'Gap Caution',   color: 'bg-red-100 text-red-700 border-red-200' },
+  wording: { label: 'Wording', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  ats_keyword: { label: 'ATS Keyword', color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  jd_alignment: { label: 'JD Alignment', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  formatting: { label: 'Formatting', color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+  missing_skill_notice: { label: 'Gap Notice', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  gap_caution: { label: 'Gap Caution', color: 'bg-red-100 text-red-700 border-red-200' },
 };
 
 function ScoreBar({ score, label, accent }: { score: number; label: string; accent: string }) {
@@ -54,9 +54,8 @@ function ScoreBar({ score, label, accent }: { score: number; label: string; acce
           initial={{ width: 0 }}
           animate={{ width: `${score}%` }}
           transition={{ duration: 0.9, ease: 'easeOut' }}
-          className={`h-full rounded-full ${
-            score >= 75 ? 'bg-emerald-500' : score >= 55 ? 'bg-amber-500' : 'bg-red-500'
-          }`}
+          className={`h-full rounded-full ${score >= 75 ? 'bg-emerald-500' : score >= 55 ? 'bg-amber-500' : 'bg-red-500'
+            }`}
         />
       </div>
     </div>
@@ -75,6 +74,7 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
   const [history, setHistory] = useState<ResumeOptimizationRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // ── Run optimization ────────────────────────────────────────────────────────
   const handleOptimize = useCallback(async () => {
@@ -83,6 +83,7 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
       return;
     }
     setPanelState('loading');
+    setTimeout(() => panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     try {
       const result = await resumeOptimizationApi.optimize(candidateId, jobId, screening);
       setOptimization(result);
@@ -178,7 +179,7 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
         ? ` ATS score updated to ${deployed.screening_score}%.`
         : '';
       toast.success(`Resume accepted and overwritten successfully!${scoreText}`);
-      
+
       // Auto close panel to show updated screening
       setPanelState('idle');
       setOptimization(null);
@@ -219,6 +220,7 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
       const records = await resumeOptimizationApi.getHistory(candidateId, jobId);
       setHistory(records);
       setShowHistory(true);
+      setTimeout(() => panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     } catch {
       toast.error('Failed to load optimization history');
     } finally {
@@ -244,9 +246,9 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
 
   // ── Toggle expand / show original ────────────────────────────────────────────
   const toggleExpand = (id: string) =>
-    setExpandedSet(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setExpandedSet(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const toggleShowOrig = (id: string) =>
-    setShowOriginalFor(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setShowOriginalFor(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   // ── Counts ───────────────────────────────────────────────────────────────────
   const counts = optimization ? {
@@ -266,19 +268,19 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
   return (
     <div className="mt-8 space-y-4">
       {/* ── Header banner ───────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl border border-violet-200/50 bg-gradient-to-br from-violet-50/80 via-purple-50/60 to-indigo-50/80 dark:from-violet-950/20 dark:via-purple-950/15 dark:to-indigo-950/20 dark:border-violet-800/30 p-5">
+      <div className="relative overflow-hidden rounded-2xl border border-violet-300 dark:border-violet-700 bg-gradient-to-br from-violet-100 via-purple-100 to-indigo-100 dark:from-violet-900/60 dark:via-purple-900/50 dark:to-indigo-900/60 shadow-md p-5">
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-0 right-0 w-56 h-56 rounded-full bg-violet-400/10 blur-3xl -translate-y-16 translate-x-16" />
+          <div className="absolute top-0 right-0 w-56 h-56 rounded-full bg-violet-400/20 blur-3xl -translate-y-16 translate-x-16" />
         </div>
 
         <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-violet-100 dark:bg-violet-900/40 border border-violet-200 dark:border-violet-700 shrink-0">
-              <Sparkles className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+            <div className="p-2.5 rounded-xl bg-white dark:bg-violet-950 shadow-sm border border-violet-200 dark:border-violet-600 shrink-0">
+              <Wand2 className="h-5 w-5 text-violet-600 dark:text-violet-400" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-foreground">AI Resume Optimization</h3>
-              <p className="text-xs text-muted-foreground mt-0.5 max-w-lg">
+              <h3 className="text-base font-bold text-violet-950 dark:text-violet-100">AI Resume Optimization</h3>
+              <p className="text-xs text-violet-800/80 dark:text-violet-200/80 mt-0.5 max-w-lg font-medium">
                 AI analyzes the original resume text (same source used for ATS screening) against the JD —
                 improving content only. No formatting, fonts, or layout changes.
               </p>
@@ -286,34 +288,36 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <Button variant="ghost" size="sm" onClick={loadHistory} disabled={loadingHistory}
-              className="text-violet-600 hover:bg-violet-100/50 text-xs gap-1.5">
+            <Button variant="outline" size="sm" onClick={loadHistory} disabled={loadingHistory}
+              className="bg-violet-100 hover:bg-blue-500 dark:bg-violet-900/60 dark:hover:bg-violet-800 border-violet-300 dark:border-violet-600 text-violet-800 dark:text-violet-100 shadow-sm transition-all text-xs gap-1.5 font-semibold">
               {loadingHistory ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <History className="h-3.5 w-3.5" />}
               History
             </Button>
 
             {panelState === 'idle' && (
               <Button onClick={handleOptimize}
-                className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white shadow-lg shadow-violet-500/25 gap-2 text-sm">
-                <Sparkles className="h-4 w-4" />
+                className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white shadow-lg shadow-violet-500/30 gap-2 text-sm font-bold">
+                <BrainCircuit className="h-4 w-4" />
                 Optimize Resume with AI
               </Button>
             )}
             {panelState === 'loading' && (
-              <Button disabled className="gap-2 bg-violet-600/80 text-white text-sm">
+              <Button disabled className="gap-2 bg-violet-600/80 text-white text-sm font-bold">
                 <Loader2 className="h-4 w-4 animate-spin" /> Analyzing...
               </Button>
             )}
             {(panelState === 'review' || panelState === 'finalizing' || panelState === 'finalized') && (
               <Button variant="outline" size="sm"
                 onClick={() => { setPanelState('idle'); setOptimization(null); setChangeStates({}); }}
-                className="border-violet-200 text-violet-600 hover:bg-violet-50 text-xs gap-1.5">
+                className="bg-violet-100 hover:bg-blue-400 dark:bg-violet-900/60 dark:hover:bg-violet-800 border-violet-300 dark:border-violet-600 text-violet-800 dark:text-violet-100 shadow-sm transition-all text-xs gap-1.5 font-semibold">
                 <RotateCcw className="h-3.5 w-3.5" /> Re-run
               </Button>
             )}
           </div>
         </div>
       </div>
+
+      <div ref={panelRef} className="scroll-mt-6" />
 
       {/* ── History panel ────────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -458,17 +462,18 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
                 <Button size="sm" variant="destructive" onClick={rejectAll} className="gap-1.5 text-xs">
                   <XCircle className="h-3.5 w-3.5" /> Reject All
                 </Button>
-                <Button size="sm" variant="outline" onClick={revertAll} className="gap-1.5 text-xs">
+                <Button size="sm" variant="outline" onClick={revertAll} className="gap-1.5 text-xs border-slate-300 dark:border-slate-700 shadow-sm">
                   <RotateCcw className="h-3.5 w-3.5" /> Reset All
                 </Button>
                 <div className="flex-1" />
                 <Button size="sm" onClick={handleFinalize}
-                  disabled={panelState === 'finalizing' || !counts || counts.accepted === 0}
+                  disabled={panelState === 'finalizing' || (counts?.accepted || 0) === 0}
                   className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white gap-1.5 text-xs shadow-lg shadow-violet-500/20">
-                  {panelState === 'finalizing'
-                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving...</>
-                    : <><ClipboardCheck className="h-3.5 w-3.5" /> Finalize &amp; Save {counts?.accepted || 0} Change{counts?.accepted !== 1 ? 's' : ''}</>
-                  }
+                  {panelState === 'finalizing' ? (
+                    <span className="flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving...</span>
+                  ) : (
+                    <span className="flex items-center gap-1.5"><ClipboardCheck className="h-3.5 w-3.5" /> Finalize {'&'} Save {counts?.accepted || 0} Change{counts?.accepted !== 1 ? 's' : ''}</span>
+                  )}
                 </Button>
               </div>
             )}
@@ -483,16 +488,16 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
                   </span>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => handleDownload('pdf')}
-                      className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 gap-1.5 text-xs">
+                      className="bg-emerald-100 hover:bg-zinc-700 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-100 shadow-sm transition-all gap-1.5 text-xs font-semibold">
                       <Download className="h-3.5 w-3.5" /> Optimized PDF
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => handleDownload('docx')}
-                      className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 gap-1.5 text-xs">
+                      className="bg-emerald-100 hover:bg-stone-500 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-100 shadow-sm transition-all gap-1.5 text-xs font-semibold">
                       <FileText className="h-3.5 w-3.5" /> Optimized DOCX
                     </Button>
                     {resumeUrl && (
                       <a href={resumeUrl} target="_blank" rel="noopener noreferrer" download
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-muted/40 transition-colors">
+                        className="inline-flex items-center gap-1 text-xs text-gray-700 hover:text-gray-900 border border-gray-500 rounded-md px-2.5 py-1.5 hover:bg-gray-200 transition-colors">
                         Original File
                       </a>
                     )}
@@ -508,7 +513,7 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
                   </div>
                   <div className="flex items-center gap-3">
                     <Button variant="outline" size="sm" onClick={() => { setPanelState('idle'); setOptimization(null); }}
-                      disabled={deploying} className="text-xs">
+                      disabled={deploying} className="text-xs hover:bg-gray-500">
                       Revert / Keep Original
                     </Button>
                     <Button size="sm" onClick={handleDeploy} disabled={deploying}
@@ -532,10 +537,10 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
 
                   const borderCls =
                     decision === 'accepted' ? 'border-emerald-200' :
-                    decision === 'rejected' ? 'border-red-200/50 opacity-55' : 'border-border';
+                      decision === 'rejected' ? 'border-red-200/50 opacity-55' : 'border-border';
                   const bgCls =
                     decision === 'accepted' ? 'bg-emerald-50/30 dark:bg-emerald-950/10' :
-                    decision === 'rejected' ? 'bg-muted/15' : '';
+                      decision === 'rejected' ? 'bg-muted/15' : '';
 
                   return (
                     <motion.div key={change.change_id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
@@ -546,13 +551,12 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
                         <div className="flex items-start gap-3 p-3.5 cursor-pointer select-none"
                           onClick={() => toggleExpand(change.change_id)}>
                           {/* Status dot */}
-                          <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                            decision === 'accepted' ? 'bg-emerald-500' :
+                          <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${decision === 'accepted' ? 'bg-emerald-500' :
                             decision === 'rejected' ? 'bg-red-100 border border-red-300' :
-                            'bg-muted border border-border'
-                          }`}>
+                              'bg-muted border border-border'
+                            }`}>
                             {decision === 'accepted' ? <Check className="h-3 w-3 text-white" /> :
-                             decision === 'rejected' ? <X className="h-3 w-3 text-red-500" /> : null}
+                              decision === 'rejected' ? <X className="h-3 w-3 text-red-500" /> : null}
                           </div>
 
                           <div className="flex-1 min-w-0">
@@ -575,16 +579,14 @@ export function ResumeOptimizationPanel({ candidateId, jobId, screening, resumeT
                             {panelState !== 'finalized' && (
                               <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                                 <button onClick={() => decide(change.change_id, 'accepted')}
-                                  className={`p-1.5 rounded-lg border transition-all ${
-                                    decision === 'accepted' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
-                                  }`} title="Accept">
-                                  <Check className="h-3 w-3" />
+                                  className={`p-2.5 rounded-xl border transition-all ${decision === 'accepted' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                                    }`} title="Accept">
+                                  <Check className="h-5 w-5 stroke-[3]" />
                                 </button>
                                 <button onClick={() => decide(change.change_id, 'rejected')}
-                                  className={`p-1.5 rounded-lg border transition-all ${
-                                    decision === 'rejected' ? 'bg-red-500 border-red-500 text-white' : 'border-red-200 text-red-500 hover:bg-red-50'
-                                  }`} title="Reject">
-                                  <X className="h-3 w-3" />
+                                  className={`p-2.5 rounded-xl border transition-all ${decision === 'rejected' ? 'bg-red-500 border-red-500 text-white' : 'border-red-200 text-red-500 hover:bg-red-50'
+                                    }`} title="Reject">
+                                  <X className="h-5 w-5 stroke-[3]" />
                                 </button>
                                 {decision !== 'pending' && (
                                   <button onClick={() => decide(change.change_id, 'pending')}

@@ -1,5 +1,5 @@
 from typing import List
-
+import datetime
 
 def get_resume_optimization_prompt(
     resume_text: str,
@@ -25,8 +25,9 @@ def get_resume_optimization_prompt(
     whats_good_str = "\n".join(f"  - {w}" for w in whats_good) if whats_good else "  - None identified"
 
     resume_raw = (resume_text or "").strip()[:8000]
+    current_date_str = datetime.date.today().strftime("%B %Y")
 
-    system_prompt = """\
+    system_prompt = f"""\
 You are an expert resume content editor and ATS optimization specialist.
 
 Your ONLY job is to improve the TEXT CONTENT of the candidate's resume to better align with the Job Description.
@@ -61,6 +62,7 @@ The candidate's current ATS score is {before_score}%. Your goal is to suggest ge
 
 6. EMPLOYMENT GAP DETECTION.
    - If you detect a suspicious gap in employment dates (> 6 months between roles), flag it as gap_caution.
+   - Note: The current date is {current_date_str}. Use this date when evaluating employment ending in "Present" or "Current".
    - Set original: "" and improved: "" for gap_caution items. Only explain in the reason field.
    - DO NOT include gap_caution items in the changes[] array — they are cautions only, not suggestions.
    - Return gap cautions in a SEPARATE top-level key: "gap_cautions": [...]

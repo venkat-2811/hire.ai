@@ -56,38 +56,47 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
         className
       )}
     >
-      {/* Logo */}
-      <div className="flex items-center h-16 px-3 border-b border-sidebar-border">
-        <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
+      {/* Branding Section */}
+      <div className="flex items-center h-[68px] px-4 border-b border-sidebar-border/60">
+        <Link
+          to="/dashboard"
+          className="flex items-center gap-3 w-full min-w-0 outline-none rounded-md focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
           {(!isMobile && collapsed) ? (
-            /* Collapsed: logo full scaled */
-            <div className="flex-shrink-0 rounded-lg bg-white/95 p-1">
+            /* Collapsed: Square Icon centered */
+            <div className="flex items-center justify-center h-9 w-9 mx-auto flex-shrink-0 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm">
               <img
-                src={logoFull}
+                src={logoIcon}
                 alt="Rekshift"
-                className="h-6 w-8 object-contain block"
+                className="h-5 w-auto object-contain"
                 draggable={false}
               />
             </div>
           ) : (
-            /* Expanded: full logo */
-            <div className="flex-shrink-0 rounded-xl bg-white/95 px-2.5 py-1.5">
-              <img
-                src={logoFull}
-                alt="Rekshift"
-                className="h-8 w-auto object-contain block"
-                draggable={false}
-              />
-            </div>
-          )}
-          {/* Company name as secondary context — only in expanded state */}
-          {!((!isMobile && collapsed)) && profile?.company_name && (
-            <span
-              className="text-xs text-sidebar-foreground/55 truncate max-w-[90px] leading-tight"
-              title={profile.company_name}
-            >
-              {profile.company_name}
-            </span>
+            /* Expanded: logo left + company info right */
+            <>
+              <div className="flex-shrink-0">
+                <img
+                  src={logoFull}
+                  alt="Rekshift"
+                  className="h-16 w-auto object-contain"
+                  draggable={false}
+                />
+              </div>
+              {profile?.company_name && (
+                <div className="flex flex-col justify-center min-w-0 border-l border-sidebar-border/50 pl-3">
+                  <span
+                    className="text-[15px] font-bold text-sidebar-foreground truncate leading-tight tracking-tight"
+                    title={profile.company_name}
+                  >
+                    {profile.company_name}
+                  </span>
+                  <span className="text-[11px] text-sidebar-foreground/45 font-medium leading-none mt-0.5">
+                    Workspace
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </Link>
       </div>

@@ -12,8 +12,9 @@ import {
   Plus,
   Clock,
   CheckCircle,
-  XCircle,
   Loader2,
+  Trophy,
+  XCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
@@ -32,7 +33,7 @@ import { toast } from 'sonner';
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
   { name: 'Screen Resume', href: '/candidates', icon: FileText, description: 'View & screen candidates' },
-  { name: 'View Results', href: '/results', icon: TrendingUp, description: 'Scores & recommendations' },
+  { name: 'View Results', href: '/results', icon: Trophy, description: 'Scores & recommendations' },
 ];
 
 export default function DashboardPage() {
@@ -124,13 +125,13 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3 w-full lg:w-auto mt-2 lg:mt-0">
-            <Button variant="outline" asChild className="flex-1 sm:flex-none">
+            <Button variant="outline" asChild className="flex-1 sm:flex-none border-foreground/80 dark:border-foreground/80 hover:bg-accent">
               <Link to="/jobs/new">
                 <Plus className="mr-2 h-4 w-4" />
                 Create Job
               </Link>
             </Button>
-            <Button 
+            <Button
               className="flex-1 sm:flex-none"
               asChild={!!hasJobs}
               onClick={(e) => {
@@ -203,73 +204,83 @@ export default function DashboardPage() {
             transition={{ delay: 0.4 }}
             className="lg:col-span-2"
           >
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Recent Candidates</CardTitle>
-                  <CardDescription>Latest screening results</CardDescription>
-                </div>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to="/candidates">
-                    View all <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {candidatesLoading || jobsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            {!hasJobs && !jobsLoading ? (
+              <Card className="h-full min-h-[300px] flex items-center justify-center border-dashed border-2">
+                <CardContent className="flex flex-col items-center justify-center py-12 space-y-4">
+                  <p className="font-semibold text-foreground text-lg">No Jobs are created yet.</p>
+                  <Button asChild className="w-48 font-semibold shadow-sm border-2 border-foreground/20 hover:border-foreground/50 transition-colors">
+                    <Link to="/jobs/new">
+                      <Plus className="mr-2 h-4 w-4" />
+                      CREATE JOB
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="h-full">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <div>
+                    <CardTitle>Recent Candidates</CardTitle>
+                    <CardDescription>Latest screening results</CardDescription>
                   </div>
-                ) : candidates && candidates.length > 0 ? (
-                  <div className="space-y-4">
-                    {candidates.slice(0, 4).map((candidate) => (
-                      <div
-                        key={candidate.job_id ? `${candidate.id}-${candidate.job_id}` : candidate.id}
-                        className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="h-10 w-10 flex-shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
-                            <span className="text-sm font-medium text-primary">
-                              {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to="/candidates">
+                      View all <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {candidatesLoading || jobsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : candidates && candidates.length > 0 ? (
+                    <div className="space-y-4 mt-4">
+                      {candidates.slice(0, 4).map((candidate) => (
+                        <div
+                          key={candidate.job_id ? `${candidate.id}-${candidate.job_id}` : candidate.id}
+                          className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 flex-shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-sm font-medium text-primary">
+                                {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                              </span>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{candidate.full_name}</p>
+                              <p className="text-sm text-muted-foreground truncate">{candidate.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            {(() => {
+                              const analytics = candidatesAnalytics?.find(a => a.candidate_id === candidate.id);
+                              if (!analytics) return null;
+                              const score = analytics.overall_score;
+                              if (score === null || score === undefined) return <span className="text-sm text-muted-foreground">No score yet</span>;
+                              return <ScoreBadge score={score} />;
+                            })()}
+                            <span className="text-sm text-muted-foreground">
+                              {new Date(candidate.created_at).toLocaleDateString()}
                             </span>
                           </div>
-                          <div className="min-w-0">
-                            <p className="font-medium truncate">{candidate.full_name}</p>
-                            <p className="text-sm text-muted-foreground truncate">{candidate.email}</p>
-                          </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          {(() => {
-                            const analytics = candidatesAnalytics?.find(a => a.candidate_id === candidate.id);
-                            if (!analytics) return null;
-                            const score = analytics.overall_score;
-                            if (score === null || score === undefined) return <span className="text-sm text-muted-foreground">No score yet</span>;
-                            return <ScoreBadge score={score} />;
-                          })()}
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(candidate.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : !hasJobs ? (
-                  <div className="text-center py-10 text-muted-foreground flex flex-col items-center justify-center space-y-4">
-                    <p>No jobs available yet. Get started by creating one!</p>
-                    <Button asChild>
-                      <Link to="/jobs/new">Create your first Job</Link>
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-center py-10 text-muted-foreground flex flex-col items-center justify-center space-y-4">
-                    <p>No candidates yet.</p>
-                    <Button asChild>
-                      <Link to="/candidates/new">Add Your First Candidate</Link>
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-10 text-muted-foreground flex flex-col items-center justify-center space-y-4">
+                      <p className="font-semibold text-foreground text-lg">No Candidates are added to the job yet</p>
+                      <Button asChild className="w-48 font-semibold shadow-sm border-2 border-foreground/20 hover:border-foreground/50 transition-colors">
+                        <Link to="/candidates/new">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Candidate
+                        </Link>
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </motion.div>
 
           {/* Quick Actions */}
@@ -289,16 +300,16 @@ export default function DashboardPage() {
                   <Link
                     key={action.name}
                     to={action.href}
-                    className="flex items-center gap-4 p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors group"
+                    className="flex items-center gap-4 p-4 rounded-lg bg-card border border-primary/20 hover:border-primary hover:shadow-md hover:bg-primary/[0.02] transition-all group shadow-sm"
                   >
                     <div className="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                       <action.icon className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <p className="font-medium">{action.name}</p>
+                      <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{action.name}</p>
                       <p className="text-sm text-muted-foreground">{action.description}</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                   </Link>
                 ))}
               </CardContent>

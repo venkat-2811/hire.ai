@@ -453,18 +453,23 @@ export default function ResultsDashboardPage() {
               </p>
             </div>
 
-            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="Select a job to view results" />
-              </SelectTrigger>
-              <SelectContent>
-                {jobs?.map((job) => (
-                  <SelectItem key={job.id} value={job.id}>
-                    {job.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Viewing Results For
+              </p>
+              <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+                <SelectTrigger className="w-[280px] border border-primary/60 bg-primary/5 dark:bg-primary/10 shadow-md font-medium text-foreground hover:border-primary transition-colors focus:ring-0 focus:ring-offset-0">
+                  <SelectValue placeholder="Select a job to view results" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs?.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {!selectedJobId ? (
@@ -801,37 +806,41 @@ export default function ResultsDashboardPage() {
                             Candidate <ArrowUpDown className="ml-2 h-3 w-3" />
                           </Button>
                         </TableHead>
-                        <TableHead>
+                        <TableHead className="text-center">
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="mx-auto flex"
                             onClick={() => handleSort('ats_score')}
                           >
                             Resume Score <ArrowUpDown className="ml-2 h-3 w-3" />
                           </Button>
                         </TableHead>
-                        <TableHead>
+                        <TableHead className="text-center">
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="mx-auto flex"
                             onClick={() => handleSort('assessment_score')}
                           >
                             Tech. Assessment <ArrowUpDown className="ml-2 h-3 w-3" />
                           </Button>
                         </TableHead>
-                        <TableHead>
+                        <TableHead className="text-center">
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="mx-auto flex"
                             onClick={() => handleSort('interview_score')}
                           >
                             Interview Score <ArrowUpDown className="ml-2 h-3 w-3" />
                           </Button>
                         </TableHead>
-                        <TableHead>
+                        <TableHead className="text-center">
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="mx-auto flex"
                             onClick={() => handleSort('total_score')}
                           >
                             Total Avg <ArrowUpDown className="ml-2 h-3 w-3" />
@@ -892,43 +901,51 @@ export default function ResultsDashboardPage() {
                                   </p>
                                 </div>
                               </TableCell>
-                              <TableCell>
-                                {typeof candidate.ats_score === 'number' ? (
-                                  <ScoreBadge score={candidate.ats_score} />
-                                ) : (
-                                  <span className="text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {typeof candidate.assessment_score === 'number' ? (
-                                  <ScoreBadge score={candidate.assessment_score} />
-                                ) : (
-                                  <span className="text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {typeof candidate.interview_score === 'number' ? (
-                                  <ScoreBadge score={candidate.interview_score} />
-                                ) : (
-                                  <span className="text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  const scores = [
-                                    candidate.ats_score,
-                                    candidate.assessment_score,
-                                    candidate.interview_score,
-                                  ].filter((s) => s !== null) as number[];
-                                  const avg = scores.length
-                                    ? scores.reduce((a, b) => a + b, 0) / scores.length
-                                    : 0;
-                                  return scores.length ? (
-                                    <ScoreBadge score={Math.round(avg)} />
+                              <TableCell className="text-center">
+                                <div className="flex justify-center">
+                                  {typeof candidate.ats_score === 'number' ? (
+                                    <ScoreBadge score={candidate.ats_score} />
                                   ) : (
                                     <span className="text-muted-foreground">-</span>
-                                  );
-                                })()}
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex justify-center">
+                                  {typeof candidate.assessment_score === 'number' ? (
+                                    <ScoreBadge score={candidate.assessment_score} />
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex justify-center">
+                                  {typeof candidate.interview_score === 'number' ? (
+                                    <ScoreBadge score={candidate.interview_score} />
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex justify-center">
+                                  {(() => {
+                                    const scores = [
+                                      candidate.ats_score,
+                                      candidate.assessment_score,
+                                      candidate.interview_score,
+                                    ].filter((s) => s !== null) as number[];
+                                    const avg = scores.length
+                                      ? scores.reduce((a, b) => a + b, 0) / scores.length
+                                      : 0;
+                                    return scores.length ? (
+                                      <ScoreBadge score={Math.round(avg)} />
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    );
+                                  })()}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 {getRecommendationBadge(candidate.recommendation)}

@@ -76,20 +76,27 @@ export default function AnalyticsLayout() {
             </p>
           </div>
 
-          <Select value={selectedJobId} onValueChange={setSelectedJobId}>
-            <SelectTrigger className="w-full sm:w-[260px]">
-              <Briefcase className="h-4 w-4 mr-2 text-muted-foreground" />
-              <SelectValue placeholder="Filter by job role…" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Job Roles</SelectItem>
-              {(jobs ?? []).map((job) => (
-                <SelectItem key={job.id} value={job.id}>
-                  {job.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-1">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Filter Analytics For
+            </p>
+            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+              <SelectTrigger className="w-full sm:w-[280px] border border-primary/60 bg-primary/5 dark:bg-primary/10 shadow-md font-medium text-foreground hover:border-primary transition-colors focus:ring-0 focus:ring-offset-0">
+                <div className="flex items-center">
+                  <Briefcase className="h-4 w-4 mr-2 text-foreground dark:text-white drop-shadow-sm" />
+                  <SelectValue placeholder="All Job Roles" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Job Roles</SelectItem>
+                {(jobs ?? []).map((job) => (
+                  <SelectItem key={job.id} value={job.id}>
+                    {job.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Sub-Navigation */}

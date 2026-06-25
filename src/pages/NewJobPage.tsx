@@ -167,6 +167,7 @@ export default function NewJobPage() {
                   <Label htmlFor="title">Job Title *</Label>
                   <Input
                     id="title"
+                    className="border-slate-200 dark:border-slate-800 shadow-sm"
                     placeholder="e.g., Senior Salesforce Developer"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
@@ -179,7 +180,8 @@ export default function NewJobPage() {
                     <Label htmlFor="role">Role Type *</Label>
                     <Input
                       id="role"
-                      placeholder="e.g. React Developer, Project Manager"
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
+                      placeholder="e.g. Software Development, Sales"
                       value={role}
                       onChange={(e) => setRole(e.target.value)}
                       required
@@ -189,7 +191,7 @@ export default function NewJobPage() {
                   <div className="space-y-2">
                     <Label>Experience Level *</Label>
                     <Select value={level} onValueChange={(v) => setLevel(v as RoleLevel)}>
-                      <SelectTrigger>
+                      <SelectTrigger className="border-slate-200 dark:border-slate-800 shadow-sm">
                         <SelectValue placeholder="Select level" />
                       </SelectTrigger>
                       <SelectContent>
@@ -206,6 +208,7 @@ export default function NewJobPage() {
                     <Label htmlFor="experience">Min. Years Experience</Label>
                     <Input
                       id="experience"
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
                       type="number"
                       min={0}
                       max={20}
@@ -218,6 +221,7 @@ export default function NewJobPage() {
                     <Label htmlFor="location">Location</Label>
                     <Input
                       id="location"
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
                       placeholder="e.g., Remote, New York"
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
@@ -227,7 +231,7 @@ export default function NewJobPage() {
                   <div className="space-y-2">
                     <Label>Hiring For</Label>
                     <Select value={endCustomer} onValueChange={(v) => setEndCustomer(v as any)}>
-                      <SelectTrigger>
+                      <SelectTrigger className="border-slate-200 dark:border-slate-800 shadow-sm">
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -242,6 +246,7 @@ export default function NewJobPage() {
                       <Label htmlFor="end_customer_name">Name of Customer/Client *</Label>
                       <Input
                         id="end_customer_name"
+                        className="border-slate-200 dark:border-slate-800 shadow-sm"
                         placeholder="e.g., Acme Corp"
                         value={endCustomerName}
                         onChange={(e) => setEndCustomerName(e.target.value)}
@@ -251,18 +256,19 @@ export default function NewJobPage() {
                   )}
                 </div>
 
-                <div className="space-y-2 flex flex-col justify-center">
+                <div className="space-y-2 flex flex-col justify-center border border-slate-200 dark:border-slate-800 p-4 rounded-lg bg-card shadow-sm">
                   <div className="flex items-center space-x-2">
                     <Switch
                       id="is_salesforce_job"
                       checked={isSalesforceJob}
                       onCheckedChange={(checked) => setIsSalesforceJob(checked)}
+                      className="border border-primary/30"
                     />
-                    <Label htmlFor="is_salesforce_job" className="cursor-pointer">
+                    <Label htmlFor="is_salesforce_job" className="cursor-pointer font-semibold">
                       Salesforce Related Job
                     </Label>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-sm text-foreground font-medium mt-1">
                     Enable to automatically use Apex assessments instead of standard DSA coding challenges
                   </p>
                 </div>
@@ -271,6 +277,7 @@ export default function NewJobPage() {
                   <Label htmlFor="description">Job Description *</Label>
                   <Textarea
                     id="description"
+                    className="border-slate-200 dark:border-slate-800 shadow-sm"
                     placeholder="Describe the role, responsibilities, and what you're looking for..."
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
@@ -290,7 +297,18 @@ export default function NewJobPage() {
                     {extractingSkills ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Extracting Skills...</>
                     ) : (
-                      <><Sparkles className="mr-2 h-4 w-4" />Auto-Extract Skills from Description</>
+                      <>
+                        <svg className="mr-2" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path
+                            d="M9 17.5H3.5M6.5 12H2M9 6.5H4M17 3L10.4036 12.235C10.1116 12.6438 9.96562 12.8481 9.97194 13.0185C9.97744 13.1669 10.0486 13.3051 10.1661 13.3958C10.3011 13.5 10.5522 13.5 11.0546 13.5H16L15 21L21.5964 11.765C21.8884 11.3562 22.0344 11.1519 22.0281 10.9815C22.0226 10.8331 21.9514 10.6949 21.8339 10.6042C21.6989 10.5 21.4478 10.5 20.9454 10.5H16L17 3Z"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        Auto-Extract Skills from Description
+                      </>
                     )}
                   </Button>
                 </div>
@@ -300,6 +318,7 @@ export default function NewJobPage() {
                     <Label htmlFor="resume_cutoff">Resume Cut-off Score (0-100)</Label>
                     <Input
                       id="resume_cutoff"
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
                       type="number"
                       min={0}
                       max={100}
@@ -311,6 +330,7 @@ export default function NewJobPage() {
                     <Label htmlFor="assessment_cutoff">Assessment Cut-off Score (0-100)</Label>
                     <Input
                       id="assessment_cutoff"
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
                       type="number"
                       min={0}
                       max={100}
@@ -322,6 +342,7 @@ export default function NewJobPage() {
                     <Label htmlFor="interview_cutoff">Interview Cut-off Score (0-100)</Label>
                     <Input
                       id="interview_cutoff"
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
                       type="number"
                       min={0}
                       max={100}
@@ -345,6 +366,7 @@ export default function NewJobPage() {
                   <Label>Must-Have Skills</Label>
                   <div className="flex gap-2">
                     <Input
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
                       placeholder="Add a required skill..."
                       value={newMustHave}
                       onChange={(e) => setNewMustHave(e.target.value)}
@@ -374,6 +396,7 @@ export default function NewJobPage() {
                   <Label>Good-to-Have Skills</Label>
                   <div className="flex gap-2">
                     <Input
+                      className="border-slate-200 dark:border-slate-800 shadow-sm"
                       placeholder="Add a nice-to-have skill..."
                       value={newGoodToHave}
                       onChange={(e) => setNewGoodToHave(e.target.value)}
