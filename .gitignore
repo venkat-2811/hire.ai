@@ -54,3 +54,5 @@ temp_*.env
 # Vite temporary files
 vite.config.ts.timestamp-*
 
+# Tokens and keys
+backend/jwt.txt

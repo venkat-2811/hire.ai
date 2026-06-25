@@ -265,21 +265,19 @@ export default function OnboardingPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 max-w-4xl mx-auto">
-        <div className="flex items-center gap-3 mb-8">
+      <div className={`mx-auto w-full transition-all duration-500 ease-in-out ${step === 1 ? 'max-w-4xl p-6 lg:p-8' : 'max-w-[1400px] p-4 lg:px-6 lg:py-4'}`}>
+        <div className={`flex items-center gap-3 ${step === 1 ? 'mb-8' : 'mb-4 justify-center'}`}>
           <div className={`flex items-center gap-2 ${step >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              step > 1 ? 'bg-primary text-white' : step === 1 ? 'bg-primary/10 border-2 border-primary text-primary' : 'bg-muted text-muted-foreground'
-            }`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step > 1 ? 'bg-primary text-white' : step === 1 ? 'bg-primary/10 border-2 border-primary text-primary' : 'bg-muted text-muted-foreground'
+              }`}>
               {step > 1 ? <Check className="h-4 w-4" /> : '1'}
             </div>
             <span className="text-sm font-medium">Company Setup</span>
           </div>
           <div className="h-px w-8 bg-border" />
           <div className={`flex items-center gap-2 ${step >= 2 ? 'text-primary' : 'text-muted-foreground'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              step === 2 ? 'bg-primary/10 border-2 border-primary text-primary' : 'bg-muted text-muted-foreground'
-            }`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step === 2 ? 'bg-primary/10 border-2 border-primary text-primary' : 'bg-muted text-muted-foreground'
+              }`}>
               2
             </div>
             <span className="text-sm font-medium">Choose Plan</span>
@@ -317,7 +315,7 @@ export default function OnboardingPage() {
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="orgEmail">Organization Email *</Label>
@@ -400,102 +398,130 @@ export default function OnboardingPage() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
             >
-              <div className="mb-6 text-center">
-                <h1 className="text-2xl lg:text-3xl font-bold">Choose Your Plan</h1>
-                <p className="text-muted-foreground mt-1">Select an onboard plan to active candidate assessment capacities.</p>
-                <div className="flex items-center justify-center gap-1.5 mt-3 text-xs text-muted-foreground font-semibold">
+              <div className="mb-4 lg:mb-5 text-center">
+                <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight">Choose Your Plan</h1>
+                <p className="text-muted-foreground mt-1.5 text-sm lg:text-base max-w-xl mx-auto">Select an onboard plan to active candidate assessment capacities.</p>
+                <div className="flex items-center justify-center gap-1.5 mt-3 text-xs text-muted-foreground font-semibold bg-muted/50 w-fit mx-auto px-3 py-1 rounded-full border border-border/50 shadow-sm">
                   <Globe className="h-3.5 w-3.5" />
                   <span>Currency Auto-Detected: <span className="text-primary font-bold">{detectedCurrency}</span></span>
                 </div>
               </div>
 
               {geoLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 lg:gap-7 items-stretch">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-5 items-stretch h-full">
                   {onboardingPlans.map((plan) => (
-                    <div key={plan.id} className="h-[520px] rounded-2xl bg-muted/30 animate-pulse" />
+                    <div key={plan.id} className="min-h-[420px] rounded-[24px] bg-muted/30 animate-pulse" />
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 lg:gap-7 items-stretch">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-5 items-stretch relative z-10">
                   {onboardingPlans.map((plan) => {
                     const price = detectedCurrency === 'INR' ? plan.priceINR : plan.priceUSD;
 
                     return (
                       <motion.div
                         key={plan.id}
-                        whileHover={{ scale: 1.02 }}
-                        className={`relative flex flex-col rounded-2xl border-2 p-6 transition-all cursor-pointer bg-card h-full min-h-[520px] ${
-                          selectedPlan === plan.id
-                            ? 'border-primary shadow-lg shadow-primary/10'
-                            : plan.cardBg
-                        } ${plan.popular ? 'ring-2 ring-purple-500/30' : ''}`}
+                        whileHover={{ y: -4, scale: 1.01 }}
+                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        className={`relative flex flex-col rounded-[24px] border p-5 transition-all cursor-pointer bg-card overflow-visible group ${selectedPlan === plan.id
+                          ? 'border-primary ring-1 ring-primary shadow-xl shadow-primary/10'
+                          : `border-border/60 hover:border-border hover:shadow-lg ${plan.cardBg}`
+                          } ${plan.popular ? 'border-purple-500/50 shadow-lg shadow-purple-500/10' : ''}`}
                         onClick={() => !processingPlan && setSelectedPlan(plan.id)}
                       >
+                        {/* Subtle background glow for popular plan */}
                         {plan.popular && (
-                          <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-3">
-                            MOST POPULAR
+                          <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 to-transparent pointer-events-none rounded-[22px]" />
+                        )}
+
+                        {plan.popular && (
+                          <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] uppercase tracking-wider font-bold py-0.5 px-3 rounded-full border-none shadow-md whitespace-nowrap z-10">
+                            Most Popular
                           </Badge>
                         )}
 
-                        <div className="text-center mb-4">
-                          <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${plan.gradient} mb-3`}>
-                            <plan.icon className="h-6 w-6 text-white" />
+                        <div className="text-center mb-4 relative z-10">
+                          <div className={`mx-auto w-10 h-10 rounded-xl bg-gradient-to-br ${plan.gradient} mb-3 flex items-center justify-center shadow-inner`}>
+                            <plan.icon className="h-5 w-5 text-white" />
                           </div>
-                          <h3 className="text-lg font-bold">{plan.name}</h3>
-                          <div className="mt-1 flex items-baseline justify-center gap-1">
+                          <h3 className="text-[15px] font-bold text-foreground/90 uppercase tracking-wide">{plan.name}</h3>
+                          <div className="mt-1.5 flex items-baseline justify-center gap-1 h-[36px]">
                             {plan.isContactPlan ? (
-                              <span className="text-2xl font-extrabold text-purple-600">Contact Sales</span>
+                              <span className="text-xl lg:text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-violet-600 to-purple-700">Contact Sales</span>
                             ) : (
                               <>
-                                <span className="text-3xl font-extrabold">{formatCurrency(price ?? 0, detectedCurrency)}</span>
-                                <span className="text-sm text-muted-foreground font-semibold">/ {plan.validity}</span>
+                                <span className="text-2xl lg:text-3xl font-extrabold tracking-tight">{formatCurrency(price ?? 0, detectedCurrency)}</span>
+                                <span className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">/ {plan.validity}</span>
                               </>
                             )}
                           </div>
                         </div>
 
-                        <ul className="space-y-2.5 mb-6 flex-grow">
+                        <ul className="space-y-2.5 mb-5 flex-grow relative z-10">
                           {plan.features.map((f, idx) => (
-                            <li key={idx} className="flex items-center gap-2 text-sm">
-                              <Check className={`h-4 w-4 flex-shrink-0 ${f.highlight ? 'text-green-500' : 'text-muted-foreground'}`} />
-                              <span className={f.highlight ? 'font-medium' : 'text-muted-foreground'}>{f.text}</span>
+                            <li key={idx} className="flex items-start gap-2.5 text-[12px] leading-tight">
+                              <div className={`mt-[2px] rounded-full p-[2px] shrink-0 ${f.highlight ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}`}>
+                                <Check className="h-[10px] w-[10px]" strokeWidth={3} />
+                              </div>
+                              <span className={f.highlight ? 'font-semibold text-foreground' : 'text-muted-foreground'}>{f.text}</span>
                             </li>
                           ))}
                         </ul>
 
-                        <Button
-                          className="w-full mt-auto font-bold"
-                          variant={plan.popular || plan.id === 'scale' ? 'default' : plan.id === 'enterprise' ? 'default' : 'outline'}
-                          disabled={processingPlan}
-                          style={plan.id === 'enterprise' ? { background: 'linear-gradient(135deg, #7c3aed, #9333ea)' } : undefined}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (plan.isContactPlan) {
-                              window.open('/contact', '_blank');
-                            } else {
-                              handlePlanSelect(plan.id);
-                            }
-                          }}
-                        >
-                          {processingPlan && selectedPlan === plan.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : null}
-                          {plan.id === 'free'
-                            ? plan.cta
-                            : plan.isContactPlan
-                            ? 'Contact Sales'
-                            : `${plan.cta} — ${formatCurrency(price, detectedCurrency)}`}
-                        </Button>
+                        <div className="mt-auto relative z-10 pt-2">
+                          <Button
+                            className={`w-full rounded-xl h-9 text-sm font-semibold transition-all shadow-sm ${plan.popular
+                              ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white border-0'
+                              : ''
+                              }`}
+                            variant={plan.popular || plan.id === 'enterprise' ? 'default' : 'outline'}
+                            disabled={processingPlan}
+                            style={plan.id === 'enterprise' ? { background: 'linear-gradient(135deg, #7c3aed, #9333ea)', color: 'white', border: 'none' } : undefined}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (plan.isContactPlan) {
+                                window.open('/contact', '_blank');
+                              } else {
+                                handlePlanSelect(plan.id);
+                              }
+                            }}
+                          >
+                            {processingPlan && selectedPlan === plan.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : null}
+                            {plan.id === 'free'
+                              ? plan.cta
+                              : plan.isContactPlan
+                                ? 'Contact Sales'
+                                : `${plan.cta} — ${formatCurrency(price ?? 0, detectedCurrency)}`}
+                          </Button>
+                        </div>
                       </motion.div>
                     );
                   })}
                 </div>
               )}
 
-              <div className="mt-6 text-center">
-                <Button variant="ghost" size="sm" onClick={() => setStep(1)} disabled={processingPlan}>
-                  ← Back to Company Setup
-                </Button>
+              <div className="mt-5 lg:mt-7 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  disabled={processingPlan}
+                  className="bg-card text-center w-56 rounded-lg h-9 relative text-foreground text-xs font-medium border border-border/80 group overflow-hidden flex items-center justify-center shadow-sm hover:shadow-md hover:border-border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="bg-muted rounded-md h-[calc(100%-4px)] w-8 absolute left-[2px] top-[2px] group-hover:w-[calc(100%-4px)] group-hover:bg-neutral-800 z-10 duration-500 ease-in-out" />
+                  <svg
+                    width="14px"
+                    height="14px"
+                    viewBox="0 0 1024 1024"
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="absolute left-[11px] top-[11px] group-hover:left-[calc(100%-25px)] text-neutral-950 group-hover:text-white transition-all duration-500 z-20"
+                  >
+                    <path fill="currentColor" d="M224 480h640a32 32 0 1 1 0 64H224a32 32 0 0 1 0-64z"></path>
+                    <path fill="currentColor" d="m237.248 512 265.408 265.344a32 32 0 0 1-45.312 45.312l-288-288a32 32 0 0 1 0-45.312l288-288a32 32 0 1 1 45.312 45.312L237.248 512z"></path>
+                  </svg>
+                  <p className="translate-x-3 z-20 transition-colors duration-500 group-hover:text-white font-bold">Back to Company Setup</p>
+                </button>
               </div>
             </motion.div>
           )}

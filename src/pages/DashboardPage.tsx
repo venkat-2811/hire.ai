@@ -22,10 +22,12 @@ import { RoleBadge } from '@/components/ui/role-badge';
 import { useDashboardStats, useCandidateAnalytics, useHiringTrends } from '@/hooks/useAnalytics';
 import { useCandidates } from '@/hooks/useCandidates';
 import { useInterviews } from '@/hooks/useInterviews';
+import { useJobs } from '@/hooks/useJobs';
 import type { JobRole, InterviewStatus } from '@/types/database';
 import { AnalyticsCharts } from '@/components/dashboard/AnalyticsCharts';
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
 
 const quickActions = [
   { name: 'Add New Job', href: '/jobs/new', icon: Plus, description: 'Create a job posting' },
@@ -40,8 +42,10 @@ export default function DashboardPage() {
   const { data: interviews, isLoading: interviewsLoading } = useInterviews({ status: 'completed' });
   const { data: candidatesAnalytics, isLoading: analyticsLoading } = useCandidateAnalytics();
   const { data: trendsData, isLoading: trendsLoading } = useHiringTrends(30);
+  const { data: jobs, isLoading: jobsLoading } = useJobs();
 
-  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading;
+  const hasJobs = jobs && jobs.length > 0;
+  const isLoading = authLoading || statsLoading || analyticsLoading || trendsLoading || jobsLoading;
 
   if (authLoading) {
     return (
@@ -99,25 +103,53 @@ export default function DashboardPage() {
             <motion.h1
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-2xl lg:text-3xl font-bold text-foreground"
+              className="text-2xl lg:text-3xl font-bold text-foreground min-h-[36px] flex items-center"
             >
-              Welcome back! 👋
+              {jobsLoading ? (
+                <span className="inline-block w-48 h-8 bg-muted animate-pulse rounded-md" />
+              ) : !hasJobs ? (
+                'Welcome to Rekshift! 🎉'
+              ) : (
+                'Welcome back! 👋'
+              )}
             </motion.h1>
-            <p className="text-muted-foreground mt-1">
-              See how your hiring pipeline is performing today.
-            </p>
+            <div className="text-muted-foreground mt-1 min-h-[20px] flex items-center">
+              {jobsLoading ? (
+                <span className="inline-block w-64 h-4 bg-muted animate-pulse rounded-md" />
+              ) : !hasJobs ? (
+                "Let's get started by creating your first job posting."
+              ) : (
+                'See how your hiring pipeline is performing today.'
+              )}
+            </div>
           </div>
           <div className="flex flex-wrap gap-3 w-full lg:w-auto mt-2 lg:mt-0">
             <Button variant="outline" asChild className="flex-1 sm:flex-none">
-              <Link to="/candidates">
-                View All Candidates
+              <Link to="/jobs/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Create Job
               </Link>
             </Button>
-            <Button asChild className="flex-1 sm:flex-none">
-              <Link to="/candidates/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Candidate
-              </Link>
+            <Button 
+              className="flex-1 sm:flex-none"
+              asChild={!!hasJobs}
+              onClick={(e) => {
+                if (!hasJobs && !jobsLoading) {
+                  toast.error("Please create a job first before adding candidates.");
+                }
+              }}
+            >
+              {hasJobs ? (
+                <Link to="/candidates/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Candidate
+                </Link>
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Candidate
+                </>
+              )}
             </Button>
           </div>
         </div>
@@ -184,7 +216,7 @@ export default function DashboardPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                {candidatesLoading ? (
+                {candidatesLoading || jobsLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
@@ -221,9 +253,19 @@ export default function DashboardPage() {
                       </div>
                     ))}
                   </div>
+                ) : !hasJobs ? (
+                  <div className="text-center py-10 text-muted-foreground flex flex-col items-center justify-center space-y-4">
+                    <p>No jobs available yet. Get started by creating one!</p>
+                    <Button asChild>
+                      <Link to="/jobs/new">Create your first Job</Link>
+                    </Button>
+                  </div>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No candidates yet. <Link to="/candidates/new" className="text-primary hover:underline">Add your first candidate</Link>
+                  <div className="text-center py-10 text-muted-foreground flex flex-col items-center justify-center space-y-4">
+                    <p>No candidates yet.</p>
+                    <Button asChild>
+                      <Link to="/candidates/new">Add Your First Candidate</Link>
+                    </Button>
                   </div>
                 )}
               </CardContent>
