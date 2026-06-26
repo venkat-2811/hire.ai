@@ -22,6 +22,7 @@ import {
   Loader2,
   UserPlus,
   PenLine,
+  ShieldCheck,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -594,47 +595,62 @@ export default function NewCandidatePage() {
           )}
 
           {currentStep === 'consent' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Consent & Agreement</CardTitle>
-                <CardDescription>
-                  Confirm candidate consent for AI-powered evaluation
-                </CardDescription>
+            <Card className="border-t-4 border-t-primary/80">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">Consent & Agreement</CardTitle>
+                    <CardDescription className="mt-0.5">
+                      Confirm candidate consent for AI-powered evaluation
+                    </CardDescription>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <h4 className="font-medium mb-2">What happens next?</h4>
-                  <ul className="space-y-2 text-sm text-muted-foreground">
-                    <li className="flex items-start gap-2">
-                      <Sparkles className="h-4 w-4 mt-0.5 text-accent" />
-                      AI will parse and analyze the resume
+                <div className="p-5 rounded-lg bg-primary/[0.02] border border-primary/10">
+                  <h4 className="font-semibold text-primary mb-3 text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    What happens next?
+                  </h4>
+                  <ul className="space-y-3 text-sm text-muted-foreground">
+                    <li className="flex items-start gap-2.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary/60 mt-2 shrink-0" />
+                      <span>AI will parse and analyze the resume</span>
                     </li>
-                    <li className="flex items-start gap-2">
-                      <Sparkles className="h-4 w-4 mt-0.5 text-accent" />
-                      Skills will be matched against job requirements
+                    <li className="flex items-start gap-2.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary/60 mt-2 shrink-0" />
+                      <span>Skills will be matched against job requirements</span>
                     </li>
-                    <li className="flex items-start gap-2">
-                      <Sparkles className="h-4 w-4 mt-0.5 text-accent" />
-                      An ATS score and shortlisting decision will be generated
+                    <li className="flex items-start gap-2.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary/60 mt-2 shrink-0" />
+                      <span>An ATS score and shortlisting decision will be generated</span>
                     </li>
-                    <li className="flex items-start gap-2">
-                      <Sparkles className="h-4 w-4 mt-0.5 text-accent" />
-                      Interview questions will be customized based on the profile
+                    <li className="flex items-start gap-2.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary/60 mt-2 shrink-0" />
+                      <span>Interview questions will be customized based on the profile</span>
                     </li>
                   </ul>
                 </div>
 
-                <div className="flex items-start gap-3 p-4 rounded-lg border">
+                <div className={`flex items-start gap-3 p-5 rounded-lg border transition-all duration-200 ${
+                  consentGiven 
+                    ? 'border-primary/40 bg-primary/[0.02] shadow-sm' 
+                    : 'border-muted hover:border-muted-foreground/20 bg-transparent'
+                }`}>
                   <Checkbox
                     id="consent"
                     checked={consentGiven}
                     onCheckedChange={(checked) => setConsentGiven(checked as boolean)}
+                    className="mt-1"
                   />
                   <div>
-                    <Label htmlFor="consent" className="cursor-pointer">
+                    <Label htmlFor="consent" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                       I confirm that the candidate has provided consent for AI-powered evaluation
                     </Label>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    <p className="text-sm text-muted-foreground mt-1.5">
                       By checking this box, you confirm that the candidate has agreed to have their 
                       resume and responses analyzed by AI systems for hiring purposes.
                     </p>
@@ -655,7 +671,7 @@ export default function NewCandidatePage() {
                     <div className="absolute inset-0 rounded-full animate-ping bg-accent/20" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-semibold">Processing with AI</h3>
+                    <h3 className="text-2xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent animate-pulse drop-shadow-sm">Processing with AI</h3>
                     <p className="text-muted-foreground mt-2">
                       Analyzing resume, matching skills, and generating insights...
                     </p>
@@ -707,12 +723,12 @@ export default function NewCandidatePage() {
               disabled={isParsingResume}
             >
               {isParsingResume ? (
-                <div className="p-2.5 rounded-lg bg-primary/10 shrink-0">
-                  <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                <div className="p-2.5 rounded-lg bg-muted shrink-0">
+                  <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
                 </div>
               ) : (
-                <div className="p-2.5 rounded-lg bg-primary/10 shrink-0">
-                  <Sparkles className="h-5 w-5 text-primary" />
+                <div className="p-2.5 rounded-lg bg-muted shrink-0">
+                  <Sparkles className="h-5 w-5 text-muted-foreground" />
                 </div>
               )}
               <div className="min-w-0 flex-1 overflow-hidden">

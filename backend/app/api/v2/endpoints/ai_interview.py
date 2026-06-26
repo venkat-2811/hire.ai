@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, UploadFile, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from app.api.v2.deps import require_user
@@ -590,6 +590,7 @@ class InterviewInviteRequest(BaseModel):
 
 @router.post("/invite")
 async def invite_ai_interviews(
+    background_tasks: BackgroundTasks,
     body: InterviewInviteRequest,
     user: ClerkUser = Depends(require_user),
 ):
@@ -653,126 +654,128 @@ async def invite_ai_interviews(
         if calculated_time_limit < 2:
             calculated_time_limit = 2
 
-    invites_sent = 0
-    failed: List[str] = []
-    failed_reasons: Dict[str, str] = {}
+    async def _generate_and_send_interview_invites():
+        invites_sent = 0
+        failed: List[str] = []
+        failed_reasons: Dict[str, str] = {}
 
-    for c in candidates:
-        cid = c.get("id") if isinstance(c, dict) else None
-        if not cid:
-            continue
-        token = secrets.token_urlsafe(32)
-        session_id = str(uuid.uuid4())
+        for c in candidates:
+            cid = c.get("id") if isinstance(c, dict) else None
+            if not cid:
+                continue
+            token = secrets.token_urlsafe(32)
+            session_id = str(uuid.uuid4())
 
-        try:
-            questions_raw = await generate_interview_questions(
-                openai,
-                job,
-                c.get("resume_parsed_data") if isinstance(c, dict) else None,
-                requested_count,
-                difficulty,
-                focus_areas=body.focus_areas or "",
-                strict_focus=bool(body.strict_focus),
-            )
-            questions = _normalize_questions(questions_raw)
-            if len(questions) == 0:
-                raise ValueError("No interview questions generated")
-
-            resume = c.get("resume_parsed_data") if isinstance(c, dict) else None
-            resume = resume if isinstance(resume, dict) else {}
-            resume_insights = {
-                "skills": resume.get("skills")[:15]
-                if isinstance(resume.get("skills"), list)
-                else [],
-                "experience_summary": "; ".join(
-                    [
-                        f"{(e or {}).get('title', '')} at {(e or {}).get('company', '')}".strip()
-                        for e in (resume.get("experience") or [])[:3]
-                        if isinstance(e, dict)
-                    ]
-                )
-                if isinstance(resume.get("experience"), list)
-                else (str(resume.get("experience"))[:300] if isinstance(resume.get("experience"), str) else ""),
-                "education_summary": "; ".join(
-                    [
-                        f"{(e or {}).get('degree', '')} from {(e or {}).get('institution', '')}".strip()
-                        for e in (resume.get("education") or [])[:2]
-                        if isinstance(e, dict)
-                    ]
-                )
-                if isinstance(resume.get("education"), list)
-                else (str(resume.get("education"))[:200] if isinstance(resume.get("education"), str) else ""),
-            }
-
-            proctoring_data = {
-                "warnings": [],
-                "camera_enabled": False,
-                "microphone_enabled": False,
-                "resume_insights": resume_insights,
-                "invite_delivery": {"status": "pending", "attempted_at": _utc_now_iso()},
-            }
-
-            proctoring_data["difficulty"] = difficulty
-            proctoring_data["time_limit_minutes"] = calculated_time_limit
-            if body.focus_areas and body.focus_areas.strip():
-                proctoring_data["focus_areas"] = body.focus_areas.strip()
-                proctoring_data["strict_focus"] = bool(body.strict_focus)
-
-            insert_row = {
-                "id": session_id,
-                "candidate_id": cid,
-                "job_id": body.job_id,
-                "token": token,
-                "status": "pending",
-                "deadline": deadline_dt.isoformat(),
-                "current_question_index": 0,
-                "questions": questions,
-                "responses": [],
-                "proctoring_data": proctoring_data,
-                "created_at": _utc_now_iso(),
-            }
-
-            logger.info("[ai_interview.invite] inserting session session_id=%s candidate_id=%s job_id=%s", session_id, cid, body.job_id)
-            await db.run(lambda: db.client.from_("ai_interview_sessions").insert(insert_row).execute())
-
-            # Email is non-blocking infra
             try:
-                interview_link = f"{str(settings.frontend_url).rstrip('/')}/ai-interview/{token}"
-                recipient_email = str(c.get("email") or "").strip()
-                if not recipient_email:
-                    raise RuntimeError("Candidate email is missing")
-                await email_service.send_interview_invite(
-                    to=recipient_email,
-                    candidate_name=str(c.get("full_name") or "Candidate"),
-                    job_title=str(job.get("title") or ""),
-                    interview_link=interview_link,
-                    scheduled_time=body.scheduled_time,
+                questions_raw = await generate_interview_questions(
+                    openai,
+                    job,
+                    c.get("resume_parsed_data") if isinstance(c, dict) else None,
+                    requested_count,
+                    difficulty,
+                    focus_areas=body.focus_areas or "",
+                    strict_focus=bool(body.strict_focus),
                 )
-                proctoring_data["invite_delivery"] = {"status": "sent", "sent_at": _utc_now_iso()}
+                questions = _normalize_questions(questions_raw)
+                if len(questions) == 0:
+                    raise ValueError("No interview questions generated")
+
+                resume = c.get("resume_parsed_data") if isinstance(c, dict) else None
+                resume = resume if isinstance(resume, dict) else {}
+                resume_insights = {
+                    "skills": resume.get("skills")[:15]
+                    if isinstance(resume.get("skills"), list)
+                    else [],
+                    "experience_summary": "; ".join(
+                        [
+                            f"{(e or {}).get('title', '')} at {(e or {}).get('company', '')}".strip()
+                            for e in (resume.get("experience") or [])[:3]
+                            if isinstance(e, dict)
+                        ]
+                    )
+                    if isinstance(resume.get("experience"), list)
+                    else (str(resume.get("experience"))[:300] if isinstance(resume.get("experience"), str) else ""),
+                    "education_summary": "; ".join(
+                        [
+                            f"{(e or {}).get('degree', '')} from {(e or {}).get('institution', '')}".strip()
+                            for e in (resume.get("education") or [])[:2]
+                            if isinstance(e, dict)
+                        ]
+                    )
+                    if isinstance(resume.get("education"), list)
+                    else (str(resume.get("education"))[:200] if isinstance(resume.get("education"), str) else ""),
+                }
+
+                proctoring_data = {
+                    "warnings": [],
+                    "camera_enabled": False,
+                    "microphone_enabled": False,
+                    "resume_insights": resume_insights,
+                    "invite_delivery": {"status": "pending", "attempted_at": _utc_now_iso()},
+                }
+
+                proctoring_data["difficulty"] = difficulty
+                proctoring_data["time_limit_minutes"] = calculated_time_limit
+                if body.focus_areas and body.focus_areas.strip():
+                    proctoring_data["focus_areas"] = body.focus_areas.strip()
+                    proctoring_data["strict_focus"] = bool(body.strict_focus)
+
+                insert_row = {
+                    "id": session_id,
+                    "candidate_id": cid,
+                    "job_id": body.job_id,
+                    "token": token,
+                    "status": "pending",
+                    "deadline": deadline_dt.isoformat(),
+                    "current_question_index": 0,
+                    "questions": questions,
+                    "responses": [],
+                    "proctoring_data": proctoring_data,
+                    "created_at": _utc_now_iso(),
+                }
+
+                logger.info("[ai_interview.invite] inserting session session_id=%s candidate_id=%s job_id=%s", session_id, cid, body.job_id)
+                await db.run(lambda: db.client.from_("ai_interview_sessions").insert(insert_row).execute())
+
+                # Email is non-blocking infra
+                try:
+                    interview_link = f"{str(settings.frontend_url).rstrip('/')}/ai-interview/{token}"
+                    recipient_email = str(c.get("email") or "").strip()
+                    if not recipient_email:
+                        raise RuntimeError("Candidate email is missing")
+                    await email_service.send_interview_invite(
+                        to=recipient_email,
+                        candidate_name=str(c.get("full_name") or "Candidate"),
+                        job_title=str(job.get("title") or ""),
+                        interview_link=interview_link,
+                        scheduled_time=body.scheduled_time,
+                    )
+                    proctoring_data["invite_delivery"] = {"status": "sent", "sent_at": _utc_now_iso()}
+                except Exception as e:
+                    logger.error("[ai_interview.invite] EMAIL FAILED session=%s to=%s error=%s", session_id, recipient_email if 'recipient_email' in dir() else '?', str(e))
+                    proctoring_data["invite_delivery"] = {"status": "failed", "failed_at": _utc_now_iso(), "error": str(e)}
+
+                await db.run(
+                    lambda: db.client.from_("ai_interview_sessions")
+                    .update({"proctoring_data": proctoring_data, "updated_at": _utc_now_iso()})
+                    .eq("id", session_id)
+                    .execute()
+                )
+
+                invites_sent += 1
             except Exception as e:
-                logger.error("[ai_interview.invite] EMAIL FAILED session=%s to=%s error=%s", session_id, recipient_email if 'recipient_email' in dir() else '?', str(e))
-                proctoring_data["invite_delivery"] = {"status": "failed", "failed_at": _utc_now_iso(), "error": str(e)}
+                failed.append(str(cid))
+                failed_reasons[str(cid)] = str(e)
 
-            await db.run(
-                lambda: db.client.from_("ai_interview_sessions")
-                .update({"proctoring_data": proctoring_data, "updated_at": _utc_now_iso()})
-                .eq("id", session_id)
-                .execute()
-            )
+    background_tasks.add_task(_generate_and_send_interview_invites)
 
-            invites_sent += 1
-        except Exception as e:
-            failed.append(str(cid))
-            failed_reasons[str(cid)] = str(e)
-
-    return ok(
-        {
-            "success": invites_sent > 0,
-            "invites_sent": invites_sent,
-            "failed": failed,
-            "failed_reasons": failed_reasons,
-        }
-    )
+    return ok({
+        "success": True,
+        "invites_sent": len(candidates),
+        "failed": [],
+        "failed_reasons": {},
+        "status": "processing"
+    })
 
 
 @router.get("/start/{token}")
@@ -1266,3 +1269,4 @@ async def upload_screenshot(
             return ok({"success": True, "path": path})
         except Exception as e2:
             return api_error(message=str(e2), status_code=500)
+

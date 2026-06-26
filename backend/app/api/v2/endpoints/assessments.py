@@ -260,8 +260,17 @@ async def _select_dsa_coding_challenges(
     difficulty: str,
     count: int,
 ) -> List[Dict[str, Any]]:
+    """Select `count` DSA problems at the given difficulty tier.
+
+    Diversity guarantee: problems are picked from different categories first
+    (e.g., Graphs → DP → Binary Search) so that a 3-problem assessment does not
+    accidentally serve three Binary Search questions.  Falls back to any remaining
+    unselected problem when the category pool is exhausted.
+    """
     if count <= 0:
         return []
+
+    import random
 
     if difficulty == "easy":
         dist = ["easy"] * count
@@ -272,29 +281,58 @@ async def _select_dsa_coding_challenges(
 
     selected: List[Dict[str, Any]] = []
 
+    # ── Fetch a large pool once per difficulty tier ─────────────────────────
     def _fetch_for_diff(d: str):
         return (
             db.client.from_("dsa_problems")
             .select("*")
             .eq("difficulty", d)
             .eq("is_active", True)
-            .limit(20)
+            .limit(200)          # large pool to support diverse selection
             .execute()
         )
 
+    _pool_cache: Dict[str, List[Dict[str, Any]]] = {}
+
+    def _pick_diverse(
+        pool: List[Dict[str, Any]],
+        already_selected: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Return a problem from `pool` that has not been selected yet,
+        preferring a category not already represented."""
+        selected_ids  = {p.get("id")       for p in already_selected}
+        selected_cats = {p.get("category") for p in already_selected}
+
+        available = [p for p in pool if isinstance(p, dict) and p.get("id") not in selected_ids]
+        if not available:
+            return None
+
+        # Prefer a problem from a NEW category
+        new_cat_pool = [p for p in available if p.get("category") not in selected_cats]
+        if new_cat_pool:
+            return random.choice(new_cat_pool)
+
+        # All categories already represented — fall back to any remaining
+        return random.choice(available)
+
     for d in dist:
-        res = await db.run(lambda d=d: _fetch_for_diff(d))
-        problems = getattr(res, "data", None) or []
-        if not isinstance(problems, list) or not problems:
+        # Reuse cached pool to avoid duplicate DB round-trips per difficulty
+        if d not in _pool_cache:
+            res = await db.run(lambda _d=d: _fetch_for_diff(_d))
+            problems = getattr(res, "data", None) or []
+            _pool_cache[d] = (
+                [p for p in problems if isinstance(p, dict)]
+                if isinstance(problems, list)
+                else []
+            )
+
+        pool = _pool_cache[d]
+        if not pool:
             continue
 
-        avail = [p for p in problems if isinstance(p, dict) and not any(s.get("id") == p.get("id") for s in selected)]
-        if not avail:
-            continue
-        import random
-
-        picked = random.choice(avail)
-        selected.append(picked)
+        picked = _pick_diverse(pool, selected)
+        if picked is not None:
+            selected.append(picked)
 
     def _public_test_cases(p: Dict[str, Any]) -> List[Dict[str, Any]]:
         tcs = p.get("test_cases") or []
@@ -1408,15 +1446,32 @@ async def coding_run(session_id: str, body: Dict[str, Any] = Body(...)):
             "score_percentage": eval_result.get("score", 0)
         })
 
+    # Fetch the FULL problem from dsa_problems to get all test cases with visibility metadata
+    problem_id = problem.get("id") or challenge_id
+    def _fetch_full_problem():
+        return db.client.from_("dsa_problems").select("*").eq("id", problem_id).single().execute()
+
+    full_prob_res = await db.run(_fetch_full_problem)
+    full_problem = getattr(full_prob_res, "data", None)
+    if isinstance(full_problem, dict) and full_problem:
+        problem = full_problem
+    else:
+        logger.warning(
+            "[assessments.coding_run] full_problem_fetch_failed session_id=%s challenge_id=%s — falling back to session-cached problem",
+            str(session_id), str(challenge_id),
+        )
+
     problem = await _ensure_problem_execution_metadata(db=db, problem=problem, language=str(language))
 
     all_tests = problem.get("test_cases") or []
     if not isinstance(all_tests, list):
         all_tests = []
+    
     public_tests = [tc for tc in all_tests if isinstance(tc, dict) and tc.get("visibility") == "public"]
     if not public_tests:
         # Fall back to first 3 test cases regardless of visibility (run mode shows all)
         public_tests = [tc for tc in all_tests if isinstance(tc, dict)][:3]
+        
     if not public_tests:
         logger.error("[assessments.coding_run] no_test_cases session_id=%s challenge_id=%s", str(session_id), str(challenge_id))
         return api_error(message="No test cases available for this problem", status_code=400)
@@ -1725,6 +1780,27 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
             "runtime_error": cand_err if cand_err else None,
         })
 
+    # ── Fetch the FULL problem from dsa_problems to get all test cases ──────────
+    # The session's coding_challenges only stores *public* test cases (they were
+    # filtered in _select_dsa_coding_challenges). We must re-fetch the raw record
+    # from the DB to access hidden (private) test cases for Submit evaluation.
+    problem_id = problem.get("id") or challenge_id
+    def _fetch_full_problem():
+        return db.client.from_("dsa_problems").select("*").eq("id", problem_id).single().execute()
+
+    full_prob_res = await db.run(_fetch_full_problem)
+    full_problem = getattr(full_prob_res, "data", None)
+    if isinstance(full_problem, dict) and full_problem:
+        # Use the full DB record (has all test cases); merge in any repaired metadata
+        # (e.g., solution_wrappers, function_name) that _ensure_problem_execution_metadata
+        # may have computed but isn't yet persisted.
+        problem = full_problem
+    else:
+        logger.warning(
+            "[assessments.coding_submit] full_problem_fetch_failed session_id=%s challenge_id=%s — falling back to session-cached problem",
+            str(session_id), str(challenge_id),
+        )
+
     problem = await _ensure_problem_execution_metadata(db=db, problem=problem, language=str(language))
 
     all_tests = problem.get("test_cases") or []
@@ -1733,6 +1809,53 @@ async def coding_submit(session_id: str, body: Dict[str, Any] = Body(...)):
     total_tests = len(all_tests)
     if total_tests == 0:
         return api_error(message="No test cases available", status_code=400)
+
+    # ── Validate hidden test cases ───────────────────────────────────────────
+    # Enforce that every test case uses only the two allowed visibility values.
+    # Also verify that at least one valid hidden test case exists so we never
+    # ship a problem that only has public tests evaluated on Submit.
+    _invalid_visibility = [
+        tc.get("visibility")
+        for tc in all_tests
+        if isinstance(tc, dict) and tc.get("visibility") not in ("public", "hidden")
+    ]
+    if _invalid_visibility:
+        logger.error(
+            "[assessments.coding_submit] invalid_visibility_values session_id=%s challenge_id=%s values=%s",
+            str(session_id), str(challenge_id), str(list(set(_invalid_visibility))),
+        )
+        return api_error(
+            message="Problem configuration error: test cases contain unsupported visibility values. Only 'public' and 'hidden' are allowed.",
+            status_code=500,
+        )
+
+    hidden_tests = [tc for tc in all_tests if isinstance(tc, dict) and tc.get("visibility") == "hidden"]
+    if not hidden_tests:
+        # Backward-compatible: old problems that pre-date the new seed revisions
+        # may not yet have hidden test cases. Log a warning but do NOT fail the
+        # submission — the candidate will be scored on public tests only until
+        # the problem is updated with proper hidden test cases.
+        logger.warning(
+            "[assessments.coding_submit] no_hidden_test_cases session_id=%s challenge_id=%s — scoring on public tests only",
+            str(session_id), str(challenge_id),
+        )
+    else:
+        # Verify every hidden test case is well-formed (has input + expected output).
+        _malformed = [
+            tc.get("id", f"index_{i}")
+            for i, tc in enumerate(hidden_tests)
+            if not (tc.get("input") is not None and tc.get("expected_output") not in (None, ""))
+        ]
+        if _malformed:
+            logger.error(
+                "[assessments.coding_submit] malformed_hidden_test_cases session_id=%s challenge_id=%s ids=%s",
+                str(session_id), str(challenge_id), str(_malformed),
+            )
+            return api_error(
+                message="Problem configuration error: one or more hidden test cases are missing input or expected output.",
+                status_code=500,
+            )
+
 
     def _maybe_parse_json_string(v: Any) -> Any:
         if not isinstance(v, str):

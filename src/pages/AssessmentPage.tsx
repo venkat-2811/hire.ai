@@ -48,6 +48,7 @@ import {
   CheckCircle2,
   Terminal,
   Database,
+  Lock,
 } from "lucide-react";
 import { useFaceDetection } from "@/hooks/useFaceDetection";
 import {
@@ -1983,6 +1984,7 @@ export default function AssessmentPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-emerald-600/50 text-emerald-600 hover:bg-emerald-500/10 hover:border-emerald-600 hover:text-emerald-700 transition-colors"
                   onClick={handleRequestPermissions}
                 >
                   <Camera className="mr-2 h-4 w-4" />
@@ -2054,7 +2056,7 @@ export default function AssessmentPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="border-primary text-primary hover:bg-primary/10 mt-2"
+                  className="border-emerald-600/50 text-emerald-600 hover:bg-emerald-500/10 hover:border-emerald-600 hover:text-emerald-700 transition-colors mt-2"
                   onClick={async () => {
                     await requestScreenShare();
                   }}
@@ -2638,7 +2640,7 @@ export default function AssessmentPage() {
             {/* MCQ Section */}
             {hasMcq && (
               <TabsContent value="mcq">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-6xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-5xl mr-auto ml-4 md:ml-8 lg:ml-16">
                   {/* Left Column: Question Navigator */}
                   <div className="md:col-span-1">
                     <Card className="sticky top-4">
@@ -2726,7 +2728,7 @@ export default function AssessmentPage() {
                             ))}
                           </RadioGroup>
 
-                          <div className="flex justify-between pt-4">
+                          <div className="flex justify-start gap-4 pt-4">
                             <div className="flex gap-2">
                               <Button
                                 variant="outline"
@@ -3302,8 +3304,9 @@ export default function AssessmentPage() {
                                           ) : (
                                             <XCircle className="h-3.5 w-3.5 text-red-500" />
                                           )}
-                                          <span className="font-semibold font-sans">
+                                          <span className="font-semibold font-sans flex items-center gap-1.5">
                                             Test {idx + 1}
+                                            {result.is_hidden && <Lock className="h-3 w-3 text-zinc-400" />}
                                           </span>
                                           <Badge
                                             variant="outline"
@@ -3346,14 +3349,7 @@ export default function AssessmentPage() {
                                         </div>
                                       </div>
                                       <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
-                                        {result.is_hidden ? (
-                                          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground italic">
-                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400">
-                                              🔒 Hidden test — input &amp;
-                                              expected not shown
-                                            </span>
-                                          </div>
-                                        ) : (
+                                        {result.is_hidden ? null : (
                                           <>
                                             <div>
                                               <span className="text-muted-foreground/70">
@@ -3801,7 +3797,7 @@ export default function AssessmentPage() {
                     </div>
                   )}
 
-                  <div className="flex justify-between">
+                  <div className="flex justify-start gap-4">
                     <Button
                       variant="outline"
                       onClick={() =>
@@ -4247,8 +4243,9 @@ export default function AssessmentPage() {
                                         ) : (
                                           <XCircle className="h-3.5 w-3.5 text-red-500" />
                                         )}
-                                        <span className="font-semibold font-sans">
+                                        <span className="font-semibold font-sans flex items-center gap-1.5">
                                           Test {idx + 1}
+                                          {result.is_hidden && <Lock className="h-3 w-3 text-zinc-400" />}
                                         </span>
                                         <Badge
                                           variant="outline"
@@ -4289,14 +4286,7 @@ export default function AssessmentPage() {
                                       </div>
                                     </div>
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed text-muted-foreground space-y-0.5">
-                                      {result.is_hidden ? (
-                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground italic">
-                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400">
-                                            🔒 Hidden test — input &amp;
-                                            expected not shown
-                                          </span>
-                                        </div>
-                                      ) : (
+                                      {result.is_hidden ? null : (
                                         <>
                                           <div>
                                             <span className="text-muted-foreground/70">
@@ -4713,7 +4703,7 @@ export default function AssessmentPage() {
                     </div>
                   )}
 
-                  <div className="flex justify-between">
+                  <div className="flex justify-start gap-4">
                     <Button
                       variant="outline"
                       onClick={() =>

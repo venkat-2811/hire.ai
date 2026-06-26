@@ -877,7 +877,7 @@ export default function AIInterviewPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="border-primary text-primary hover:bg-primary/10"
+                        className="border-emerald-600/50 text-emerald-600 hover:bg-emerald-500/10 hover:border-emerald-600 hover:text-emerald-700 transition-colors"
                         onClick={async () => {
                           await requestScreenShare();
                         }}
