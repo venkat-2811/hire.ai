@@ -20,6 +20,9 @@ import {
   Copy,
   Check,
   Briefcase,
+  Sparkles,
+  Code,
+  Video,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { RoleBadge } from '@/components/ui/role-badge';
@@ -153,19 +156,83 @@ export default function JobsPage() {
         </div>
 
         {jobs && jobs.length === 0 ? (
-          <div className="text-center py-20 bg-card rounded-2xl border border-border/80 shadow-sm flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto mt-8">
-            <div className="p-3 bg-primary/10 rounded-2xl">
-              <Briefcase className="h-10 w-10 text-primary" />
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="text-center py-10 px-6 glass-card rounded-2xl border border-border/80 shadow-md flex flex-col items-center justify-center max-w-4xl mx-auto mt-6 space-y-6"
+          >
+            <div className="relative">
+              {/* Pulsing glow backdrop */}
+              <div className="absolute inset-0 bg-gradient-to-tr from-primary/25 to-info/25 rounded-2xl blur-lg animate-float opacity-75 animate-pulse" />
+              <div className="relative p-3.5 bg-gradient-to-tr from-primary/10 to-info/10 border border-primary/20 rounded-2xl animate-float">
+                <Briefcase className="h-9 w-9 text-primary" />
+              </div>
             </div>
-            <div className="space-y-1">
-              <h3 className="text-xl font-bold text-foreground">No Jobs are created yet.</h3>
-              <p className="text-sm text-muted-foreground">Create your first job posting to start onboarding candidates.</p>
+
+            <div className="space-y-1.5 max-w-xl">
+              <h3 className="text-2xl font-bold text-gradient">
+                Create Your First Job Position
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+                Establish job requirements to unlock AI-powered resume screening, automated coding challenges, and interactive speech-to-text video interviews.
+              </p>
             </div>
-            <Button onClick={handleCreateJobClick} className="w-48 font-semibold shadow-sm mt-2">
-              <Plus className="mr-2 h-4 w-4" />
-              Add JOB
+
+            {/* Feature Value Propositions Grid (Slightly larger horizontal layout) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full pt-1">
+              <div className="flex items-center gap-3.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 hover:border-border transition-colors text-left">
+                <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                  <svg className="h-5 w-5 text-primary" width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 2.26953V6.40007C14 6.96012 14 7.24015 14.109 7.45406C14.2049 7.64222 14.3578 7.7952 14.546 7.89108C14.7599 8.00007 15.0399 8.00007 15.6 8.00007H19.7305M16 13H8M16 17H8M10 9H8M14 2H8.8C7.11984 2 6.27976 2 5.63803 2.32698C5.07354 2.6146 4.6146 3.07354 4.32698 3.63803C4 4.27976 4 5.11984 4 6.8V17.2C4 18.8802 4 19.7202 4.32698 20.362C4.6146 20.9265 5.07354 21.3854 5.63803 21.673C6.27976 22 7.11984 22 8.8 22H15.2C16.8802 22 17.7202 22 18.362 21.673C18.9265 21.3854 19.3854 20.9265 19.673 20.362C20 19.7202 20 18.8802 20 17.2V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <div className="space-y-0.5">
+                  <h4 className="text-sm font-semibold text-foreground leading-none">AI Resume Screening</h4>
+                  <p className="text-xs text-muted-foreground leading-normal mt-1">
+                    Analyze resumes and rank match scores instantly.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 hover:border-border transition-colors text-left">
+                <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                  <svg className="h-5 w-5 text-primary" width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M17 17L22 12L17 7M7 7L2 12L7 17M14 3L10 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <div className="space-y-0.5">
+                  <h4 className="text-sm font-semibold text-foreground leading-none">Automated Testing</h4>
+                  <p className="text-xs text-muted-foreground leading-normal mt-1">
+                    Evaluate skills with MCQ, coding, or SQL tasks.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 hover:border-border transition-colors text-left">
+                <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                  <svg className="h-5 w-5 text-primary" width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22 8.93137C22 8.32555 22 8.02265 21.8802 7.88238C21.7763 7.76068 21.6203 7.69609 21.4608 7.70865C21.2769 7.72312 21.0627 7.93731 20.6343 8.36569L17 12L20.6343 15.6343C21.0627 16.0627 21.2769 16.2769 21.4608 16.2914C21.6203 16.3039 21.7763 16.2393 21.8802 16.1176C22 15.9774 22 15.6744 22 15.0686V8.93137Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 9.8C2 8.11984 2 7.27976 2.32698 6.63803C2.6146 6.07354 3.07354 5.6146 3.63803 5.32698C4.27976 5 5.11984 5 6.8 5H12.2C13.8802 5 14.7202 5 15.362 5.32698C15.9265 5.6146 16.3854 6.07354 16.673 6.63803C17 7.27976 17 8.11984 17 9.8V14.2C17 15.8802 17 16.7202 16.673 17.362C16.3854 17.9265 15.9265 18.3854 15.362 18.673C14.7202 19 13.8802 19 12.2 19H6.8C5.11984 19 4.27976 19 3.63803 18.673C3.07354 18.3854 2.6146 17.9265 2.32698 17.362C2 16.7202 2 15.8802 2 14.2V9.8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <div className="space-y-0.5">
+                  <h4 className="text-sm font-semibold text-foreground leading-none">AI Video Interviews</h4>
+                  <p className="text-xs text-muted-foreground leading-normal mt-1">
+                    Interactive audio-visual screening & evaluation.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleCreateJobClick}
+              className="w-52 font-semibold shadow-md bg-gradient-to-r from-primary to-primary/95 hover:from-primary/95 hover:to-primary text-primary-foreground transform hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 h-11 rounded-lg"
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              Create Job Position
             </Button>
-          </div>
+          </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredJobs.length === 0 ? (

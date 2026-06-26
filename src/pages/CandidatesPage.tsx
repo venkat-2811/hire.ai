@@ -27,6 +27,11 @@ import {
   Shield,
   Briefcase,
   UserX,
+  Copy,
+  Check,
+  Link2,
+  UserPlus,
+  Code,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
@@ -203,6 +208,25 @@ export default function CandidatesPage() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [candidateToEdit, setCandidateToEdit] = useState<any | null>(null);
 
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+
+  const hasCandidates = useMemo(() => {
+    if (!selectedJobId || !candidates) return false;
+    return candidates.some(c => (c as any).job_id === selectedJobId);
+  }, [candidates, selectedJobId]);
+
+  const copyJobLink = async (jobId: string) => {
+    const link = `${window.location.origin}/apply/${jobId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLinkId(jobId);
+      toast.success('Application link copied to clipboard!');
+      setTimeout(() => setCopiedLinkId(null), 2000);
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
   const activeJobs = useMemo(() => (jobs || []).filter(j => j.is_active), [jobs]);
   const allJobs = useMemo(() => jobs || [], [jobs]);
   const selectedJob = useMemo(() => allJobs.find((j) => j.id === selectedJobId) || null, [allJobs, selectedJobId]);
@@ -339,12 +363,12 @@ export default function CandidatesPage() {
       toast.error('QUESTIONS SHOULD BE EQUAL TO OR GREATER THAN 1');
       return;
     }
-    
+
     if (!isSalesforce && includeCoding && codingCount < 1) {
       toast.error('QUESTIONS SHOULD BE EQUAL TO OR GREATER THAN 1');
       return;
     }
-    
+
     if (includeSql && sqlCount < 1) {
       toast.error('QUESTIONS SHOULD BE EQUAL TO OR GREATER THAN 1');
       return;
@@ -479,7 +503,7 @@ export default function CandidatesPage() {
         });
         toast.success(`Interview invites are sent to ${data.invites_sent} candidate(s)`);
       }
-      
+
       setInterviewDialogOpen(false);
       setSelectedIds(new Set());
     } catch (e) {
@@ -551,22 +575,20 @@ export default function CandidatesPage() {
             <div className="flex rounded-lg border border-border overflow-hidden">
               <button
                 onClick={() => setActiveTab('active')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${
-                  activeTab === 'active'
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${activeTab === 'active'
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-background text-muted-foreground hover:text-foreground'
-                }`}
+                  }`}
               >
                 <Users className="h-3.5 w-3.5" />
                 Active
               </button>
               <button
                 onClick={() => setActiveTab('unassigned')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors border-l border-border ${
-                  activeTab === 'unassigned'
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors border-l border-border ${activeTab === 'unassigned'
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-background text-muted-foreground hover:text-foreground'
-                }`}
+                  }`}
               >
                 <UserX className="h-3.5 w-3.5" />
                 Unassigned
@@ -586,89 +608,89 @@ export default function CandidatesPage() {
           </div>
         </div>
 
-        {activeTab === 'active' && (
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="text-sm font-medium w-full sm:w-auto">Job</div>
-              <Select value={selectedJobId} onValueChange={(v) => {
-                handleJobChange(v);
-                setSelectedIds(new Set());
-                setStartJobId(v);
-              }}>
-                <SelectTrigger className="w-full sm:w-[320px]" disabled={jobsLoading || allJobs.length === 0}>
-                  <SelectValue placeholder={jobsLoading ? 'Loading jobs...' : 'Select a job'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {allJobs.map((j) => (
-                    <SelectItem key={j.id} value={j.id}>
-                      {j.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+        {activeTab === 'active' && allJobs.length > 0 && (
+          <Card>
+            <CardContent className="py-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="text-sm font-medium w-full sm:w-auto">Job</div>
+                <Select value={selectedJobId} onValueChange={(v) => {
+                  handleJobChange(v);
+                  setSelectedIds(new Set());
+                  setStartJobId(v);
+                }}>
+                  <SelectTrigger className="w-full sm:w-[320px]" disabled={jobsLoading || allJobs.length === 0}>
+                    <SelectValue placeholder={jobsLoading ? 'Loading jobs...' : 'Select a job'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allJobs.map((j) => (
+                      <SelectItem key={j.id} value={j.id}>
+                        {j.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Filters */}
-        {activeTab === 'active' && (
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-                <div className="relative w-full sm:flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search candidates..."
-                    className="pl-10 w-full"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full sm:w-auto"
-                  onClick={() => setShowFilters(!showFilters)}
-                >
-                  <Filter className="mr-2 h-4 w-4" />
-                  Filters
-                </Button>
-              </div>
-
-              {showFilters && (
-                <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
-                  <div className="flex items-center gap-2">
-                    <Label>Sort by:</Label>
-                    <Select value={sortField} onValueChange={(v: SortField) => setSortField(v)}>
-                      <SelectTrigger className="w-[140px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="name">Name</SelectItem>
-                        <SelectItem value="date">Date Applied</SelectItem>
-                        <SelectItem value="score">Score</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    >
-                      <ArrowUpDown className="h-4 w-4" />
-                    </Button>
+        {activeTab === 'active' && allJobs.length > 0 && hasCandidates && (
+          <Card>
+            <CardContent className="py-4">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+                  <div className="relative w-full sm:flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search candidates..."
+                      className="pl-10 w-full"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    onClick={() => setShowFilters(!showFilters)}
+                  >
+                    <Filter className="mr-2 h-4 w-4" />
+                    Filters
+                  </Button>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+
+                {showFilters && (
+                  <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
+                    <div className="flex items-center gap-2">
+                      <Label>Sort by:</Label>
+                      <Select value={sortField} onValueChange={(v: SortField) => setSortField(v)}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="name">Name</SelectItem>
+                          <SelectItem value="date">Date Applied</SelectItem>
+                          <SelectItem value="score">Score</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                      >
+                        <ArrowUpDown className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Bulk Actions */}
-        {activeTab === 'active' && selectedIds.size > 0 && (
+        {activeTab === 'active' && allJobs.length > 0 && hasCandidates && selectedIds.size > 0 && (
           <Card>
             <CardContent className="py-4">
               <div className="flex flex-wrap items-center gap-2 sm:gap-4">
@@ -699,272 +721,385 @@ export default function CandidatesPage() {
 
         {/* Grouped Candidates by Job */}
         {activeTab === 'active' && (
-        <div className="space-y-4">
-          {allJobs.length === 0 ? (
-            <div className="text-center py-20 bg-card rounded-2xl border border-border/80 shadow-sm flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto mt-8">
-              <div className="p-3 bg-primary/10 rounded-2xl">
-                <Briefcase className="h-10 w-10 text-primary" />
+          <div className="space-y-4">
+            {allJobs.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="text-center py-10 px-6 glass-card rounded-2xl border border-border/80 shadow-md flex flex-col items-center justify-center max-w-4xl mx-auto mt-6 space-y-6"
+              >
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-tr from-primary/25 to-info/25 rounded-2xl blur-lg animate-float opacity-75 animate-pulse" />
+                  <div className="relative p-3.5 bg-gradient-to-tr from-primary/10 to-info/10 border border-primary/20 rounded-2xl animate-float">
+                    <Briefcase className="h-9 w-9 text-primary" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 max-w-xl">
+                  <h3 className="text-2xl font-bold text-gradient">
+                    No Job Positions Created Yet
+                  </h3>
+                  <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+                    To start onboarding and screening candidates, you first need to establish a job description to map all assessment and interview records.
+                  </p>
+                </div>
+
+                {/* Step-by-Step recruitment flow (Slightly larger horizontal grid) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full pt-1">
+                  <div className="flex items-center gap-3.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 text-left">
+                    <div className="p-2 px-3 bg-primary/10 rounded-lg shrink-0 text-sm font-bold text-primary">
+                      1
+                    </div>
+                    <div className="space-y-0.5">
+                      <h4 className="text-sm font-semibold text-foreground leading-none">Define Job Description</h4>
+                      <p className="text-xs text-muted-foreground leading-normal mt-1">Specify role details and technology criteria.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 text-left">
+                    <div className="p-2 px-3 bg-primary/10 rounded-lg shrink-0 text-sm font-bold text-primary">
+                      2
+                    </div>
+                    <div className="space-y-0.5">
+                      <h4 className="text-sm font-semibold text-foreground leading-none">Onboard Candidates</h4>
+                      <p className="text-xs text-muted-foreground leading-normal mt-1">Invite candidates directly or share the apply page.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3.5 p-3.5 bg-muted/40 rounded-xl border border-border/60 text-left">
+                    <div className="p-2 px-3 bg-primary/10 rounded-lg shrink-0 text-sm font-bold text-primary">
+                      3
+                    </div>
+                    <div className="space-y-0.5">
+                      <h4 className="text-sm font-semibold text-foreground leading-none">Configure Challenges</h4>
+                      <p className="text-xs text-muted-foreground leading-normal mt-1">Set up tests, coding challenges, and AI interviews.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => navigate('/jobs/new')}
+                  className="w-48 font-semibold shadow-md bg-gradient-to-r from-primary to-primary/95 hover:from-primary/95 hover:to-primary text-primary-foreground transform hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 h-11 rounded-lg"
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Create Job Position
+                </Button>
+              </motion.div>
+            ) : !hasCandidates ? (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="text-center py-14 px-8 glass-card rounded-2xl border border-border/80 shadow-md flex flex-col items-center justify-center max-w-4xl mx-auto mt-6 space-y-7"
+              >
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-tr from-primary/25 to-info/25 rounded-2xl blur-lg animate-float opacity-75 animate-pulse" />
+                  <div className="relative p-4 bg-gradient-to-tr from-primary/10 to-info/10 border border-primary/20 rounded-2xl animate-float">
+                    <Users className="h-10 w-10 text-primary" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 max-w-xl">
+                  <h3 className="text-2xl font-bold text-gradient">
+                    No Candidates Onboarded Yet
+                  </h3>
+                  <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+                    There are no candidates assigned to the position <strong className="text-foreground">"{selectedJob?.title || 'this job'}"</strong> yet. Get started by utilizing the methods below.
+                  </p>
+                </div>
+
+                {/* Quick Actions Shortcuts (Slightly larger horizontal flex items with custom SVGs and high contrast hover buttons) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full pt-1">
+                  <div className="flex items-center gap-4 p-4.5 md:p-5 bg-muted/40 rounded-xl border border-border/60 hover:border-border transition-all duration-150 text-left w-full">
+                    <div className="p-2.5 bg-primary/10 rounded-lg shrink-0">
+                      <svg className="h-6 w-6 text-primary" width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 10V4M16 7H22M16 21V19.8C16 18.1198 16 17.2798 15.673 16.638C15.3854 16.0735 14.9265 15.6146 14.362 15.327C13.7202 15 12.8802 15 11.2 15H6.8C5.11984 15 4.27976 15 3.63803 15.327C3.07354 15.6146 2.6146 16.0735 2.32698 16.638C2 17.2798 2 18.1198 2 19.8V21M12.5 7.5C12.5 9.433 10.933 11 9 11C7.067 11 5.5 9.433 5.5 7.5C5.5 5.567 7.067 4 9 4C10.933 4 12.5 5.567 12.5 7.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </div>
+                    <div className="space-y-0.5 flex-1 min-w-0">
+                      <h4 className="text-[14px] font-semibold text-foreground leading-none">Add Candidate</h4>
+                      <p className="text-[12px] text-muted-foreground leading-normal mt-1">
+                        Enter details manually and upload resumes.
+                      </p>
+                    </div>
+                    <Button asChild variant="outline" size="sm" className="shrink-0 h-10 px-4 border-slate-400 dark:border-slate-800 shadow-sm bg-background hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all duration-200 text-sm font-semibold rounded-lg cursor-pointer">
+                      <Link to="/candidates/new">
+                        <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                      </Link>
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-4 p-4.5 md:p-5 bg-muted/40 rounded-xl border border-border/60 hover:border-border transition-all duration-150 text-left w-full">
+                    <div className="p-2.5 bg-primary/10 rounded-lg shrink-0">
+                      <svg className="h-6 w-6 text-primary" width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 17H7C4.23858 17 2 14.7614 2 12C2 9.23858 4.23858 7 7 7H9M15 17H17C19.7614 17 22 14.7614 22 12C22 9.23858 19.7614 7 17 7H15M7 12L17 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </div>
+                    <div className="space-y-0.5 flex-1 min-w-0">
+                      <h4 className="text-[14px] font-semibold text-foreground leading-none">Copy Application Link</h4>
+                      <p className="text-[12px] text-muted-foreground leading-normal mt-1">
+                        Share a public page where candidates can apply.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => selectedJobId && copyJobLink(selectedJobId)}
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 h-10 px-4 border-slate-400 dark:border-slate-800 shadow-sm bg-background hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all duration-200 text-sm font-semibold rounded-lg cursor-pointer"
+                    >
+                      {copiedLinkId === selectedJobId ? (
+                        <><Check className="mr-1 h-3.5 w-3.5 text-success" /> Copied</>
+                      ) : (
+                        <><Copy className="mr-1 h-3.5 w-3.5" /> Copy Link</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : Object.entries(candidatesByJob).length === 0 ? (
+              <div className="text-center py-16 bg-card rounded-2xl border border-border/80 shadow-sm flex flex-col items-center justify-center space-y-3 max-w-xl mx-auto mt-8">
+                <Search className="h-10 w-10 text-muted-foreground/60" />
+                <div className="space-y-1 text-center">
+                  <h3 className="text-lg font-bold text-foreground">No matching candidates</h3>
+                  <p className="text-sm text-muted-foreground">Adjust your search terms or filters to find other candidates.</p>
+                </div>
               </div>
-              <div className="space-y-1">
-                <h3 className="text-xl font-bold text-foreground">No Jobs are created yet.</h3>
-                <p className="text-sm text-muted-foreground">Please create a job posting first before managing candidates.</p>
-              </div>
-              <Button onClick={() => navigate('/jobs/new')} className="w-48 font-semibold shadow-sm mt-2">
-                <Plus className="mr-2 h-4 w-4" />
-                Add JOB
-              </Button>
-            </div>
-          ) : Object.entries(candidatesByJob).length === 0 ? (
-            <div className="text-center py-20 bg-card rounded-2xl border border-border/80 shadow-sm flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto mt-8">
-              <div className="p-3 bg-primary/10 rounded-2xl">
-                <Users className="h-10 w-10 text-primary" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-xl font-bold text-foreground">No Candidates are added to the job yet</h3>
-                <p className="text-sm text-muted-foreground">Onboard candidates to this job to start the screening process.</p>
-              </div>
-              <Button asChild className="w-48 font-semibold shadow-sm mt-2">
-                <Link to="/candidates/new">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Candidate
-                </Link>
-              </Button>
-            </div>
-          ) : (
-            Object.entries(candidatesByJob).map(([jobId, jobCandidates]) => (
-              <Collapsible key={jobId} defaultOpen className="w-full">
-                <Card>
-                  <CollapsibleTrigger asChild>
-                    <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-primary/10 rounded-lg">
-                            <Briefcase className="h-5 w-5 text-primary" />
+            ) : (
+              Object.entries(candidatesByJob).map(([jobId, jobCandidates]) => (
+                <Collapsible key={jobId} defaultOpen className="w-full">
+                  <Card>
+                    <CollapsibleTrigger asChild>
+                      <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-lg">
+                              <Briefcase className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-lg">{getJobTitle(jobId)}</CardTitle>
+                              <CardDescription>{jobCandidates.length} candidate(s)</CardDescription>
+                            </div>
                           </div>
-                          <div>
-                            <CardTitle className="text-lg">{getJobTitle(jobId)}</CardTitle>
-                            <CardDescription>{jobCandidates.length} candidate(s)</CardDescription>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={selectedIds.size === jobCandidates.length && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
+                              onCheckedChange={(checked) => {
+                                const newSet = new Set(selectedIds);
+                                if (checked) {
+                                  // Select all candidates in this job
+                                  jobCandidates.forEach(c => newSet.add(`${c.id}_${jobId}`));
+                                } else {
+                                  // Deselect all candidates in this job
+                                  jobCandidates.forEach(c => newSet.delete(`${c.id}_${jobId}`));
+                                }
+                                setSelectedIds(newSet);
+                              }}
+                            />
+                            <ChevronDown className="h-4 w-4" />
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Checkbox
-                            checked={selectedIds.size === jobCandidates.length && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
-                            onCheckedChange={(checked) => {
-                              const newSet = new Set(selectedIds);
-                              if (checked) {
-                                // Select all candidates in this job
-                                jobCandidates.forEach(c => newSet.add(`${c.id}_${jobId}`));
-                              } else {
-                                // Deselect all candidates in this job
-                                jobCandidates.forEach(c => newSet.delete(`${c.id}_${jobId}`));
-                              }
-                              setSelectedIds(newSet);
-                            }}
-                          />
-                          <ChevronDown className="h-4 w-4" />
-                        </div>
-                      </div>
-                    </CardHeader>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <CardContent className="p-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-12">
-                              <Checkbox
-                                checked={selectedIds.size === jobCandidates.length && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
-                                onCheckedChange={(checked) => {
-                                  const newSet = new Set(selectedIds);
-                                  if (checked) {
-                                    // Select all candidates in this job
-                                    jobCandidates.forEach(c => newSet.add(`${c.id}_${jobId}`));
-                                  } else {
-                                    // Deselect all candidates in this job
-                                    jobCandidates.forEach(c => newSet.delete(`${c.id}_${jobId}`));
-                                  }
-                                  setSelectedIds(newSet);
-                                }}
-                              />
-                            </TableHead>
-                            <TableHead>Candidate</TableHead>
-                            <TableHead>Resume ATS Score</TableHead>
-                            <TableHead>Assessment</TableHead>
-                            <TableHead>Interview</TableHead>
-                            <TableHead>Applied</TableHead>
-                            <TableHead className="w-12"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {jobCandidates.length === 0 ? (
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableHeader>
                             <TableRow>
-                              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                                No candidates in this job group.
-                              </TableCell>
+                              <TableHead className="w-12">
+                                <Checkbox
+                                  checked={selectedIds.size === jobCandidates.length && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
+                                  onCheckedChange={(checked) => {
+                                    const newSet = new Set(selectedIds);
+                                    if (checked) {
+                                      // Select all candidates in this job
+                                      jobCandidates.forEach(c => newSet.add(`${c.id}_${jobId}`));
+                                    } else {
+                                      // Deselect all candidates in this job
+                                      jobCandidates.forEach(c => newSet.delete(`${c.id}_${jobId}`));
+                                    }
+                                    setSelectedIds(newSet);
+                                  }}
+                                />
+                              </TableHead>
+                              <TableHead>Candidate</TableHead>
+                              <TableHead>Resume ATS Score</TableHead>
+                              <TableHead>Assessment</TableHead>
+                              <TableHead>Interview</TableHead>
+                              <TableHead>Applied</TableHead>
+                              <TableHead className="w-12"></TableHead>
                             </TableRow>
-                          ) : (
-                            jobCandidates.map((candidate, index) => (
-                              <motion.tr
-                                key={candidate.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.05 }}
-                                className={`group ${selectedIds.has(`${candidate.id}_${jobId}`) ? 'bg-primary/5' : ''}`}
-                              >
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedIds.has(`${candidate.id}_${jobId}`)}
-                                    onCheckedChange={() => toggleSelect(candidate.id, jobId)}
-                                  />
+                          </TableHeader>
+                          <TableBody>
+                            {jobCandidates.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                  No candidates in this job group.
                                 </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                      <span className="text-sm font-medium text-primary">
-                                        {candidate.full_name.split(' ').map(n => n[0]).join('')}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <p className="font-medium">{candidate.full_name}</p>
-                                      <p className="text-sm text-muted-foreground">{candidate.email}</p>
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {typeof (candidate as any).ats_score === 'number' ? (
-                                    <div className="flex items-center gap-2">
-                                      <ScoreBadge score={(candidate as any).ats_score} />
-                                      {(candidate as any).shortlisted && (
-                                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-success/10 text-success font-medium">
-                                          Shortlisted
+                              </TableRow>
+                            ) : (
+                              jobCandidates.map((candidate, index) => (
+                                <motion.tr
+                                  key={candidate.id}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: index * 0.05 }}
+                                  className={`group ${selectedIds.has(`${candidate.id}_${jobId}`) ? 'bg-primary/5' : ''}`}
+                                >
+                                  <TableCell>
+                                    <Checkbox
+                                      checked={selectedIds.has(`${candidate.id}_${jobId}`)}
+                                      onCheckedChange={() => toggleSelect(candidate.id, jobId)}
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                        <span className="text-sm font-medium text-primary">
+                                          {candidate.full_name.split(' ').map(n => n[0]).join('')}
                                         </span>
-                                      )}
+                                      </div>
+                                      <div>
+                                        <p className="font-medium">{candidate.full_name}</p>
+                                        <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                                      </div>
                                     </div>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">Not screened</span>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {(() => {
-                                    const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
-                                    const rawStatus = candidateAnalytics?.assessment_status;
-                                    const status = rawStatus === 'completed' || rawStatus === 'terminated'
-                                      ? 'completed'
-                                      : rawStatus === 'in_progress'
-                                        ? 'in_progress'
-                                        : 'pending';
-                                    const score = candidateAnalytics?.assessment_score;
-                                    if (status === 'completed' && typeof score === 'number') {
-                                      return (
-                                        <div className="flex items-center gap-2">
-                                          <ScoreBadge score={score} />
-                                          <StatusBadge status={status} />
-                                        </div>
-                                      );
-                                    }
-                                    return <StatusBadge status={status} />;
-                                  })()}
-                                </TableCell>
-                                <TableCell>
-                                  {(() => {
-                                    const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
-                                    const rawStatus = candidateAnalytics?.interview_status;
-                                    const status = rawStatus === 'completed' || rawStatus === 'terminated'
-                                      ? 'completed'
-                                      : rawStatus === 'in_progress'
-                                        ? 'in_progress'
-                                        : 'pending';
-                                    const score = candidateAnalytics?.interview_score;
-                                    if (status === 'completed' && typeof score === 'number') {
-                                      return (
-                                        <div className="flex items-center gap-2">
-                                          <ScoreBadge score={score} />
-                                          <StatusBadge status={status} />
-                                        </div>
-                                      );
-                                    }
-                                    return <StatusBadge status={status} />;
-                                  })()}
-                                </TableCell>
-                                <TableCell className="text-muted-foreground">
-                                  {candidate.applied_at
-                                    ? new Date(candidate.applied_at).toLocaleDateString()
-                                    : new Date(candidate.created_at).toLocaleDateString()}
-                                </TableCell>
-                                <TableCell>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm">
-                                        <MoreHorizontal className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem asChild>
-                                        <Link to={`/candidates/${candidate.id}${jobId ? `?job_id=${jobId}` : ''}`}>
-                                          <Eye className="mr-2 h-4 w-4" />
-                                          View Details
-                                        </Link>
-                                      </DropdownMenuItem>
-                                      {(candidate as any).applied_at && (
-                                        <DropdownMenuItem onClick={() => {
-                                          setCandidateToEdit(candidate);
-                                          setEditModalOpen(true);
-                                        }}>
-                                          <Pencil className="mr-2 h-4 w-4" />
-                                          Edit Details
+                                  </TableCell>
+                                  <TableCell>
+                                    {typeof (candidate as any).ats_score === 'number' ? (
+                                      <div className="flex items-center gap-2">
+                                        <ScoreBadge score={(candidate as any).ats_score} />
+                                        {(candidate as any).shortlisted && (
+                                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-success/10 text-success font-medium">
+                                            Shortlisted
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">Not screened</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {(() => {
+                                      const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                      const rawStatus = candidateAnalytics?.assessment_status;
+                                      const status = rawStatus === 'completed' || rawStatus === 'terminated'
+                                        ? 'completed'
+                                        : rawStatus === 'in_progress'
+                                          ? 'in_progress'
+                                          : 'pending';
+                                      const score = candidateAnalytics?.assessment_score;
+                                      if (status === 'completed' && typeof score === 'number') {
+                                        return (
+                                          <div className="flex items-center gap-2">
+                                            <ScoreBadge score={score} />
+                                            <StatusBadge status={status} />
+                                          </div>
+                                        );
+                                      }
+                                      return <StatusBadge status={status} />;
+                                    })()}
+                                  </TableCell>
+                                  <TableCell>
+                                    {(() => {
+                                      const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                      const rawStatus = candidateAnalytics?.interview_status;
+                                      const status = rawStatus === 'completed' || rawStatus === 'terminated'
+                                        ? 'completed'
+                                        : rawStatus === 'in_progress'
+                                          ? 'in_progress'
+                                          : 'pending';
+                                      const score = candidateAnalytics?.interview_score;
+                                      if (status === 'completed' && typeof score === 'number') {
+                                        return (
+                                          <div className="flex items-center gap-2">
+                                            <ScoreBadge score={score} />
+                                            <StatusBadge status={status} />
+                                          </div>
+                                        );
+                                      }
+                                      return <StatusBadge status={status} />;
+                                    })()}
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {candidate.applied_at
+                                      ? new Date(candidate.applied_at).toLocaleDateString()
+                                      : new Date(candidate.created_at).toLocaleDateString()}
+                                  </TableCell>
+                                  <TableCell>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="sm">
+                                          <MoreHorizontal className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem asChild>
+                                          <Link to={`/candidates/${candidate.id}${jobId ? `?job_id=${jobId}` : ''}`}>
+                                            <Eye className="mr-2 h-4 w-4" />
+                                            View Details
+                                          </Link>
                                         </DropdownMenuItem>
-                                      )}
-                                      <DropdownMenuItem onClick={() => {
-                                        setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
-                                        setStartJobId(jobId);
-                                        setAssessmentDialogOpen(true);
-                                      }}>
-                                        <FileText className="mr-2 h-4 w-4" />
-                                        Send Assessment
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => {
-                                        setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
-                                        setStartJobId(jobId);
-                                        setInterviewMode('ai');
-                                        setInterviewDialogOpen(true);
-                                      }}>
-                                        <Play className="mr-2 h-4 w-4" />
-                                        Send AI Interview
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => {
-                                        setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
-                                        setStartJobId(jobId);
-                                        setInterviewMode('manual');
-                                        setInterviewDialogOpen(true);
-                                      }}>
-                                        <MessageSquare className="mr-2 h-4 w-4" />
-                                        Manual Interview
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        className="text-destructive"
-                                        onClick={() => {
-                                          setCandidateToDelete({ id: candidate.id, jobId });
-                                          setDeleteDialogOpen(true);
-                                        }}
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Delete
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </TableCell>
-                              </motion.tr>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </CollapsibleContent>
-                </Card>
-              </Collapsible>
-            ))
-          )}
-        </div>
+                                        {(candidate as any).applied_at && (
+                                          <DropdownMenuItem onClick={() => {
+                                            setCandidateToEdit(candidate);
+                                            setEditModalOpen(true);
+                                          }}>
+                                            <Pencil className="mr-2 h-4 w-4" />
+                                            Edit Details
+                                          </DropdownMenuItem>
+                                        )}
+                                        <DropdownMenuItem onClick={() => {
+                                          setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
+                                          setStartJobId(jobId);
+                                          setAssessmentDialogOpen(true);
+                                        }}>
+                                          <FileText className="mr-2 h-4 w-4" />
+                                          Send Assessment
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => {
+                                          setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
+                                          setStartJobId(jobId);
+                                          setInterviewMode('ai');
+                                          setInterviewDialogOpen(true);
+                                        }}>
+                                          <Play className="mr-2 h-4 w-4" />
+                                          Send AI Interview
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => {
+                                          setSelectedIds(new Set([`${candidate.id}_${jobId}`]));
+                                          setStartJobId(jobId);
+                                          setInterviewMode('manual');
+                                          setInterviewDialogOpen(true);
+                                        }}>
+                                          <MessageSquare className="mr-2 h-4 w-4" />
+                                          Manual Interview
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          className="text-destructive"
+                                          onClick={() => {
+                                            setCandidateToDelete({ id: candidate.id, jobId });
+                                            setDeleteDialogOpen(true);
+                                          }}
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </TableCell>
+                                </motion.tr>
+                              ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+              ))
+            )}
+          </div>
         )}
 
         {/* ── Unassigned Candidates ─────────────────────────────── */}
@@ -1233,7 +1368,7 @@ export default function CandidatesPage() {
                     min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
                   />
                   <div className="text-[10px] text-muted-foreground leading-tight">
-                   Default: 48h from now. The link will expire after this deadline.
+                    Default: 48h from now. The link will expire after this deadline.
                     Candidates who miss it get 0.
                   </div>
                 </div>
@@ -1296,7 +1431,7 @@ export default function CandidatesPage() {
             <DialogHeader>
               <DialogTitle>Send Interview Invites</DialogTitle>
               <DialogDescription>
-                {interviewMode === 'ai' 
+                {interviewMode === 'ai'
                   ? `Send AI interview invitations to ${selectedIds.size} selected candidate(s).`
                   : `Set manual interview mode for ${selectedIds.size} selected candidate(s).`}
               </DialogDescription>
@@ -1318,7 +1453,7 @@ export default function CandidatesPage() {
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      {interviewMode === 'ai' 
+                      {interviewMode === 'ai'
                         ? 'Candidates will complete an AI-powered interview with speech recognition and camera proctoring.'
                         : 'You will conduct interviews outside the platform and manually enter scores later.'}
                     </p>
@@ -1467,7 +1602,7 @@ export default function CandidatesPage() {
                 {sendingInvites ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
                 ) : (
-                  interviewMode === 'ai' 
+                  interviewMode === 'ai'
                     ? <><Play className="mr-2 h-4 w-4" />Send Invites</>
                     : <><CheckSquare className="mr-2 h-4 w-4" />Save Evaluation</>
                 )}
