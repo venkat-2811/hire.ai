@@ -34,13 +34,29 @@ export function useScreenshotCapture() {
   const requestScreenShare = useCallback(async (): Promise<boolean> => {
     try {
       const stream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: { width: 1280, height: 720, frameRate: 1 },
+        video: { 
+          width: 1280, 
+          height: 720, 
+          frameRate: 1,
+          displaySurface: "monitor"
+        },
         audio: false,
       });
+
+      // Strict check for entire screen (monitor)
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings();
+      if (settings && settings.displaySurface && settings.displaySurface !== "monitor") {
+        stream.getTracks().forEach((t: any) => t.stop());
+        alert("Proctoring requires you to share your ENTIRE SCREEN, not just a window or tab. Please try again.");
+        setPermission('denied');
+        return false;
+      }
+
       screenStreamRef.current = stream;
 
       // If user stops sharing via browser UI, mark as denied
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      track?.addEventListener('ended', () => {
         screenStreamRef.current = null;
         setPermission('denied');
       });

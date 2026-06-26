@@ -167,6 +167,12 @@ async def submit_application(
             [{"id": candidate_id, **candidate_payload, "created_at": _utc_now_iso()}],
         )
 
+        # Increment billing for the job creator
+        recruiter_id = job.get("created_by")
+        if recruiter_id:
+            from app.utils.billing_helpers import increment_candidates_consumed
+            await increment_candidates_consumed(db, recruiter_id)
+
     # Create job application
     import uuid
 

@@ -482,6 +482,11 @@ export default function AIInterviewPage() {
     }
   }, []);
 
+  // Prevent right click
+  const handleContextMenu = useCallback((e: Event) => {
+    e.preventDefault();
+  }, []);
+
   // Proctoring listeners
   useEffect(() => {
     if (!interviewData || isTerminated || isCompleted || showReadyScreen) return;
@@ -490,14 +495,16 @@ export default function AIInterviewPage() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [interviewData, isTerminated, isCompleted, showReadyScreen, handleFullscreenChange, handleVisibilityChange, handleWindowBlur, handleWindowFocus]);
+  }, [interviewData, isTerminated, isCompleted, showReadyScreen, handleFullscreenChange, handleVisibilityChange, handleWindowBlur, handleWindowFocus, handleContextMenu]);
 
   // Ensure video stream stays attached after transitioning out of setup screen
   useEffect(() => {

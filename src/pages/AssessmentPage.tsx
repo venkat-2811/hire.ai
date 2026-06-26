@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -3038,7 +3039,7 @@ export default function AssessmentPage() {
                           {problemTab === "description" ? (
                             <>
                               <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:bg-muted/50 prose-pre:border">
-                                <ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                   {currentCoding.description}
                                 </ReactMarkdown>
                               </div>
@@ -3059,13 +3060,13 @@ export default function AssessmentPage() {
                                             <span className="text-muted-foreground">
                                               Input:
                                             </span>{" "}
-                                            {renderSafe(ex.input)}
+                                            <pre className="mt-1 p-2 bg-muted/50 rounded-md whitespace-pre-wrap">{renderSafe(ex.input)}</pre>
                                           </div>
                                           <div>
                                             <span className="text-muted-foreground">
                                               Output:
                                             </span>{" "}
-                                            {renderSafe(ex.output)}
+                                            <pre className="mt-1 p-2 bg-muted/50 rounded-md whitespace-pre-wrap">{renderSafe(ex.output)}</pre>
                                           </div>
                                           {ex.explanation && (
                                             <div>
@@ -3926,7 +3927,7 @@ export default function AssessmentPage() {
                           {problemTab === "description" ? (
                             <>
                               <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:bg-muted/50 prose-pre:border">
-                                <ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                   {sqlChallenges[currentSqlIndex].description}
                                 </ReactMarkdown>
                               </div>
@@ -3950,13 +3951,13 @@ export default function AssessmentPage() {
                                             <span className="text-muted-foreground">
                                               Input:
                                             </span>{" "}
-                                            {renderSafe(ex.input)}
+                                            <pre className="mt-1 p-2 bg-muted/50 rounded-md whitespace-pre-wrap">{renderSafe(ex.input)}</pre>
                                           </div>
                                           <div>
                                             <span className="text-muted-foreground">
                                               Output:
                                             </span>{" "}
-                                            {renderSafe(ex.output)}
+                                            <pre className="mt-1 p-2 bg-muted/50 rounded-md whitespace-pre-wrap">{renderSafe(ex.output)}</pre>
                                           </div>
                                           {ex.explanation && (
                                             <div>
