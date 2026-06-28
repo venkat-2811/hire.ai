@@ -12,7 +12,38 @@ import { Label } from '@/components/ui/label';
 import { useState, useEffect } from 'react';
 import { type Profile } from '@/lib/api';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { motion } from 'framer-motion';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { motion, type Variants } from 'framer-motion';
+
+const TIMEZONES = [
+  'UTC',
+  'Asia/Kolkata',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'America/Toronto',
+  'America/Vancouver',
+  'Australia/Sydney',
+  'Asia/Singapore',
+  'Asia/Dubai',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Europe/Amsterdam',
+  'Europe/Dublin',
+  'Pacific/Auckland',
+  'Africa/Johannesburg',
+];
+
+function LockIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
 
 export default function ProfilePage() {
   const { user, loading } = useRequireAuth();
@@ -22,7 +53,7 @@ export default function ProfilePage() {
   const [formData, setFormData] = useState<Partial<Profile>>({});
 
   useEffect(() => {
-    if (profile) {
+    if (profile && Object.keys(formData).length === 0) {
       setFormData({
         company_name: profile.company_name || '',
         organization_email: profile.organization_email || user?.email || '',
@@ -59,18 +90,18 @@ export default function ProfilePage() {
     );
   }
 
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { y: 16, opacity: 0 },
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 320, damping: 26 } },
   };
 
   /** Shared class for editable inputs */
-  const editableInput = 'pl-9 border-border/70 bg-background hover:border-primary/40 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 transition-all placeholder:text-muted-foreground/50';
+  const editableInput = 'pl-9 border border-input shadow-sm bg-background hover:border-primary/50 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 transition-all placeholder:text-muted-foreground/50';
 
   /** Shared class for read-only / disabled inputs */
   const readonlyInput = 'pl-9 bg-muted/40 cursor-not-allowed border-muted text-muted-foreground select-none';
@@ -100,8 +131,7 @@ export default function ProfilePage() {
 
             {/* Text */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <Sparkles className="h-4 w-4 text-primary" />
+              <div className="flex items-center mb-1">
                 <span className="text-xs font-semibold uppercase tracking-widest text-primary">Organization Profile</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground truncate">
@@ -203,24 +233,27 @@ export default function ProfilePage() {
                               className={readonlyInput}
                               placeholder="e.g. Acme Corp"
                             />
+                            <LockIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground/40" />
                           </div>
+                          <p className="text-[13px] text-muted-foreground mt-1.5 flex items-start gap-1.5 leading-snug">
+                            <LockIcon className="h-3.5 w-3.5 shrink-0 mt-0.5" /> 
+                            <span>Company Name is locked. Please contact Support if you need to update it.</span>
+                          </p>
                         </div>
 
-                        {/* Website – read-only */}
+                        {/* Website – editable */}
                         <div className="space-y-2">
                           <Label htmlFor="company_website" className="text-sm font-medium flex items-center gap-1.5">
                             Website URL
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-normal">locked</span>
                           </Label>
                           <div className="relative">
-                            <LinkIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground/60" />
+                            <LinkIcon className="absolute left-3 top-2.5 h-4 w-4 text-primary/50" />
                             <Input
                               id="company_website"
                               name="company_website"
                               value={formData.company_website || ''}
-                              readOnly
-                              disabled
-                              className={readonlyInput}
+                              onChange={handleChange}
+                              className={editableInput}
                               placeholder="e.g. https://acmecorp.com"
                             />
                           </div>
@@ -395,17 +428,17 @@ export default function ProfilePage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
 
                         <div className="space-y-2">
-                          <Label htmlFor="preferred_timezone" className="text-sm font-medium">Preferred Timezone</Label>
+                          <Label className="text-sm font-medium">Preferred Timezone</Label>
                           <div className="relative">
-                            <Clock className="absolute left-3 top-2.5 h-4 w-4 text-amber-500/60" />
-                            <Input
-                              id="preferred_timezone"
-                              name="preferred_timezone"
-                              value={formData.preferred_timezone || ''}
-                              onChange={handleChange}
-                              className={editableInput}
-                              placeholder="e.g. PST, UTC+5:30"
-                            />
+                            <Clock className="absolute left-3 top-2.5 h-4 w-4 text-amber-500/60 z-10" />
+                            <Select value={formData.preferred_timezone || undefined} onValueChange={(v) => setFormData(prev => ({ ...prev, preferred_timezone: v }))}>
+                              <SelectTrigger className={editableInput}>
+                                <SelectValue placeholder="Select Your Timezone" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TIMEZONES.map((tz) => (<SelectItem key={tz} value={tz}>{tz}</SelectItem>))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
 
@@ -439,10 +472,34 @@ export default function ProfilePage() {
                     <CardContent className="pt-2">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
 
-                        {/* Email – read-only */}
+                        {/* Login Email – read-only */}
+                        <div className="space-y-2">
+                          <Label htmlFor="login_email" className="text-sm font-medium flex items-center gap-1.5">
+                            Login Email
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-normal">locked</span>
+                          </Label>
+                          <div className="relative">
+                            <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground/60" />
+                            <Input
+                              id="login_email"
+                              name="login_email"
+                              type="email"
+                              value={user?.email || ''}
+                              readOnly
+                              disabled
+                              className={readonlyInput}
+                            />
+                            <LockIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground/40" />
+                          </div>
+                          <p className="text-[13px] text-muted-foreground mt-1.5 leading-snug">
+                            This is your secure authentication email from Clerk. It cannot be changed here.
+                          </p>
+                        </div>
+
+                        {/* Organization Email – read-only */}
                         <div className="space-y-2">
                           <Label htmlFor="organization_email" className="text-sm font-medium flex items-center gap-1.5">
-                            Organization / Login Email
+                            Organization Email
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-normal">locked</span>
                           </Label>
                           <div className="relative">
@@ -451,15 +508,17 @@ export default function ProfilePage() {
                               id="organization_email"
                               name="organization_email"
                               type="email"
-                              value={formData.organization_email || user?.email || ''}
+                              value={formData.organization_email || ''}
                               readOnly
                               disabled
                               className={readonlyInput}
+                              placeholder="e.g. contact@company.com"
                             />
+                            <LockIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground/40" />
                           </div>
-                          <p className="text-[11px] text-muted-foreground font-medium mt-1 flex items-center gap-1.5">
-                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
-                            Your email cannot be changed. Contact support for modifications.
+                          <p className="text-[13px] text-muted-foreground mt-1.5 flex items-start gap-1.5 leading-snug">
+                            <LockIcon className="h-3.5 w-3.5 shrink-0 mt-0.5" /> 
+                            <span>Organization Email is locked. Please contact Support if you need to update it.</span>
                           </p>
                         </div>
 

@@ -21,8 +21,24 @@ import { formatPrice, getPlansForCurrency, type Currency, type PlanId } from '@/
 const COMPANY_SIZES = ['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'];
 
 const TIMEZONES = [
-  'UTC', 'Asia/Kolkata', 'America/New_York', 'America/Los_Angeles',
-  'Europe/London', 'Europe/Berlin', 'Asia/Singapore', 'Australia/Sydney',
+  'UTC',
+  'Asia/Kolkata',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'America/Toronto',
+  'America/Vancouver',
+  'Australia/Sydney',
+  'Asia/Singapore',
+  'Asia/Dubai',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Europe/Amsterdam',
+  'Europe/Dublin',
+  'Pacific/Auckland',
+  'Africa/Johannesburg',
 ];
 
 const COUNTRY_OPTIONS = [
@@ -36,6 +52,10 @@ const COUNTRY_OPTIONS = [
   { code: 'DE', label: 'Germany' },
   { code: 'FR', label: 'France' },
   { code: 'NL', label: 'Netherlands' },
+  { code: 'IE', label: 'Ireland' },
+  { code: 'NZ', label: 'New Zealand' },
+  { code: 'ZA', label: 'South Africa' },
+  { code: 'OTHER', label: 'Other' },
 ];
 
 const PLAN_UI_META: Record<PlanId, { icon: typeof Sparkles; gradient: string; cardBg: string; cta: string; popular?: boolean }> = {
@@ -98,14 +118,15 @@ export default function OnboardingPage() {
     headquarters_location: profile?.headquarters_location ?? '',
     hiring_regions: profile?.hiring_regions ?? '',
     hiring_roles: profile?.hiring_roles ?? '',
-    preferred_timezone: profile?.preferred_timezone ?? 'Asia/Kolkata',
+    preferred_timezone: profile?.preferred_timezone ?? '',
     country: profile?.country ?? '',
     contact_phone: profile?.contact_phone ?? '',
-  }), [profile]);
+  }), [profile, user?.firstName, user?.lastName]);
 
   const [form, setForm] = useState(initial);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { country, currency: detectedCurrency, isLoading: geoLoading } = useCountryDetection({
+  const { country, currency: detectedCurrency, isLoading: geoLoading, isIndia } = useCountryDetection({
     explicitCountry: form.country,
     profileCountry: profile?.country,
   });
@@ -177,13 +198,51 @@ export default function OnboardingPage() {
 
   const onChange = (key: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (errors[key]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
   };
 
   const handleStep1Submit = async () => {
-    if (!form.organization_email.trim()) return;
-    if (!form.company_name.trim()) return;
-    if (needsName && (!form.first_name.trim() || !form.last_name.trim())) {
-      toast.error('First Name and Last Name are required');
+    const newErrors: Record<string, string> = {};
+    if (!form.organization_email.trim()) {
+      newErrors.organization_email = 'Organization Email is required';
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(form.organization_email.trim())) {
+        newErrors.organization_email = 'Please enter a valid organization email address (e.g., user@company.com)';
+      }
+    }
+    if (!form.company_name.trim()) {
+      newErrors.company_name = 'Company Name is required';
+    }
+    if (needsName) {
+      if (!form.first_name.trim()) newErrors.first_name = 'First Name is required';
+      if (!form.last_name.trim()) newErrors.last_name = 'Last Name is required';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      toast.error('Please fix the highlighted errors');
+      const firstErrorKey = Object.keys(newErrors)[0];
+      const idMap: Record<string, string> = {
+        organization_email: 'orgEmail',
+        company_name: 'companyName',
+        first_name: 'firstName',
+        last_name: 'lastName'
+      };
+      const elementId = idMap[firstErrorKey];
+      if (elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.focus();
+        }
+      }
       return;
     }
 
@@ -306,24 +365,28 @@ export default function OnboardingPage() {
                   {needsName && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2 pb-4 border-b">
                       <div className="space-y-2">
-                        <Label htmlFor="firstName">Your First Name *</Label>
-                        <Input id="firstName" placeholder="John" value={form.first_name} onChange={(e) => onChange('first_name', e.target.value)} />
+                        <Label htmlFor="firstName" className={errors.first_name ? "text-red-500" : ""}>Your First Name *</Label>
+                        <Input id="firstName" className={errors.first_name ? "border-red-500 focus-visible:ring-red-500" : ""} placeholder="John" value={form.first_name} onChange={(e) => onChange('first_name', e.target.value)} />
+                        {errors.first_name && <p className="text-xs text-red-500">{errors.first_name}</p>}
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="lastName">Your Last Name *</Label>
-                        <Input id="lastName" placeholder="Doe" value={form.last_name} onChange={(e) => onChange('last_name', e.target.value)} />
+                        <Label htmlFor="lastName" className={errors.last_name ? "text-red-500" : ""}>Your Last Name *</Label>
+                        <Input id="lastName" className={errors.last_name ? "border-red-500 focus-visible:ring-red-500" : ""} placeholder="Doe" value={form.last_name} onChange={(e) => onChange('last_name', e.target.value)} />
+                        {errors.last_name && <p className="text-xs text-red-500">{errors.last_name}</p>}
                       </div>
                     </div>
                   )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="orgEmail">Organization Email *</Label>
-                      <Input id="orgEmail" type="email" placeholder="you@company.com" value={form.organization_email} onChange={(e) => onChange('organization_email', e.target.value)} />
+                      <Label htmlFor="orgEmail" className={errors.organization_email ? "text-red-500" : ""}>Organization Email *</Label>
+                      <Input id="orgEmail" className={errors.organization_email ? "border-red-500 focus-visible:ring-red-500" : ""} type="email" placeholder="you@company.com" value={form.organization_email} onChange={(e) => onChange('organization_email', e.target.value)} />
+                      {errors.organization_email && <p className="text-xs text-red-500">{errors.organization_email}</p>}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="companyName">Company Name *</Label>
-                      <Input id="companyName" placeholder="Acme Inc" value={form.company_name} onChange={(e) => onChange('company_name', e.target.value)} />
+                      <Label htmlFor="companyName" className={errors.company_name ? "text-red-500" : ""}>Company Name *</Label>
+                      <Input id="companyName" className={errors.company_name ? "border-red-500 focus-visible:ring-red-500" : ""} placeholder="Your Company" value={form.company_name} onChange={(e) => onChange('company_name', e.target.value)} />
+                      {errors.company_name && <p className="text-xs text-red-500">{errors.company_name}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="website">Company Website</Label>
@@ -352,17 +415,17 @@ export default function OnboardingPage() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="hq">Headquarters Location</Label>
-                      <Input id="hq" placeholder="Bengaluru, India" value={form.headquarters_location} onChange={(e) => onChange('headquarters_location', e.target.value)} />
+                      <Label htmlFor="hq">Headquarters (City / State)</Label>
+                      <Input id="hq" placeholder={isIndia ? "e.g. Bengaluru, Karnataka" : "e.g. San Francisco, CA"} value={form.headquarters_location} onChange={(e) => onChange('headquarters_location', e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="phone">Contact Phone</Label>
-                      <Input id="phone" placeholder="+91 9xxxx xxxxx" value={form.contact_phone} onChange={(e) => onChange('contact_phone', e.target.value)} />
+                      <Input id="phone" placeholder={isIndia ? "+91 98765 43210" : "+1 (555) 000-0000"} value={form.contact_phone} onChange={(e) => onChange('contact_phone', e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label>Preferred Timezone</Label>
-                      <Select value={form.preferred_timezone} onValueChange={(v) => onChange('preferred_timezone', v)}>
-                        <SelectTrigger><SelectValue placeholder="Select timezone" /></SelectTrigger>
+                      <Select value={form.preferred_timezone || undefined} onValueChange={(v) => onChange('preferred_timezone', v)}>
+                        <SelectTrigger><SelectValue placeholder="Select Your Timezone" /></SelectTrigger>
                         <SelectContent>
                           {TIMEZONES.map((tz) => (<SelectItem key={tz} value={tz}>{tz}</SelectItem>))}
                         </SelectContent>
@@ -376,11 +439,11 @@ export default function OnboardingPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="regions">Hiring Regions (comma-separated)</Label>
-                    <Textarea id="regions" placeholder="India, US, Remote..." value={form.hiring_regions} onChange={(e) => onChange('hiring_regions', e.target.value)} />
+                    <Textarea id="regions" placeholder={isIndia ? "e.g. India, APAC, Remote Worldwide..." : "e.g. US, Canada, Remote Worldwide..."} value={form.hiring_regions} onChange={(e) => onChange('hiring_regions', e.target.value)} />
                   </div>
 
                   <div className="flex justify-end">
-                    <Button onClick={handleStep1Submit} disabled={updateProfile.isPending || !form.organization_email.trim() || !form.company_name.trim() || (needsName && (!form.first_name.trim() || !form.last_name.trim()))}>
+                    <Button onClick={handleStep1Submit} disabled={updateProfile.isPending}>
                       {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Continue
                       <ArrowRight className="ml-2 h-4 w-4" />

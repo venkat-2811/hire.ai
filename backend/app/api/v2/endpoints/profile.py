@@ -139,24 +139,30 @@ async def update_profile(payload: Dict[str, Any], user: ClerkUser = Depends(requ
     def _fetch():
         return db.client.from_("profiles").select("*").eq("user_id", user.id).maybe_single().execute()
 
-    # Remove keys with value None if the key wasn't present in payload
+    # Only retain explicitly allowed keys in the update dict
+    allowed_keys = {
+        "organization_email",
+        "company_name",
+        "company_website",
+        "company_size",
+        "industry",
+        "headquarters_location",
+        "country",
+        "hiring_regions",
+        "hiring_roles",
+        "preferred_timezone",
+        "contact_phone",
+        "first_name",
+        "last_name",
+        "full_name",
+        "updated_at",
+        "onboarding_completed",
+        "onboarding_completed_at"
+    }
+    
     for k in list(update.keys()):
-        if k in ("updated_at", "onboarding_completed", "onboarding_completed_at"):
-            continue
-        if k not in payload and k not in {
-            "organization_email",
-            "company_name",
-            "company_website",
-            "company_size",
-            "industry",
-            "headquarters_location",
-            "country",
-            "hiring_regions",
-            "hiring_roles",
-            "preferred_timezone",
-            "contact_phone",
-        }:
-            continue
+        if k not in allowed_keys:
+            del update[k]
 
     # Upsert behavior
     def _fetch_existing():

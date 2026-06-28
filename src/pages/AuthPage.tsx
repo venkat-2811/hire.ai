@@ -41,8 +41,9 @@ export default function AuthPage() {
       </Link>
 
       {/* Left Panel - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary/90 to-info/80 p-12 flex-col justify-between">
-        <div className="space-y-8">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary/90 to-info/80">
+        <div className="sticky top-0 h-screen w-full p-12 flex flex-col justify-between">
+          <div className="space-y-8">
           {/* Desktop Back Button */}
           <Link
             to="/"
@@ -96,9 +97,9 @@ export default function AuthPage() {
 
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Roles Supported', value: '3+' },
-            { label: 'AI Accuracy', value: '95%' },
-            { label: 'Time Saved', value: '70%' },
+            { label: 'Job Roles', value: '50+' },
+            { label: 'Hiring Stages', value: '3' },
+            { label: 'Powered Screening', value: 'AI' },
           ].map((stat, i) => (
             <motion.div
               key={stat.label}
@@ -111,6 +112,7 @@ export default function AuthPage() {
               <div className="text-sm text-white/60">{stat.label}</div>
             </motion.div>
           ))}
+        </div>
         </div>
       </div>
 

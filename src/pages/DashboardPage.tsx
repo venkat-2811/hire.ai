@@ -205,13 +205,19 @@ export default function DashboardPage() {
             className="lg:col-span-2"
           >
             {!hasJobs && !jobsLoading ? (
-              <Card className="h-full min-h-[300px] flex items-center justify-center border-dashed border-2">
-                <CardContent className="flex flex-col items-center justify-center py-12 space-y-4">
-                  <p className="font-semibold text-foreground text-lg">No Jobs are created yet.</p>
-                  <Button asChild className="w-48 font-semibold shadow-sm border-2 border-foreground/20 hover:border-foreground/50 transition-colors">
+              <Card className="h-full min-h-[340px] flex items-center justify-center border-dashed border-2 bg-gradient-to-br from-background to-muted/20">
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 shadow-inner ring-1 ring-primary/20">
+                    <Briefcase className="h-8 w-8 text-primary" />
+                  </div>
+                  <h3 className="font-semibold text-foreground text-xl tracking-tight mb-2">No jobs created yet</h3>
+                  <p className="text-muted-foreground max-w-sm mb-8 text-sm">
+                    Start building your hiring pipeline by creating your first job opening. Get ready to find your next great hire!
+                  </p>
+                  <Button asChild size="lg" className="font-semibold shadow-md hover:shadow-lg transition-all rounded-full px-8">
                     <Link to="/jobs/new">
-                      <Plus className="mr-2 h-4 w-4" />
-                      CREATE JOB
+                      <Plus className="mr-2 h-5 w-5" />
+                      Create Your First Job
                     </Link>
                   </Button>
                 </CardContent>

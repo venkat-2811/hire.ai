@@ -230,9 +230,9 @@ export default function LandingPage() {
               className="mt-12 grid grid-cols-3 gap-6"
             >
               {[
-                { value: '3+', label: 'Roles Supported' },
-                { value: '95%', label: 'AI Accuracy' },
-                { value: '70%', label: 'Time Saved' },
+                { value: '50+', label: 'Job Roles' },
+                { value: '3', label: 'Hiring Stages' },
+                { value: 'AI', label: 'Powered Screening' },
               ].map((stat) => (
                 <div key={stat.label}>
                   <div className="text-2xl md:text-3xl font-bold text-foreground">{stat.value}</div>

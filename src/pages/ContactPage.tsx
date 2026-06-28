@@ -8,9 +8,11 @@ import { Mail, Send, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Footer from '@/components/layout/Footer';
 import Navbar from '@/components/layout/Navbar';
+import { useCountryDetection } from '@/hooks/useCountryDetection';
 
 const ContactPage = () => {
   const { toast } = useToast();
+  const { isIndia } = useCountryDetection();
   const [isFirstVisit, setIsFirstVisit] = useState(true);
 
   useEffect(() => {
@@ -250,7 +252,7 @@ const ContactPage = () => {
                     type="tel"
                     value={formData.phone}
                     onChange={handleChange}
-                    placeholder="+1 (555) 000-0000"
+                    placeholder={isIndia ? "+91 98765 43210" : "+1 (555) 000-0000"}
                     className="rounded-lg"
                   />
                 </div>
