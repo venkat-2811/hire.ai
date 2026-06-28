@@ -207,6 +207,7 @@ export default function NewCandidatePage() {
     const currentIndex = steps.indexOf(currentStep);
     if (currentIndex > 0) {
       setCurrentStep(steps[currentIndex - 1]);
+      setConsentGiven(false);
     }
   };
 
@@ -285,8 +286,11 @@ export default function NewCandidatePage() {
 
           runAtsIfPossible();
         },
-        onError: () => {
-          toast.error('Failed to create candidate');
+        onError: (err: any) => {
+          const errMsg = err?.response?.data?.detail || err?.message || '';
+          if (!errMsg.toLowerCase().includes('limit')) {
+            toast.error('Failed to create candidate');
+          }
           setCurrentStep('consent');
           setIsProcessing(false);
         }

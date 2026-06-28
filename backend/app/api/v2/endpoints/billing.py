@@ -346,6 +346,7 @@ async def billing_webhook(request: Request):
                         "subscription_status": "active",
                         "subscription_id": obj.get("subscription") or obj.get("id"),
                         "stripe_payment_id": obj.get("customer") or obj.get("payment_intent"),
+                        "candidates_consumed": 0,
                         "plan_selected_at": now.isoformat(),
                         "updated_at": now.isoformat(),
                     })
@@ -471,26 +472,48 @@ async def billing_webhook(request: Request):
                         if current_period_end else now.isoformat()
                     )
 
+                    is_renewal = False
+                    current_period_start = obj.get("current_period_start")
+                    db_cycle_start_str = sub.get("billing_cycle_start")
+                    if current_period_start and db_cycle_start_str:
+                        incoming_start_dt = datetime.fromtimestamp(current_period_start, tz=timezone.utc)
+                        try:
+                            # Handle potential Z suffix
+                            db_cycle_start_clean = db_cycle_start_str.replace("Z", "+00:00")
+                            db_cycle_start_dt = datetime.fromisoformat(db_cycle_start_clean)
+                            if incoming_start_dt > db_cycle_start_dt:
+                                is_renewal = True
+                        except ValueError:
+                            pass
+
                     def _sync_profile():
+                        update_payload = {
+                            "subscription_status": db_status,
+                            "updated_at": now.isoformat(),
+                        }
+                        if is_renewal:
+                            update_payload["candidates_consumed"] = 0
+                            
                         return (
                             db.client.from_("profiles")
-                            .update({
-                                "subscription_status": db_status,
-                                "updated_at": now.isoformat(),
-                            })
+                            .update(update_payload)
                             .eq("user_id", user_id)
                             .execute()
                         )
                     await db.run(_sync_profile)
 
                     def _sync_sub():
+                        update_payload = {
+                            "status": db_status,
+                            "billing_cycle_end": cycle_end_iso,
+                            "updated_at": now.isoformat(),
+                        }
+                        if is_renewal:
+                            update_payload["billing_cycle_start"] = incoming_start_dt.isoformat()
+
                         return (
                             db.client.from_("subscriptions")
-                            .update({
-                                "status": db_status,
-                                "billing_cycle_end": cycle_end_iso,
-                                "updated_at": now.isoformat(),
-                            })
+                            .update(update_payload)
                             .eq("id", sub["id"])
                             .execute()
                         )
@@ -641,6 +664,7 @@ async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depe
                 "subscription_id": stripe_session.get("subscription") or session_id,
                 "stripe_payment_id": stripe_session.get("customer") or session_id,
                 "subscription_status": "active",
+                "candidates_consumed": 0,
                 "plan_selected_at": now.isoformat(),
                 "updated_at": now.isoformat(),
             })

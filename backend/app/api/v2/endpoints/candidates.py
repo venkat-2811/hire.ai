@@ -248,173 +248,173 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
 
     existing_res = await db.run(_find_existing)
     existing = getattr(existing_res, "data", None) or []
+    is_existing = isinstance(existing, list) and existing and isinstance(existing[0], dict) and existing[0].get("id")
 
     now = datetime.now(timezone.utc).isoformat()
     candidate_row: Optional[Dict[str, Any]] = None
     is_new_candidate: bool = False  # True only when we INSERT a new candidate row
 
-    if isinstance(existing, list) and existing and isinstance(existing[0], dict) and existing[0].get("id"):
-        existing_id = existing[0]["id"]
-        existing_row = existing[0]
-
-        # SECURITY: Only update fields that are currently null/empty on the shared candidate
-        # record. This prevents a recruiter from clobbering another tenant's data when adding
-        # an existing candidate (same email) to their own job.
-        update_data: Dict[str, Any] = {"updated_at": now}
-
-        def _merge_if_null(field: str, value: Any) -> None:
-            """Only include the field in the update payload if the existing value is falsy."""
-            if value and not existing_row.get(field):
-                update_data[field] = value
-
-        _merge_if_null("full_name", full_name)
-        _merge_if_null("phone", payload.get("phone"))
-        _merge_if_null("portfolio_url", payload.get("portfolio_url") or payload.get("portfolioUrl"))
-        _merge_if_null("github_url", payload.get("github_url") or payload.get("githubUrl"))
-        _merge_if_null("location", payload.get("location"))
-        _merge_if_null("vendorName", payload.get("vendorName"))
-        _merge_if_null("mainSkillset", payload.get("mainSkillset"))
-
-        # Consent is always honoured for the candidate themselves (opt-in)
-        if payload.get("consent_given") or payload.get("consentGiven"):
-            update_data["consent_given"] = True
-            if not existing_row.get("consent_timestamp"):
-                update_data["consent_timestamp"] = now
-
-        def _update():
-            return (
-                db.client.from_("candidates")
-                .update(update_data)
-                .eq("id", existing_id)
-                .execute()
-            )
-
-        await db.run(_update)
-
-        def _fetch_updated():
-            return db.client.from_("candidates").select("*").eq("id", existing_id).maybe_single().execute()
-
-        updated_res = await db.run(_fetch_updated)
-        cand = getattr(updated_res, "data", None)
-        candidate_row = cand if isinstance(cand, dict) else existing[0]
-    else:
-        from app.utils.billing_helpers import check_candidate_limit
-        err_msg = await check_candidate_limit(db, user.id)
+    # ATOMIC QUOTA CHECK AND CONSUMPTION FOR NEW CANDIDATES
+    if not is_existing:
+        from app.utils.billing_helpers import consume_candidate_slot
+        err_msg = await consume_candidate_slot(db, user.id)
         if err_msg:
             return api_error(message=err_msg, status_code=403)
 
-        insert_row: Dict[str, Any] = {
-            "full_name": full_name,
-            "email": email,
-            "phone": payload.get("phone"),
-            "portfolio_url": payload.get("portfolio_url") or payload.get("portfolioUrl"),
-            "github_url": payload.get("github_url") or payload.get("githubUrl"),
-            "consent_given": bool(payload.get("consent_given") or payload.get("consentGiven")),
-            "consent_timestamp": now if (payload.get("consent_given") or payload.get("consentGiven")) else None,
-            "resume_url": payload.get("resume_url") or payload.get("resumeUrl"),
-            "resume_text": payload.get("resume_text") or payload.get("resumeText"),
-            "resume_parsed_data": payload.get("resume_parsed_data") or payload.get("resumeParsedData"),
-            "location": payload.get("location"),
-            "vendorName": payload.get("vendorName"),
-            "mainSkillset": payload.get("mainSkillset"),
-        }
-        def _insert():
-            return db.client.from_("candidates").insert(insert_row).execute()
+    try:
+        if is_existing:
+            existing_id = existing[0]["id"]
+            existing_row = existing[0]
 
-        ins_res = await db.run(_insert)
-        data = getattr(ins_res, "data", None)
-        candidate_row = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else None
-        if candidate_row:
-            is_new_candidate = True  # Mark for billing counter increment below
+            # SECURITY: Only update fields that are currently null/empty on the shared candidate
+            # record. This prevents a recruiter from clobbering another tenant's data when adding
+            # an existing candidate (same email) to their own job.
+            update_data: Dict[str, Any] = {"updated_at": now}
 
-    if not candidate_row or not candidate_row.get("id"):
-        return api_error(message="Failed to create candidate", status_code=500)
+            def _merge_if_null(field: str, value: Any) -> None:
+                """Only include the field in the update payload if the existing value is falsy."""
+                if value and not existing_row.get(field):
+                    update_data[field] = value
 
-    # Increment the immutable billing counter for this recruiter.
-    # Only fires when a brand-new candidate was inserted (is_new_candidate=True),
-    # NOT when an existing candidate (same email) is added to another job.
-    if is_new_candidate:
-        from app.utils.billing_helpers import increment_candidates_consumed
-        await increment_candidates_consumed(db, user.id)
+            _merge_if_null("full_name", full_name)
+            _merge_if_null("phone", payload.get("phone"))
+            _merge_if_null("portfolio_url", payload.get("portfolio_url") or payload.get("portfolioUrl"))
+            _merge_if_null("github_url", payload.get("github_url") or payload.get("githubUrl"))
+            _merge_if_null("location", payload.get("location"))
+            _merge_if_null("vendorName", payload.get("vendorName"))
+            _merge_if_null("mainSkillset", payload.get("mainSkillset"))
 
-    if job_id:
-        candidate_id = str(candidate_row["id"])
-        def _check_existing_app():
-            return (
-                db.client.from_("job_applications")
-                .select("id")
-                .eq("candidate_id", candidate_id)
-                .eq("job_id", job_id)
-                .maybe_single()
-                .execute()
-            )
+            # Consent is always honoured for the candidate themselves (opt-in)
+            if payload.get("consent_given") or payload.get("consentGiven"):
+                update_data["consent_given"] = True
+                if not existing_row.get("consent_timestamp"):
+                    update_data["consent_timestamp"] = now
 
-        app_res = await db.run(_check_existing_app)
-        existing_app = getattr(app_res, "data", None)
-        if isinstance(existing_app, dict) and existing_app.get("id"):
-            return api_error(message="This candidate has already applied to this job", status_code=400)
-
-        from app.utils.billing_helpers import check_candidate_limit
-        err_msg = await check_candidate_limit(db, user.id)
-        if err_msg:
-            return api_error(message=err_msg, status_code=403)
-
-        def _insert_app():
-            return (
-                db.client.from_("job_applications")
-                .insert(
-                    {
-                        "candidate_id": candidate_id,
-                        "job_id": job_id,
-                        "status": "applied",
-                        "applied_at": now,
-                    }
-                )
-                .execute()
-            )
-
-        await db.run(_insert_app)
-
-        # ISOLATION FIX: Always capture the recruiter-submitted identity fields into
-        # candidate_overrides on this specific application row.  The shared candidates
-        # table only stores the first-seen value for each field (to avoid tenant bleed),
-        # so without this step a recruiter who adds an existing email with a different
-        # name would silently see the *first* recruiter's name instead of their own.
-        _overrides: Dict[str, Any] = {}
-        if full_name:
-            _overrides["full_name"] = full_name
-        _phone = payload.get("phone")
-        if _phone:
-            _overrides["phone"] = _phone
-        _portfolio = payload.get("portfolio_url") or payload.get("portfolioUrl")
-        if _portfolio:
-            _overrides["portfolio_url"] = _portfolio
-        _github = payload.get("github_url") or payload.get("githubUrl")
-        if _github:
-            _overrides["github_url"] = _github
-        _location = payload.get("location")
-        if _location:
-            _overrides["location"] = _location
-        _vendor = payload.get("vendorName")
-        if _vendor:
-            _overrides["vendorName"] = _vendor
-        _skillset = payload.get("mainSkillset")
-        if _skillset:
-            _overrides["mainSkillset"] = _skillset
-
-        if _overrides:
-            def _write_overrides(ov=_overrides):
+            def _update():
                 return (
-                    db.client.from_("job_applications")
-                    .update({"candidate_overrides": ov})
-                    .eq("candidate_id", candidate_id)
-                    .eq("job_id", job_id)
+                    db.client.from_("candidates")
+                    .update(update_data)
+                    .eq("id", existing_id)
                     .execute()
                 )
-            await db.run(_write_overrides)
 
+            await db.run(_update)
 
-    return ok({**candidate_row, "job_id": job_id}, status_code=201)
+            def _fetch_updated():
+                return db.client.from_("candidates").select("*").eq("id", existing_id).maybe_single().execute()
+
+            updated_res = await db.run(_fetch_updated)
+            cand = getattr(updated_res, "data", None)
+            candidate_row = cand if isinstance(cand, dict) else existing[0]
+        else:
+            insert_row: Dict[str, Any] = {
+                "full_name": full_name,
+                "email": email,
+                "phone": payload.get("phone"),
+                "portfolio_url": payload.get("portfolio_url") or payload.get("portfolioUrl"),
+                "github_url": payload.get("github_url") or payload.get("githubUrl"),
+                "consent_given": bool(payload.get("consent_given") or payload.get("consentGiven")),
+                "consent_timestamp": now if (payload.get("consent_given") or payload.get("consentGiven")) else None,
+                "resume_url": payload.get("resume_url") or payload.get("resumeUrl"),
+                "resume_text": payload.get("resume_text") or payload.get("resumeText"),
+                "resume_parsed_data": payload.get("resume_parsed_data") or payload.get("resumeParsedData"),
+                "location": payload.get("location"),
+                "vendorName": payload.get("vendorName"),
+                "mainSkillset": payload.get("mainSkillset"),
+            }
+            def _insert():
+                return db.client.from_("candidates").insert(insert_row).execute()
+
+            ins_res = await db.run(_insert)
+            data = getattr(ins_res, "data", None)
+            candidate_row = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else None
+            if candidate_row:
+                is_new_candidate = True  # Mark that it was created
+
+        if not candidate_row or not candidate_row.get("id"):
+            if not is_existing:
+                from app.utils.billing_helpers import refund_candidate_slot
+                await refund_candidate_slot(db, user.id)
+            return api_error(message="Failed to create candidate", status_code=500)
+
+        if job_id:
+            candidate_id = str(candidate_row["id"])
+            def _check_existing_app():
+                return (
+                    db.client.from_("job_applications")
+                    .select("id")
+                    .eq("candidate_id", candidate_id)
+                    .eq("job_id", job_id)
+                    .maybe_single()
+                    .execute()
+                )
+
+            app_res = await db.run(_check_existing_app)
+            existing_app = getattr(app_res, "data", None)
+            if isinstance(existing_app, dict) and existing_app.get("id"):
+                if not is_existing:
+                    from app.utils.billing_helpers import refund_candidate_slot
+                    await refund_candidate_slot(db, user.id)
+                return api_error(message="This candidate has already applied to this job", status_code=400)
+
+            def _insert_app():
+                return (
+                    db.client.from_("job_applications")
+                    .insert(
+                        {
+                            "candidate_id": candidate_id,
+                            "job_id": job_id,
+                            "status": "applied",
+                            "applied_at": now,
+                        }
+                    )
+                    .execute()
+                )
+
+            await db.run(_insert_app)
+
+            # ISOLATION FIX: Always capture the recruiter-submitted identity fields into
+            # candidate_overrides on this specific application row.
+            _overrides: Dict[str, Any] = {}
+            if full_name:
+                _overrides["full_name"] = full_name
+            _phone = payload.get("phone")
+            if _phone:
+                _overrides["phone"] = _phone
+            _portfolio = payload.get("portfolio_url") or payload.get("portfolioUrl")
+            if _portfolio:
+                _overrides["portfolio_url"] = _portfolio
+            _github = payload.get("github_url") or payload.get("githubUrl")
+            if _github:
+                _overrides["github_url"] = _github
+            _location = payload.get("location")
+            if _location:
+                _overrides["location"] = _location
+            _vendor = payload.get("vendorName")
+            if _vendor:
+                _overrides["vendorName"] = _vendor
+            _skillset = payload.get("mainSkillset")
+            if _skillset:
+                _overrides["mainSkillset"] = _skillset
+
+            if _overrides:
+                def _write_overrides(ov=_overrides):
+                    return (
+                        db.client.from_("job_applications")
+                        .update({"candidate_overrides": ov})
+                        .eq("candidate_id", candidate_id)
+                        .eq("job_id", job_id)
+                        .execute()
+                    )
+                await db.run(_write_overrides)
+
+        return ok({**candidate_row, "job_id": job_id}, status_code=201)
+
+    except Exception as e:
+        if not is_existing:
+            from app.utils.billing_helpers import refund_candidate_slot
+            await refund_candidate_slot(db, user.id)
+        raise e
 
 
 @router.post("/{candidate_id}/upload-resume")

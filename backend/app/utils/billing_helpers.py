@@ -209,34 +209,97 @@ async def get_candidate_count_after_deployment(db, recruiter_id: str) -> int:
     return len(unique_cids)
 
 
-async def increment_candidates_consumed(db, recruiter_id: str) -> None:
-    """Atomically increment the candidates_consumed counter for a recruiter.
-
-    Called once per NEW candidate creation (not when an existing candidate
-    is added to a second job). Safe to call without a transaction — in the
-    rare case of a race condition the counter may be off by at most 1, which
-    is acceptable for billing purposes.
+async def consume_candidate_slot(db, recruiter_id: str) -> Optional[str]:
+    """Atomically check limits and increment the candidates_consumed counter using OCC.
+    
+    Returns error message string if limit reached, else None on successful consumption.
     """
-    def _fetch_and_increment():
-        res = (
-            db.client.from_("profiles")
-            .select("candidates_consumed")
-            .eq("user_id", recruiter_id)
-            .maybe_single()
-            .execute()
-        )
-        current = int((getattr(res, "data", None) or {}).get("candidates_consumed") or 0)
-        db.client.from_("profiles").update(
-            {"candidates_consumed": current + 1}
-        ).eq("user_id", recruiter_id).execute()
+    for _ in range(5): # Retry loop for optimistic concurrency control
+        def _fetch():
+            return (
+                db.client.from_("profiles")
+                .select("subscription_plan, candidates_consumed")
+                .eq("user_id", recruiter_id)
+                .maybe_single()
+                .execute()
+            )
+        
+        try:
+            p_res = await db.run(_fetch)
+            profile = getattr(p_res, "data", None) or {}
+            
+            plan = _normalize_plan(profile.get("subscription_plan"))
+            plan_config = BILLING_PLAN_CONFIG.get(plan, BILLING_PLAN_CONFIG["free"])
+            plan_limit = plan_config.get("candidates")
+            
+            current_consumed = int(profile.get("candidates_consumed") or 0)
+            
+            # Enterprise plan has custom/unlimited limits
+            if plan_limit is not None and current_consumed >= plan_limit:
+                return "You have reached your plan limit. Please choose a subscription plan to continue assessing additional candidates."
+                
+            def _update():
+                return (
+                    db.client.from_("profiles")
+                    .update({"candidates_consumed": current_consumed + 1})
+                    .eq("user_id", recruiter_id)
+                    .eq("candidates_consumed", current_consumed)
+                    .execute()
+                )
+                
+            update_res = await db.run(_update)
+            updated_data = getattr(update_res, "data", [])
+            
+            if updated_data:
+                return None # Successfully consumed
+                
+        except Exception as exc:
+            logger.error("[billing_helpers] Error in consume_candidate_slot: %s", exc)
+            return "Failed to validate candidate limit. Please try again."
+            
+    return "The system is currently busy. Please try adding the candidate again."
 
-    try:
-        await db.run(_fetch_and_increment)
-    except Exception as exc:
-        logger.error(
-            "[billing_helpers] Failed to increment candidates_consumed for user=%s: %s",
-            recruiter_id, exc
-        )
+async def refund_candidate_slot(db, recruiter_id: str) -> None:
+    """Atomically decrement the candidates_consumed counter using OCC."""
+    for _ in range(5):
+        def _fetch():
+            return (
+                db.client.from_("profiles")
+                .select("candidates_consumed")
+                .eq("user_id", recruiter_id)
+                .maybe_single()
+                .execute()
+            )
+            
+        try:
+            p_res = await db.run(_fetch)
+            profile = getattr(p_res, "data", None) or {}
+            current_consumed = profile.get("candidates_consumed")
+            
+            if current_consumed is None or int(current_consumed) <= 0:
+                return # Nothing to refund
+                
+            current_consumed = int(current_consumed)
+            
+            def _update():
+                return (
+                    db.client.from_("profiles")
+                    .update({"candidates_consumed": current_consumed - 1})
+                    .eq("user_id", recruiter_id)
+                    .eq("candidates_consumed", current_consumed)
+                    .execute()
+                )
+                
+            update_res = await db.run(_update)
+            updated_data = getattr(update_res, "data", [])
+            
+            if updated_data:
+                return
+        except Exception as exc:
+            logger.error("[billing_helpers] Error in refund_candidate_slot: %s", exc)
+            return
+            
+    logger.error("[billing_helpers] Failed to refund candidates_consumed for user=%s due to concurrent modifications", recruiter_id)
 
 
 async def check_candidate_limit(db, recruiter_id: str) -> Optional[str]:

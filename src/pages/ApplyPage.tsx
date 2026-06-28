@@ -67,7 +67,7 @@ export default function ApplyPage() {
         if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('no longer accepting')) {
           setError('This job is no longer accepting applications.');
         } else {
-          setError('Failed to load job details. Please try again later.');
+          setError('Candidates cannot be onboarded into this job');
         }
       } finally {
         setLoading(false);
@@ -156,12 +156,6 @@ export default function ApplyPage() {
             <CardTitle>Job Not Found</CardTitle>
             <CardDescription>{error || 'This job posting is no longer available.'}</CardDescription>
           </CardHeader>
-          <CardContent className="flex justify-center">
-            <Button variant="outline" onClick={() => navigate('/')}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Home
-            </Button>
-          </CardContent>
         </Card>
       </div>
     );
