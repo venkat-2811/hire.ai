@@ -588,7 +588,8 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
         logger.info(f"[billing.subscribe] Successfully created checkout session {session['id']} for {plan} ({currency})")
     except Exception as exc:
         logger.error("[billing.subscribe] Stripe error for user=%s plan=%s: %s", user.id, plan, exc)
-        return api_error(message="Checkout initialization failed. Please try again.", status_code=500)
+        # Expose the actual error (e.g. invalid Price ID, missing secret key, Stripe validation error)
+        return api_error(message=f"Checkout initialization failed. Error: {str(exc)}", status_code=500)
 
     return ok({
         "success": True,
