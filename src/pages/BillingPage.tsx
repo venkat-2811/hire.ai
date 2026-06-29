@@ -301,7 +301,7 @@ export default function BillingPage() {
               size="sm"
               onClick={() => void triggerRealtimeUpdates(true)}
               disabled={busy !== null}
-              className="gap-2 border-border/60 shadow-sm hover:bg-muted/40 transition-all font-medium"
+              className="gap-2 border-border/60 shadow-sm hover:bg-muted hover:text-foreground transition-all font-medium"
             >
               <RefreshCw className={`h-4 w-4 text-muted-foreground ${busy === 'refreshing' ? 'animate-spin text-primary' : ''}`} />
               {busy === 'refreshing' ? 'Refreshing...' : 'Refresh Status'}

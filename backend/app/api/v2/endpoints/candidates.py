@@ -250,12 +250,21 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
     existing = getattr(existing_res, "data", None) or []
     is_existing = isinstance(existing, list) and existing and isinstance(existing[0], dict) and existing[0].get("id")
 
+    is_new_for_recruiter = True
+    if is_existing:
+        existing_id = existing[0]["id"]
+        def _check_recruiter_has_cand():
+            return db.client.from_("job_applications").select("id, job_descriptions!inner(created_by)").eq("candidate_id", existing_id).eq("job_descriptions.created_by", user.id).limit(1).execute()
+        cr_res = await db.run(_check_recruiter_has_cand)
+        if getattr(cr_res, "data", None):
+            is_new_for_recruiter = False
+
     now = datetime.now(timezone.utc).isoformat()
     candidate_row: Optional[Dict[str, Any]] = None
     is_new_candidate: bool = False  # True only when we INSERT a new candidate row
 
     # ATOMIC QUOTA CHECK AND CONSUMPTION FOR NEW CANDIDATES
-    if not is_existing:
+    if is_new_for_recruiter:
         from app.utils.billing_helpers import consume_candidate_slot
         err_msg = await consume_candidate_slot(db, user.id)
         if err_msg:
@@ -332,7 +341,7 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
                 is_new_candidate = True  # Mark that it was created
 
         if not candidate_row or not candidate_row.get("id"):
-            if not is_existing:
+            if is_new_for_recruiter:
                 from app.utils.billing_helpers import refund_candidate_slot
                 await refund_candidate_slot(db, user.id)
             return api_error(message="Failed to create candidate", status_code=500)
@@ -352,7 +361,7 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
             app_res = await db.run(_check_existing_app)
             existing_app = getattr(app_res, "data", None)
             if isinstance(existing_app, dict) and existing_app.get("id"):
-                if not is_existing:
+                if is_new_for_recruiter:
                     from app.utils.billing_helpers import refund_candidate_slot
                     await refund_candidate_slot(db, user.id)
                 return api_error(message="This candidate has already applied to this job", status_code=400)
@@ -411,7 +420,7 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
         return ok({**candidate_row, "job_id": job_id}, status_code=201)
 
     except Exception as e:
-        if not is_existing:
+        if is_new_for_recruiter:
             from app.utils.billing_helpers import refund_candidate_slot
             await refund_candidate_slot(db, user.id)
         raise e

@@ -27,7 +27,7 @@ async def get_public_job(job_id: str):
         "job_descriptions",
         columns=(
             "id, title, role, level, description, must_have_skills, good_to_have_skills, "
-            "min_experience_years, is_active, recruiter_id"
+            "min_experience_years, is_active, created_by"
         ),
         filters={"id": job_id, "is_active": True},
         limit=1,
@@ -37,7 +37,7 @@ async def get_public_job(job_id: str):
 
     # Check candidate limit
     from app.utils.billing_helpers import check_candidate_limit
-    err_msg = await check_candidate_limit(db, jobs[0].get("recruiter_id"))
+    err_msg = await check_candidate_limit(db, jobs[0].get("created_by"))
     if err_msg:
         return api_error(message="Candidates cannot be onboarded into this job", status_code=403)
 
@@ -90,6 +90,9 @@ async def submit_application(
 
     candidate_id: Optional[str] = None
     is_new_candidate = False
+    is_new_for_recruiter = True
+    recruiter_id = job.get("created_by")
+
     if existing_candidates:
         candidate_id = existing_candidates[0].get("id")
 
@@ -102,10 +105,18 @@ async def submit_application(
         )
         if existing_apps:
             return api_error(message="You have already applied to this job", status_code=400)
+            
+        def _check_recruiter_has_cand():
+            return db.client.from_("job_applications").select("id, job_descriptions!inner(created_by)").eq("candidate_id", candidate_id).eq("job_descriptions.created_by", recruiter_id).limit(1).execute()
+        cr_res = await db.run(_check_recruiter_has_cand)
+        if getattr(cr_res, "data", None):
+            is_new_for_recruiter = False
     else:
         is_new_candidate = True
+
+    if is_new_for_recruiter:
         from app.utils.billing_helpers import consume_candidate_slot
-        err_msg = await consume_candidate_slot(db, job.get("recruiter_id"))
+        err_msg = await consume_candidate_slot(db, recruiter_id)
         if err_msg:
             return api_error(message="Candidates cannot be onboarded into this job", status_code=403)
 
@@ -302,7 +313,7 @@ async def submit_application(
         )
 
     except Exception as e:
-        if is_new_candidate:
+        if is_new_for_recruiter:
             from app.utils.billing_helpers import refund_candidate_slot
-            await refund_candidate_slot(db, job.get("recruiter_id"))
+            await refund_candidate_slot(db, recruiter_id)
         raise e

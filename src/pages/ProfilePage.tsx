@@ -1,9 +1,10 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRequireAuth } from '@/hooks/useAuth';
+import { useClerk } from '@clerk/clerk-react';
 import {
   Loader2, Save, Building2, User, Globe2, Briefcase, MapPin,
-  Link as LinkIcon, Users, Building, Phone, Mail, Clock, Sparkles,
+  Link as LinkIcon, Users, Building, Phone, Mail, Clock, Sparkles, LogOut,
 } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ function LockIcon({ className }: { className?: string }) {
 
 export default function ProfilePage() {
   const { user, loading } = useRequireAuth();
+  const { signOut } = useClerk();
   const { data: profile, isLoading: profileLoading } = useProfile();
   const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
 
@@ -538,6 +540,43 @@ export default function ProfilePage() {
                           </div>
                         </div>
 
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                {/* Account Actions Card */}
+                <motion.div variants={itemVariants}>
+                  <Card className="border-border/60 shadow-sm overflow-hidden border-red-500/20">
+                    <div className="h-1 bg-gradient-to-r from-red-500 via-red-500/70 to-red-500/20 w-full" />
+                    <CardHeader className="pb-4 pt-5 bg-gradient-to-b from-red-500/5 to-transparent">
+                      <CardTitle className="text-lg flex items-center gap-2.5 text-red-500">
+                        <div className="p-1.5 rounded-lg bg-red-500/10">
+                          <LogOut className="h-4 w-4 text-red-500" />
+                        </div>
+                        Account Actions
+                      </CardTitle>
+                      <CardDescription>
+                        Manage your session and account access.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <p className="font-medium text-sm">Sign Out</p>
+                          <p className="text-sm text-muted-foreground">
+                            Securely sign out of your account on this device.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20 w-full sm:w-auto"
+                          onClick={() => signOut()}
+                        >
+                          <LogOut className="mr-2 h-4 w-4" />
+                          Log out
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
