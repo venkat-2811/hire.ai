@@ -2205,18 +2205,38 @@ async def complete(session_id: str):
     coding_raw = session.get("coding_score")
     coding_val = float(coding_raw) if coding_raw is not None else None
 
-    # Build total score as an equal-weight average of all sections that were submitted
-    section_scores: List[float] = []
-    if session.get("mcq_score") is not None:
-        section_scores.append(mcq_val)
-    if coding_val is not None:
-        section_scores.append(coding_val)
-    if sql_score is not None:
-        section_scores.append(sql_score)
-    if apex_score is not None:
-        section_scores.append(apex_score)
+    assessment_config = proctoring_data.get("assessment_config", {})
+    mcq_configured = bool(assessment_config.get("include_mcq"))
+    coding_apex_configured = bool(assessment_config.get("include_coding") or assessment_config.get("include_apex"))
+    sql_configured = bool(assessment_config.get("include_sql"))
 
-    total_score = sum(section_scores) / len(section_scores) if section_scores else 0.0
+    configured_sections = sum([mcq_configured, coding_apex_configured, sql_configured])
+
+    if configured_sections == 0:
+        # Fallback for older sessions that lack assessment_config
+        section_scores: List[float] = []
+        if session.get("mcq_score") is not None:
+            section_scores.append(mcq_val)
+        if coding_val is not None:
+            section_scores.append(coding_val)
+        if sql_score is not None:
+            section_scores.append(sql_score)
+        if apex_score is not None and apex_score != coding_val:
+            section_scores.append(apex_score)
+        total_score = sum(section_scores) / len(section_scores) if section_scores else 0.0
+    else:
+        # Calculate total score based on configured sections, treating unattempted as 0
+        total_sum = 0.0
+        if mcq_configured:
+            total_sum += mcq_val
+        if coding_apex_configured:
+            # Coding and Apex share the same slot
+            actual_coding_score = coding_val if coding_val is not None else (apex_score if apex_score is not None else 0.0)
+            total_sum += actual_coding_score
+        if sql_configured:
+            total_sum += (sql_score if sql_score is not None else 0.0)
+        
+        total_score = total_sum / configured_sections
 
     complete_payload: Dict[str, Any] = {
         "status": "completed",

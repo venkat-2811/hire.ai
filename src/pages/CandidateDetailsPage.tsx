@@ -176,9 +176,36 @@ export default function CandidateDetailsPage() {
   };
 
   const pd = assessmentDetails?.proctoring_data;
-  const sqlChallenges = asArray<any>(pd?.assessment_content?.sql_challenges);
-  const sqlSubs = asArray<any>(pd?.sql_submissions);
-  const hasSql = sqlChallenges.length > 0 || sqlSubs.length > 0 || assessmentDetails?.sql_score != null;
+  const assessmentConfig = (pd as any)?.assessment_config;
+  
+  let mcqScore100 = 0;
+  if (assessmentDetails) {
+    const content = getAssessmentContent(assessmentDetails);
+    const questions = asArray<any>(assessmentDetails.mcq_questions).length > 0
+      ? asArray<any>(assessmentDetails.mcq_questions)
+      : asArray<any>((content as any)?.mcq_questions);
+    const subs = asArray<any>(assessmentDetails.mcq_submissions);
+    const correctCount = subs.filter((s: any) => s?.is_correct).length;
+    const totalForScore = questions.length || subs.length;
+    if (totalForScore > 0 && correctCount > 0) {
+      mcqScore100 = Math.ceil((correctCount / totalForScore) * 100);
+    }
+  }
+
+  const hasMcqConfigured = assessmentConfig ? !!assessmentConfig.include_mcq : (asArray<any>(assessmentDetails?.mcq_questions).length > 0 || assessmentDetails?.mcq_score != null);
+  const hasCodingConfigured = assessmentConfig ? (!!assessmentConfig.include_coding || !!assessmentConfig.include_apex) : (assessmentDetails?.coding_score != null || jobData?.is_salesforce_job || jobData?.include_apex_assessment);
+  const hasSqlConfigured = assessmentConfig ? !!assessmentConfig.include_sql : (asArray<any>((pd as any)?.assessment_content?.sql_challenges).length > 0 || asArray<any>((pd as any)?.sql_submissions).length > 0 || assessmentDetails?.sql_score != null);
+
+  const configuredCount = [hasMcqConfigured, hasCodingConfigured, hasSqlConfigured].filter(Boolean).length || 1;
+
+  let dynamicTotalScore = 0;
+  if (assessmentDetails) {
+    let totalSum = 0;
+    if (hasMcqConfigured) totalSum += mcqScore100;
+    if (hasCodingConfigured) totalSum += (assessmentDetails.coding_score ?? 0);
+    if (hasSqlConfigured) totalSum += (assessmentDetails.sql_score ?? 0);
+    dynamicTotalScore = totalSum / configuredCount;
+  }
 
   
   const [expandedMcq, setExpandedMcq] = useState<string[]>([]);
@@ -613,34 +640,84 @@ export default function CandidateDetailsPage() {
             </CardContent>
           </Card>
           
-          <Card className="bg-card shadow-sm border-muted">
-            <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assessment Score</p>
-              {assessmentDetails?.total_score != null ? (
-                <ScoreBadge score={assessmentDetails.total_score} size="lg" />
-              ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-card shadow-sm border-muted">
-            <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                {jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex Score' : 'Coding Score'}
-              </p>
-              {assessmentDetails?.coding_score != null ? (
-                <ScoreBadge score={assessmentDetails.coding_score} size="lg" />
-              ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-card shadow-sm border-muted">
-            <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">SQL Score</p>
-              {hasSql ? (
-                <ScoreBadge score={assessmentDetails?.sql_score ?? 0} size="lg" />
-              ) : (
-                <span className="text-xl font-bold text-muted-foreground">-</span>
-              )}
+          <Card className="bg-card shadow-sm border-muted md:col-span-3 overflow-hidden relative group transition-all hover:shadow-md">
+            <div className="absolute top-0 left-0 w-1 h-full bg-primary/80 transition-all group-hover:bg-primary" />
+            <CardContent className="p-5 flex flex-col h-full justify-between">
+              
+              {/* Top Section: Main KPI */}
+              <div className="flex items-start justify-between mb-4 pl-2">
+                <div className="flex flex-col">
+                  <h3 className="text-base font-extrabold text-foreground tracking-tight">Assessment Score</h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 whitespace-nowrap">
+                    Overall technical performance breakdown
+                  </p>
+                </div>
+                <div className="flex flex-col items-end justify-center">
+                  {assessmentDetails ? (
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-6xl font-black tracking-tighter ${
+                        dynamicTotalScore >= 80 ? 'text-success' :
+                        dynamicTotalScore >= 50 ? 'text-warning' : 'text-destructive'
+                      }`}>
+                        {Math.round(dynamicTotalScore)}
+                      </span>
+                      <span className="text-lg font-medium text-muted-foreground/70">/ 100</span>
+                    </div>
+                  ) : <span className="text-4xl font-bold text-muted-foreground/30">-</span>}
+                </div>
+              </div>
+
+              {/* Bottom Section: Detailed Sub-Scores */}
+              <div className={`grid gap-2 mt-auto pt-3 border-t border-border/60 ${configuredCount === 1 ? 'grid-cols-1' : configuredCount === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                
+                {/* MCQ Chip */}
+                {hasMcqConfigured && (
+                <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm" />
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">MCQ</p>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    {assessmentDetails ? (
+                      <span className="text-xl font-bold text-foreground leading-none">{mcqScore100}</span>
+                    ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                  </div>
+                </div>
+                )}
+
+                {/* Coding/Apex Chip */}
+                {hasCodingConfigured && (
+                <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-sm" />
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider truncate" title={jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}>
+                      {jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}
+                    </p>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    {assessmentDetails?.coding_score != null ? (
+                      <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.coding_score)}</span>
+                    ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                  </div>
+                </div>
+                )}
+
+                {/* SQL Chip */}
+                {hasSqlConfigured && (
+                <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-sm" />
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">SQL</p>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    {assessmentDetails ? (
+                      <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.sql_score ?? 0)}</span>
+                    ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                  </div>
+                </div>
+                )}
+                
+              </div>
             </CardContent>
           </Card>
 

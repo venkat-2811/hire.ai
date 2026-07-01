@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile, HTTPException
 
 from app.api.v2.deps import require_user
 from app.auth.clerk import ClerkUser
