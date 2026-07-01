@@ -1098,8 +1098,8 @@ def _repair_coding_challenge(challenge: Dict[str, Any]) -> Dict[str, Any]:
         repaired["supported_languages"] = ["python3", "cpp", "java", "csharp"]
         logger.warning("[assessments.repair] injected_fallback_languages challenge_id=%s", str(challenge_id))
     else:
-        # Remove javascript from existing database records before sending to frontend
-        repaired["supported_languages"] = [l for l in langs if l.lower() not in ("javascript", "typescript")]
+        # Filter unsupported languages but allow javascript to be executed client-side
+        repaired["supported_languages"] = [l for l in langs if l.lower() not in ("typescript",)]
         # Ensure csharp is available if it was missing from an old challenge
         if "csharp" not in repaired["supported_languages"] and "c#" not in repaired["supported_languages"]:
             repaired["supported_languages"].append("csharp")
