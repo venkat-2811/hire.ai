@@ -1366,7 +1366,18 @@ async def parse_resume_preview(
         )[:50000]
 
         if not resume_text or len(resume_text) < 20:
-            return api_error(message="Could not extract text from the resume. Please try a different file format.", status_code=400)
+            # Return empty-but-valid data so the form stays open (don't 400 — the
+            # recruiter can still fill in details manually)
+            return ok({
+                "full_name": "",
+                "email": "",
+                "phone": "",
+                "location": "",
+                "skills": [],
+                "summary": "",
+                "total_experience_years": 0,
+                "_warning": "Could not extract text from this resume (it may be a scanned/vector PDF or an unsupported format). Please fill in the details manually.",
+            })
 
         prompt = (
             "You are an expert resume parser. Parse the following resume and extract key information for a candidate profile.\n\n"
@@ -1439,6 +1450,9 @@ async def send_acceptance(payload: dict, user: ClerkUser = Depends(require_user)
     db = get_db_admin_service()
     candidate_ids = payload.get("candidate_ids")
     job_id = payload.get("job_id")
+    # send_email=True by default for backward compatibility; False = status-only update
+    send_email: bool = payload.get("send_email", True) is not False
+
     if not isinstance(candidate_ids, list) or not candidate_ids or not job_id:
         return api_error(message="candidate_ids and job_id are required", status_code=400)
 
@@ -1471,22 +1485,23 @@ async def send_acceptance(payload: dict, user: ClerkUser = Depends(require_user)
         return api_error(message="No candidates found", status_code=404)
 
     from app.services.email_service import get_email_service
-
     email_service = get_email_service()
 
     emails_sent = 0
+    statuses_updated = 0
     error_messages: List[str] = []
 
     for c in candidates:
         if not isinstance(c, dict):
             continue
         try:
-            await email_service.send_acceptance_email(
-                to=str(c.get("email") or ""),
-                candidate_name=str(c.get("full_name") or ""),
-                job_title=str(job.get("title") or ""),
-            )
-            emails_sent += 1
+            if send_email:
+                await email_service.send_acceptance_email(
+                    to=str(c.get("email") or ""),
+                    candidate_name=str(c.get("full_name") or ""),
+                    job_title=str(job.get("title") or ""),
+                )
+                emails_sent += 1
 
             def _update_app():
                 return (
@@ -1498,10 +1513,11 @@ async def send_acceptance(payload: dict, user: ClerkUser = Depends(require_user)
                 )
 
             await db.run(_update_app)
+            statuses_updated += 1
         except Exception as e:
             error_messages.append(f"{c.get('full_name')}: {str(e)}")
 
-    return ok({"success": emails_sent > 0, "emails_sent": emails_sent, "error_messages": error_messages})
+    return ok({"success": statuses_updated > 0, "emails_sent": emails_sent, "statuses_updated": statuses_updated, "error_messages": error_messages})
 
 
 @router.post("/bulk-update-interview-mode")
@@ -1604,6 +1620,9 @@ async def send_rejection(payload: dict, user: ClerkUser = Depends(require_user))
     db = get_db_admin_service()
     candidate_ids = payload.get("candidate_ids")
     job_id = payload.get("job_id")
+    # send_email=True by default for backward compatibility; False = status-only update
+    send_email: bool = payload.get("send_email", True) is not False
+
     if not isinstance(candidate_ids, list) or not candidate_ids or not job_id:
         return api_error(message="candidate_ids and job_id are required", status_code=400)
 
@@ -1636,22 +1655,23 @@ async def send_rejection(payload: dict, user: ClerkUser = Depends(require_user))
         return api_error(message="No candidates found", status_code=404)
 
     from app.services.email_service import get_email_service
-
     email_service = get_email_service()
 
     emails_sent = 0
+    statuses_updated = 0
     error_messages: List[str] = []
 
     for c in candidates:
         if not isinstance(c, dict):
             continue
         try:
-            await email_service.send_rejection_email(
-                to=str(c.get("email") or ""),
-                candidate_name=str(c.get("full_name") or ""),
-                job_title=str(job.get("title") or ""),
-            )
-            emails_sent += 1
+            if send_email:
+                await email_service.send_rejection_email(
+                    to=str(c.get("email") or ""),
+                    candidate_name=str(c.get("full_name") or ""),
+                    job_title=str(job.get("title") or ""),
+                )
+                emails_sent += 1
 
             def _update_app():
                 return (
@@ -1663,10 +1683,11 @@ async def send_rejection(payload: dict, user: ClerkUser = Depends(require_user))
                 )
 
             await db.run(_update_app)
+            statuses_updated += 1
         except Exception as e:
             error_messages.append(f"{c.get('full_name')}: {str(e)}")
 
-    return ok({"success": emails_sent > 0, "emails_sent": emails_sent, "error_messages": error_messages})
+    return ok({"success": statuses_updated > 0, "emails_sent": emails_sent, "statuses_updated": statuses_updated, "error_messages": error_messages})
 
 
 @router.post("/send-offer-letter")

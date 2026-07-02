@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -10,6 +11,8 @@ from app.services.db.supabase_service import get_db_admin_service
 from app.services.email_service import get_email_service
 from app.services.resume_parser import get_resume_parser
 from app.utils.responses import api_error, ok
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/apply")
 
@@ -126,15 +129,26 @@ async def submit_application(
         resume_text = ""
         resume_parsed_data: Any = None
         if resume is not None:
+            _resume_filename = resume.filename or "resume.pdf"
             try:
                 content = await resume.read()
                 parser = get_resume_parser()
-                resume_text, parsed = await parser.parse_resume(content, resume.filename or "resume.pdf")
+                resume_text, parsed = await parser.parse_resume(content, _resume_filename)
                 # Align with Node: store JSON-like dict, but keep any pydantic models serializable
                 resume_parsed_data = parsed.model_dump() if hasattr(parsed, "model_dump") else parsed
-            except Exception:
+                logger.info(
+                    "apply: resume_parsed file=%s candidate_email=%s char_count=%d",
+                    _resume_filename, email, len(resume_text),
+                )
+            except Exception as parse_exc:
+                logger.error(
+                    "apply: RESUME_PARSE_FAILED file=%s candidate_email=%s error=%s "
+                    "– continuing without ATS screening",
+                    _resume_filename, email, parse_exc,
+                )
                 resume_text = ""
                 resume_parsed_data = None
+
 
         # Create or update candidate
         candidate_payload: Dict[str, Any] = {

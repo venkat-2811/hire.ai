@@ -16,6 +16,7 @@ openai>=1.10.0
 pypdf2==3.0.1
 python-docx==1.1.0
 pdfplumber==0.10.3
+pymupdf>=1.23.0
 
 # Data processing
 pydantic>=2.10,<3

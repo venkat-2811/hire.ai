@@ -100,7 +100,7 @@ export const PDFExportService = {
                 ['Phone', candidate.phone || ''],
                 ['Location', (candidate as any).location || ''],
                 ['Main Skillset', (candidate as any).mainSkillset || ''],
-                ['Vendor', (candidate as any).vendorName || ''],
+
                 ['Portfolio', (candidate as any).portfolio_url || ''],
                 ['GitHub', (candidate as any).github_url || ''],
                 ['Consent Given', String(!!candidate.consent_given)],

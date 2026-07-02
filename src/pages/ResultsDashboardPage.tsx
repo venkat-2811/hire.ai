@@ -80,6 +80,7 @@ export default function ResultsDashboardPage() {
   // Track which candidates have had acceptance emails sent (keyed by candidate_id)
   // We also seed from server-side final_status === 'accepted' | 'offer_sent'
   const [acceptedCandidateIds, setAcceptedCandidateIds] = useState<Set<string>>(new Set());
+  const [rejectedCandidateIds, setRejectedCandidateIds] = useState<Set<string>>(new Set());
 
   // Filtering & Sorting State
   const [searchQuery, setSearchQuery] = useState('');
@@ -116,6 +117,7 @@ export default function ResultsDashboardPage() {
     if (!selectedJobId) {
       setCandidates([]);
       setAcceptedCandidateIds(new Set());
+      setRejectedCandidateIds(new Set());
       return;
     }
 
@@ -127,12 +129,16 @@ export default function ResultsDashboardPage() {
 
         // Seed accepted/offer_sent status from server data
         const accepted = new Set<string>();
+        const rejected = new Set<string>();
         data.forEach((c) => {
           if (c.final_status === 'accepted' || c.final_status === 'offer_sent' || c.final_status === 'offer_accepted') {
             accepted.add(c.candidate_id);
+          } else if (c.final_status === 'rejected') {
+            rejected.add(c.candidate_id);
           }
         });
         setAcceptedCandidateIds(accepted);
+        setRejectedCandidateIds(rejected);
       } catch (e) {
         console.error('Error loading candidates', e);
         toast.error('Failed to load candidate data');
@@ -287,7 +293,7 @@ export default function ResultsDashboardPage() {
     }
   };
 
-  const sendAcceptanceEmails = async () => {
+  const sendAcceptanceEmails = async (sendEmail: boolean) => {
     if (selectedCandidates.size === 0) return;
     if (!selectedJobId) {
       toast.error('Please select a job first');
@@ -300,14 +306,19 @@ export default function ResultsDashboardPage() {
       const data = await candidatesWorkflowApi.sendAcceptance({
         candidate_ids: candidateIds,
         job_id: selectedJobId,
+        send_email: sendEmail,
       });
 
       if (data?.error_messages?.length) {
-        toast.error(`Some emails failed: ${data.error_messages[0]}`);
+        toast.error(`Some updates failed: ${data.error_messages[0]}`);
       } else {
-        toast.success(`Acceptance emails sent to ${data.emails_sent} candidate(s)`);
+        if (sendEmail) {
+          toast.success(`Acceptance emails sent to ${data.emails_sent} candidate(s)`);
+        } else {
+          toast.success(`Shortlisted status updated for ${(data as any).statuses_updated ?? candidateIds.length} candidate(s) (no email sent)`);
+        }
 
-        // Mark all successfully emailed candidates as accepted  → unlock Offer Letter button
+        // Mark all successfully updated candidates as accepted → unlock Offer Letter button
         const newAccepted = new Set(acceptedCandidateIds);
         candidateIds.forEach((id) => newAccepted.add(id));
         setAcceptedCandidateIds(newAccepted);
@@ -315,13 +326,13 @@ export default function ResultsDashboardPage() {
       setAcceptDialogOpen(false);
       setSelectedCandidates(new Set());
     } catch (e) {
-      toast.error('Failed to send acceptance emails');
+      toast.error('Failed to update candidate status');
     } finally {
       setSendingEmails(false);
     }
   };
 
-  const sendRejectionEmails = async () => {
+  const sendRejectionEmails = async (sendEmail: boolean) => {
     if (selectedCandidates.size === 0) return;
     if (!selectedJobId) {
       toast.error('Please select a job first');
@@ -334,18 +345,28 @@ export default function ResultsDashboardPage() {
       const data = await candidatesWorkflowApi.sendRejection({
         candidate_ids: candidateIds,
         job_id: selectedJobId,
+        send_email: sendEmail,
       });
 
       if (data?.error_messages?.length) {
-        toast.error(`Some emails failed: ${data.error_messages[0]}`);
+        toast.error(`Some updates failed: ${data.error_messages[0]}`);
       } else {
-        toast.success('Rejection emails sent');
+        if (sendEmail) {
+          toast.success('Rejection emails sent');
+        } else {
+          toast.success(`Rejected status updated for ${(data as any).statuses_updated ?? candidateIds.length} candidate(s) (no email sent)`);
+        }
+        
+        // Mark all successfully updated candidates as rejected
+        const newRejected = new Set(rejectedCandidateIds);
+        candidateIds.forEach((id) => newRejected.add(id));
+        setRejectedCandidateIds(newRejected);
       }
 
       setRejectDialogOpen(false);
       setSelectedCandidates(new Set());
     } catch (e) {
-      toast.error('Failed to send rejection emails');
+      toast.error('Failed to update candidate status');
     } finally {
       setSendingEmails(false);
     }
@@ -580,6 +601,11 @@ export default function ResultsDashboardPage() {
                                   <p className="text-xs text-muted-foreground uppercase tracking-wider">
                                     {candidate.job_title}
                                   </p>
+                                  {candidate.candidate_email && (
+                                    <p className="text-[11px] text-muted-foreground/80 lowercase mt-0.5 truncate max-w-[250px]" title={candidate.candidate_email}>
+                                      {candidate.candidate_email}
+                                    </p>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -862,6 +888,7 @@ export default function ResultsDashboardPage() {
                       ) : (
                         processedCandidates.map((candidate) => {
                           const isAccepted = acceptedCandidateIds.has(candidate.candidate_id);
+                          const isRejected = rejectedCandidateIds.has(candidate.candidate_id);
                           const isOfferAccepted = candidate.final_status === 'offer_accepted';
 
                           return (
@@ -890,6 +917,11 @@ export default function ResultsDashboardPage() {
                                         Accepted
                                       </Badge>
                                     )}
+                                    {isRejected && (
+                                      <Badge className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] py-0 px-1.5">
+                                        Rejected
+                                      </Badge>
+                                    )}
                                     {isOfferAccepted && (
                                       <Badge className="bg-emerald-600 text-white border-emerald-700 text-[10px] py-0 px-1.5">
                                         Offer Accepted
@@ -899,6 +931,11 @@ export default function ResultsDashboardPage() {
                                   <p className="text-xs text-muted-foreground uppercase tracking-wider">
                                     {candidate.job_title}
                                   </p>
+                                  {candidate.candidate_email && (
+                                    <p className="text-[11px] text-muted-foreground/80 lowercase mt-0.5 truncate max-w-[250px]" title={candidate.candidate_email}>
+                                      {candidate.candidate_email}
+                                    </p>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell className="text-center">
@@ -961,36 +998,48 @@ export default function ResultsDashboardPage() {
 
               {/* ─── Acceptance Dialog ─────────────────────────────────────────── */}
               <Dialog open={acceptDialogOpen} onOpenChange={setAcceptDialogOpen}>
-                <DialogContent>
+                <DialogContent className="sm:max-w-[600px]">
                   <DialogHeader>
-                    <DialogTitle>Send Acceptance Emails</DialogTitle>
+                    <DialogTitle>Shortlist Candidate(s)</DialogTitle>
                     <DialogDescription>
-                      Send acceptance emails to <strong>{selectedCandidates.size}</strong> selected
-                      candidate(s).
+                      Update status for <strong>{selectedCandidates.size}</strong> selected candidate(s) to <strong>Selected / Shortlisted</strong>.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="py-4">
+                  <div className="py-4 space-y-3">
                     {hasIncompleteEvaluation && (
-                      <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md mb-2 flex gap-3 text-sm text-amber-900 items-start shadow-sm">
+                      <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md flex gap-3 text-sm text-amber-900 items-start shadow-sm">
                         <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 min-w-0">
                           <span className="font-bold text-amber-800">Incomplete Evaluation Detected</span>
-                          <span className="text-amber-800">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                          <span className="text-amber-800 break-words">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
                         </div>
                       </div>
                     )}
+                    <p className="text-sm text-muted-foreground">
+                      Choose whether to also notify the candidate(s) via email.
+                    </p>
                   </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setAcceptDialogOpen(false)}>
+                  <DialogFooter className="flex-col sm:flex-row gap-2">
+                    <Button variant="outline" onClick={() => setAcceptDialogOpen(false)} disabled={sendingEmails}>
                       Cancel
                     </Button>
-                    <Button onClick={sendAcceptanceEmails} disabled={sendingEmails}>
-                      {sendingEmails ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Mail className="mr-2 h-4 w-4" />
-                      )}
-                      Send Acceptance Emails
+                    <Button
+                      variant="secondary"
+                      className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 hover:border-primary/30"
+                      onClick={() => sendAcceptanceEmails(false)}
+                      disabled={sendingEmails}
+                      id="acceptance-status-only-btn"
+                    >
+                      {sendingEmails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Update Status Only
+                    </Button>
+                    <Button
+                      onClick={() => sendAcceptanceEmails(true)}
+                      disabled={sendingEmails}
+                      id="acceptance-send-email-btn"
+                    >
+                      {sendingEmails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                      Update Status + Send Email
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -998,41 +1047,49 @@ export default function ResultsDashboardPage() {
 
               {/* ─── Rejection Dialog ──────────────────────────────────────────── */}
               <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-                <DialogContent>
+                <DialogContent className="sm:max-w-[600px]">
                   <DialogHeader>
-                    <DialogTitle>Send Rejection Emails</DialogTitle>
+                    <DialogTitle>Reject Candidate(s)</DialogTitle>
                     <DialogDescription>
-                      Send rejection emails to{' '}
-                      <strong>{selectedCandidates.size}</strong> selected candidate(s). This will
-                      also remove them from the active pipeline.
+                      Update status for <strong>{selectedCandidates.size}</strong> selected candidate(s) to <strong>Rejected</strong>.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="py-4">
+                  <div className="py-4 space-y-3">
                     {hasIncompleteEvaluation && (
-                      <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md mb-2 flex gap-3 text-sm text-amber-900 items-start shadow-sm">
+                      <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md flex gap-3 text-sm text-amber-900 items-start shadow-sm">
                         <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 min-w-0">
                           <span className="font-bold text-amber-800">Incomplete Evaluation Detected</span>
-                          <span className="text-amber-800">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                          <span className="text-amber-800 break-words">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
                         </div>
                       </div>
                     )}
+                    <p className="text-sm text-muted-foreground">
+                      Choose whether to also notify the candidate(s) via email. This will remove them from the active pipeline.
+                    </p>
                   </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
+                  <DialogFooter className="flex-col sm:flex-row gap-2">
+                    <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={sendingEmails}>
                       Cancel
                     </Button>
                     <Button
-                      variant="destructive"
-                      onClick={sendRejectionEmails}
+                      variant="secondary"
+                      className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 hover:border-primary/30"
+                      onClick={() => sendRejectionEmails(false)}
                       disabled={sendingEmails}
+                      id="rejection-status-only-btn"
                     >
-                      {sendingEmails ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Mail className="mr-2 h-4 w-4" />
-                      )}
-                      Send Rejection
+                      {sendingEmails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Update Status Only
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => sendRejectionEmails(true)}
+                      disabled={sendingEmails}
+                      id="rejection-send-email-btn"
+                    >
+                      {sendingEmails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                      Update Status + Send Email
                     </Button>
                   </DialogFooter>
                 </DialogContent>

@@ -59,6 +59,34 @@ class OpenAIService:
             print(f"OpenAI API error: {e}")
             raise
     
+    async def extract_text_from_images(self, base64_images: List[str]) -> str:
+        """Extract text from a list of base64 encoded images using Vision."""
+        messages = [
+            {"role": "system", "content": "You are an expert OCR system. Extract all text from the provided images exactly as written. Do not add conversational filler. Maintain structural formatting where possible."}
+        ]
+        
+        content = [{"type": "text", "text": "Please transcribe the text from these document pages."}]
+        for b64 in base64_images:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+            })
+            
+        messages.append({"role": "user", "content": content})
+        
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4o-mini", # Need a vision capable model
+                messages=messages,
+                temperature=0.1,
+                max_tokens=4000,
+            )
+            text = response.choices[0].message.content
+            return text.strip() if text else ""
+        except Exception as e:
+            print(f"Vision OCR error: {e}")
+            return ""
+    
     async def generate_json(
         self,
         prompt: str,

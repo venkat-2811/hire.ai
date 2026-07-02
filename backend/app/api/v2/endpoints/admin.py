@@ -307,10 +307,16 @@ async def admin_all_recruiters(
 
     # Search filtering
     filtered_profiles = []
+    seen_uids = set()
     search_lower = search.lower() if search else None
     for p in profiles:
         if not isinstance(p, dict):
             continue
+        uid = str(p.get("user_id") or "").strip()
+        if not uid or uid in seen_uids:
+            continue
+        seen_uids.add(uid)
+
         if search_lower:
             fn = str(p.get("full_name") or "").lower()
             em = str(p.get("email") or "").lower()
@@ -873,9 +879,15 @@ async def admin_plan_recruiters(
     rows = getattr(res, "data", None) or []
 
     filtered_rows: List[Dict[str, Any]] = []
+    seen_uids = set()
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
+        uid = str(row.get("user_id") or "").strip()
+        if not uid or uid in seen_uids:
+            continue
+        seen_uids.add(uid)
+        
         row_plan = _normalize_admin_plan(row.get("subscription_plan"), default="free")
         if row_plan != plan_normalized:
             continue

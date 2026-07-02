@@ -9,10 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { 
-  Upload, 
-  FileText, 
-  Link as LinkIcon, 
+import {
+  Upload,
+  FileText,
+  Link as LinkIcon,
   Github,
   ArrowLeft,
   ArrowRight,
@@ -45,12 +45,12 @@ type Step = 'upload' | 'details' | 'job' | 'consent' | 'processing';
 export default function NewCandidatePage() {
   const { user, loading } = useRequireAuth();
   const navigate = useNavigate();
-  
+
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAutoFillDialog, setShowAutoFillDialog] = useState(false);
   const [isParsingResume, setIsParsingResume] = useState(false);
-  
+
   // Form state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [fullName, setFullName] = useState('');
@@ -64,7 +64,7 @@ export default function NewCandidatePage() {
   const [selectedJob, setSelectedJob] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
-  
+
   const [resumeParseJobId, setResumeParseJobId] = useState<string | null>(null);
   const [screeningJobId, setScreeningJobId] = useState<string | null>(null);
 
@@ -73,7 +73,7 @@ export default function NewCandidatePage() {
   const uploadResume = useUploadResume();
   const runScreening = useRunScreening();
   const { data: jobsData, isLoading: jobsLoading } = useJobs({ is_active: true });
-  
+
   const jobs = jobsData || [];
 
   useJobPolling(resumeParseJobId, {
@@ -134,12 +134,21 @@ export default function NewCandidatePage() {
   const handleAutoFill = async () => {
     if (!resumeFile) return;
     setIsParsingResume(true);
+
+    // Set a timeout to notify the user if parsing takes a while (e.g. Vision OCR fallback)
+    const slowParseTimer = setTimeout(() => {
+      toast.info('Complex resume detected. Using Advanced AI Vision extract text... Please wait for processing', {
+        id: 'vision-ocr-toast',
+        duration: 45000,
+      });
+    }, 20000);
+
     try {
       const formData = new FormData();
       formData.append('resume', resumeFile);
 
       const data = await apiUploadFile<any>('/candidates/parse-resume-preview', formData, false, {
-        timeoutMs: 40000,
+        timeoutMs: 120000,
       });
 
       // Pre-populate form fields with extracted data
@@ -151,12 +160,20 @@ export default function NewCandidatePage() {
 
       setShowAutoFillDialog(false);
       setCurrentStep('details');
-      toast.success('Resume parsed! Fields have been auto-filled. You can review and edit them.');
+
+      if (data._warning) {
+        // Vector/image PDF – could not extract text, show amber warning
+        toast.warning(data._warning);
+      } else {
+        toast.success('Resume parsed! Fields have been auto-filled. You can review and edit them.');
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to parse resume. You can enter details manually.');
       setShowAutoFillDialog(false);
       setCurrentStep('details');
     } finally {
+      clearTimeout(slowParseTimer);
+      toast.dismiss('vision-ocr-toast');
       setIsParsingResume(false);
     }
   };
@@ -195,7 +212,7 @@ export default function NewCandidatePage() {
     if (currentIndex < steps.length - 1) {
       const nextStep = steps[currentIndex + 1];
       setCurrentStep(nextStep);
-      
+
       if (nextStep === 'processing') {
         handleSubmit();
       }
@@ -213,7 +230,7 @@ export default function NewCandidatePage() {
 
   const handleSubmit = async () => {
     setIsProcessing(true);
-    
+
     try {
       // Create candidate (JSON payload)
       createCandidate.mutate({
@@ -265,10 +282,19 @@ export default function NewCandidatePage() {
 
           // Upload resume first (so resume_parsed_data exists), then run screening.
           if (resumeFile) {
+            const slowSubmitTimer = setTimeout(() => {
+              toast.info('Complex resume detected. Using Advanced AI Vision extract text... Please wait for processing', {
+                id: 'vision-ocr-submit-toast',
+                duration: 45000,
+              });
+            }, 20000);
+
             uploadResume.mutate(
               { id: candidate.id, file: resumeFile },
               {
                 onSuccess: (data: any) => {
+                  clearTimeout(slowSubmitTimer);
+                  toast.dismiss('vision-ocr-submit-toast');
                   if (data.job_id) {
                     setResumeParseJobId(data.job_id);
                   } else {
@@ -276,6 +302,8 @@ export default function NewCandidatePage() {
                   }
                 },
                 onError: () => {
+                  clearTimeout(slowSubmitTimer);
+                  toast.dismiss('vision-ocr-submit-toast');
                   toast.error('Resume upload failed.');
                   runAtsIfPossible();
                 },
@@ -391,8 +419,8 @@ export default function NewCandidatePage() {
                     isDragActive
                       ? "border-primary bg-primary/5"
                       : resumeFile
-                      ? "border-success bg-success/5"
-                      : "border-muted-foreground/25 hover:border-primary/50"
+                        ? "border-success bg-success/5"
+                        : "border-muted-foreground/25 hover:border-primary/50"
                   )}
                 >
                   <input {...getInputProps()} />
@@ -552,47 +580,47 @@ export default function NewCandidatePage() {
                     <Link to="/jobs/new" className="text-primary hover:underline">Create a job first</Link>
                   </div>
                 ) : (
-                <div className="space-y-4">
-                  {jobs.map((job) => (
-                    <div
-                      key={job.id}
-                      onClick={() => setSelectedJob(job.id)}
-                      className={cn(
-                        "p-4 rounded-lg border-2 cursor-pointer transition-all",
-                        selectedJob === job.id
-                          ? "border-primary bg-primary/5"
-                          : "border-muted hover:border-muted-foreground/25"
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{job.title}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={cn(
-                              "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
-                              ROLE_CONFIG[job.role as JobRole]?.color || 'bg-muted'
-                            )}>
-                              {ROLE_CONFIG[job.role as JobRole]?.icon} {ROLE_CONFIG[job.role as JobRole]?.label || job.role}
-                            </span>
-                            <span className="text-sm text-muted-foreground">
-                              {LEVEL_CONFIG[job.level as RoleLevel]?.label || job.level}
-                            </span>
+                  <div className="space-y-4">
+                    {jobs.map((job) => (
+                      <div
+                        key={job.id}
+                        onClick={() => setSelectedJob(job.id)}
+                        className={cn(
+                          "p-4 rounded-lg border-2 cursor-pointer transition-all",
+                          selectedJob === job.id
+                            ? "border-primary bg-primary/5"
+                            : "border-muted hover:border-muted-foreground/25"
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{job.title}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                                ROLE_CONFIG[job.role as JobRole]?.color || 'bg-muted'
+                              )}>
+                                {ROLE_CONFIG[job.role as JobRole]?.icon} {ROLE_CONFIG[job.role as JobRole]?.label || job.role}
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {LEVEL_CONFIG[job.level as RoleLevel]?.label || job.level}
+                              </span>
+                            </div>
+                          </div>
+                          <div className={cn(
+                            "w-5 h-5 rounded-full border-2 flex items-center justify-center",
+                            selectedJob === job.id
+                              ? "border-primary bg-primary"
+                              : "border-muted-foreground/25"
+                          )}>
+                            {selectedJob === job.id && (
+                              <CheckCircle className="h-3 w-3 text-primary-foreground" />
+                            )}
                           </div>
                         </div>
-                        <div className={cn(
-                          "w-5 h-5 rounded-full border-2 flex items-center justify-center",
-                          selectedJob === job.id
-                            ? "border-primary bg-primary"
-                            : "border-muted-foreground/25"
-                        )}>
-                          {selectedJob === job.id && (
-                            <CheckCircle className="h-3 w-3 text-primary-foreground" />
-                          )}
-                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -639,11 +667,10 @@ export default function NewCandidatePage() {
                   </ul>
                 </div>
 
-                <div className={`flex items-start gap-3 p-5 rounded-lg border transition-all duration-200 ${
-                  consentGiven 
-                    ? 'border-primary/40 bg-primary/[0.02] shadow-sm' 
-                    : 'border-muted hover:border-muted-foreground/20 bg-transparent'
-                }`}>
+                <div className={`flex items-start gap-3 p-5 rounded-lg border transition-all duration-200 ${consentGiven
+                  ? 'border-primary/40 bg-primary/[0.02] shadow-sm'
+                  : 'border-muted hover:border-muted-foreground/20 bg-transparent'
+                  }`}>
                   <Checkbox
                     id="consent"
                     checked={consentGiven}
@@ -655,7 +682,7 @@ export default function NewCandidatePage() {
                       I confirm that the candidate has provided consent for AI-powered evaluation
                     </Label>
                     <p className="text-sm text-muted-foreground mt-1.5">
-                      By checking this box, you confirm that the candidate has agreed to have their 
+                      By checking this box, you confirm that the candidate has agreed to have their
                       resume and responses analyzed by AI systems for hiring purposes.
                     </p>
                   </div>

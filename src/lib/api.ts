@@ -145,7 +145,7 @@ async function uploadFile<T>(
   skipAuth = false,
   opts?: { timeoutMs?: number },
 ): Promise<T> {
-  const timeoutMs = opts?.timeoutMs ?? 40000;
+  const timeoutMs = opts?.timeoutMs ?? 120000;
 
   const headers: Record<string, string> = {};
   if (!skipAuth && getAuthToken) {
@@ -534,13 +534,13 @@ export interface BulkUpdateInterviewModeResponse {
 }
 
 export const candidatesWorkflowApi = {
-  sendAcceptance: (body: { candidate_ids: string[]; job_id: string }) =>
+  sendAcceptance: (body: { candidate_ids: string[]; job_id: string; send_email?: boolean }) =>
     request<BulkEmailActionResponse>('/candidates/send-acceptance', {
       method: 'POST',
       body,
     }),
 
-  sendRejection: (body: { candidate_ids: string[]; job_id: string }) =>
+  sendRejection: (body: { candidate_ids: string[]; job_id: string; send_email?: boolean }) =>
     request<BulkEmailActionResponse>('/candidates/send-rejection', {
       method: 'POST',
       body,

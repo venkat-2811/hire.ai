@@ -905,7 +905,7 @@ export default function CandidateDetailsPage() {
 
           {/* TAB 2: RESUME ANALYSIS */}
           <TabsContent value="resume" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
-            {screening && (
+            {screening ? (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 space-y-6">
                   <Card>
@@ -1015,7 +1015,7 @@ export default function CandidateDetailsPage() {
                 </div>
 
                 <div className="lg:col-span-2 space-y-6">
-                  {candidate.resume_parsed_data && typeof candidate.resume_parsed_data === 'object' ? (
+                  {candidate.resume_parsed_data && typeof candidate.resume_parsed_data === 'object' && Object.keys(candidate.resume_parsed_data).length > 0 ? (
                     <>
                       {/* Added Resume Summary and Skills to Resume tab */}
                       <Card>
@@ -1105,14 +1105,80 @@ export default function CandidateDetailsPage() {
                         </Card>
                       )}
                     </>
+                  ) : candidate.resume_url ? (
+                    <Card className="h-full flex flex-col border overflow-hidden min-h-[700px]">
+                      <CardHeader className="bg-muted/30 border-b pb-4">
+                        <div className="flex items-center justify-between">
+                          <CardTitle>Original Resume Document</CardTitle>
+                          <a
+                            href={candidate.resume_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 border border-primary/20 px-3 py-1.5 rounded-lg transition-all"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </a>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-0 flex-1">
+                        <iframe 
+                          src={candidate.resume_url} 
+                          className="w-full h-[700px] border-0" 
+                          title="Candidate Resume Document" 
+                        />
+                      </CardContent>
+                    </Card>
                   ) : (
                     <Card>
-                      <CardContent className="p-8 text-center text-muted-foreground">
-                        No parsed resume details available.
+                      <CardContent className="p-12 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[300px]">
+                        <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-4" />
+                        <p className="text-lg font-medium text-foreground/80">No parsed data available</p>
+                        <p className="mt-1 text-sm">Could not extract structured data, and no document is attached.</p>
                       </CardContent>
                     </Card>
                   )}
                 </div>
+              </div>
+            ) : candidate.resume_url ? (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-muted/30 p-5 rounded-xl border gap-4 shadow-sm">
+                  <div>
+                    <h3 className="font-semibold text-lg flex items-center gap-2 text-foreground">
+                      <FileText className="h-5 w-5 text-primary" />
+                      Original Resume Document
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      ATS screening has not been run or could not be completed for this candidate.
+                    </p>
+                  </div>
+                  <a
+                    href={candidate.resume_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    className="inline-flex items-center justify-center gap-2 text-sm font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 border border-primary/20 px-4 py-2.5 rounded-lg transition-all whitespace-nowrap"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download PDF
+                  </a>
+                </div>
+                <div className="w-full border rounded-xl overflow-hidden bg-muted/10 shadow-sm">
+                  <iframe 
+                    src={candidate.resume_url} 
+                    className="w-full h-[800px] border-0"
+                    title="Candidate Resume"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed rounded-xl bg-muted/10">
+                <AlertCircle className="h-10 w-10 text-muted-foreground/50 mb-3" />
+                <h3 className="font-semibold text-lg text-foreground/80">No Resume Available</h3>
+                <p className="text-muted-foreground text-sm max-w-sm text-center mt-1">
+                  This candidate has not uploaded a resume, or the file could not be processed.
+                </p>
               </div>
             )}
 
