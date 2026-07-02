@@ -71,7 +71,6 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiRequest, assessmentsRuntimeApi } from "@/lib/api";
-import { runJavascriptClientSide } from "@/lib/jsRunner";
 
 interface MCQQuestion {
   id: string;
@@ -1330,19 +1329,14 @@ export default function AssessmentPage() {
     try {
       const selectedLanguage = lang;
 
-      let data: any;
-      if (selectedLanguage === "javascript") {
-        data = await runJavascriptClientSide(code, challenge.test_cases, false);
-      } else {
-        data = await assessmentsRuntimeApi.codingRun(
-          assessmentData.session_id,
-          {
-            challenge_id: challengeId,
-            code,
-            language: selectedLanguage,
-          },
-        );
-      }
+      const data = await assessmentsRuntimeApi.codingRun(
+        assessmentData.session_id,
+        {
+          challenge_id: challengeId,
+          code,
+          language: selectedLanguage,
+        },
+      );
 
       console.log("[RunCode] execution_result_debug:", data);
 
@@ -1451,22 +1445,14 @@ export default function AssessmentPage() {
     try {
       const selectedLanguage = lang;
 
-      let data: any;
-      if (selectedLanguage === "javascript") {
-        data = await runJavascriptClientSide(code, challenge.test_cases, true);
-        data.test_results = data.results;
-        data.passed_count = data.passed;
-        data.total_tests = data.total;
-      } else {
-        data = await assessmentsRuntimeApi.codingSubmit(
-          assessmentData.session_id,
-          {
-            challenge_id: challengeId,
-            code,
-            language: selectedLanguage,
-          },
-        );
-      }
+      const data = await assessmentsRuntimeApi.codingSubmit(
+        assessmentData.session_id,
+        {
+          challenge_id: challengeId,
+          code,
+          language: selectedLanguage,
+        },
+      );
 
       if (data.ai_evaluation && typeof data.ai_evaluation?.score === "number") {
         const score = Number(data.ai_evaluation.score) || 0;
@@ -3488,7 +3474,6 @@ export default function AssessmentPage() {
                                         csharp: "C#",
                                         "c#": "C#",
                                         sql: "MySQL",
-                                        javascript: "JavaScript",
                                       }[lang] || lang}
                                     </SelectItem>
                                   ))}
