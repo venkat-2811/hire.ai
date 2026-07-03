@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -17,12 +17,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { 
-  ArrowLeft, 
-  Edit, 
-  Archive, 
-  Copy, 
-  Check, 
+import {
+  ArrowLeft,
+  Edit,
+  Archive,
+  Copy,
+  Check,
   Loader2,
   Users,
   Briefcase,
@@ -106,7 +106,7 @@ export default function JobDetailsPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div className="min-w-0">
-              <motion.h1 
+              <motion.h1
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="text-2xl lg:text-3xl font-bold truncate"
@@ -228,12 +228,16 @@ export default function JobDetailsPage() {
                     </div>
                   </div>
                 )}
-                {job.endCustomer && (
+                {(job.endCustomer || (job as any).end_customer) && (
                   <div className="flex items-center gap-3">
                     <Building2 className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <p className="text-sm text-muted-foreground">Hiring For</p>
-                      <p className="font-medium">{job.endCustomer === 'your_own_company' ? 'Your Own Company' : 'End Customer'}</p>
+                      <p className="font-medium">
+                        {(job.endCustomer || (job as any).end_customer) === 'your_own_company'
+                          ? 'Your Company'
+                          : (job.end_customer_name || 'End Customer')}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -268,8 +272,8 @@ export default function JobDetailsPage() {
                   This job will be moved to the archived state and will no longer appear as an active job.
                 </p>
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="archive-confirm-details" 
+                  <Checkbox
+                    id="archive-confirm-details"
                     checked={archiveChecked}
                     onCheckedChange={(checked) => setArchiveChecked(!!checked)}
                   />
@@ -284,7 +288,7 @@ export default function JobDetailsPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction 
+              <AlertDialogAction
                 onClick={() => {
                   handleArchive();
                   setArchiveJobOpen(false);

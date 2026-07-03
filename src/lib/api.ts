@@ -170,7 +170,7 @@ async function uploadFile<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new APIError(response.status, error.detail || 'Upload failed');
+    throw new APIError(response.status, error.error || error.detail || error.message || 'Upload failed');
   }
 
   return response.json();

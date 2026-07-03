@@ -131,7 +131,12 @@ export default function ApplyPage() {
       setSubmitted(true);
       toast.success('Application submitted successfully!');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to submit application');
+      const errMsg = e instanceof Error ? e.message : 'Failed to submit application';
+      if (errMsg.includes('already applied')) {
+        toast.error('Candidate has existing application for this Job', { duration: 7000 });
+      } else {
+        toast.error(errMsg);
+      }
     } finally {
       setSubmitting(false);
     }

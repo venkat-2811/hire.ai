@@ -316,7 +316,7 @@ export default function NewCandidatePage() {
         },
         onError: (err: any) => {
           const errMsg = err?.response?.data?.detail || err?.message || '';
-          if (!errMsg.toLowerCase().includes('limit')) {
+          if (!errMsg.toLowerCase().includes('limit') && !errMsg.toLowerCase().includes('already applied')) {
             toast.error('Failed to create candidate');
           }
           setCurrentStep('consent');

@@ -39,7 +39,11 @@ export function useCreateCandidate() {
       toast.success('Candidate created successfully');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to create candidate');
+      if (error.message.includes('already applied')) {
+        toast.error('Candidate has existing application for this Job', { duration: 7000 });
+      } else {
+        toast.error(error.message || 'Failed to create candidate');
+      }
     },
   });
 }

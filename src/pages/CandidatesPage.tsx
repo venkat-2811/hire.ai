@@ -872,13 +872,13 @@ export default function CandidatesPage() {
                     <CollapsibleTrigger asChild>
                       <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-primary/10 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0">
                               <Briefcase className="h-5 w-5 text-primary" />
                             </div>
-                            <div>
+                            <div className="flex items-center gap-2">
                               <CardTitle className="text-lg">{getJobTitle(jobId)}</CardTitle>
-                              <CardDescription>{jobCandidates.length} candidate(s)</CardDescription>
+                              <CardDescription className="text-sm">({jobCandidates.length} candidate{jobCandidates.length === 1 ? '' : 's'})</CardDescription>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
