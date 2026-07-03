@@ -498,16 +498,24 @@ export default function AIInterviewPage() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('focus', handleWindowFocus);
-    window.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [interviewData, isTerminated, isCompleted, showReadyScreen, handleFullscreenChange, handleVisibilityChange, handleWindowBlur, handleWindowFocus]);
+
+  // Right-click listener (active even during setup)
+  useEffect(() => {
+    if (!interviewData || isTerminated || isCompleted) return;
+    
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => {
       window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [interviewData, isTerminated, isCompleted, showReadyScreen, handleFullscreenChange, handleVisibilityChange, handleWindowBlur, handleWindowFocus, handleContextMenu]);
+  }, [interviewData, isTerminated, isCompleted, handleContextMenu]);
 
   // Ensure video stream stays attached after transitioning out of setup screen
   useEffect(() => {
