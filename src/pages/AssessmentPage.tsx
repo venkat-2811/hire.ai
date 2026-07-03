@@ -787,12 +787,15 @@ export default function AssessmentPage() {
   const handleContextMenu = useCallback(
     (e: MouseEvent) => {
       e.preventDefault();
-      reportProctoringEvent("right_click");
       toast.error(
-        "Right-click is disabled during the assessment. This violation has been recorded.",
+        "Right-click is disabled during the assessment.",
       );
+      setWarningMessage(
+        "Right-click is disabled during the assessment. Please avoid using right-click.",
+      );
+      setShowWarning(true);
     },
-    [reportProctoringEvent],
+    [],
   );
 
   const handleKeyDown = useCallback(

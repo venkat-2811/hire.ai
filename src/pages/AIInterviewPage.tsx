@@ -485,6 +485,9 @@ export default function AIInterviewPage() {
   // Prevent right click
   const handleContextMenu = useCallback((e: Event) => {
     e.preventDefault();
+    toast.error("Right-click is disabled during the interview.");
+    setWarningMessage("Right-click is disabled during the interview. Please avoid using right-click.");
+    setShowWarning(true);
   }, []);
 
   // Proctoring listeners

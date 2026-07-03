@@ -23,6 +23,7 @@ import {
   UserPlus,
   PenLine,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -352,9 +353,9 @@ export default function NewCandidatePage() {
       <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="icon" asChild>
+          <Button variant="outline" size="icon" className="h-10 w-10 border-slate-300 dark:border-slate-700 shadow-sm" title="Cancel and close" asChild>
             <Link to="/candidates">
-              <ArrowLeft className="h-5 w-5" />
+              <X className="h-5 w-5" />
             </Link>
           </Button>
           <div>
@@ -723,13 +724,19 @@ export default function NewCandidatePage() {
               variant="outline"
               onClick={handleBack}
               disabled={currentStep === 'upload'}
+              size="lg"
+              className="border-slate-300 dark:border-slate-700 font-medium text-base shadow-sm"
             >
-              <ArrowLeft className="mr-2 h-4 w-4" />
+              <ArrowLeft className="mr-2 h-5 w-5" />
               Back
             </Button>
-            <Button onClick={handleNext}>
+            <Button 
+              onClick={handleNext} 
+              size="lg"
+              className="px-8 font-medium text-base shadow-sm"
+            >
               {currentStep === 'consent' ? 'Start Processing' : 'Continue'}
-              <ArrowRight className="ml-2 h-4 w-4" />
+              <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </div>
         )}
