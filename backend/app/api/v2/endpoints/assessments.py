@@ -909,7 +909,14 @@ async def invite_assessments(
             float(time() - bg_started),
         )
 
-    asyncio.create_task(_generate_update_and_email())
+    _bg_task = asyncio.create_task(_generate_update_and_email())
+    _bg_task.add_done_callback(
+        lambda t: logger.error(
+            "[assessments.invite] background_task_failed error=%s",
+            t.exception(),
+            exc_info=t.exception(),
+        ) if not t.cancelled() and t.exception() else None
+    )
 
     logger.info(
         "[assessments.invite] response_ready invites=%s duration_s=%.3f",
@@ -2761,7 +2768,14 @@ async def send_assessment_single(
             priority=Priority.HIGH
         )
         
-    asyncio.create_task(_generate_and_enqueue())
+    _bg_task2 = asyncio.create_task(_generate_and_enqueue())
+    _bg_task2.add_done_callback(
+        lambda t: logger.error(
+            "[assessments.invite_single] background_task_failed error=%s",
+            t.exception(),
+            exc_info=t.exception(),
+        ) if not t.cancelled() and t.exception() else None
+    )
     return ok({"status": "Accepted"}, status_code=202)
 
 from fastapi import UploadFile, File

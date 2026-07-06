@@ -1484,10 +1484,9 @@ async def send_acceptance(payload: dict, user: ClerkUser = Depends(require_user)
     if not candidates:
         return api_error(message="No candidates found", status_code=404)
 
-    from app.services.email_service import get_email_service
-    email_service = get_email_service()
+    from app.services.email_queue import email_queue, Priority
 
-    emails_sent = 0
+    emails_queued = 0
     statuses_updated = 0
     error_messages: List[str] = []
 
@@ -1496,12 +1495,21 @@ async def send_acceptance(payload: dict, user: ClerkUser = Depends(require_user)
             continue
         try:
             if send_email:
-                await email_service.send_acceptance_email(
-                    to=str(c.get("email") or ""),
-                    candidate_name=str(c.get("full_name") or ""),
-                    job_title=str(job.get("title") or ""),
-                )
-                emails_sent += 1
+                cand_email = str(c.get("email") or "").strip()
+                if cand_email:
+                    html, text, subject = email_queue.build_acceptance_email(
+                        candidate_name=str(c.get("full_name") or ""),
+                        job_title=str(job.get("title") or ""),
+                    )
+                    await email_queue.enqueue(
+                        to_email=cand_email,
+                        subject=subject,
+                        html_body=html,
+                        text_body=text,
+                        priority=Priority.HIGH,
+                        idempotency_key=f"accept:{c.get('id')}:{job_id}",
+                    )
+                    emails_queued += 1
 
             def _update_app():
                 return (
@@ -1517,7 +1525,7 @@ async def send_acceptance(payload: dict, user: ClerkUser = Depends(require_user)
         except Exception as e:
             error_messages.append(f"{c.get('full_name')}: {str(e)}")
 
-    return ok({"success": statuses_updated > 0, "emails_sent": emails_sent, "statuses_updated": statuses_updated, "error_messages": error_messages})
+    return ok({"success": statuses_updated > 0, "emails_sent": emails_queued, "statuses_updated": statuses_updated, "error_messages": error_messages})
 
 
 @router.post("/bulk-update-interview-mode")
@@ -1654,10 +1662,9 @@ async def send_rejection(payload: dict, user: ClerkUser = Depends(require_user))
     if not candidates:
         return api_error(message="No candidates found", status_code=404)
 
-    from app.services.email_service import get_email_service
-    email_service = get_email_service()
+    from app.services.email_queue import email_queue, Priority
 
-    emails_sent = 0
+    emails_queued = 0
     statuses_updated = 0
     error_messages: List[str] = []
 
@@ -1666,12 +1673,21 @@ async def send_rejection(payload: dict, user: ClerkUser = Depends(require_user))
             continue
         try:
             if send_email:
-                await email_service.send_rejection_email(
-                    to=str(c.get("email") or ""),
-                    candidate_name=str(c.get("full_name") or ""),
-                    job_title=str(job.get("title") or ""),
-                )
-                emails_sent += 1
+                cand_email = str(c.get("email") or "").strip()
+                if cand_email:
+                    html, text, subject = email_queue.build_rejection_email(
+                        candidate_name=str(c.get("full_name") or ""),
+                        job_title=str(job.get("title") or ""),
+                    )
+                    await email_queue.enqueue(
+                        to_email=cand_email,
+                        subject=subject,
+                        html_body=html,
+                        text_body=text,
+                        priority=Priority.HIGH,
+                        idempotency_key=f"reject:{c.get('id')}:{job_id}",
+                    )
+                    emails_queued += 1
 
             def _update_app():
                 return (
@@ -1687,7 +1703,7 @@ async def send_rejection(payload: dict, user: ClerkUser = Depends(require_user))
         except Exception as e:
             error_messages.append(f"{c.get('full_name')}: {str(e)}")
 
-    return ok({"success": statuses_updated > 0, "emails_sent": emails_sent, "statuses_updated": statuses_updated, "error_messages": error_messages})
+    return ok({"success": statuses_updated > 0, "emails_sent": emails_queued, "statuses_updated": statuses_updated, "error_messages": error_messages})
 
 
 @router.post("/send-offer-letter")
@@ -1738,10 +1754,8 @@ async def send_offer_letter(payload: dict, user: ClerkUser = Depends(require_use
     if not candidates:
         return api_error(message="No candidates found", status_code=404)
 
+    from app.services.email_queue import email_queue, Priority
     from jose import jwt
-
-    from app.config import get_settings
-    from app.services.email_service import get_email_service
     from app.services.offer_letter_service import generate_offer_letter_pdf
 
     settings = get_settings()
@@ -1749,10 +1763,9 @@ async def send_offer_letter(payload: dict, user: ClerkUser = Depends(require_use
     if not secret:
         return api_error(message="Offer token signing secret is not configured", status_code=500)
 
-    email_service = get_email_service()
     resolved_company = str(company_name).strip() or "Our Company"
 
-    emails_sent = 0
+    emails_queued = 0
     error_messages: List[str] = []
 
     for c in candidates:
@@ -1782,16 +1795,28 @@ async def send_offer_letter(payload: dict, user: ClerkUser = Depends(require_use
                 location=str(location) if location else None,
             )
 
-            await email_service.send_offer_letter_email(
-                to=str(c.get("email") or ""),
-                candidate_name=str(c.get("full_name") or ""),
-                job_title=str(job.get("title") or ""),
-                company_name=resolved_company,
-                attachment_bytes=pdf_bytes,
-                attachment_filename=f"Offer_Letter_{str(c.get('full_name') or 'Candidate').replace(' ', '_')}.pdf",
-                attachment_content_type="application/pdf",
-                acceptance_link=acceptance_link,
-            )
+            cand_email = str(c.get("email") or "").strip()
+            if cand_email:
+                html, text, subject = email_queue.build_offer_letter_email(
+                    candidate_name=str(c.get("full_name") or ""),
+                    job_title=str(job.get("title") or ""),
+                    company_name=resolved_company,
+                    acceptance_link=acceptance_link,
+                )
+                await email_queue.enqueue(
+                    to_email=cand_email,
+                    subject=subject,
+                    html_body=html,
+                    text_body=text,
+                    priority=Priority.HIGH,
+                    attachments=[{
+                        "filename": f"Offer_Letter_{str(c.get('full_name') or 'Candidate').replace(' ', '_')}.pdf",
+                        "data": pdf_bytes,
+                        "content_type": "application/pdf",
+                    }],
+                    idempotency_key=f"offer:{c.get('id')}:{job_id}",
+                )
+                emails_queued += 1
 
             # Persist snapshot + update status
             note_lines = [
@@ -1833,11 +1858,11 @@ async def send_offer_letter(payload: dict, user: ClerkUser = Depends(require_use
                 )
 
             await db.run(_update_app)
-            emails_sent += 1
+            emails_queued += 1
         except Exception as e:
             error_messages.append(f"{c.get('full_name')}: {str(e)}")
 
-    return ok({"success": emails_sent > 0, "emails_sent": emails_sent, "error_messages": error_messages})
+    return ok({"success": emails_queued > 0, "emails_sent": emails_queued, "error_messages": error_messages})
 
 
 @router.post("/submit-offer-acceptance")

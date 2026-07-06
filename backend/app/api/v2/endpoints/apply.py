@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, UploadFile, HTTPException
 
 from app.services.ats_screening import get_ats_screening_service
 from app.services.db.supabase_service import get_db_admin_service
-from app.services.email_service import get_email_service
+from app.services.email_queue import email_queue, Priority
 from app.services.resume_parser import get_resume_parser
 from app.utils.responses import api_error, ok
 
@@ -309,9 +309,20 @@ async def submit_application(
             except Exception:
                 pass
 
-        # Confirmation email (best-effort)
+        # Confirmation email (best-effort, async via queue)
         try:
-            await email_service.send_application_received(to=email, candidate_name=full_name, job_title=str(job.get("title") or ""))
+            html, text, subject = email_queue.build_application_received(
+                candidate_name=full_name,
+                job_title=str(job.get("title") or ""),
+            )
+            await email_queue.enqueue(
+                to_email=email,
+                subject=subject,
+                html_body=html,
+                text_body=text,
+                priority=Priority.NORMAL,
+                idempotency_key=f"apply:{application_id}",
+            )
         except Exception:
             pass
 

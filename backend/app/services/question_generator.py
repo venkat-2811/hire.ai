@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from typing import Optional, List, Dict, Any
 import hashlib
 import uuid
@@ -16,6 +18,12 @@ from app.prompts import (
     get_coding_challenges_prompt,
     get_sql_challenges_prompt
 )
+
+logger = logging.getLogger(__name__)
+
+# NOTE: LLM call timeout is now applied inside openai_client.py directly on
+# the OpenAI HTTP call (LLM_API_CALL_TIMEOUT_SECONDS, default 90s), so that
+# the timeout budget is never consumed by semaphore queue-waiting time.
 
 
 class QuestionGeneratorService:
@@ -274,11 +282,15 @@ class QuestionGeneratorService:
                     f"Failed to generate required MCQ count: generated {len(questions)}, requested {count}"
                 )
 
-            print(f"Successfully generated {len(questions)} MCQ questions out of {count} requested")
+            logger.info(
+                "[question_gen] mcq_generated count=%s requested=%s",
+                len(questions),
+                count,
+            )
             return questions
 
         except Exception as e:
-            print(f"Error generating MCQ questions: {e}")
+            logger.error("[question_gen] mcq_generation_failed count=%s error=%s", count, str(e))
             raise RuntimeError("MCQ generation failed") from e
     
     def _topic_fingerprint(self, text: str) -> str:
@@ -421,10 +433,11 @@ class QuestionGeneratorService:
             if not challenges:
                 raise RuntimeError("OpenAI returned no coding challenges")
 
+            logger.info("[question_gen] coding_generated count=%s", len(challenges))
             return challenges
-            
+
         except Exception as e:
-            print(f"Error generating coding challenges: {e}")
+            logger.error("[question_gen] coding_generation_failed count=%s error=%s", count, str(e))
             return self._get_fallback_coding_challenges(count)
     
     def _get_fallback_coding_challenges(self, count: int) -> List[dict]:
@@ -512,10 +525,11 @@ class QuestionGeneratorService:
             if not challenges:
                 raise RuntimeError("OpenAI returned no SQL challenges")
 
+            logger.info("[question_gen] sql_generated count=%s", len(challenges))
             return challenges
-            
+
         except Exception as e:
-            print(f"Error generating SQL challenges: {e}")
+            logger.error("[question_gen] sql_generation_failed count=%s error=%s", count, str(e))
             return self._get_fallback_sql_challenges(count)
             
     def _get_fallback_sql_challenges(self, count: int) -> List[dict]:

@@ -1,8 +1,12 @@
 import json
+import logging
+import os
 import re
+import time
 from typing import Optional, Dict, Any, List
 from openai import AsyncOpenAI
 from app.config import get_settings
+from app.core.llm_semaphore import llm_semaphore_context
 from app.prompts import (
     STRICT_JSON_INSTRUCTION,
     get_analyze_resume_prompt,
@@ -12,6 +16,25 @@ from app.prompts import (
     get_generate_practical_assessment_prompt,
     get_evaluate_practical_submission_prompt
 )
+
+logger = logging.getLogger(__name__)
+
+# Timeout in seconds applied exclusively to the OpenAI HTTP call itself.
+# This is independent of how long the job waited in the semaphore queue.
+#
+# Default: 180s — covers the worst-case MCQ generation:
+#   max_tokens=16384 (100 questions), gpt-4.1-mini at ~80–120 tok/s → 120–150s
+# Override via LLM_API_CALL_TIMEOUT_SECONDS.
+_LLM_API_CALL_TIMEOUT = float(os.getenv("LLM_API_CALL_TIMEOUT_SECONDS", "180"))
+
+# How long a job may wait in the semaphore queue before being abandoned.
+#
+# Not unlimited because during an extended OpenAI outage, jobs would queue
+# indefinitely and cause a thundering herd on recovery. 600s gives any
+# queued job a realistic window (10 batches × ~45s avg per slot cycle)
+# while ensuring stale requests eventually shed cleanly.
+# Override via LLM_SEMAPHORE_WAIT_TIMEOUT_SECONDS.
+_LLM_SEMAPHORE_WAIT_TIMEOUT = float(os.getenv("LLM_SEMAPHORE_WAIT_TIMEOUT_SECONDS", "600"))
 
 
 class OpenAIService:
@@ -44,19 +67,32 @@ class OpenAIService:
             messages.append({"role": "system", "content": system_instruction})
         messages.append({"role": "user", "content": prompt})
 
+        t0 = time.perf_counter()
         try:
-            response = await self.client.chat.completions.create(
-                model=self._model_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            async with llm_semaphore_context(wait_timeout=_LLM_SEMAPHORE_WAIT_TIMEOUT):
+                response = await self.client.chat.completions.create(
+                    model=self._model_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=_LLM_API_CALL_TIMEOUT,
+                )
             text = response.choices[0].message.content
             if text and text.strip():
+                logger.debug(
+                    "[openai] generate_text ok duration_ms=%.0f max_tokens=%s",
+                    (time.perf_counter() - t0) * 1000,
+                    max_tokens,
+                )
                 return text.strip()
             raise RuntimeError("OpenAI returned empty response")
         except Exception as e:
-            print(f"OpenAI API error: {e}")
+            logger.error(
+                "[openai] generate_text_error duration_ms=%.0f error_type=%s error=%s",
+                (time.perf_counter() - t0) * 1000,
+                type(e).__name__,
+                str(e),
+            )
             raise
     
     async def extract_text_from_images(self, base64_images: List[str]) -> str:
@@ -74,17 +110,29 @@ class OpenAIService:
             
         messages.append({"role": "user", "content": content})
         
+        t0 = time.perf_counter()
         try:
-            response = await self.client.chat.completions.create(
-                model="gpt-4o-mini", # Need a vision capable model
-                messages=messages,
-                temperature=0.1,
-                max_tokens=4000,
-            )
+            async with llm_semaphore_context(wait_timeout=_LLM_SEMAPHORE_WAIT_TIMEOUT):
+                response = await self.client.chat.completions.create(
+                    model="gpt-4o-mini",  # Vision-capable model required
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=4000,
+                    timeout=_LLM_API_CALL_TIMEOUT,
+                )
             text = response.choices[0].message.content
+            logger.debug(
+                "[openai] vision_ocr ok duration_ms=%.0f",
+                (time.perf_counter() - t0) * 1000,
+            )
             return text.strip() if text else ""
         except Exception as e:
-            print(f"Vision OCR error: {e}")
+            logger.error(
+                "[openai] vision_ocr_error duration_ms=%.0f error_type=%s error=%s",
+                (time.perf_counter() - t0) * 1000,
+                type(e).__name__,
+                str(e),
+            )
             return ""
     
     async def generate_json(
@@ -104,24 +152,39 @@ class OpenAIService:
             messages.append({"role": "system", "content": full_system})
         messages.append({"role": "user", "content": prompt})
 
+        t0 = time.perf_counter()
         try:
-            response = await self.client.chat.completions.create(
-                model=self._model_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"}
-            )
+            async with llm_semaphore_context(wait_timeout=_LLM_SEMAPHORE_WAIT_TIMEOUT):
+                response = await self.client.chat.completions.create(
+                    model=self._model_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                    timeout=_LLM_API_CALL_TIMEOUT,
+                )
             text = response.choices[0].message.content
-            
+
             if not text:
                 return {}
-            
-            return json.loads(text.strip())
+
+            parsed = json.loads(text.strip())
+            logger.debug(
+                "[openai] generate_json ok duration_ms=%.0f max_tokens=%s",
+                (time.perf_counter() - t0) * 1000,
+                max_tokens,
+            )
+            return parsed
         except Exception as e:
+            logger.error(
+                "[openai] generate_json_error duration_ms=%.0f error_type=%s error=%s raise_on_error=%s",
+                (time.perf_counter() - t0) * 1000,
+                type(e).__name__,
+                str(e),
+                raise_on_error,
+            )
             if raise_on_error:
                 raise RuntimeError(f"Failed to parse OpenAI JSON response: {e}")
-            print(f"JSON api or parse error: {e}")
             return {}
     
     async def analyze_resume(self, resume_text: str) -> Dict[str, Any]:

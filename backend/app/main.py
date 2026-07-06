@@ -16,6 +16,7 @@ from app.middleware.request_id import RequestIdMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.openai_client import get_openai_service
 from app.services.email_queue import email_queue
+from app.core.llm_semaphore import get_llm_semaphore_stats
 
 
 @asynccontextmanager
@@ -104,8 +105,25 @@ async def openai_ping():
 
 @app.get("/health/email-queue")
 def email_queue_health():
+    """Email delivery queue health — queue depth, worker status, and delivery metrics."""
+    stats = email_queue.get_queue_stats()
     return {
-        "queue_size": email_queue.queue_size,
-        "workers": len(email_queue.workers),
-        "status": "running" if email_queue.workers else "stopped"
+        "queue_size": stats["queue_size"],
+        "workers": stats["worker_count"],
+        "workers_alive": stats["workers_alive"],
+        "status": "running" if stats["workers_alive"] > 0 else "stopped",
+        "metrics": stats["metrics"],
+    }
+
+
+@app.get("/health/llm")
+def llm_queue_health():
+    """LLM concurrency gate health — capacity, active slots, and lifetime call metrics."""
+    stats = get_llm_semaphore_stats()
+    return {
+        "capacity": stats["capacity"],
+        "in_use": stats["in_use"],
+        "available": stats["available"],
+        "status": "ok" if stats["available"] > 0 else "saturated",
+        "metrics": stats["metrics"],
     }

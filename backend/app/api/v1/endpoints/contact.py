@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from app.services.email_service import EmailService
+from app.services.email_queue import email_queue, Priority
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -66,8 +66,7 @@ async def submit_contact(request: ContactRequest) -> ContactResponse:
     """
     try:
         settings = get_settings()
-        email_service = EmailService()
-        
+
         # Recipient email address
         recipient_email = "admin@rekshift.com"
         
@@ -97,13 +96,16 @@ async def submit_contact(request: ContactRequest) -> ContactResponse:
         </div>
         """
         
-        # Send email
-        await email_service.send_email(
-            to=recipient_email,
-            subject=subject,
-            html=html_content,
-            reply_to=request.email,
-        )
+        # Send email via async queue
+        try:
+            await email_queue.enqueue(
+                to_email=recipient_email,
+                subject=subject,
+                html_body=html_content,
+                priority=Priority.NORMAL,
+            )
+        except Exception as queue_err:
+            logger.warning("[contact] email_queue failed: %s", queue_err)
         
         logger.info(
             "[contact] inquiry submitted: %s (%s) - %s",

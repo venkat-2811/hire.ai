@@ -3,13 +3,15 @@ import logging
 import uuid
 import re
 import os
+import time
+import threading
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from email.utils import formatdate, formataddr
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Set
 from enum import IntEnum
 
 import aiosmtplib
@@ -17,6 +19,9 @@ import aiosmtplib
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+# Dedicated dead-letter logger — routes to a named logger so operators can
+# direct it to a separate file / log aggregator without touching the main log.
+_dead_letter_logger = logging.getLogger("dead_letter")
 
 class Priority(IntEnum):
     CRITICAL = 0
@@ -33,6 +38,7 @@ class EmailJob:
         text_body: Optional[str] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
         max_attempts: int = 3,
+        idempotency_key: Optional[str] = None,
     ):
         self.priority = priority
         self.enqueued_at = datetime.now(timezone.utc).timestamp()
@@ -44,6 +50,9 @@ class EmailJob:
         self.attachments = attachments or []
         self.attempts = 0
         self.max_attempts = max_attempts
+        # Idempotency key: if set, a duplicate job with the same key will be
+        # silently dropped instead of queued a second time.
+        self.idempotency_key: Optional[str] = idempotency_key
 
     def __lt__(self, other):
         if not isinstance(other, EmailJob):
@@ -71,13 +80,39 @@ class SMTPConfig:
         return (self.use_ssl, not self.use_ssl)
 
 
+class _EmailMetrics:
+    """Simple thread-safe counters for email delivery statistics.
+
+    Uses a dict + threading lock so it's safe from any thread. Values are
+    monotonically increasing and reset only on process restart.
+    """
+    _lock = threading.Lock()
+    _counters: Dict[str, int] = {
+        "enqueued": 0,
+        "sent": 0,
+        "failed": 0,    # permanent failures (dead-lettered)
+        "retried": 0,   # transient failures retried
+    }
+
+    @classmethod
+    def inc(cls, key: str, delta: int = 1) -> None:
+        with cls._lock:
+            cls._counters[key] = cls._counters.get(key, 0) + delta
+
+    @classmethod
+    def snapshot(cls) -> Dict[str, int]:
+        with cls._lock:
+            return dict(cls._counters)
+
+
 class SMTPWorker:
-    def __init__(self, queue: asyncio.PriorityQueue, config: SMTPConfig, worker_id: int):
+    def __init__(self, queue: asyncio.PriorityQueue, config: SMTPConfig, worker_id: int, on_job_complete=None):
         self.queue = queue
         self.config = config
         self.worker_id = worker_id
         self.smtp: Optional[aiosmtplib.SMTP] = None
         self._running = False
+        self.on_job_complete = on_job_complete
 
     async def _ensure_connected(self):
         if self.smtp and self.smtp.is_connected:
@@ -159,25 +194,40 @@ class SMTPWorker:
                 break
                 
             job.attempts += 1
-            
+            success = False
+
             try:
                 await self._send(job)
+                _EmailMetrics.inc("sent")
+                success = True
             except Exception as e:
                 logger.error(f"[email_worker_{self.worker_id}] Failed to send job {job.job_id}: {str(e)}")
-                
+
                 if job.attempts < job.max_attempts:
                     backoff = 2 ** job.attempts  # 2, 4, 8...
+                    _EmailMetrics.inc("retried")
                     logger.info(f"[email_worker_{self.worker_id}] Re-enqueuing job {job.job_id} in {backoff}s")
-                    async def re_enqueue():
-                        await asyncio.sleep(backoff)
-                        await self.queue.put(job)
-                    asyncio.create_task(re_enqueue())
+                    async def re_enqueue(j=job, b=backoff):
+                        await asyncio.sleep(b)
+                        await self.queue.put(j)
+                    t = asyncio.create_task(re_enqueue())
+                    self._pending_retries = getattr(self, "_pending_retries", set())
+                    self._pending_retries.add(t)
+                    t.add_done_callback(self._pending_retries.discard)
                 else:
-                    logger.error(f"[email_worker_{self.worker_id}] Job {job.job_id} exceeded max attempts. Dead-lettering.")
-                    with open("dead_letter.log", "a") as f:
-                        f.write(f"[{datetime.now(timezone.utc).isoformat()}] Failed to send email to {job.to_email}. Subject: {job.subject}. Error: {str(e)}\n")
+                    _dead_letter_logger.error(
+                        "email_dead_letter job_id=%s to=%s subject=%r error=%s",
+                        job.job_id,
+                        job.to_email,
+                        job.subject,
+                        str(e),
+                    )
+                    _EmailMetrics.inc("failed")
             finally:
                 self.queue.task_done()
+                if success or job.attempts >= job.max_attempts:
+                    if self.on_job_complete and job.idempotency_key:
+                        self.on_job_complete(job.idempotency_key)
                 
         if self.smtp and self.smtp.is_connected:
             self.smtp.close()
@@ -187,16 +237,24 @@ class SMTPWorker:
 class EmailQueueManager:
     def __init__(self, workers: int = 3):
         self.num_workers = workers
-        self.queue = asyncio.PriorityQueue()
+        self.queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
         self.workers: List[asyncio.Task] = []
         self.config = SMTPConfig()
+        # Idempotency registry: tracks keys of in-flight / recently-queued jobs.
+        # Prevents duplicate sends when retries or concurrent requests collide.
+        self._inflight_keys: Set[str] = set()
+        self._inflight_lock = threading.Lock()
+
+    def remove_inflight_key(self, key: str):
+        with self._inflight_lock:
+            self._inflight_keys.discard(key)
 
     async def start(self):
         if self.workers:
             return
             
         for i in range(self.num_workers):
-            worker = SMTPWorker(self.queue, self.config, i)
+            worker = SMTPWorker(self.queue, self.config, i, on_job_complete=self.remove_inflight_key)
             task = asyncio.create_task(worker.run())
             self.workers.append(task)
         logger.info(f"[EmailQueueManager] Started {self.num_workers} workers")
@@ -220,6 +278,18 @@ class EmailQueueManager:
     def queue_size(self) -> int:
         return self.queue.qsize()
 
+    def get_queue_stats(self) -> Dict[str, Any]:
+        """Return a snapshot of queue depth, worker count, and delivery metrics.
+
+        Consumed by the /health/email-queue endpoint.
+        """
+        return {
+            "queue_size": self.queue.qsize(),
+            "worker_count": len(self.workers),
+            "workers_alive": sum(1 for t in self.workers if not t.done()),
+            "metrics": _EmailMetrics.snapshot(),
+        }
+
     async def enqueue(
         self,
         to_email: str,
@@ -228,13 +298,26 @@ class EmailQueueManager:
         text_body: Optional[str] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
         priority: Priority = Priority.NORMAL,
-        max_attempts: int = 3
+        max_attempts: int = 3,
+        idempotency_key: Optional[str] = None,
     ) -> str:
         if not self.config.user or not self.config.password:
             raise RuntimeError("SMTP_USER and SMTP_PASSWORD are not configured")
 
         if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", to_email):
             raise RuntimeError(f"Invalid recipient email: {to_email}")
+
+        # Idempotency check: skip if an identical job is already in-flight
+        if idempotency_key:
+            with self._inflight_lock:
+                if idempotency_key in self._inflight_keys:
+                    logger.info(
+                        "[email_queue] duplicate_skipped idempotency_key=%s to=%s",
+                        idempotency_key,
+                        to_email,
+                    )
+                    return idempotency_key  # return key as surrogate job_id
+                self._inflight_keys.add(idempotency_key)
 
         job = EmailJob(
             priority=priority,
@@ -243,9 +326,18 @@ class EmailQueueManager:
             html_body=html_body,
             text_body=text_body,
             attachments=attachments,
-            max_attempts=max_attempts
+            max_attempts=max_attempts,
+            idempotency_key=idempotency_key,
         )
         await self.queue.put(job)
+        _EmailMetrics.inc("enqueued")
+        logger.debug(
+            "[email_queue] enqueued job_id=%s to=%s subject=%r priority=%s",
+            job.job_id,
+            to_email,
+            subject,
+            priority.name,
+        )
         return job.job_id
         
     # --- TEMPLATE HELPERS ----------------------------------------------------
