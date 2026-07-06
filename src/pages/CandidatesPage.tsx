@@ -576,8 +576,8 @@ export default function CandidatesPage() {
               <button
                 onClick={() => setActiveTab('active')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${activeTab === 'active'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-background text-muted-foreground hover:text-foreground'
                   }`}
               >
                 <Users className="h-3.5 w-3.5" />
@@ -586,8 +586,8 @@ export default function CandidatesPage() {
               <button
                 onClick={() => setActiveTab('unassigned')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors border-l border-border ${activeTab === 'unassigned'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-background text-muted-foreground hover:text-foreground'
                   }`}
               >
                 <UserX className="h-3.5 w-3.5" />
@@ -608,17 +608,35 @@ export default function CandidatesPage() {
           </div>
         </div>
 
+        {/* Unified Search, Job, and Filters Toolbar */}
         {activeTab === 'active' && allJobs.length > 0 && (
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <div className="text-sm font-medium w-full sm:w-auto">Job</div>
+          <div className="flex flex-col gap-4 mb-2">
+            {/* Single Toolbar Row */}
+            <div className="flex flex-col md:flex-row items-center gap-4">
+              {/* Search Bar (Left, ~35-40% width) */}
+              {hasCandidates ? (
+                <div className="relative w-full md:w-[40%]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search candidates..."
+                    className="pl-10 w-full border-slate-400 dark:border-slate-800 shadow-sm"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <div className="hidden md:block md:w-[40%]" />
+              )}
+
+              {/* Job Dropdown (Primary, Center, fixed percentage width) */}
+              <div className="flex items-center gap-3 w-full md:w-[35%]">
+                <div className="text-sm font-medium whitespace-nowrap text-muted-foreground">JOB:</div>
                 <Select value={selectedJobId} onValueChange={(v) => {
                   handleJobChange(v);
                   setSelectedIds(new Set());
                   setStartJobId(v);
                 }}>
-                  <SelectTrigger className="w-full sm:w-[320px]" disabled={jobsLoading || allJobs.length === 0}>
+                  <SelectTrigger className="w-full font-medium border-slate-400 dark:border-slate-800 shadow-sm" disabled={jobsLoading || allJobs.length === 0}>
                     <SelectValue placeholder={jobsLoading ? 'Loading jobs...' : 'Select a job'} />
                   </SelectTrigger>
                   <SelectContent>
@@ -630,63 +648,48 @@ export default function CandidatesPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </CardContent>
-          </Card>
-        )}
 
-        {/* Filters */}
-        {activeTab === 'active' && allJobs.length > 0 && hasCandidates && (
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-                  <div className="relative w-full sm:flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search candidates..."
-                      className="pl-10 w-full"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
+              {/* Filters Button (Far right, compact) */}
+              {hasCandidates && (
+                <Button
+                  variant={showFilters ? "secondary" : "outline"}
+                  size="icon"
+                  className="w-full md:w-10 shrink-0 md:ml-auto border-slate-400 dark:border-slate-800 shadow-sm"
+                  onClick={() => setShowFilters(!showFilters)}
+                  title="Filters"
+                >
+                  <Filter className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+
+            {/* Filters Panel (collapsible) */}
+            {showFilters && hasCandidates && (
+              <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border/60">
+                <div className="flex items-center gap-2">
+                  <Label>Sort by:</Label>
+                  <Select value={sortField} onValueChange={(v: SortField) => setSortField(v)}>
+                    <SelectTrigger className="w-[140px] border-slate-400 dark:border-slate-800 shadow-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name">Name</SelectItem>
+                      <SelectItem value="date">Date Applied</SelectItem>
+                      <SelectItem value="score">Score</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="w-full sm:w-auto"
-                    onClick={() => setShowFilters(!showFilters)}
+                    className="border-slate-400 dark:border-slate-800 shadow-sm"
+                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
                   >
-                    <Filter className="mr-2 h-4 w-4" />
-                    Filters
+                    <ArrowUpDown className="h-4 w-4" />
                   </Button>
                 </div>
-
-                {showFilters && (
-                  <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
-                    <div className="flex items-center gap-2">
-                      <Label>Sort by:</Label>
-                      <Select value={sortField} onValueChange={(v: SortField) => setSortField(v)}>
-                        <SelectTrigger className="w-[140px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="name">Name</SelectItem>
-                          <SelectItem value="date">Date Applied</SelectItem>
-                          <SelectItem value="score">Score</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                      >
-                        <ArrowUpDown className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </div>
         )}
 
         {/* Bulk Actions */}

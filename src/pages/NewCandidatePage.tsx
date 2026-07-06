@@ -24,6 +24,7 @@ import {
   PenLine,
   ShieldCheck,
   X,
+  Search,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -63,6 +64,7 @@ export default function NewCandidatePage() {
   const [vendorName, setVendorName] = useState('');
   const [mainSkillset, setMainSkillset] = useState('');
   const [selectedJob, setSelectedJob] = useState('');
+  const [jobSearchQuery, setJobSearchQuery] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
 
@@ -76,6 +78,12 @@ export default function NewCandidatePage() {
   const { data: jobsData, isLoading: jobsLoading } = useJobs({ is_active: true });
 
   const jobs = jobsData || [];
+  const filteredJobs = jobs.filter((job: any) => {
+    const q = jobSearchQuery.toLowerCase();
+    const titleMatch = job.title?.toLowerCase().includes(q);
+    const customerMatch = job.end_customer_name?.toLowerCase().includes(q);
+    return titleMatch || customerMatch;
+  });
 
   useJobPolling(resumeParseJobId, {
     onComplete: () => {
@@ -582,7 +590,21 @@ export default function NewCandidatePage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {jobs.map((job) => (
+                    <div className="relative mb-4">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search job title or customer name..."
+                        value={jobSearchQuery}
+                        onChange={(e) => setJobSearchQuery(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                    {filteredJobs.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>No jobs match your search.</p>
+                      </div>
+                    ) : (
+                      filteredJobs.map((job: any) => (
                       <div
                         key={job.id}
                         onClick={() => setSelectedJob(job.id)}
@@ -620,7 +642,8 @@ export default function NewCandidatePage() {
                           </div>
                         </div>
                       </div>
-                    ))}
+                    ))
+                    )}
                   </div>
                 )}
               </CardContent>
