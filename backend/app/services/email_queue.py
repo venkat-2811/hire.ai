@@ -39,6 +39,7 @@ class EmailJob:
         attachments: Optional[List[Dict[str, Any]]] = None,
         max_attempts: int = 3,
         idempotency_key: Optional[str] = None,
+        cc_emails: Optional[List[str]] = None,
     ):
         self.priority = priority
         self.enqueued_at = datetime.now(timezone.utc).timestamp()
@@ -50,6 +51,7 @@ class EmailJob:
         self.attachments = attachments or []
         self.attempts = 0
         self.max_attempts = max_attempts
+        self.cc_emails = cc_emails or []
         # Idempotency key: if set, a duplicate job with the same key will be
         # silently dropped instead of queued a second time.
         self.idempotency_key: Optional[str] = idempotency_key
@@ -137,6 +139,8 @@ class SMTPWorker:
         msg = MIMEMultipart("mixed" if has_attachments else "alternative")
         msg["From"] = formataddr(("Rekshift", self.config.from_email))
         msg["To"] = job.to_email
+        if job.cc_emails:
+            msg["Cc"] = ", ".join(job.cc_emails)
         msg["Subject"] = job.subject
         msg["Date"] = formatdate(localtime=True)
         msg["Message-ID"] = f"<{uuid.uuid4().hex}@rekshift.com>"
@@ -176,7 +180,8 @@ class SMTPWorker:
         
         try:
             await self.smtp.send_message(msg)
-            logger.info(f"[email_worker_{self.worker_id}] Sent email to {job.to_email} (job={job.job_id})")
+            cc_log = f", cc={job.cc_emails}" if job.cc_emails else ""
+            logger.info(f"[email_worker_{self.worker_id}] Sent email to {job.to_email}{cc_log} (job={job.job_id})")
         except aiosmtplib.SMTPServerDisconnected:
             logger.warning(f"[email_worker_{self.worker_id}] Disconnected. Reconnecting and retrying once.")
             await self._ensure_connected()
@@ -300,6 +305,7 @@ class EmailQueueManager:
         priority: Priority = Priority.NORMAL,
         max_attempts: int = 3,
         idempotency_key: Optional[str] = None,
+        cc_emails: Optional[List[str]] = None,
     ) -> str:
         if not self.config.user or not self.config.password:
             raise RuntimeError("SMTP_USER and SMTP_PASSWORD are not configured")
@@ -328,13 +334,15 @@ class EmailQueueManager:
             attachments=attachments,
             max_attempts=max_attempts,
             idempotency_key=idempotency_key,
+            cc_emails=cc_emails,
         )
         await self.queue.put(job)
         _EmailMetrics.inc("enqueued")
         logger.debug(
-            "[email_queue] enqueued job_id=%s to=%s subject=%r priority=%s",
+            "[email_queue] enqueued job_id=%s to=%s cc=%s subject=%r priority=%s",
             job.job_id,
             to_email,
+            cc_emails,
             subject,
             priority.name,
         )

@@ -232,20 +232,25 @@ export default function CandidatesPage() {
   const selectedJob = useMemo(() => allJobs.find((j) => j.id === selectedJobId) || null, [allJobs, selectedJobId]);
 
   useEffect(() => {
-    if (!selectedJobId) {
-      // Only fall back to the first job if there is no persisted selection
-      const savedId = sessionStorage.getItem(CANDIDATES_JOB_KEY);
-      if (savedId && allJobs.some(j => j.id === savedId)) {
-        // Saved job still exists — keep it (state already set from initialiser)
-        return;
-      }
-      const defaultJobId = activeJobs[0]?.id || allJobs[0]?.id;
-      if (defaultJobId) {
-        sessionStorage.setItem(CANDIDATES_JOB_KEY, defaultJobId);
-        setSelectedJobId(defaultJobId);
+    if (!jobs || jobs.length === 0) return;
+
+    // Check if the currently selected job exists in the loaded jobs
+    const currentJobExists = jobs.some(j => j.id === selectedJobId);
+
+    if (!selectedJobId || !currentJobExists) {
+      // Find the most recently created job
+      const latestJob = [...jobs].sort((a, b) => {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return dateB - dateA;
+      })[0];
+
+      if (latestJob) {
+        sessionStorage.setItem(CANDIDATES_JOB_KEY, latestJob.id);
+        setSelectedJobId(latestJob.id);
       }
     }
-  }, [activeJobs, allJobs, selectedJobId]);
+  }, [jobs, selectedJobId]);
 
   // Group candidates by job
   const candidatesByJob = useMemo(() => {

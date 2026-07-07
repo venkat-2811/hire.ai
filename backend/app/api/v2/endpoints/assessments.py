@@ -443,6 +443,13 @@ async def invite_assessments(
     if not job:
         return api_error(message="Job not found", status_code=404)
 
+    def _fetch_profile():
+        return db.client.from_("profiles").select("organization_email").eq("user_id", user.id).maybe_single().execute()
+
+    prof_res = await db.run(_fetch_profile)
+    prof_row = getattr(prof_res, "data", None) or {}
+    org_email = prof_row.get("organization_email") if isinstance(prof_row, dict) else None
+
     # ── Recruiter-controlled Salesforce/Apex logic ──────────────────────────────
     # The system NO LONGER auto-detects Salesforce roles. The recruiter's job
     # configuration (include_apex_assessment) and invite-dialog choices are the
@@ -845,12 +852,22 @@ async def invite_assessments(
                     assessment_link,
                     deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC"),
                 )
+                cc_emails = ["vamsi@bvitsolutions.com", "sarma@bvitsolutions.com"]
+                if user.email:
+                    cc_emails.append(user.email)
+                else:
+                    logger.warning(f"[assessments.invite] Recruiter email unavailable for user {user.id}")
+
+                if org_email:
+                    cc_emails.append(org_email)
+
                 await email_queue.enqueue(
                     to_email=recipient_email,
                     subject=subject,
                     html_body=html,
                     text_body=text,
                     priority=Priority.HIGH,
+                    cc_emails=cc_emails,
                 )
 
                 def _mark_email_ok(sid=sid, email_pd=email_pd):
@@ -2752,6 +2769,13 @@ async def send_assessment_single(
     if not job:
         return api_error(message="Job not found", status_code=404)
         
+    def _fetch_profile():
+        return db.client.from_("profiles").select("organization_email").eq("user_id", user.id).maybe_single().execute()
+
+    prof_res = await db.run(_fetch_profile)
+    prof_row = getattr(prof_res, "data", None) or {}
+    org_email = prof_row.get("organization_email") if isinstance(prof_row, dict) else None
+        
     candidates = await _fetch_candidates(db=db, candidate_ids=[candidate_id])
     if not candidates:
         return api_error(message="Candidate not found", status_code=404)
@@ -2779,12 +2803,22 @@ async def send_assessment_single(
             "72 hours"
         )
         
+        cc_emails = ["vamsi@bvitsolutions.com", "sarma@bvitsolutions.com"]
+        if user.email:
+            cc_emails.append(user.email)
+        else:
+            logger.warning(f"[assessments.invite_single] Recruiter email unavailable for user {user.id}")
+
+        if org_email:
+            cc_emails.append(org_email)
+
         await email_queue.enqueue(
             to_email=str(candidate.get("email") or ""),
             subject=subject,
             html_body=html,
             text_body=text,
-            priority=Priority.HIGH
+            priority=Priority.HIGH,
+            cc_emails=cc_emails,
         )
         
     _bg_task2 = asyncio.create_task(_generate_and_enqueue())
