@@ -122,7 +122,7 @@ const PricingPage = () => {
                     {amount}
                   </span>
                   <p className="text-muted-foreground mt-2 text-sm">
-                    {plan.candidates} Candidate{typeof plan.candidates === 'number' && plan.candidates !== 1 ? 's' : ''}
+                    {plan.candidates} Candidate Evaluation Credits
                   </p>
                 </>
               )}

@@ -469,9 +469,9 @@ export default function BillingPage() {
                 <span className="text-muted-foreground font-medium">Candidate Invites</span>
                 <span className="font-bold text-foreground">
                   {activePlanId === 'scale' || activePlanId === 'enterprise' ? (
-                    activePlanId === 'enterprise' ? 'Custom Volume' : `${usage?.candidates_limit || 500} Included`
+                    activePlanId === 'enterprise' ? 'Custom Volume' : `${usage?.candidates_limit || 500} Credits Included`
                   ) : (
-                    `${usage?.candidates_limit || 5} Included`
+                    `${usage?.candidates_limit || 5} Credits Included`
                   )}
                 </span>
               </div>
@@ -572,7 +572,9 @@ export default function BillingPage() {
                             : 'bg-background border border-border/80'
                             }`}
                         >
-                          {plan.candidates != null ? `${plan.candidates} Candidates` : 'Custom Limit'}
+                          <span className="text-primary font-bold">
+                            {plan.candidates != null ? `${plan.candidates} Candidate Evaluation Credits` : 'Custom Limit'}
+                          </span>
                         </Badge>
                       </div>
 
@@ -619,6 +621,15 @@ export default function BillingPage() {
               })}
             </div>
           )}
+          <div className="mt-6 p-4 rounded-xl bg-muted/30 border border-border/50">
+            <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              What are Candidate Evaluation Credits?
+            </h4>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              A <strong>Candidate Evaluation Credit</strong> represents a fully processed candidate. We use a fractional billing system: adding a candidate consumes <strong>0.50 credits</strong>, and sending them an assessment or interview consumes the remaining <strong>0.50 credits</strong> (you are only charged once for the evaluation phase per candidate). Unused credits do not roll over to the next billing cycle.
+            </p>
+          </div>
         </div>
 
         {/* 2.5 Usage History */}
@@ -631,7 +642,7 @@ export default function BillingPage() {
                 </div>
                 Usage History
               </CardTitle>
-              <CardDescription className="text-xs font-medium">Detailed breakdown of candidate usage and fractional billing points.</CardDescription>
+              <CardDescription className="text-xs font-medium">Detailed breakdown of candidate evaluation credit usage and fractional billing points.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {usageHistory.length === 0 ? (
