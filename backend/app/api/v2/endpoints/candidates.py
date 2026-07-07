@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from app.config import get_settings
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
