@@ -348,6 +348,32 @@ async def _has_evaluation_charge(db, recruiter_id: str, candidate_id: Optional[s
         return False
 
 
+async def _log_zero_charge_event(
+    db,
+    recruiter_id: str,
+    action_label: str,
+    candidate_id: Optional[str],
+    job_id: Optional[str],
+) -> None:
+    """Insert a history row with 0 points so the action is visible even when skipped."""
+    def _insert(_r=recruiter_id, _c=candidate_id, _j=job_id, _a=action_label):
+        return (
+            db.client.from_("billing_usage_history")
+            .insert({
+                "recruiter_id": _r,
+                "candidate_id": _c,
+                "job_id": _j,
+                "action_type": _a,
+                "points_used": 0.00,
+            })
+            .execute()
+        )
+    try:
+        await db.run(_insert)
+    except Exception as exc:
+        logger.warning("[billing_helpers] _log_zero_charge_event failed: %s", exc)
+
+
 async def consume_assessment_slot(
     db,
     recruiter_id: str,
@@ -356,15 +382,16 @@ async def consume_assessment_slot(
 ) -> Optional[str]:
     """Consume +0.50 for the evaluation phase (assessment sent).
 
-    If an evaluation charge already exists for this candidate the call is a
-    no-op (returns None without touching the counter or the history table).
+    If an evaluation charge already exists for this candidate, logs a 0-point
+    history entry so the action remains visible, then returns None (no counter change).
     """
     if await _has_evaluation_charge(db, recruiter_id, candidate_id):
         logger.info(
             "[billing_helpers] assessment sent: evaluation phase already billed for "
-            "recruiter=%s candidate=%s — skipping charge",
+            "recruiter=%s candidate=%s — logging 0-point entry",
             recruiter_id, candidate_id,
         )
+        await _log_zero_charge_event(db, recruiter_id, "assessment sent", candidate_id, job_id)
         return None
     return await _consume_slot(db, recruiter_id, _BILLING_ASSESSMENT_COST, "assessment sent", candidate_id, job_id)
 
@@ -377,15 +404,16 @@ async def consume_interview_slot(
 ) -> Optional[str]:
     """Consume +0.50 for the evaluation phase (interview sent).
 
-    If an evaluation charge already exists for this candidate the call is a
-    no-op (returns None without touching the counter or the history table).
+    If an evaluation charge already exists for this candidate, logs a 0-point
+    history entry so the action remains visible, then returns None (no counter change).
     """
     if await _has_evaluation_charge(db, recruiter_id, candidate_id):
         logger.info(
             "[billing_helpers] interview sent: evaluation phase already billed for "
-            "recruiter=%s candidate=%s — skipping charge",
+            "recruiter=%s candidate=%s — logging 0-point entry",
             recruiter_id, candidate_id,
         )
+        await _log_zero_charge_event(db, recruiter_id, "interview sent", candidate_id, job_id)
         return None
     return await _consume_slot(db, recruiter_id, _BILLING_INTERVIEW_COST, "interview sent", candidate_id, job_id)
 
