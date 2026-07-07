@@ -576,6 +576,24 @@ async def invite_assessments(
 
     invites_sent = len(session_rows)
 
+    # Fractional billing: bill +0.50 per candidate for assessment send.
+    # We fire-and-forget in a best-effort manner; a billing failure does NOT
+    # block the invite flow — the sessions are already created.
+    from app.utils.billing_helpers import consume_assessment_slot as _consume_assessment
+    import asyncio as _asyncio
+    async def _bill_assessments():
+        for meta in session_meta:
+            try:
+                await _consume_assessment(db, user.id, meta["candidate_id"], job["id"])
+            except Exception as _exc:
+                logger.warning("[assessments.invite] billing assessment slot failed: %s", _exc)
+    _bill_task = _asyncio.create_task(_bill_assessments())
+    _bill_task.add_done_callback(
+        lambda t: logger.error(
+            "[assessments.invite] billing_task_failed error=%s", t.exception(), exc_info=t.exception()
+        ) if not t.cancelled() and t.exception() else None
+    )
+
     # Background: generate shared content once, update sessions, then send email per candidate.
     async def _generate_update_and_email():
         bg_started = time()
@@ -2742,6 +2760,7 @@ async def send_assessment_single(
     mcq_count = int(body.mcq_question_count or 0) if body.include_mcq is not False else 0
     sql_count = int(body.sql_question_count or 0) if body.include_sql else 0
     
+    
     async def _generate_and_enqueue():
         logger.info(f"Generating questions for {candidate_id}")
         mcqs, sqls = await generate_assessment_questions(
@@ -2776,6 +2795,21 @@ async def send_assessment_single(
             exc_info=t.exception(),
         ) if not t.cancelled() and t.exception() else None
     )
+
+    # Fractional billing: bill +0.50 for assessment send (single candidate).
+    from app.utils.billing_helpers import consume_assessment_slot as _consume_assessment_s
+    async def _bill_single_assessment():
+        try:
+            await _consume_assessment_s(db, user.id, candidate_id, body.job_id)
+        except Exception as _exc:
+            logger.warning("[assessments.invite_single] billing assessment slot failed: %s", _exc)
+    _bill_task_s = asyncio.create_task(_bill_single_assessment())
+    _bill_task_s.add_done_callback(
+        lambda t: logger.error(
+            "[assessments.invite_single] billing_task_failed error=%s", t.exception(), exc_info=t.exception()
+        ) if not t.cancelled() and t.exception() else None
+    )
+
     return ok({"status": "Accepted"}, status_code=202)
 
 from fastapi import UploadFile, File

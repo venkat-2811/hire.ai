@@ -116,10 +116,12 @@ async def submit_application(
             is_new_for_recruiter = False
     else:
         is_new_candidate = True
+        import uuid
+        candidate_id = str(uuid.uuid4())
 
     if is_new_for_recruiter:
         from app.utils.billing_helpers import consume_candidate_slot
-        err_msg = await consume_candidate_slot(db, recruiter_id)
+        err_msg = await consume_candidate_slot(db, recruiter_id, candidate_id, job_id)
         if err_msg:
             return api_error(message="Candidates cannot be onboarded into this job", status_code=403)
 
@@ -200,9 +202,6 @@ async def submit_application(
 
             await db.update("candidates", safe_update, filters={"id": candidate_id})
         else:
-            import uuid
-
-            candidate_id = str(uuid.uuid4())
             await db.insert(
                 "candidates",
                 [{"id": candidate_id, **candidate_payload, "created_at": _utc_now_iso()}],

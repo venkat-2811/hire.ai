@@ -737,6 +737,13 @@ async def invite_ai_interviews(
             logger.info("[ai_interview.invite] inserting session session_id=%s candidate_id=%s job_id=%s", session_id, cid, body.job_id)
             await db.run(lambda: db.client.from_("ai_interview_sessions").insert(insert_row).execute())
 
+            # Fractional billing: bill +0.25 for interview invite.
+            try:
+                from app.utils.billing_helpers import consume_interview_slot as _consume_interview
+                await _consume_interview(db, user.id, cid, body.job_id)
+            except Exception as _bill_exc:
+                logger.warning("[ai_interview.invite] billing interview slot failed session=%s: %s", session_id, _bill_exc)
+
             # Email is non-blocking — routed through the async queue
             try:
                 interview_link = f"{str(settings.frontend_url).rstrip('/')}/ai-interview/{token}"

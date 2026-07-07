@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  ShieldCheck, RefreshCw, Phone, Users, Zap
+  ShieldCheck, RefreshCw, Phone, Users, Zap, Activity
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -86,6 +86,11 @@ export default function BillingPage() {
     queryFn: () => billingApi.invoices(),
   });
 
+  const usageHistoryQuery = useQuery({
+    queryKey: ['billing-usage-history'],
+    queryFn: () => billingApi.getUsageHistory(),
+  });
+
   const usage = usageQuery.data;
   const profile = profileQuery.data;
 
@@ -96,6 +101,7 @@ export default function BillingPage() {
     profileCountry: profile?.country ?? null,
   });
   const invoices = (invoicesQuery.data || []) as BillingInvoice[];
+  const usageHistory = usageHistoryQuery.data || [];
 
   const activePlanId = normalizePlanId(usage?.plan);
   // STRICT REQUIREMENT: Geo-detected currency is the single source of truth.
@@ -172,9 +178,11 @@ export default function BillingPage() {
         queryClient.invalidateQueries({ queryKey: ['billing-usage'] }),
         queryClient.invalidateQueries({ queryKey: ['layout-billing-usage'] }),
         queryClient.invalidateQueries({ queryKey: ['billing-invoices'] }),
+        queryClient.invalidateQueries({ queryKey: ['billing-usage-history'] }),
         queryClient.invalidateQueries({ queryKey: ['profile'] }),
         usageQuery.refetch(),
         invoicesQuery.refetch(),
+        usageHistoryQuery.refetch(),
       ]);
 
       if (isManual) {
@@ -375,7 +383,12 @@ export default function BillingPage() {
                     <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Current Billing Period</span>
                   </span>
                   <div className="text-right">
-                    <span className="text-xl font-black text-primary">{usage?.candidates_count || 0}</span>
+                    <span className="text-xl font-black text-primary">
+                      {(() => {
+                        const count = usage?.candidates_count || 0;
+                        return Number.isInteger(count) ? count : count.toFixed(2);
+                      })()}
+                    </span>
                     <span className="text-sm text-muted-foreground font-medium mx-1">/</span>
                     <span className="text-sm font-bold text-foreground">{usage?.candidates_limit || 5}</span>
                   </div>
@@ -388,7 +401,28 @@ export default function BillingPage() {
                   {/* Subtle shine overlay */}
                   <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
                 </div>
-                <p className="text-[11px] font-medium text-muted-foreground pt-1 flex items-center gap-1.5">
+
+                {/* Billing stage legend */}
+                <div className="pt-2 pb-0.5">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Billing per candidate</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+                      <span className="inline-flex items-center justify-center h-4 w-9 rounded-sm bg-primary/10 text-primary font-bold text-[10px] border border-primary/20">+0.50</span>
+                      Added
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+                      <span className="inline-flex items-center justify-center h-4 w-9 rounded-sm bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold text-[10px] border border-blue-500/20">+0.50</span>
+                      Assessment / Interview sent
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+                      <span className="inline-flex items-center justify-center h-4 w-9 rounded-sm bg-foreground/10 text-foreground font-bold text-[10px] border border-foreground/20">= 1.00</span>
+                      Full slot
+                    </span>
+                  </div>
+
+                </div>
+
+                <p className="text-[11px] font-medium text-muted-foreground pt-0.5 flex items-center gap-1.5">
                   <span className="h-1 w-1 rounded-full bg-muted-foreground/40 block" />
                   Assessment limits reset automatically at the start of your next billing cycle.
                 </p>
@@ -585,6 +619,69 @@ export default function BillingPage() {
               })}
             </div>
           )}
+        </div>
+
+        {/* 2.5 Usage History */}
+        <div className="pt-6">
+          <Card className="border border-border/60 shadow-md bg-card rounded-2xl overflow-hidden">
+            <CardHeader className="border-b border-border/50 pb-5 pt-6 px-6 bg-muted/20">
+              <CardTitle className="flex items-center gap-2.5 text-lg font-bold text-foreground">
+                <div className="p-1.5 rounded-md bg-background border border-border shadow-sm">
+                  <Activity className="h-4 w-4 text-primary" />
+                </div>
+                Usage History
+              </CardTitle>
+              <CardDescription className="text-xs font-medium">Detailed breakdown of candidate usage and fractional billing points.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {usageHistory.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <p className="text-sm font-semibold text-foreground">No usage history yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">When you add candidates or send assessments, they will appear here.</p>
+                </div>
+              ) : (
+                <div className="max-h-[400px] overflow-y-auto">
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead className="sticky top-0 bg-muted border-b border-border/50 z-10">
+                      <tr className="text-muted-foreground">
+                        <th className="py-3 px-6 text-[11px] font-bold uppercase tracking-wider">Date & Time</th>
+                        <th className="py-3 px-6 text-[11px] font-bold uppercase tracking-wider">Action</th>
+                        <th className="py-3 px-6 text-[11px] font-bold uppercase tracking-wider">Candidate</th>
+                        <th className="py-3 px-6 text-[11px] font-bold uppercase tracking-wider">Job Title</th>
+                        <th className="py-3 px-6 text-[11px] font-bold uppercase tracking-wider text-right">Points Used</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40">
+                      {usageHistory.map((item) => (
+                        <tr key={item.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-3 px-6 whitespace-nowrap text-muted-foreground font-medium text-xs">
+                            {new Date(item.created_at).toLocaleString()}
+                          </td>
+                          <td className="py-3 px-6">
+                            <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-widest shadow-sm">
+                              {item.action_type}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-6">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-foreground text-xs">{item.candidate_name || 'Unknown'}</span>
+                              {item.candidate_email && <span className="text-[10px] text-muted-foreground">{item.candidate_email}</span>}
+                            </div>
+                          </td>
+                          <td className="py-3 px-6 text-xs text-muted-foreground truncate max-w-[200px]" title={item.job_title || '-'}>
+                            {item.job_title || '-'}
+                          </td>
+                          <td className="py-3 px-6 text-right font-bold font-mono text-xs text-primary">
+                            +{Number(item.points_used).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* 3. Invoice History */}

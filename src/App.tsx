@@ -41,6 +41,7 @@ import AdminPeoplePage from "./pages/admin/AdminPeoplePage";
 import AdminLoginsTodayPage from "./pages/admin/AdminLoginsTodayPage";
 import AdminAllRecruitersPage from "./pages/admin/AdminAllRecruitersPage";
 import AdminRecruiterDetailPage from "./pages/admin/AdminRecruiterDetailPage";
+import AdminUsageHistoryPage from "./pages/admin/AdminUsageHistoryPage";
 import OfferAcceptancePage from "./pages/OfferAcceptancePage";
 import NotFound from "./pages/NotFound";
 
@@ -123,6 +124,7 @@ const App = () => (
               <Route path="logins-today" element={<AdminLoginsTodayPage />} />
               <Route path="people/recruiters" element={<AdminAllRecruitersPage />} />
               <Route path="people/recruiters/:id" element={<AdminRecruiterDetailPage />} />
+              <Route path="usage-history" element={<AdminUsageHistoryPage />} />
             </Route>
             <Route path="/offer-acceptance" element={<OfferAcceptancePage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

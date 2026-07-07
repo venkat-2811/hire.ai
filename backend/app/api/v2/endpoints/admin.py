@@ -1440,3 +1440,54 @@ async def admin_candidates_list(
         "candidates": candidates_payload,
     })
 
+
+@router.get("/usage-history")
+async def get_all_usage_history(user: ClerkUser = Depends(require_role("admin"))):
+    """GET /api/v2/admin/usage-history"""
+    db = get_db_admin_service()
+
+    def _fetch():
+        return (
+            db.client.from_("billing_usage_history")
+            .select("id, action_type, points_used, created_at, recruiter_id, candidates(email, full_name), job_descriptions(title)")
+            .order("created_at", desc=True)
+            .limit(500)
+            .execute()
+        )
+
+    try:
+        res = await db.run(_fetch)
+        data = getattr(res, "data", None) or []
+    except Exception as exc:
+        logger.warning("[admin.usage-history] Table query failed (migration may not have run yet): %s", exc)
+        return ok([])
+    
+    # We need to map recruiter_id to email. We can fetch all profiles for these recruiters.
+    recruiter_ids = list(set([row["recruiter_id"] for row in data if row.get("recruiter_id")]))
+    profiles_by_id = {}
+    if recruiter_ids:
+        def _fetch_profiles():
+            return db.client.from_("profiles").select("user_id, email, full_name").in_("user_id", recruiter_ids).execute()
+        prof_res = await db.run(_fetch_profiles)
+        for p in (getattr(prof_res, "data", None) or []):
+            profiles_by_id[p["user_id"]] = p
+            
+    formatted = []
+    for row in data:
+        cand = row.get("candidates") or {}
+        job = row.get("job_descriptions") or {}
+        recruiter = profiles_by_id.get(row.get("recruiter_id")) or {}
+        formatted.append({
+            "id": row["id"],
+            "action_type": row["action_type"],
+            "points_used": row["points_used"],
+            "created_at": row["created_at"],
+            "candidate_email": cand.get("email"),
+            "candidate_name": cand.get("full_name"),
+            "job_title": job.get("title"),
+            "recruiter_email": recruiter.get("email"),
+            "recruiter_name": recruiter.get("full_name")
+        })
+        
+    return ok(formatted)
+

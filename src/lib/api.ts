@@ -1489,6 +1489,13 @@ export interface UsageInfo {
   };
 }
 
+export interface UsageHistoryItem {
+  date: string;
+  jobs_used: number;
+  assessments_used: number;
+  interviews_used: number;
+}
+
 export const subscriptionApi = {
   get: () =>
     request<SubscriptionInfo>('/subscription', {
@@ -1606,9 +1613,22 @@ export const billingApi = {
       '/billing/verify-session',
       { method: 'POST', body: { session_id: sessionId, plan } },
     ),
+  getUsageHistory: () => request<UsageHistoryItem[]>('/billing/usage-history', { method: 'GET' }),
 };
 
 // ============== Admin API ==============
+
+export interface UsageHistoryItem {
+  id: string;
+  action_type: string;
+  points_used: number;
+  created_at: string;
+  candidate_email?: string;
+  candidate_name?: string;
+  job_title?: string;
+  recruiter_email?: string;
+  recruiter_name?: string;
+}
 
 export interface AdminOverview {
   generated_at: string;
@@ -1874,6 +1894,8 @@ export const adminApi = {
       {}
     );
   },
+
+  usageHistory: () => request<UsageHistoryItem[]>('/admin/usage-history', { method: 'GET' }),
 };
 
 // ============== DSA Problems API ==============
@@ -1932,3 +1954,4 @@ export const dsaProblemsApi = {
 };
 
 export { APIError };
+

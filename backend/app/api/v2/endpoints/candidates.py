@@ -263,10 +263,17 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
     candidate_row: Optional[Dict[str, Any]] = None
     is_new_candidate: bool = False  # True only when we INSERT a new candidate row
 
+    import uuid
+    pre_generated_candidate_id = None
+    if not is_existing:
+        pre_generated_candidate_id = str(uuid.uuid4())
+        
+    candidate_id_to_bill = existing[0]["id"] if is_existing else pre_generated_candidate_id
+
     # ATOMIC QUOTA CHECK AND CONSUMPTION FOR NEW CANDIDATES
     if is_new_for_recruiter:
         from app.utils.billing_helpers import consume_candidate_slot
-        err_msg = await consume_candidate_slot(db, user.id)
+        err_msg = await consume_candidate_slot(db, user.id, candidate_id_to_bill, job_id)
         if err_msg:
             return api_error(message=err_msg, status_code=403)
 
@@ -317,6 +324,7 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
             candidate_row = cand if isinstance(cand, dict) else existing[0]
         else:
             insert_row: Dict[str, Any] = {
+                "id": pre_generated_candidate_id,
                 "full_name": full_name,
                 "email": email,
                 "phone": payload.get("phone"),

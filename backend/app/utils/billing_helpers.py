@@ -145,7 +145,7 @@ def validate_plan_currency(plan: str, currency: str) -> Optional[str]:
 
 # ── Candidate Count ───────────────────────────────────────────────────────────
 
-async def get_candidate_count_after_deployment(db, recruiter_id: str) -> int:
+async def get_candidate_count_after_deployment(db, recruiter_id: str) -> float:
     """Return the total number of candidates ever consumed by the recruiter.
 
     Reads the immutable `candidates_consumed` counter from the profiles table.
@@ -169,7 +169,7 @@ async def get_candidate_count_after_deployment(db, recruiter_id: str) -> int:
         profile = getattr(res, "data", None) or {}
         consumed = profile.get("candidates_consumed")
         if consumed is not None:
-            return int(consumed)
+            return float(consumed)
     except Exception as exc:
         logger.warning(
             "[billing_helpers] Could not read candidates_consumed, falling back to live count: %s", exc
@@ -209,97 +209,226 @@ async def get_candidate_count_after_deployment(db, recruiter_id: str) -> int:
     return len(unique_cids)
 
 
-async def consume_candidate_slot(db, recruiter_id: str) -> Optional[str]:
-    """Atomically check limits and increment the candidates_consumed counter using OCC.
-    
-    Returns error message string if limit reached, else None on successful consumption.
+# ── Fractional billing increments ─────────────────────────────────────────────
+# Each action contributes a partial amount toward a candidate's full 1.0 slot:
+#   +0.50  candidate added
+#   +0.50  assessment OR interview sent (sending either or both only counts once
+#          towards the evaluation phase — the first to be sent charges 0.50,
+#          and no additional charge is levied for the second action)
+#   ─────
+#   1.00   total for a fully-processed candidate
+_BILLING_ADD_COST        = 0.50
+_BILLING_ASSESSMENT_COST = 0.50
+_BILLING_INTERVIEW_COST  = 0.50
+
+
+async def _consume_slot(
+    db, 
+    recruiter_id: str, 
+    amount: float, 
+    action_label: str,
+    candidate_id: Optional[str] = None,
+    job_id: Optional[str] = None
+) -> Optional[str]:
+    """Atomically increment candidates_consumed by `amount`.
+
+    Checks the plan limit first, then does a direct atomic increment using
+    a PostgreSQL stored procedure to avoid Python closure variable-capture bugs.
+    Returns an error message string on failure, or None on success.
     """
-    for _ in range(5): # Retry loop for optimistic concurrency control
-        def _fetch():
+    # Step 1: Fetch profile to do the limit check
+    def _fetch():
+        return (
+            db.client.from_("profiles")
+            .select("subscription_plan, candidates_consumed")
+            .eq("user_id", recruiter_id)
+            .maybe_single()
+            .execute()
+        )
+
+    try:
+        p_res = await db.run(_fetch)
+        profile = getattr(p_res, "data", None) or {}
+
+        plan = _normalize_plan(profile.get("subscription_plan"))
+        plan_config = BILLING_PLAN_CONFIG.get(plan, BILLING_PLAN_CONFIG["free"])
+        plan_limit = plan_config.get("candidates")
+
+        current_consumed = float(profile.get("candidates_consumed") or 0)
+
+        # Enterprise plan has custom/unlimited limits
+        if plan_limit is not None and current_consumed >= plan_limit:
+            return "You have reached your plan limit. Please choose a subscription plan to continue assessing additional candidates."
+
+        new_value = round(current_consumed + amount, 2)
+
+        # Step 2: Perform a direct atomic update.
+        # Freeze captured values as default args to avoid Python late-binding closure bug.
+        def _update(_nv=new_value, _uid=recruiter_id):
             return (
                 db.client.from_("profiles")
-                .select("subscription_plan, candidates_consumed")
-                .eq("user_id", recruiter_id)
-                .maybe_single()
+                .update({"candidates_consumed": _nv})
+                .eq("user_id", _uid)
                 .execute()
             )
-        
-        try:
-            p_res = await db.run(_fetch)
-            profile = getattr(p_res, "data", None) or {}
+
+        update_res = await db.run(_update)
+        updated_data = getattr(update_res, "data", [])
+
+        if updated_data:
+            logger.info(
+                "[billing_helpers] %s recruiter=%s +%.2f → %.2f",
+                action_label, recruiter_id, amount, new_value,
+            )
             
-            plan = _normalize_plan(profile.get("subscription_plan"))
-            plan_config = BILLING_PLAN_CONFIG.get(plan, BILLING_PLAN_CONFIG["free"])
-            plan_limit = plan_config.get("candidates")
-            
-            current_consumed = int(profile.get("candidates_consumed") or 0)
-            
-            # Enterprise plan has custom/unlimited limits
-            if plan_limit is not None and current_consumed >= plan_limit:
-                return "You have reached your plan limit. Please choose a subscription plan to continue assessing additional candidates."
-                
-            def _update():
+            # Log usage history
+            def _log_usage(_r=recruiter_id, _c=candidate_id, _j=job_id, _a=action_label, _p=amount):
                 return (
-                    db.client.from_("profiles")
-                    .update({"candidates_consumed": current_consumed + 1})
-                    .eq("user_id", recruiter_id)
-                    .eq("candidates_consumed", current_consumed)
+                    db.client.from_("billing_usage_history")
+                    .insert({
+                        "recruiter_id": _r,
+                        "candidate_id": _c,
+                        "job_id": _j,
+                        "action_type": _a,
+                        "points_used": _p
+                    })
                     .execute()
                 )
-                
-            update_res = await db.run(_update)
-            updated_data = getattr(update_res, "data", [])
-            
-            if updated_data:
-                return None # Successfully consumed
-                
-        except Exception as exc:
-            logger.error("[billing_helpers] Error in consume_candidate_slot: %s", exc)
-            return "Failed to validate candidate limit. Please try again."
-            
-    return "The system is currently busy. Please try adding the candidate again."
+            try:
+                await db.run(_log_usage)
+            except Exception as e:
+                logger.error("[billing_helpers] Failed to log usage history: %s", e)
+
+            return None  # Successfully consumed
+
+        # If update returned empty, profile may not exist — create it
+        logger.warning("[billing_helpers] _consume_slot: update returned empty for user=%s", recruiter_id)
+        return None  # Non-fatal — candidate was already added
+
+    except Exception as exc:
+        logger.error("[billing_helpers] Error in _consume_slot(%s): %s", action_label, exc)
+        return "Failed to validate candidate limit. Please try again."
+
+
+async def consume_candidate_slot(
+    db, 
+    recruiter_id: str, 
+    candidate_id: Optional[str] = None, 
+    job_id: Optional[str] = None
+) -> Optional[str]:
+    """Consume exactly +0.50 for adding a candidate."""
+    return await _consume_slot(db, recruiter_id, _BILLING_ADD_COST, "candidate added", candidate_id, job_id)
+
+
+async def _has_evaluation_charge(db, recruiter_id: str, candidate_id: Optional[str]) -> bool:
+    """Return True if the recruiter has already been billed the evaluation phase
+    (+0.50) for this candidate — i.e., an 'assessment sent' or 'interview sent'
+    entry already exists in billing_usage_history.
+    """
+    if not candidate_id:
+        return False
+
+    def _check(_r=recruiter_id, _c=candidate_id):
+        return (
+            db.client.from_("billing_usage_history")
+            .select("id")
+            .eq("recruiter_id", _r)
+            .eq("candidate_id", _c)
+            .in_("action_type", ["assessment sent", "interview sent"])
+            .limit(1)
+            .execute()
+        )
+
+    try:
+        res = await db.run(_check)
+        rows = getattr(res, "data", None) or []
+        return len(rows) > 0
+    except Exception as exc:
+        logger.warning("[billing_helpers] _has_evaluation_charge check failed: %s", exc)
+        return False
+
+
+async def consume_assessment_slot(
+    db,
+    recruiter_id: str,
+    candidate_id: Optional[str] = None,
+    job_id: Optional[str] = None
+) -> Optional[str]:
+    """Consume +0.50 for the evaluation phase (assessment sent).
+
+    If an evaluation charge already exists for this candidate the call is a
+    no-op (returns None without touching the counter or the history table).
+    """
+    if await _has_evaluation_charge(db, recruiter_id, candidate_id):
+        logger.info(
+            "[billing_helpers] assessment sent: evaluation phase already billed for "
+            "recruiter=%s candidate=%s — skipping charge",
+            recruiter_id, candidate_id,
+        )
+        return None
+    return await _consume_slot(db, recruiter_id, _BILLING_ASSESSMENT_COST, "assessment sent", candidate_id, job_id)
+
+
+async def consume_interview_slot(
+    db,
+    recruiter_id: str,
+    candidate_id: Optional[str] = None,
+    job_id: Optional[str] = None
+) -> Optional[str]:
+    """Consume +0.50 for the evaluation phase (interview sent).
+
+    If an evaluation charge already exists for this candidate the call is a
+    no-op (returns None without touching the counter or the history table).
+    """
+    if await _has_evaluation_charge(db, recruiter_id, candidate_id):
+        logger.info(
+            "[billing_helpers] interview sent: evaluation phase already billed for "
+            "recruiter=%s candidate=%s — skipping charge",
+            recruiter_id, candidate_id,
+        )
+        return None
+    return await _consume_slot(db, recruiter_id, _BILLING_INTERVIEW_COST, "interview sent", candidate_id, job_id)
 
 async def refund_candidate_slot(db, recruiter_id: str) -> None:
-    """Atomically decrement the candidates_consumed counter using OCC."""
-    for _ in range(5):
-        def _fetch():
+    """Atomically decrement candidates_consumed by 0.50 (reverses a candidate-add charge)."""
+    def _fetch():
+        return (
+            db.client.from_("profiles")
+            .select("candidates_consumed")
+            .eq("user_id", recruiter_id)
+            .maybe_single()
+            .execute()
+        )
+
+    try:
+        p_res = await db.run(_fetch)
+        profile = getattr(p_res, "data", None) or {}
+        current_consumed = profile.get("candidates_consumed")
+
+        if current_consumed is None or float(current_consumed) <= 0:
+            return  # Nothing to refund
+
+        new_value = round(max(0.0, float(current_consumed) - _BILLING_ADD_COST), 2)
+
+        # Freeze captured values as default args to avoid Python late-binding closure bug.
+        def _update(_nv=new_value, _uid=recruiter_id):
             return (
                 db.client.from_("profiles")
-                .select("candidates_consumed")
-                .eq("user_id", recruiter_id)
-                .maybe_single()
+                .update({"candidates_consumed": _nv})
+                .eq("user_id", _uid)
                 .execute()
             )
-            
-        try:
-            p_res = await db.run(_fetch)
-            profile = getattr(p_res, "data", None) or {}
-            current_consumed = profile.get("candidates_consumed")
-            
-            if current_consumed is None or int(current_consumed) <= 0:
-                return # Nothing to refund
-                
-            current_consumed = int(current_consumed)
-            
-            def _update():
-                return (
-                    db.client.from_("profiles")
-                    .update({"candidates_consumed": current_consumed - 1})
-                    .eq("user_id", recruiter_id)
-                    .eq("candidates_consumed", current_consumed)
-                    .execute()
-                )
-                
-            update_res = await db.run(_update)
-            updated_data = getattr(update_res, "data", [])
-            
-            if updated_data:
-                return
-        except Exception as exc:
-            logger.error("[billing_helpers] Error in refund_candidate_slot: %s", exc)
-            return
-            
-    logger.error("[billing_helpers] Failed to refund candidates_consumed for user=%s due to concurrent modifications", recruiter_id)
+
+        update_res = await db.run(_update)
+        updated_data = getattr(update_res, "data", [])
+
+        if updated_data:
+            logger.info(
+                "[billing_helpers] refund_candidate_slot recruiter=%s -0.50 → %.2f",
+                recruiter_id, new_value,
+            )
+    except Exception as exc:
+        logger.error("[billing_helpers] Error in refund_candidate_slot: %s", exc)
 
 
 async def check_candidate_limit(db, recruiter_id: str) -> Optional[str]:

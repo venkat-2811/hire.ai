@@ -836,3 +836,43 @@ async def list_invoices(user: ClerkUser = Depends(require_user)):
     res = await db.run(_fetch)
     data = getattr(res, "data", None) or []
     return ok(data)
+
+@router.get("/usage-history")
+async def get_usage_history(user: ClerkUser = Depends(require_user)):
+    """GET /api/v2/billing/usage-history"""
+    db = get_db_admin_service()
+
+    def _fetch():
+        return (
+            db.client.from_("billing_usage_history")
+            .select("id, action_type, points_used, created_at, candidates(email, full_name), job_descriptions(title)")
+            .eq("recruiter_id", user.id)
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+        )
+
+    try:
+        res = await db.run(_fetch)
+        data = getattr(res, "data", None) or []
+    except Exception as exc:
+        logger.warning("[billing.usage-history] Table query failed (migration may not have run yet): %s", exc)
+        return ok([])
+
+    # Format the data for the frontend
+    formatted = []
+    for row in data:
+        cand = row.get("candidates") or {}
+        job = row.get("job_descriptions") or {}
+        formatted.append({
+            "id": row["id"],
+            "action_type": row["action_type"],
+            "points_used": row["points_used"],
+            "created_at": row["created_at"],
+            "candidate_email": cand.get("email"),
+            "candidate_name": cand.get("full_name"),
+            "job_title": job.get("title")
+        })
+
+    return ok(formatted)
+
