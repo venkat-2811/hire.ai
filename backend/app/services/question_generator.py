@@ -236,62 +236,74 @@ class QuestionGeneratorService:
         must_have_skills = ", ".join(job.must_have_skills)
         good_to_have_skills = ", ".join(job.good_to_have_skills)
         
-        # Adjust token limit based on question count
-        max_tokens = min(16384, 4096 + (count * 150))
+        CHUNK_SIZE = 20
+        all_questions = []
+        seen_topics: set = set()
         
-        system_prompt, user_prompt = get_mcq_generation_prompt(
-            role=job.role,
-            level=job.level,
-            description=job.description,
-            must_have_skills=must_have_skills,
-            good_to_have_skills=good_to_have_skills,
-            count=count,
-            difficulty=difficulty,
-            focus_areas=focus_areas,
-            strict_focus=strict_focus,
-        )
+        max_attempts = (count // CHUNK_SIZE) + 5
+        attempts = 0
 
-        try:
-            result = await self.openai.generate_json(
-                prompt=user_prompt,
-                system_instruction=system_prompt,
-                temperature=0.85,
-                max_tokens=max_tokens,
-                raise_on_error=True
+        while len(all_questions) < count and attempts < max_attempts:
+            attempts += 1
+            remaining = count - len(all_questions)
+            chunk_count = min(CHUNK_SIZE, remaining)
+
+            # Adjust token limit based on chunk count
+            max_tokens = min(16384, 4096 + (chunk_count * 150))
+            
+            system_prompt, user_prompt = get_mcq_generation_prompt(
+                role=job.role,
+                level=job.level,
+                description=job.description,
+                must_have_skills=must_have_skills,
+                good_to_have_skills=good_to_have_skills,
+                count=chunk_count,
+                difficulty=difficulty,
+                focus_areas=focus_areas,
+                strict_focus=strict_focus,
             )
 
-            questions = []
-            seen_topics: set = set()  # topic-fingerprint deduplication
-            generated_questions = result.get("questions", [])
-
-            for q in generated_questions:
-                if len(questions) >= count:
-                    break
-                question_data = self._validate_and_format_question(q, difficulty)
-                if not question_data:
-                    continue
-                # Near-duplicate topic check
-                fingerprint = self._topic_fingerprint(question_data['question'])
-                if fingerprint and fingerprint in seen_topics:
-                    continue
-                seen_topics.add(fingerprint)
-                questions.append(question_data)
-
-            if len(questions) != count:
-                raise RuntimeError(
-                    f"Failed to generate required MCQ count: generated {len(questions)}, requested {count}"
+            try:
+                result = await self.openai.generate_json(
+                    prompt=user_prompt,
+                    system_instruction=system_prompt,
+                    temperature=0.85,
+                    max_tokens=max_tokens,
+                    raise_on_error=True
                 )
 
-            logger.info(
-                "[question_gen] mcq_generated count=%s requested=%s",
-                len(questions),
-                count,
-            )
-            return questions
+                generated_questions = result.get("questions", [])
 
-        except Exception as e:
-            logger.error("[question_gen] mcq_generation_failed count=%s error=%s", count, str(e))
-            raise RuntimeError("MCQ generation failed") from e
+                for q in generated_questions:
+                    if len(all_questions) >= count:
+                        break
+                    question_data = self._validate_and_format_question(q, difficulty)
+                    if not question_data:
+                        continue
+                    # Near-duplicate topic check
+                    fingerprint = self._topic_fingerprint(question_data['question'])
+                    if fingerprint and fingerprint in seen_topics:
+                        continue
+                    seen_topics.add(fingerprint)
+                    all_questions.append(question_data)
+
+                logger.info(f"[question_gen] Generated {len(all_questions)}/{count} MCQs so far...")
+
+            except Exception as e:
+                logger.error("[question_gen] mcq_generation chunk failed error=%s", str(e))
+                continue
+
+        if len(all_questions) < count:
+            raise RuntimeError(
+                f"Failed to generate required MCQ count: generated {len(all_questions)}, requested {count}"
+            )
+
+        logger.info(
+            "[question_gen] mcq_generated count=%s requested=%s",
+            len(all_questions),
+            count,
+        )
+        return all_questions
     
     def _topic_fingerprint(self, text: str) -> str:
         """Extract a normalised topic key for near-duplicate detection."""

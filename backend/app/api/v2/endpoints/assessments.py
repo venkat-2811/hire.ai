@@ -853,12 +853,12 @@ async def invite_assessments(
                     deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC"),
                 )
                 cc_emails = ["vamsi@bvitsolutions.com", "sarma@bvitsolutions.com"]
-                if user.email:
+                if user.email and user.email not in cc_emails:
                     cc_emails.append(user.email)
-                else:
+                elif not user.email:
                     logger.warning(f"[assessments.invite] Recruiter email unavailable for user {user.id}")
 
-                if org_email:
+                if org_email and org_email not in cc_emails:
                     cc_emails.append(org_email)
 
                 await email_queue.enqueue(

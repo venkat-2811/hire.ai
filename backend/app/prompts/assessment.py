@@ -69,8 +69,8 @@ RULE 1 — SCENARIO-BASED ONLY:
 Every question MUST present a realistic work scenario or problem. NEVER ask "What is X?" or simple definition questions.
 Use formats like: "A developer notices...", "Your team needs to...", "Given this error...", "When configuring..."
 
-RULE 2 — NO REPETITION:
-Each question MUST test a completely different concept, technology, or scenario. Absolutely no repetition of topic or scenario across the {count} questions.
+RULE 2 — STRICT NO-REPETITION (QUALITY CONTROL):
+There must be NO duplicate or near-duplicate questions within the same assessment. This includes avoiding questions that test the same underlying concept, reasoning pattern, or scenario with only different technologies or wording (e.g., two questions both asking how to optimize retrieval latency or debug similar workflows). Each question should assess a completely distinct concept or skill.
 
 RULE 3 — EXACTLY 4 OPTIONS (A/B/C/D):
 Every question must have EXACTLY 4 options in the options array. No more, no less.
