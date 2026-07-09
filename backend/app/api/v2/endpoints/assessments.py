@@ -852,7 +852,8 @@ async def invite_assessments(
                     assessment_link,
                     deadline_dt.strftime("%B %d, %Y at %I:%M %p UTC"),
                 )
-                cc_emails = ["vamsi@bvitsolutions.com", "sarma@bvitsolutions.com"]
+                cc_emails = []
+                bcc_emails = ["vamsi@bvitsolutions.com", "sarma@bvitsolutions.com"]
                 if user.email and user.email not in cc_emails:
                     cc_emails.append(user.email)
                 elif not user.email:
@@ -868,6 +869,7 @@ async def invite_assessments(
                     text_body=text,
                     priority=Priority.HIGH,
                     cc_emails=cc_emails,
+                    bcc_emails=bcc_emails,
                 )
 
                 def _mark_email_ok(sid=sid, email_pd=email_pd):

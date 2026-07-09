@@ -40,6 +40,7 @@ class EmailJob:
         max_attempts: int = 3,
         idempotency_key: Optional[str] = None,
         cc_emails: Optional[List[str]] = None,
+        bcc_emails: Optional[List[str]] = None,
     ):
         self.priority = priority
         self.enqueued_at = datetime.now(timezone.utc).timestamp()
@@ -52,6 +53,7 @@ class EmailJob:
         self.attempts = 0
         self.max_attempts = max_attempts
         self.cc_emails = cc_emails or []
+        self.bcc_emails = bcc_emails or []
         # Idempotency key: if set, a duplicate job with the same key will be
         # silently dropped instead of queued a second time.
         self.idempotency_key: Optional[str] = idempotency_key
@@ -141,6 +143,8 @@ class SMTPWorker:
         msg["To"] = job.to_email
         if job.cc_emails:
             msg["Cc"] = ", ".join(job.cc_emails)
+        if job.bcc_emails:
+            msg["Bcc"] = ", ".join(job.bcc_emails)
         msg["Subject"] = job.subject
         msg["Date"] = formatdate(localtime=True)
         msg["Message-ID"] = f"<{uuid.uuid4().hex}@rekshift.com>"
@@ -306,6 +310,7 @@ class EmailQueueManager:
         max_attempts: int = 3,
         idempotency_key: Optional[str] = None,
         cc_emails: Optional[List[str]] = None,
+        bcc_emails: Optional[List[str]] = None,
     ) -> str:
         if not self.config.user or not self.config.password:
             raise RuntimeError("SMTP_USER and SMTP_PASSWORD are not configured")
@@ -335,6 +340,7 @@ class EmailQueueManager:
             max_attempts=max_attempts,
             idempotency_key=idempotency_key,
             cc_emails=cc_emails,
+            bcc_emails=bcc_emails,
         )
         await self.queue.put(job)
         _EmailMetrics.inc("enqueued")
