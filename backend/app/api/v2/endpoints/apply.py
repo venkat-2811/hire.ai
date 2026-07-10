@@ -63,7 +63,6 @@ async def submit_application(
 ):
     """Submit a public job application. No auth required."""
     db = get_db_admin_service()
-    email_service = get_email_service()
 
     if not job_id or not full_name or not email:
         return api_error(message="job_id, full_name, and email are required", status_code=400)
@@ -170,7 +169,7 @@ async def submit_application(
             candidate_payload["resume_text"] = resume_text
             candidate_payload["resume_parsed_data"] = resume_parsed_data
 
-        if candidate_id:
+        if not is_new_candidate:
             # SECURITY: When updating an existing shared candidate record, only overwrite fields
             # that are currently null/empty. This prevents a new application from clobbering
             # contact details recorded by a different recruiter's tenant context.
