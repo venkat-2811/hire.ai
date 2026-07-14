@@ -129,10 +129,45 @@ async def submit_application(
         # Parse resume (best-effort)
         resume_text = ""
         resume_parsed_data: Any = None
+        resume_url = ""
         if resume is not None:
             _resume_filename = resume.filename or "resume.pdf"
             try:
                 content = await resume.read()
+
+                # Upload to Supabase Storage
+                import os
+                import uuid
+                from app.config import get_settings
+                
+                settings = get_settings()
+                ext = os.path.splitext(_resume_filename)[1].lower() or ".pdf"
+                object_path = f"{candidate_id}/{uuid.uuid4().hex}{ext}"
+
+                def _ensure_bucket():
+                    try:
+                        db.client.storage.create_bucket("resumes", options={"public": True})
+                    except Exception:
+                        try:
+                            db.client.storage.update_bucket("resumes", options={"public": True})
+                        except Exception:
+                            pass
+
+                await db.run(_ensure_bucket)
+
+                def _upload_storage():
+                    return db.client.storage.from_("resumes").upload(
+                        object_path,
+                        content,
+                        {"content-type": resume.content_type or "application/octet-stream"},
+                    )
+
+                await db.run(_upload_storage)
+
+                supabase_url = settings.supabase_url.rstrip("/")
+                resume_url = f"{supabase_url}/storage/v1/object/public/resumes/{object_path}"
+
+                # Parse Resume
                 parser = get_resume_parser()
                 resume_text, parsed = await parser.parse_resume(content, _resume_filename)
                 # Align with Node: store JSON-like dict, but keep any pydantic models serializable
@@ -168,6 +203,8 @@ async def submit_application(
         if resume_text:
             candidate_payload["resume_text"] = resume_text
             candidate_payload["resume_parsed_data"] = resume_parsed_data
+        if resume_url:
+            candidate_payload["resume_url"] = resume_url
 
         if not is_new_candidate:
             # SECURITY: When updating an existing shared candidate record, only overwrite fields
@@ -198,6 +235,8 @@ async def submit_application(
             if resume_text:
                 safe_update["resume_text"] = resume_text
                 safe_update["resume_parsed_data"] = resume_parsed_data
+            if resume_url:
+                safe_update["resume_url"] = resume_url
 
             await db.update("candidates", safe_update, filters={"id": candidate_id})
         else:
