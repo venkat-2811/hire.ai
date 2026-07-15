@@ -533,34 +533,9 @@ async def upload_resume(
     resume_parsed_data = None
     if resume_text and len(resume_text) >= 20:
         try:
-            from app.services.ai.factory import get_ai
-            ai = get_ai()
-            prompt = (
-                "You are an expert resume parser. Extract structured information from the resume below.\n\n"
-                "Return ONLY valid JSON in this exact format:\n"
-                "{\n"
-                '  "skills": ["skill1", "skill2"],\n'
-                '  "experience": [\n'
-                '    {"title": "Job Title", "company": "Company", "duration": "Jan 2020 - Dec 2022", "description": "What they did"}\n'
-                "  ],\n"
-                '  "education": [\n'
-                '    {"degree": "B.Tech Computer Science", "institution": "University Name", "year": "2019"}\n'
-                "  ],\n"
-                '  "summary": "Brief professional summary",\n'
-                '  "total_experience_years": 5,\n'
-                '  "certifications": ["cert1"]\n'
-                "}\n\n"
-                "Rules:\n"
-                "- skills: list of technical/professional skills (max 20)\n"
-                "- experience: list of work experiences (most recent first)\n"
-                "- education: list of degrees/qualifications\n"
-                "- summary: 2-3 sentence professional summary\n"
-                "- total_experience_years: numeric estimate of total years of experience\n"
-                "- certifications: list of certifications/courses (empty list if none)\n"
-                "- Use empty strings/lists if a field cannot be determined\n\n"
-                "RESUME TEXT:\n" + resume_text[:8000]
-            )
-            resume_parsed_data = await ai.generate_json(prompt, temperature=0.1, max_tokens=2000, timeout_s=30)
+            from app.services.resume_parser import ResumeParserService
+            rp = ResumeParserService()
+            resume_parsed_data = await rp.parse_resume_to_dict(resume_text)
         except Exception:
             resume_parsed_data = None
 

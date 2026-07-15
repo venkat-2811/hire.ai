@@ -32,11 +32,18 @@ import {
   Link2,
   UserPlus,
   Code,
+  ThumbsUp,
+  ThumbsDown,
+  BarChart3,
+  TrendingUp,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { RoleBadge } from '@/components/ui/role-badge';
+import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -81,9 +88,10 @@ import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { assessmentsApi } from '@/lib/api';
 import { aiInterviewApi } from '@/lib/api';
-import { candidatesWorkflowApi, candidatesApi } from '@/lib/api';
+import { candidatesWorkflowApi, candidatesApi, analyticsApi, type CandidateAnalytics } from '@/lib/api';
 import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
 import { Pencil } from 'lucide-react';
+import { HireRecommendation } from '@/types/database';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,7 +103,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type SortField = 'name' | 'date' | 'score';
+type SortField = 'name' | 'date' | 'score' | 'average';
 type SortOrder = 'asc' | 'desc';
 
 const CANDIDATES_JOB_KEY = 'candidates_selected_job_id';
@@ -108,6 +116,8 @@ export default function CandidatesPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterRecommendation, setFilterRecommendation] = useState<string>('all');
   const [selectedJobId, setSelectedJobId] = useState<string>(
     () => sessionStorage.getItem(CANDIDATES_JOB_KEY) || ''
   );
@@ -210,6 +220,170 @@ export default function CandidatesPage() {
 
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
 
+  // ── Results / Stats state ─────────────────────────────────────────────────
+  const [globalCandidates, setGlobalCandidates] = useState<CandidateAnalytics[]>([]);
+  const [loadingGlobalResults, setLoadingGlobalResults] = useState(false);
+  const [acceptedCandidateIds, setAcceptedCandidateIds] = useState<Set<string>>(new Set());
+  const [rejectedCandidateIds, setRejectedCandidateIds] = useState<Set<string>>(new Set());
+  const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [sendingAcceptReject, setSendingAcceptReject] = useState(false);
+
+  // Load global candidates once for summary stats
+  useEffect(() => {
+    async function loadGlobalResults() {
+      setLoadingGlobalResults(true);
+      try {
+        const data = await analyticsApi.getCandidates();
+        setGlobalCandidates(data);
+      } catch (e) {
+        console.error('Error loading global candidates', e);
+      } finally {
+        setLoadingGlobalResults(false);
+      }
+    }
+    loadGlobalResults();
+  }, []);
+
+  // Seed accepted/rejected from analytics when analytics data loads
+  useEffect(() => {
+    if (!analytics) return;
+    const accepted = new Set<string>();
+    const rejected = new Set<string>();
+    analytics.forEach((c) => {
+      if (c.final_status === 'accepted' || c.final_status === 'offer_sent' || c.final_status === 'offer_accepted') {
+        accepted.add(`${c.candidate_id}_${c.job_id}`);
+      } else if (c.final_status === 'rejected') {
+        rejected.add(`${c.candidate_id}_${c.job_id}`);
+      }
+    });
+    setAcceptedCandidateIds(accepted);
+    setRejectedCandidateIds(rejected);
+  }, [analytics]);
+
+  // Stats derived from global candidates
+  const globalTotalCandidates = useMemo(() => {
+    const s = new Set<string>();
+    globalCandidates.forEach((c) => { if (c.candidate_id) s.add(c.candidate_id); });
+    return s.size;
+  }, [globalCandidates]);
+
+  const globalAvgTotalScore = useMemo(() => {
+    if (!globalCandidates.length) return 0;
+    let sum = 0; let count = 0;
+    globalCandidates.forEach((c) => {
+      const scores = [c.ats_score, c.assessment_score, c.interview_score].filter((s) => s !== null) as number[];
+      if (scores.length) { sum += scores.reduce((a, b) => a + b, 0) / scores.length; count++; }
+    });
+    return count ? sum / count : 0;
+  }, [globalCandidates]);
+
+  const globalHiresCount = useMemo(() =>
+    globalCandidates.filter((c) => c.final_status === 'accepted' || c.final_status === 'offer_sent' || c.final_status === 'offer_accepted').length,
+    [globalCandidates]);
+
+  const globalRejectionsCount = useMemo(() =>
+    globalCandidates.filter((c) => c.final_status === 'rejected').length,
+    [globalCandidates]);
+
+  // Recommendation badge renderer
+  const getRecommendationBadge = (recommendation: string | null | undefined) => {
+    if (!recommendation) return <Badge variant="outline" className="w-fit whitespace-nowrap">Pending</Badge>;
+    const normalized = recommendation as HireRecommendation;
+    switch (normalized) {
+      case 'strong_hire': return <Badge className="bg-success text-success-foreground w-fit whitespace-nowrap">Strong Hire</Badge>;
+      case 'hire': return <Badge className="bg-info text-info-foreground w-fit whitespace-nowrap">Hire</Badge>;
+      case 'borderline': return <Badge variant="secondary" className="w-fit whitespace-nowrap">Borderline</Badge>;
+      case 'maybe': return <Badge variant="secondary" className="w-fit whitespace-nowrap">Maybe</Badge>;
+      case 'no_hire': return <Badge variant="destructive" className="w-fit whitespace-nowrap">No Hire</Badge>;
+      default: return <Badge variant="outline" className="w-fit whitespace-nowrap">{recommendation}</Badge>;
+    }
+  };
+
+  // Check if any selected candidate has an incomplete evaluation
+  const hasIncompleteEvaluation = useMemo(() => {
+    return Array.from(selectedIds).some(key => {
+      const candidateId = key.split('_')[0];
+      const c = analytics?.find(a => a.candidate_id === candidateId);
+      if (!c) return false;
+      return typeof c.assessment_score !== 'number' || typeof c.interview_score !== 'number';
+    });
+  }, [selectedIds, analytics]);
+
+  // Accept handler
+  const sendAcceptanceEmails = async (sendEmail: boolean) => {
+    if (selectedIds.size === 0) return;
+    if (!selectedJobId) { toast.error('Please select a job first'); return; }
+    setSendingAcceptReject(true);
+    try {
+      const candidateIds = Array.from(selectedIds).map(id => id.split('_')[0]);
+      const data = await candidatesWorkflowApi.sendAcceptance({
+        candidate_ids: candidateIds,
+        job_id: selectedJobId,
+        send_email: sendEmail,
+      });
+      if (data?.error_messages?.length) {
+        toast.error(`Some updates failed: ${data.error_messages[0]}`);
+      } else {
+        if (sendEmail) {
+          toast.success(`Acceptance emails sent to ${data.emails_sent} candidate(s)`);
+        } else {
+          toast.success(`Shortlisted status updated for ${(data as any).statuses_updated ?? candidateIds.length} candidate(s) (no email sent)`);
+        }
+        const newAccepted = new Set(acceptedCandidateIds);
+        candidateIds.forEach((id) => newAccepted.add(`${id}_${selectedJobId}`));
+        setAcceptedCandidateIds(newAccepted);
+        // Remove from rejected if previously rejected
+        const newRejected = new Set(rejectedCandidateIds);
+        candidateIds.forEach((id) => newRejected.delete(`${id}_${selectedJobId}`));
+        setRejectedCandidateIds(newRejected);
+      }
+      setAcceptDialogOpen(false);
+      setSelectedIds(new Set());
+    } catch (e) {
+      toast.error('Failed to update candidate status');
+    } finally {
+      setSendingAcceptReject(false);
+    }
+  };
+
+  // Reject handler
+  const sendRejectionEmails = async (sendEmail: boolean) => {
+    if (selectedIds.size === 0) return;
+    if (!selectedJobId) { toast.error('Please select a job first'); return; }
+    setSendingAcceptReject(true);
+    try {
+      const candidateIds = Array.from(selectedIds).map(id => id.split('_')[0]);
+      const data = await candidatesWorkflowApi.sendRejection({
+        candidate_ids: candidateIds,
+        job_id: selectedJobId,
+        send_email: sendEmail,
+      });
+      if (data?.error_messages?.length) {
+        toast.error(`Some updates failed: ${data.error_messages[0]}`);
+      } else {
+        if (sendEmail) {
+          toast.success('Rejection emails sent');
+        } else {
+          toast.success(`Rejected status updated for ${(data as any).statuses_updated ?? candidateIds.length} candidate(s) (no email sent)`);
+        }
+        const newRejected = new Set(rejectedCandidateIds);
+        candidateIds.forEach((id) => newRejected.add(`${id}_${selectedJobId}`));
+        setRejectedCandidateIds(newRejected);
+        // Remove from accepted if previously accepted
+        const newAccepted = new Set(acceptedCandidateIds);
+        candidateIds.forEach((id) => newAccepted.delete(`${id}_${selectedJobId}`));
+        setAcceptedCandidateIds(newAccepted);
+      }
+      setRejectDialogOpen(false);
+      setSelectedIds(new Set());
+    } catch (e) {
+      toast.error('Failed to update candidate status');
+    } finally {
+      setSendingAcceptReject(false);
+    }
+  };
+
   const hasCandidates = useMemo(() => {
     if (!selectedJobId || !candidates) return false;
     return candidates.some(c => (c as any).job_id === selectedJobId);
@@ -269,6 +443,37 @@ export default function CandidatesPage() {
       );
     }
 
+    // Apply status filter
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter((candidate) => {
+        const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === selectedJobId);
+        const isAccepted = acceptedCandidateIds.has(`${candidate.id}_${selectedJobId}`);
+        const isRejected = rejectedCandidateIds.has(`${candidate.id}_${selectedJobId}`);
+        const isOfferAccepted = ca?.final_status === 'offer_accepted';
+        const isHired = isAccepted || isOfferAccepted;
+        
+        if (filterStatus === 'accepted') return isHired;
+        if (filterStatus === 'rejected') return isRejected;
+        if (filterStatus === 'in_progress') return ca?.assessment_status === 'in_progress' || ca?.interview_status === 'in_progress';
+        if (filterStatus === 'pending') return (!ca?.assessment_status || ca?.assessment_status === 'pending') && (!ca?.interview_status || ca?.interview_status === 'pending') && !isHired && !isRejected;
+        return true;
+      });
+    }
+
+    // Apply recommendation filter
+    if (filterRecommendation !== 'all') {
+      filtered = filtered.filter((candidate) => {
+        const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === selectedJobId);
+        const rec = ca?.recommendation?.toLowerCase();
+        
+        if (filterRecommendation === 'hire') return rec === 'hire';
+        if (filterRecommendation === 'strong_hire') return rec === 'strong_hire';
+        if (filterRecommendation === 'no_hire') return rec === 'no_hire';
+        if (filterRecommendation === 'pending') return rec === 'pending' || !rec;
+        return true;
+      });
+    }
+
     // Group by job
     const grouped: Record<string, any[]> = {};
 
@@ -296,13 +501,26 @@ export default function CandidatesPage() {
           case 'score':
             comparison = (a.ats_score || 0) - (b.ats_score || 0);
             break;
+          case 'average': {
+            const getAvg = (c: any) => {
+              const ca = analytics?.find(an => an.candidate_id === c.id && an.job_id === jobId);
+              const ats = c.ats_score;
+              const ass = ca?.assessment_score;
+              const int = ca?.interview_score;
+              const scs = [ats, ass, int].filter(s => typeof s === 'number') as number[];
+              if (scs.length === 0) return -1;
+              return scs.reduce((acc, val) => acc + val, 0) / scs.length;
+            };
+            comparison = getAvg(a) - getAvg(b);
+            break;
+          }
         }
         return sortOrder === 'asc' ? comparison : -comparison;
       });
     });
 
     return grouped;
-  }, [candidates, searchQuery, sortField, sortOrder, selectedJobId]);
+  }, [candidates, searchQuery, sortField, sortOrder, selectedJobId, analytics, filterStatus, filterRecommendation, acceptedCandidateIds, rejectedCandidateIds]);
 
   // Get job title by ID
   const getJobTitle = (jobId: string) => {
@@ -331,6 +549,40 @@ export default function CandidatesPage() {
       newSet.add(key);
     }
     setSelectedIds(newSet);
+  };
+
+  const handleActionForJob = (e: React.MouseEvent, jobId: string, action: 'assessment' | 'ai-interview' | 'manual-interview' | 'accept' | 'reject') => {
+    e.stopPropagation();
+    
+    let currentSelectedIds = selectedIds;
+    const jobSelectedIds = Array.from(selectedIds).filter(id => id.endsWith(`_${jobId}`));
+    if (jobSelectedIds.length !== selectedIds.size) {
+      currentSelectedIds = new Set(jobSelectedIds);
+      setSelectedIds(currentSelectedIds);
+    }
+    
+    if (currentSelectedIds.size === 0) return;
+    
+    if (jobId !== selectedJobId) {
+      setSelectedJobId(jobId);
+    }
+    
+    if (action === 'assessment') {
+      setStartJobId(jobId);
+      setAssessmentDialogOpen(true);
+    } else if (action === 'ai-interview') {
+      setStartJobId(jobId);
+      setInterviewMode('ai');
+      setInterviewDialogOpen(true);
+    } else if (action === 'manual-interview') {
+      setStartJobId(jobId);
+      setInterviewMode('manual');
+      setInterviewDialogOpen(true);
+    } else if (action === 'accept') {
+      setAcceptDialogOpen(true);
+    } else if (action === 'reject') {
+      setRejectDialogOpen(true);
+    }
   };
 
   const handleBulkAssessment = () => {
@@ -613,8 +865,122 @@ export default function CandidatesPage() {
           </div>
         </div>
 
+        {/* ── Stats Dashboard (from Results) ───────────────────────────── */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 shrink-0">
+          <Card className="h-[88px]">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
+                  <BarChart3 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium leading-tight whitespace-nowrap">Total Jobs</p>
+                  <p className="text-2xl font-bold leading-tight tabular-nums mt-1">{jobs?.length || 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="h-[88px]">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium leading-tight whitespace-nowrap">Total Candidates</p>
+                  <p className="text-2xl font-bold leading-tight tabular-nums mt-1">
+                    {loadingGlobalResults ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      globalTotalCandidates
+                    )}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="h-[88px]">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-info/10 rounded-lg flex items-center justify-center shrink-0">
+                  <TrendingUp className="h-5 w-5 text-info" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium leading-tight whitespace-nowrap">Avg Overall Score</p>
+                  <p className="text-2xl font-bold leading-tight tabular-nums mt-1">
+                    {loadingGlobalResults ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      `${globalAvgTotalScore.toFixed(0)}%`
+                    )}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 h-[88px]"
+            onClick={() => navigate('/analytics/pipeline?status=selected')}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-success/10 rounded-lg flex items-center justify-center shrink-0">
+                    <ThumbsUp className="h-5 w-5 text-success" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium leading-tight whitespace-nowrap">Total Hires</p>
+                    <p className="text-2xl font-bold leading-tight tabular-nums mt-1">
+                      {loadingGlobalResults ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (
+                        globalHiresCount
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center text-[10px] text-muted-foreground/70 bg-muted/40 px-1.5 py-1 rounded whitespace-nowrap group-hover:text-foreground/80 transition-colors">
+                  View <ChevronRight className="h-3 w-3 ml-0.5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card 
+            className="cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 h-[88px]"
+            onClick={() => navigate('/analytics/pipeline?status=rejected')}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-destructive/10 rounded-lg flex items-center justify-center shrink-0">
+                    <ThumbsDown className="h-5 w-5 text-destructive" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium leading-tight whitespace-nowrap">Total Rejections</p>
+                    <p className="text-2xl font-bold leading-tight tabular-nums mt-1">
+                      {loadingGlobalResults ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (
+                        globalRejectionsCount
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center text-[10px] text-muted-foreground/70 bg-muted/40 px-1.5 py-1 rounded whitespace-nowrap group-hover:text-foreground/80 transition-colors">
+                  View <ChevronRight className="h-3 w-3 ml-0.5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Unified Search, Job, and Filters Toolbar */}
         {activeTab === 'active' && allJobs.length > 0 && (
+
           <div className="flex flex-col gap-4 mb-2">
             {/* Single Toolbar Row */}
             <div className="flex flex-col md:flex-row items-center gap-4">
@@ -633,15 +999,15 @@ export default function CandidatesPage() {
                 <div className="hidden md:block md:w-[40%]" />
               )}
 
-              {/* Job Dropdown (Primary, Center, fixed percentage width) */}
-              <div className="flex items-center gap-3 w-full md:w-[35%]">
+              {/* Job Dropdown and Filters */}
+              <div className="flex items-center gap-3 w-full md:w-auto md:flex-1">
                 <div className="text-sm font-medium whitespace-nowrap text-muted-foreground">JOB:</div>
                 <Select value={selectedJobId} onValueChange={(v) => {
                   handleJobChange(v);
                   setSelectedIds(new Set());
                   setStartJobId(v);
                 }}>
-                  <SelectTrigger className="w-full font-medium border-slate-400 dark:border-slate-800 shadow-sm" disabled={jobsLoading || allJobs.length === 0}>
+                  <SelectTrigger className="w-full md:w-[240px] font-medium border-slate-400 dark:border-slate-800 shadow-sm" disabled={jobsLoading || allJobs.length === 0}>
                     <SelectValue placeholder={jobsLoading ? 'Loading jobs...' : 'Select a job'} />
                   </SelectTrigger>
                   <SelectContent>
@@ -652,20 +1018,34 @@ export default function CandidatesPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+                
+                {hasCandidates && (
+                  <Button
+                    variant={showFilters ? "secondary" : "outline"}
+                    size="icon"
+                    className="w-10 shrink-0 border-slate-400 dark:border-slate-800 shadow-sm hover:bg-primary hover:text-primary-foreground transition-colors duration-200"
+                    onClick={() => setShowFilters(!showFilters)}
+                    title="Filters"
+                  >
+                    <Filter className="h-4 w-4" />
+                  </Button>
+                )}
 
-              {/* Filters Button (Far right, compact) */}
-              {hasCandidates && (
-                <Button
-                  variant={showFilters ? "secondary" : "outline"}
-                  size="icon"
-                  className="w-full md:w-10 shrink-0 md:ml-auto border-slate-400 dark:border-slate-800 shadow-sm"
-                  onClick={() => setShowFilters(!showFilters)}
-                  title="Filters"
-                >
-                  <Filter className="h-4 w-4" />
-                </Button>
-              )}
+                {hasCandidates && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="w-10 shrink-0 border-slate-400 dark:border-slate-800 shadow-sm hover:bg-primary hover:text-primary-foreground transition-colors duration-200 md:ml-auto"
+                    onClick={() => {
+                      refetchCandidates();
+                      toast.success('Candidates refreshed');
+                    }}
+                    title="Refresh candidates"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${candidatesLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Filters Panel (collapsible) */}
@@ -681,6 +1061,7 @@ export default function CandidatesPage() {
                       <SelectItem value="name">Name</SelectItem>
                       <SelectItem value="date">Date Applied</SelectItem>
                       <SelectItem value="score">Score</SelectItem>
+                      <SelectItem value="average">Total Average</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -692,41 +1073,42 @@ export default function CandidatesPage() {
                     <ArrowUpDown className="h-4 w-4" />
                   </Button>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Label>Status:</Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-[140px] border-slate-400 dark:border-slate-800 shadow-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="accepted">Accepted</SelectItem>
+                      <SelectItem value="rejected">Rejected</SelectItem>
+                      <SelectItem value="in_progress">In-Progress</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label>Recommendation:</Label>
+                  <Select value={filterRecommendation} onValueChange={setFilterRecommendation}>
+                    <SelectTrigger className="w-[140px] border-slate-400 dark:border-slate-800 shadow-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="hire">Hire</SelectItem>
+                      <SelectItem value="strong_hire">Strong Hire</SelectItem>
+                      <SelectItem value="no_hire">No Hire</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Bulk Actions */}
-        {activeTab === 'active' && allJobs.length > 0 && hasCandidates && selectedIds.size > 0 && (
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-                <span className="text-sm font-medium w-full sm:w-auto mb-2 sm:mb-0">
-                  {selectedIds.size} candidate(s) selected
-                </span>
-                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                  <Button size="sm" className="flex-1 sm:flex-none" onClick={handleBulkAssessment}>
-                    <Mail className="mr-2 h-4 w-4" />
-                    Send Assessment
-                  </Button>
-                  <Button size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={handleBulkInterview}>
-                    <Play className="mr-2 h-4 w-4" />
-                    Send AI Interview
-                  </Button>
-                  <Button size="sm" variant="outline" className="flex-1 sm:flex-none" onClick={handleBulkManualInterview}>
-                    <MessageSquare className="mr-2 h-4 w-4" />
-                    Manual Interview
-                  </Button>
-                  <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedIds(new Set())}>
-                    Clear Selection
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
+        {/* Bulk Actions (Removed, now inline in job header) */}
         {/* Grouped Candidates by Job */}
         {activeTab === 'active' && (
           <div className="space-y-4">
@@ -879,19 +1261,77 @@ export default function CandidatesPage() {
                   <Card>
                     <CollapsibleTrigger asChild>
                       <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-2">
                             <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0">
                               <Briefcase className="h-5 w-5 text-primary" />
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-col gap-0.5 mt-0.5">
                               <CardTitle className="text-lg">{getJobTitle(jobId)}</CardTitle>
-                              <CardDescription className="text-sm">({jobCandidates.length} candidate{jobCandidates.length === 1 ? '' : 's'})</CardDescription>
+                              <div className="flex items-center gap-2">
+                                <CardDescription className="text-[11px] whitespace-nowrap text-muted-foreground/80">
+                                  {jobCandidates.length} candidate{jobCandidates.length === 1 ? '' : 's'}
+                                </CardDescription>
+                                {(() => {
+                                  const selectedCount = jobCandidates.filter(c => selectedIds.has(`${c.id}_${jobId}`)).length;
+                                  if (selectedCount > 0) {
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-muted-foreground/40 text-[10px]">•</span>
+                                        <span className="text-primary text-[10px] font-semibold bg-primary/10 px-1.5 py-0.5 rounded-sm">{selectedCount} selected</span>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          
+                          <div className="flex items-center gap-2 ml-auto">
+                            {(() => {
+                              const selectedInJobCount = jobCandidates.filter(c => selectedIds.has(`${c.id}_${jobId}`)).length;
+                              if (selectedInJobCount === 0) return null;
+                              return (
+                                <div className="mr-2">
+                                  <div className="flex items-center gap-2">
+                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'assessment')}>
+                                      <Mail className="mr-2 h-[18px] w-[18px]" />
+                                      Send Assessment
+                                    </Button>
+                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'ai-interview')}>
+                                      <Play className="mr-2 h-[18px] w-[18px]" />
+                                      Send AI Interview
+                                    </Button>
+                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'manual-interview')}>
+                                      <MessageSquare className="mr-2 h-[18px] w-[18px]" />
+                                      Manual Interview
+                                    </Button>
+                                    <Button variant="outline" className="h-10 px-4 text-sm font-medium bg-success/10 text-success border-success/20 hover:bg-success/20 hover:text-success shadow-sm" onClick={(e) => handleActionForJob(e, jobId, 'accept')}>
+                                      <ThumbsUp className="mr-2 h-[18px] w-[18px]" />
+                                      Accept
+                                    </Button>
+                                    <Button variant="outline" className="h-10 px-4 text-sm font-medium bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20 hover:text-destructive shadow-sm" onClick={(e) => handleActionForJob(e, jobId, 'reject')}>
+                                      <ThumbsDown className="mr-2 h-[18px] w-[18px]" />
+                                      Reject
+                                    </Button>
+                                    {/* 
+                                    <Button variant="ghost" className="h-9 px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      const newSet = new Set(selectedIds);
+                                      jobCandidates.forEach(c => newSet.delete(`${c.id}_${jobId}`));
+                                      setSelectedIds(newSet);
+                                    }}>
+                                      Clear Selection
+                                    </Button>
+                                    */}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             <Checkbox
-                              checked={selectedIds.size === jobCandidates.length && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
+                              checked={jobCandidates.length > 0 && jobCandidates.every(c => selectedIds.has(`${c.id}_${jobId}`))}
+                              onClick={(e) => e.stopPropagation()}
                               onCheckedChange={(checked) => {
                                 const newSet = new Set(selectedIds);
                                 if (checked) {
@@ -904,7 +1344,7 @@ export default function CandidatesPage() {
                                 setSelectedIds(newSet);
                               }}
                             />
-                            <ChevronDown className="h-4 w-4" />
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>
                       </CardHeader>
@@ -931,9 +1371,26 @@ export default function CandidatesPage() {
                                 />
                               </TableHead>
                               <TableHead>Candidate</TableHead>
-                              <TableHead>Resume ATS Score</TableHead>
+                              <TableHead className="whitespace-nowrap">Resume ATS</TableHead>
                               <TableHead>Assessment</TableHead>
                               <TableHead>Interview</TableHead>
+                              <TableHead 
+                                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                                onClick={() => {
+                                  if (sortField === 'average') {
+                                    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                                  } else {
+                                    setSortField('average');
+                                    setSortOrder('desc');
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                  Total Average
+                                  <ArrowUpDown className={`h-3.5 w-3.5 ${sortField === 'average' ? 'text-primary' : 'text-muted-foreground/60'}`} />
+                                </div>
+                              </TableHead>
+                              <TableHead>AI Result</TableHead>
                               <TableHead>Applied</TableHead>
                               <TableHead className="w-12"></TableHead>
                             </TableRow>
@@ -941,7 +1398,7 @@ export default function CandidatesPage() {
                           <TableBody>
                             {jobCandidates.length === 0 ? (
                               <TableRow>
-                                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                                   No candidates in this job group.
                                 </TableCell>
                               </TableRow>
@@ -952,7 +1409,7 @@ export default function CandidatesPage() {
                                   initial={{ opacity: 0, y: 10 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   transition={{ delay: index * 0.05 }}
-                                  className={`group ${selectedIds.has(`${candidate.id}_${jobId}`) ? 'bg-primary/5' : ''}`}
+                                  className={`group border-b border-border/60 ${selectedIds.has(`${candidate.id}_${jobId}`) ? 'bg-primary/5' : ''}`}
                                 >
                                   <TableCell>
                                     <Checkbox
@@ -962,17 +1419,25 @@ export default function CandidatesPage() {
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex items-center gap-3">
-                                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                        <span className="text-sm font-medium text-primary">
-                                          {candidate.full_name.split(' ').map(n => n[0]).join('')}
-                                        </span>
-                                      </div>
                                       <div>
-                                        <p className="font-medium">{candidate.full_name}</p>
-                                        <p className="text-sm text-muted-foreground">{candidate.email}</p>
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-medium">{candidate.full_name}</p>
+                                          {(() => {
+                                            const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                            const isAccepted = acceptedCandidateIds.has(`${candidate.id}_${jobId}`);
+                                            const isRejected = rejectedCandidateIds.has(`${candidate.id}_${jobId}`);
+                                            const isOfferAccepted = ca?.final_status === 'offer_accepted';
+                                            if (isOfferAccepted) return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white border-emerald-700 text-[10px] py-0 px-1.5 w-fit leading-tight h-5">Offer Accepted</Badge>;
+                                            if (isAccepted) return <Badge className="bg-emerald-100 hover:bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5 w-fit leading-tight h-5 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/30 dark:text-emerald-400">Accepted</Badge>;
+                                            if (isRejected) return <Badge className="bg-destructive/10 hover:bg-destructive/10 text-destructive border-destructive/20 text-[10px] py-0 px-1.5 w-fit leading-tight h-5">Rejected</Badge>;
+                                            return null;
+                                          })()}
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground">{candidate.email}</p>
                                       </div>
                                     </div>
                                   </TableCell>
+                                  {/* Resume ATS Score */}
                                   <TableCell>
                                     {typeof (candidate as any).ats_score === 'number' ? (
                                       <div className="flex items-center gap-2">
@@ -987,16 +1452,15 @@ export default function CandidatesPage() {
                                       <span className="text-xs text-muted-foreground">Not screened</span>
                                     )}
                                   </TableCell>
+                                  {/* Assessment */}
                                   <TableCell>
                                     {(() => {
-                                      const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
-                                      const rawStatus = candidateAnalytics?.assessment_status;
+                                      const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                      const rawStatus = ca?.assessment_status;
                                       const status = rawStatus === 'completed' || rawStatus === 'terminated'
                                         ? 'completed'
-                                        : rawStatus === 'in_progress'
-                                          ? 'in_progress'
-                                          : 'pending';
-                                      const score = candidateAnalytics?.assessment_score;
+                                        : rawStatus === 'in_progress' ? 'in_progress' : 'pending';
+                                      const score = ca?.assessment_score;
                                       if (status === 'completed' && typeof score === 'number') {
                                         return (
                                           <div className="flex items-center gap-2">
@@ -1008,16 +1472,15 @@ export default function CandidatesPage() {
                                       return <StatusBadge status={status} />;
                                     })()}
                                   </TableCell>
+                                  {/* Interview */}
                                   <TableCell>
                                     {(() => {
-                                      const candidateAnalytics = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
-                                      const rawStatus = candidateAnalytics?.interview_status;
+                                      const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                      const rawStatus = ca?.interview_status;
                                       const status = rawStatus === 'completed' || rawStatus === 'terminated'
                                         ? 'completed'
-                                        : rawStatus === 'in_progress'
-                                          ? 'in_progress'
-                                          : 'pending';
-                                      const score = candidateAnalytics?.interview_score;
+                                        : rawStatus === 'in_progress' ? 'in_progress' : 'pending';
+                                      const score = ca?.interview_score;
                                       if (status === 'completed' && typeof score === 'number') {
                                         return (
                                           <div className="flex items-center gap-2">
@@ -1029,6 +1492,32 @@ export default function CandidatesPage() {
                                       return <StatusBadge status={status} />;
                                     })()}
                                   </TableCell>
+                                  {/* Total Average */}
+                                  <TableCell>
+                                    {(() => {
+                                      const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                      const atsScore = (candidate as any).ats_score;
+                                      const assessmentScore = ca?.assessment_score;
+                                      const interviewScore = ca?.interview_score;
+
+                                      const scores = [atsScore, assessmentScore, interviewScore].filter(s => typeof s === 'number') as number[];
+                                      if (scores.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+                                      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+                                      return <ScoreBadge score={avg} />;
+                                    })()}
+                                  </TableCell>
+                                  {/* Recommendation */}
+                                  <TableCell>
+                                    {(() => {
+                                      const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === jobId);
+                                      return (
+                                        <div className="flex flex-col gap-1">
+                                          {getRecommendationBadge(ca?.recommendation)}
+                                        </div>
+                                      );
+                                    })()}
+                                  </TableCell>
+                                  {/* Applied */}
                                   <TableCell className="text-muted-foreground">
                                     {candidate.applied_at
                                       ? new Date(candidate.applied_at).toLocaleDateString()
@@ -1690,6 +2179,105 @@ export default function CandidatesPage() {
           }}
           onUpdated={() => { void refetchCandidates(); }}
         />
+        {/* ── Accept Dialog (from Results) ─────────────────────────────── */}
+        <Dialog open={acceptDialogOpen} onOpenChange={setAcceptDialogOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Shortlist Candidate(s)</DialogTitle>
+              <DialogDescription>
+                Update status for <strong>{selectedIds.size}</strong> selected candidate(s) to <strong>Selected / Shortlisted</strong>.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-3">
+              {hasIncompleteEvaluation && (
+                <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md flex gap-3 text-sm text-amber-900 items-start shadow-sm dark:bg-amber-950/30 dark:border-amber-600 dark:text-amber-200">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="font-bold text-amber-800 dark:text-amber-300">Incomplete Evaluation Detected</span>
+                    <span className="text-amber-800 break-words dark:text-amber-200">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                  </div>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground">
+                Choose whether to also notify the candidate(s) via email.
+              </p>
+            </div>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="outline" onClick={() => setAcceptDialogOpen(false)} disabled={sendingAcceptReject}>
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 hover:border-primary/30"
+                onClick={() => sendAcceptanceEmails(false)}
+                disabled={sendingAcceptReject}
+                id="acceptance-status-only-btn"
+              >
+                {sendingAcceptReject ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Update Status Only
+              </Button>
+              <Button
+                onClick={() => sendAcceptanceEmails(true)}
+                disabled={sendingAcceptReject}
+                id="acceptance-send-email-btn"
+              >
+                {sendingAcceptReject ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                Update Status + Send Email
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Reject Dialog (from Results) ─────────────────────────────── */}
+        <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Reject Candidate(s)</DialogTitle>
+              <DialogDescription>
+                Update status for <strong>{selectedIds.size}</strong> selected candidate(s) to <strong>Rejected</strong>.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-3">
+              {hasIncompleteEvaluation && (
+                <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-md flex gap-3 text-sm text-amber-900 items-start shadow-sm dark:bg-amber-950/30 dark:border-amber-600 dark:text-amber-200">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="font-bold text-amber-800 dark:text-amber-300">Incomplete Evaluation Detected</span>
+                    <span className="text-amber-800 break-words dark:text-amber-200">One or more selected candidates have not completed their Technical Assessment or Interview. Are you sure you want to proceed?</span>
+                  </div>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground">
+                Choose whether to also notify the candidate(s) via email. This will remove them from the active pipeline.
+              </p>
+            </div>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={sendingAcceptReject}>
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 hover:border-primary/30"
+                onClick={() => sendRejectionEmails(false)}
+                disabled={sendingAcceptReject}
+                id="rejection-status-only-btn"
+              >
+                {sendingAcceptReject ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Update Status Only
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => sendRejectionEmails(true)}
+                disabled={sendingAcceptReject}
+                id="rejection-send-email-btn"
+              >
+                {sendingAcceptReject ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                Update Status + Send Email
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </DashboardLayout>
   );

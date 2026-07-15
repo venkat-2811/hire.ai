@@ -339,6 +339,44 @@ class ResumeParserService:
 
         return text
 
+    async def parse_resume_to_dict(self, resume_text: str) -> Optional[Dict[str, Any]]:
+        """AI-parse the resume into structured data (Dict) using the Add Candidate prompt format."""
+        if not resume_text or len(resume_text) < 20:
+            return None
+            
+        try:
+            from app.services.ai.factory import get_ai
+            ai = get_ai()
+            prompt = (
+                "You are an expert resume parser. Extract structured information from the resume below.\n\n"
+                "Return ONLY valid JSON in this exact format:\n"
+                "{\n"
+                '  "skills": ["skill1", "skill2"],\n'
+                '  "experience": [\n'
+                '    {"title": "Job Title", "company": "Company", "duration": "Jan 2020 - Dec 2022", "description": "What they did"}\n'
+                "  ],\n"
+                '  "education": [\n'
+                '    {"degree": "B.Tech Computer Science", "institution": "University Name", "year": "2019"}\n'
+                "  ],\n"
+                '  "summary": "Brief professional summary",\n'
+                '  "total_experience_years": 5,\n'
+                '  "certifications": ["cert1"]\n'
+                "}\n\n"
+                "Rules:\n"
+                "- skills: extract a consolidated list of skills from the ENTIRE resume (including Skills section, Work Experience, Projects, Internships, Certifications, and Education). Normalize the extracted skills, remove duplicates, and include only skills with clear evidence in the context.\n"
+                "- experience: list of work experiences (most recent first)\n"
+                "- education: list of degrees/qualifications\n"
+                "- summary: 2-3 sentence professional summary\n"
+                "- total_experience_years: numeric estimate of total years of experience\n"
+                "- certifications: list of certifications/courses (empty list if none)\n"
+                "- Use empty strings/lists if a field cannot be determined\n\n"
+                "RESUME TEXT:\n" + resume_text[:8000]
+            )
+            return await ai.generate_json(prompt, temperature=0.1, max_tokens=2000, timeout_s=30)
+        except Exception as e:
+            logger.error("resume_parser: AI_PARSE_TO_DICT_FAILED error=%s", e)
+            return None
+
     async def _ai_parse_resume(self, resume_text: str) -> ResumeData:
         """Use AI to semantically parse resume content."""
         try:

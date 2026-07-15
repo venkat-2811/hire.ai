@@ -169,9 +169,16 @@ async def submit_application(
 
                 # Parse Resume
                 parser = get_resume_parser()
-                resume_text, parsed = await parser.parse_resume(content, _resume_filename)
-                # Align with Node: store JSON-like dict, but keep any pydantic models serializable
-                resume_parsed_data = parsed.model_dump() if hasattr(parsed, "model_dump") else parsed
+                raw_text = await parser._extract_text(content, _resume_filename)
+                resume_text = (
+                    str(raw_text)
+                    .replace("\x00", "")
+                    .encode("utf-8", "ignore")
+                    .decode("utf-8")
+                )[:50000]
+                
+                resume_parsed_data = await parser.parse_resume_to_dict(resume_text)
+                
                 logger.info(
                     "apply: resume_parsed file=%s candidate_email=%s char_count=%d",
                     _resume_filename, email, len(resume_text),

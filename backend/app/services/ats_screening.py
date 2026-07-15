@@ -181,11 +181,6 @@ class ATSScreeningService:
             if required_lower in skill or skill in required_lower:
                 return True, f"Direct match: {skill}", 1.0
         
-        # Check in experience descriptions
-        for exp in resume_data.experience:
-            if required_lower in exp.description.lower():
-                return True, f"Found in experience at {exp.company}", 0.8
-        
         # Synonym matching
         synonyms = self._get_skill_synonyms(required_lower)
         for syn in synonyms:
