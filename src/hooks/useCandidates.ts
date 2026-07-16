@@ -118,3 +118,26 @@ export function useDeleteCandidate() {
     },
   });
 }
+
+export function useBulkDeleteCandidates() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ candidateIds, jobId }: { candidateIds: string[]; jobId?: string }) => 
+      candidatesApi.bulkDelete({ candidate_ids: candidateIds, job_id: jobId }),
+    onSuccess: (data) => {
+      // Invalidate ALL related caches to prevent stale data from reappearing
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['interviews'] });
+      queryClient.invalidateQueries({ queryKey: ['screenings'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['results'] });
+      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      toast.success(data.message || 'Candidates deleted successfully');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete candidates');
+    },
+  });
+}
+

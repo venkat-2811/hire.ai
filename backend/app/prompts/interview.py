@@ -12,32 +12,41 @@ Your role is to generate conversational, experience-based, and theoretical discu
 
 === CRITICAL RULES FOR QUESTION GENERATION ===
 
-RULE 1 — 50/50 BALANCE & OVERLAP FOCUS:
-Questions MUST be generated based on:
-- 50% Candidate Resume background and past projects
-- 50% Job Requirements (Job Description, Must-Have, and Good-to-Have skills)
-Identify common technologies, skills, tools, frameworks, and experiences between the candidate's resume and job requirements.
-Focus primarily on these OVERLAPPING skills.
+RULE 1 — USE JD & RESUME AS PRIMARY SOURCES & FOCUS ON OVERLAP:
+The Job Description (JD) and Candidate Resume are the ONLY primary sources.
+- Generate questions from JD skills and Resume projects/technologies.
+- Prioritize overlapping skills.
+- If a JD skill is missing from the resume, NEVER invent experience. Instead, generate a scenario-based or conceptual question (e.g., "Suppose you needed to implement...").
 
-RULE 2 — NO CODING OR WRITTEN QUESTIONS (ABSOLUTE PROHIBITION):
-This is a VERBAL ONLY interview platform. Candidates cannot write code.
-NEVER generate questions like: "Write a function", "Implement an algorithm", or "Write code for...".
-Questions MUST be theoretical, experience-based, or discussion-oriented.
-Good examples: "What experience do you have in Python?", "Can you explain the project mentioned in your resume?", "How did you implement authentication in your project?", "What challenges did you face while working with React?"
+RULE 2 — NEVER ASSUME EXPERIENCE OR OWNERSHIP:
+- DO NOT assume the candidate has worked with a technology, architecture, or production environment unless explicitly mentioned.
+- DO NOT assume they personally designed an entire system (e.g., Avoid "You developed...", use "In your project, what was your specific contribution to...").
 
-RULE 3 — ADAPTIVE DIFFICULTY & ROLE-SPECIFICITY:
-Difficulty must vary dynamically based on the Job Role, Candidate Experience, and Seniority level:
-- Fresher/Junior: Focus on basic conceptual and project-based questions.
-- Mid-level: Focus on implementation details, challenges, and architecture.
-- Experienced/Senior: Focus on scenario-based problem solving, system design, and optimization.
-Questions must be highly specific to the role (e.g., Backend -> APIs/DBs; Frontend -> UI/State; AI/ML -> Models/Training; Salesforce -> Apex/Triggers).
+RULE 3 — EXPERIENCE-BASED DIFFICULTY:
+Assess experience based on the nature of work, not just fixed year ranges.
+- Early-Career: Focus on fundamentals, resume projects, core programming concepts, problem-solving.
+- Mid-Level: Intermediate frameworks, DB optimization, security, testing, basic microservices.
+- Advanced/Senior: System design, scalability, distributed systems, architecture decisions, performance tuning.
 
-RULE 4 — INDEPENDENCE & NO REPETITION:
-Every question MUST stand completely on its own without referencing prior questions.
-Improve randomness and avoid static/repeated question sets. Each interview should feel completely unique and contextual to the candidate.
+RULE 4 — RESUME-BASED QUESTIONING:
+Let the resume drive the conversation. For major projects/technologies listed:
+- Ask about implementation details, design decisions, challenges, trade-offs, and debugging.
+- Verify genuine project involvement while assessing JD skills.
 
-RULE 5 — VERBAL-FRIENDLY & HUMAN-LIKE:
-Questions must be concise, natural, human-sounding, and answerable verbally in 2-5 minutes."""
+RULE 5 — ONE CONCEPT PER QUESTION (NO MULTI-PART QUESTIONS):
+Each question MUST focus on ONE primary concept. Avoid combining multiple independent topics. Use concise, standalone questions.
+
+RULE 6 — NO CODING OR WRITTEN QUESTIONS (ABSOLUTE PROHIBITION):
+This is a VERBAL ONLY interview platform. Candidates cannot write code. Questions MUST be theoretical, experience-based, or discussion-oriented.
+
+RULE 7 — NO VERSION LISTS:
+Do NOT display version lists like "Java 8/11/17". Use "Java", "Modern Java", or ask directly which versions they have used if version-specific knowledge is needed.
+
+RULE 8 — INDEPENDENCE & NATURAL FLOW:
+Every question MUST stand completely on its own without referencing prior questions (e.g. no "Following up...").
+
+RULE 9 — NEUTRAL TONE & NO NEGATIVE ASSUMPTIONS:
+Never make assumptions, judgments, or negative statements about the candidate's abilities, experience, or knowledge. The interview system must NEVER infer what the candidate does not know. Absence of a technology or skill in the resume does NOT mean the candidate lacks experience with it. Do NOT mention its absence. Do NOT compare the resume against the JD within the question. Do NOT use wording like "Given your lack of experience...", "Since you have not worked with...", "Although your resume does not mention...", or "You don't appear to have experience with...". Instead, generate a neutral, scenario-based question (e.g., "Suppose you are asked to build...")."""
 
     user_prompt = f"""Generate {num_questions} unique, independent verbal interview questions for a {role} position at {level} level.
 
@@ -53,20 +62,20 @@ CONTEXT:
 - Uniqueness Seed: {seed}
 
 ABSOLUTE REQUIREMENTS:
-1. 50/50 BALANCE: Half based on the candidate's specific resume projects/skills, half based on core JD requirements. Focus on the overlap.
-2. NO CODE WRITING: The candidate cannot write code. Ask only theoretical, architectural, and experience-based discussion questions.
-3. ADAPTIVE: Tailor the depth and complexity exactly to the {level} level and {experience_years} years of experience.
-4. ROLE-SPECIFIC: Ensure the topics are highly relevant to a {role}.
-5. NATURAL TONE: Keep questions conversational, clear, and human-like. Simulate a real technical discussion.
+1. BALANCE & VERIFY: Use the resume to verify past work while assessing JD requirements.
+2. NO ASSUMPTIONS & NEUTRAL TONE: Do not assume project ownership or unlisted tech experience. NEVER mention the absence of a skill, make negative judgments, or infer what they don't know (e.g. avoid "Given your lack of..."). Use hypothetical scenarios for missing JD skills neutrally.
+3. ONE CONCEPT PER QUESTION: Keep it focused, concise, and verbal-friendly (answerable in 2-5 mins).
+4. ROLE & LEVEL SPECIFIC: Tailor depth to {level} level and {experience_years} years of demonstrated experience.
+5. NO CODE WRITING: Ask only theoretical, architectural, and experience-based discussion questions.
+6. NO VERSION LISTS: Do not include raw version numbers like "8/11/17" in questions.
 {previous_q_text}
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Complete standalone conversational question (e.g. 'Can you explain how you implemented X in your project?')",
+            "question_text": "Complete standalone conversational question focusing on ONE concept (e.g. 'Can you explain your specific contribution to the auth module in your project?')",
             "difficulty_level": 3,
-            "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
             "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
             "time_limit_seconds": 180,
             "focus_area": "Specific overlapping skill or concept being discussed"
@@ -91,12 +100,20 @@ Every behavioral question MUST be completely self-contained and standalone.
 NEVER reference previous questions, prior answers, or use phrases like "Following up...", "Similarly...", "Also tell me..."
 Each question is asked in isolation — the candidate could see only that one question.
 
-RULE 2 — NO REPETITION:
+RULE 2 — ONE CONCEPT PER QUESTION (NO MULTI-PART QUESTIONS):
+Each question MUST focus on ONE primary concept or scenario. Avoid combining multiple independent topics into a single question.
+
+RULE 3 — NO REPETITION:
 Each question MUST assess a different competency. Never ask two questions about the same skill (e.g., two questions about "handling conflict").
 
-RULE 3 — COMPETENCY COVERAGE:
+RULE 4 — NEVER ASSUME OWNERSHIP OR EXPERIENCE:
+Do not assume the candidate led a team or managed a project unless explicitly stated. Use wording like "Can you describe a time you contributed to..." or "What was your specific role when your team faced..."
+
+RULE 5 — COMPETENCY COVERAGE:
 Cover a broad range of competencies: leadership, teamwork, communication, problem-solving, adaptability, time management, initiative, conflict resolution.
-Do NOT cluster on one competency."""
+
+RULE 6 — NEUTRAL TONE & NO NEGATIVE ASSUMPTIONS:
+Never make assumptions, judgments, or negative statements about the candidate's abilities, experience, or knowledge. The interview system must NEVER infer what the candidate does not know. Absence of a skill in the resume does NOT mean the candidate lacks experience with it. Do NOT mention its absence. Do NOT use wording like "Given your lack of experience...", "Since you have not worked with...", or "Although your resume does not mention...". Instead, generate a neutral, scenario-based question."""
 
     user_prompt = f"""Generate {num_questions} behavioral interview questions for a {role} position at {level} level.
 
@@ -107,19 +124,19 @@ CONTEXT:
 - Uniqueness Seed: {seed}
 
 ABSOLUTE REQUIREMENTS:
-1. INDEPENDENT: Every question stands alone — no references to "as you mentioned", "following up", or prior context
-2. DIFFERENT COMPETENCIES: Each question assesses a different professional competency — no repetition
-3. SITUATIONAL FOCUS: "Tell me about a time when..." or "Describe a situation where..." format (STAR method)
-4. ROLE-RELEVANT: Scenarios must connect to {role} responsibilities
-5. LEVEL-APPROPRIATE: Match question complexity to {level} seniority
-6. OPEN-ENDED: Encourage detailed, specific responses with measurable outcomes
-7. COMPLETE CONTEXT: Each question must include enough context so it's understandable without any prior discussion
+1. INDEPENDENT: Every question stands alone — no references to "as you mentioned", "following up", or prior context.
+2. ONE CONCEPT PER QUESTION: Keep it focused on a single competency and scenario.
+3. DIFFERENT COMPETENCIES: Each question assesses a different professional competency.
+4. SITUATIONAL FOCUS: "Tell me about a time when..." or "Describe a situation where..." format (STAR method).
+5. NO ASSUMPTIONS & NEUTRAL TONE: Do not assume they were the lead or sole owner. NEVER mention the absence of a skill, make negative judgments, or infer what they don't know (e.g. avoid "Given your lack of...").
+6. ROLE-RELEVANT: Scenarios must connect to {role} responsibilities and match {level} seniority.
+7. COMPLETE CONTEXT: Each question must include enough context so it's understandable without prior discussion.
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Complete standalone behavioral question with full context",
+            "question_text": "Complete standalone behavioral question with full context, focusing on ONE concept",
             "competency": "Leadership|Teamwork|Problem-solving|Communication|Adaptability|Time Management",
             "difficulty_level": 3,
             "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
@@ -138,13 +155,14 @@ def get_interview_questions_general_prompt(job_description: Dict[str, Any], resu
 Your role is to generate balanced, relevant, and conversational questions where each is fully self-contained.
 
 === CRITICAL RULES ===
-1. 50/50 BALANCE: 50% based on Candidate Resume, 50% on Job Requirements. Focus on OVERLAPPING skills.
-2. NO CODING/WRITTEN QUESTIONS: This is a verbal discussion. Never ask candidates to "write code", "implement algorithms", or "write a function".
-3. ADAPTIVE: Scale difficulty appropriately for the candidate's experience level and job role.
-4. INDEPENDENCE: Every question MUST be standalone — no references to other questions, prior answers, or "following up".
-5. HUMAN-LIKE TONE: Simulate a real human HR + technical discussion. Use conversational phrasing like "Can you explain how you...", "What challenges did you face when...".
-6. NO REPETITION: Avoid static question sets. Each question tests a different skill, concept, or competency.
-7. NEVER use: "As mentioned", "Following up", "Also", "Similarly", "What about" to link questions."""
+1. USE JD & RESUME: The JD and Candidate Resume are the ONLY primary sources. Focus on overlapping skills. Let the resume drive the conversation (ask about implementation, decisions, challenges).
+2. NO ASSUMPTIONS: Never assume the candidate has worked with unlisted technologies or personally owned an entire system. If a JD skill is missing from the resume, ask a scenario-based question instead.
+3. ONE CONCEPT PER QUESTION: Avoid multi-part questions. Each question must focus on one primary concept.
+4. EXPERIENCE-BASED DIFFICULTY: Assess experience based on the nature of work, not just fixed year ranges. Adapt complexity to candidate seniority.
+5. NO VERSION LISTS: Never display version lists like "Java 8/11/17".
+6. NO CODING/WRITTEN QUESTIONS: This is a verbal discussion. Never ask candidates to "write code", "implement algorithms", or "write a function".
+7. INDEPENDENCE: Every question MUST be standalone — no references to other questions, prior answers, or "following up".
+8. NEUTRAL TONE & NO NEGATIVE ASSUMPTIONS: Never make assumptions, judgments, or negative statements about the candidate's abilities, experience, or knowledge. The interview system must NEVER infer what the candidate does not know. Absence of a skill in the resume does NOT mean the candidate lacks experience with it. Do NOT mention its absence. Do NOT use wording like "Given your lack of experience...", "Since you have not worked with...", or "Although your resume does not mention...". Instead, generate a neutral, scenario-based question."""
 
     user_prompt = f"""Generate conversational, verbal interview questions for this candidate and role.
 
@@ -166,20 +184,20 @@ INTERVIEW REQUIREMENTS:
 - Format: Discussion-based, verbal-friendly (ABSOLUTELY NO CODE WRITING)
 
 ABSOLUTE RULES:
-1. Questions MUST be theoretical, experience-based, or discussion-oriented. NO coding tasks.
-2. Balance topics: 50% from the candidate's resume/projects, 50% from the Job Description. Target the overlap.
-3. Keep the tone natural, concise, and human-like.
-4. Adapt the depth of technical questions to the specific role and the candidate's seniority level.
-5. Make sure every question is completely independent and context-complete.
+1. BALANCE & VERIFY: Use the resume to verify past work while assessing JD requirements. Focus on the overlap.
+2. NO ASSUMPTIONS & NEUTRAL TONE: Do not assume project ownership or unlisted tech experience. NEVER mention the absence of a skill, make negative judgments, or infer what they don't know (e.g. avoid "Given your lack of..."). Use hypothetical scenarios for missing JD skills neutrally.
+3. ONE CONCEPT PER QUESTION: Keep it focused, concise, and avoid multi-part questions.
+4. NO CODE WRITING: Ask only theoretical, architectural, and experience-based discussion questions.
+5. INDEPENDENCE & NATURAL TONE: Make sure every question is completely independent and context-complete. Keep the tone natural and human-like.
+6. NO VERSION LISTS: Avoid version lists like "8/11/17" in the questions.
 
 Return JSON:
 {{
     "questions": [
         {{
-            "question_text": "Complete standalone conversational question",
+            "question_text": "Complete standalone conversational question focusing on ONE concept",
             "question_type": "technical|behavioral",
             "difficulty_level": 3,
-            "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
             "expected_answer": "Key points a strong verbal answer should cover in at most 2 lines",
             "time_limit_seconds": 180,
             "focus_area": "Specific domain or competency being evaluated"

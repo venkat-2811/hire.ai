@@ -836,6 +836,84 @@ async def update_candidate(
     return ok({**base, **latest_overrides})
 
 
+@router.post("/bulk-delete")
+async def bulk_delete_candidates(
+    payload: Dict[str, Any],
+    user: ClerkUser = Depends(require_user),
+):
+    """POST /api/v2/candidates/bulk-delete
+    
+    Accepts: {"candidate_ids": [...], "job_id": "..."}
+    """
+    candidate_ids = payload.get("candidate_ids", [])
+    job_id = payload.get("job_id")
+
+    if not isinstance(candidate_ids, list) or not candidate_ids:
+        return api_error(message="candidate_ids must be a non-empty list", status_code=400)
+
+    db = get_db_admin_service()
+
+    if job_id:
+        if not await verify_job_belongs_to_user(db, job_id, user.id):
+            return api_error(message="Job not found or access denied", status_code=404)
+            
+        def _verify_cands_for_job():
+            return db.client.from_("job_applications").select("candidate_id").in_("candidate_id", candidate_ids).eq("job_id", job_id).execute()
+        
+        apps_res = await db.run(_verify_cands_for_job)
+        apps = getattr(apps_res, "data", []) or []
+        valid_ids = [str(a["candidate_id"]) for a in apps if isinstance(a, dict) and a.get("candidate_id")]
+        
+        if not valid_ids:
+            return api_error(message="No valid candidates found for this job", status_code=404)
+            
+        def _del_job_specific():
+            db.client.from_("ai_interview_sessions").delete().in_("candidate_id", valid_ids).eq("job_id", job_id).execute()
+            db.client.from_("assessment_sessions").delete().in_("candidate_id", valid_ids).eq("job_id", job_id).execute()
+            db.client.from_("ats_screenings").delete().in_("candidate_id", valid_ids).eq("job_id", job_id).execute()
+            db.client.from_("interview_sessions").delete().in_("candidate_id", valid_ids).eq("job_id", job_id).execute()
+            db.client.from_("job_applications").delete().in_("candidate_id", valid_ids).eq("job_id", job_id).execute()
+            
+        try:
+            await db.run(_del_job_specific)
+        except Exception as exc:
+            logger.error("[bulk_delete_candidates] Failed to remove candidates from job=%s: %s", job_id, exc)
+            return api_error(message="Failed to remove candidates from job", status_code=500)
+            
+        return ok({"success": True, "message": f"{len(valid_ids)} candidates removed from job", "deleted_count": len(valid_ids)})
+        
+    else:
+        user_job_ids = await get_user_job_ids(db, user.id)
+        if not user_job_ids:
+            return api_error(message="No valid candidates found", status_code=404)
+            
+        def _verify_cands():
+            return db.client.from_("job_applications").select("candidate_id").in_("candidate_id", candidate_ids).in_("job_id", user_job_ids).execute()
+            
+        apps_res = await db.run(_verify_cands)
+        apps = getattr(apps_res, "data", []) or []
+        valid_ids = list(set([str(a["candidate_id"]) for a in apps if isinstance(a, dict) and a.get("candidate_id")]))
+        
+        if not valid_ids:
+            return api_error(message="No valid candidates found", status_code=404)
+            
+        def _del_all():
+            db.client.from_("ai_interview_sessions").delete().in_("candidate_id", valid_ids).execute()
+            db.client.from_("assessment_sessions").delete().in_("candidate_id", valid_ids).execute()
+            db.client.from_("ats_screenings").delete().in_("candidate_id", valid_ids).execute()
+            db.client.from_("interview_sessions").delete().in_("candidate_id", valid_ids).execute()
+            db.client.from_("job_applications").delete().in_("candidate_id", valid_ids).execute()
+            db.client.from_("candidates").delete().in_("id", valid_ids).execute()
+            
+        try:
+            await db.run(_del_all)
+        except Exception as exc:
+            logger.error("[bulk_delete_candidates] Failed to fully delete candidates: %s", exc)
+            return api_error(message="Failed to fully delete candidates", status_code=500)
+            
+        return ok({"success": True, "message": f"{len(valid_ids)} candidates permanently deleted", "deleted_count": len(valid_ids)})
+
+
 @router.delete("/{candidate_id}")
 async def delete_candidate(
     candidate_id: str,

@@ -79,7 +79,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import type { JobRole, InterviewStatus } from '@/types/database';
-import { useCandidates, useDeleteCandidate, useUnassignedCandidates } from '@/hooks/useCandidates';
+import { useCandidates, useDeleteCandidate, useUnassignedCandidates, useBulkDeleteCandidates } from '@/hooks/useCandidates';
 import { useCreateInterview, useStartInterview, useInterviews } from '@/hooks/useInterviews';
 import { useJobs } from '@/hooks/useJobs';
 import { useCandidateAnalytics } from '@/hooks/useAnalytics';
@@ -133,6 +133,7 @@ export default function CandidatesPage() {
   const { data: candidates, isLoading: candidatesLoading, refetch: refetchCandidates } = useCandidates();
   const { data: unassignedCandidates, isLoading: unassignedLoading } = useUnassignedCandidates();
   const deleteCandidate = useDeleteCandidate();
+  const bulkDeleteCandidates = useBulkDeleteCandidates();
   const createInterview = useCreateInterview();
   const startInterview = useStartInterview();
   const { data: jobs, isLoading: jobsLoading } = useJobs();
@@ -227,6 +228,7 @@ export default function CandidatesPage() {
   const [rejectedCandidateIds, setRejectedCandidateIds] = useState<Set<string>>(new Set());
   const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+
   const [sendingAcceptReject, setSendingAcceptReject] = useState(false);
 
   // Load global candidates once for summary stats

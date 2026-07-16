@@ -410,6 +410,9 @@ export const candidatesApi = {
 
   delete: (id: string, jobId?: string) =>
     request<{ success: boolean; message: string }>(`/candidates/${id}${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`, { method: 'DELETE' }),
+
+  bulkDelete: (data: { candidate_ids: string[]; job_id?: string }) =>
+    request<{ success: boolean; message: string; deleted_count: number }>('/candidates/bulk-delete', { method: 'POST', body: data }),
 };
 
 // ============== Resume Optimization API ==============
