@@ -2029,53 +2029,53 @@ export default function CandidateDetailsPage() {
       </Dialog>
 
       <Dialog open={emailModalOpen} onOpenChange={setEmailModalOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[550px] p-5">
+          <DialogHeader className="pb-2">
             <DialogTitle>New Message</DialogTitle>
             <DialogDescription>
               Send an email directly to {candidate?.full_name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">To</Label>
-              <Input value={candidate?.email || ''} disabled className="col-span-3" />
+          <div className="grid gap-3 py-0">
+            <div className="grid grid-cols-5 items-center gap-3">
+              <Label className="text-right text-sm">To</Label>
+              <Input value={candidate?.email || ''} disabled className="col-span-4 h-9" />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="subject" className="text-right">Subject</Label>
+            <div className="grid grid-cols-5 items-center gap-3">
+              <Label htmlFor="subject" className="text-right text-sm">Subject</Label>
               <Input 
                 id="subject" 
                 value={emailSubject} 
                 onChange={(e) => setEmailSubject(e.target.value)} 
-                className="col-span-3" 
+                className="col-span-4 h-9" 
                 placeholder="Subject"
               />
             </div>
-            <div className="grid grid-cols-4 gap-4">
-              <Label htmlFor="body" className="text-right mt-2">Message</Label>
-              <div className="col-span-3">
+            <div className="grid grid-cols-5 gap-3">
+              <Label htmlFor="body" className="text-right text-sm mt-2">Message</Label>
+              <div className="col-span-4">
                 <textarea
                   id="body"
-                  className="flex min-h-[200px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   placeholder="Write your message here..."
                   value={emailBody}
                   onChange={(e) => setEmailBody(e.target.value)}
                 />
               </div>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="attachment" className="text-right">Attachment</Label>
+            <div className="grid grid-cols-5 items-center gap-3">
+              <Label htmlFor="attachment" className="text-right text-sm">Attachment</Label>
               <Input 
                 id="attachment" 
                 type="file" 
                 onChange={(e) => setEmailAttachment(e.target.files?.[0] || null)} 
-                className="col-span-3" 
+                className="col-span-4 h-9 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90" 
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEmailModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleSendEmail} disabled={sendingEmail}>
+          <DialogFooter className="pt-2">
+            <Button variant="outline" size="sm" onClick={() => setEmailModalOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleSendEmail} disabled={sendingEmail}>
               {sendingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
               Send
             </Button>
