@@ -11,7 +11,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import {
   ArrowLeft,
   Loader2,
@@ -143,6 +143,36 @@ export default function CandidateDetailsPage() {
   const [manualScore, setManualScore] = useState<string>('');
   const [manualFeedback, setManualFeedback] = useState<string>('');
   const [manualNotes, setManualNotes] = useState<string>('');
+
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [emailAttachment, setEmailAttachment] = useState<File | null>(null);
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  const handleSendEmail = async () => {
+    if (!candidateId || !jobId) {
+      toast.error('Job ID is missing');
+      return;
+    }
+    if (!emailSubject.trim() || !emailBody.trim()) {
+      toast.error('Subject and body are required');
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      await candidatesApi.sendEmail(candidateId, jobId, emailSubject, emailBody, emailAttachment || undefined);
+      toast.success('Email sent successfully');
+      setEmailModalOpen(false);
+      setEmailSubject('');
+      setEmailBody('');
+      setEmailAttachment(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to send email');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
   const [jobData, setJobData] = useState<any>(null);
 
   useEffect(() => {
@@ -774,7 +804,12 @@ export default function CandidateDetailsPage() {
                 {candidate.resume_parsed_data && typeof candidate.resume_parsed_data === 'object' && (
                   <Card>
                     <CardHeader>
-                      <CardTitle>Candidate Summary</CardTitle>
+                      <CardTitle className="flex justify-between items-center">
+                        <span>Candidate Summary</span>
+                        <Button variant="outline" size="sm" onClick={() => setEmailModalOpen(true)}>
+                          <Mail className="mr-2 h-4 w-4" /> Send Email
+                        </Button>
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-6">
                       {typeof (candidate.resume_parsed_data as any).summary === 'string' && (candidate.resume_parsed_data as any).summary.trim() && (
@@ -1990,6 +2025,61 @@ export default function CandidateDetailsPage() {
               <img src={selectedScreenshotUrl} alt="Evidence" className="max-w-full max-h-[70vh] object-contain rounded border shadow-sm" />
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={emailModalOpen} onOpenChange={setEmailModalOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>New Message</DialogTitle>
+            <DialogDescription>
+              Send an email directly to {candidate?.full_name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">To</Label>
+              <Input value={candidate?.email || ''} disabled className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="subject" className="text-right">Subject</Label>
+              <Input 
+                id="subject" 
+                value={emailSubject} 
+                onChange={(e) => setEmailSubject(e.target.value)} 
+                className="col-span-3" 
+                placeholder="Subject"
+              />
+            </div>
+            <div className="grid grid-cols-4 gap-4">
+              <Label htmlFor="body" className="text-right mt-2">Message</Label>
+              <div className="col-span-3">
+                <textarea
+                  id="body"
+                  className="flex min-h-[200px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="Write your message here..."
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="attachment" className="text-right">Attachment</Label>
+              <Input 
+                id="attachment" 
+                type="file" 
+                onChange={(e) => setEmailAttachment(e.target.files?.[0] || null)} 
+                className="col-span-3" 
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleSendEmail} disabled={sendingEmail}>
+              {sendingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+              Send
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </DashboardLayout>

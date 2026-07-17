@@ -413,6 +413,17 @@ export const candidatesApi = {
 
   bulkDelete: (data: { candidate_ids: string[]; job_id?: string }) =>
     request<{ success: boolean; message: string; deleted_count: number }>('/candidates/bulk-delete', { method: 'POST', body: data }),
+
+  sendEmail: (candidateId: string, jobId: string, subject: string, body: string, attachment?: File) => {
+    const formData = new FormData();
+    formData.append('job_id', jobId);
+    formData.append('subject', subject);
+    formData.append('body', body);
+    if (attachment) {
+      formData.append('attachment', attachment);
+    }
+    return uploadFile<{ message: string }>(`/candidates/${candidateId}/send-email`, formData, false, {});
+  },
 };
 
 // ============== Resume Optimization API ==============

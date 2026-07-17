@@ -102,7 +102,7 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-1">
         {navigation.filter((item) => !item.adminOnly || isAdmin).map((item) => {
-          const isActive = location.pathname === item.href;
+          const isActive = location.pathname === item.href || location.pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.name}

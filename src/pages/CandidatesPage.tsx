@@ -1033,7 +1033,6 @@ export default function CandidatesPage() {
                   </Button>
                 )}
 
-                {hasCandidates && (
                   <Button
                     variant="outline"
                     size="icon"
@@ -1046,7 +1045,6 @@ export default function CandidatesPage() {
                   >
                     <RefreshCw className={`h-4 w-4 ${candidatesLoading ? 'animate-spin' : ''}`} />
                   </Button>
-                )}
               </div>
             </div>
 
@@ -1297,15 +1295,15 @@ export default function CandidatesPage() {
                               return (
                                 <div className="mr-2">
                                   <div className="flex items-center gap-2">
-                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'assessment')}>
+                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background border-slate-400 dark:border-slate-800 shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'assessment')}>
                                       <Mail className="mr-2 h-[18px] w-[18px]" />
                                       Send Assessment
                                     </Button>
-                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'ai-interview')}>
+                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background border-slate-400 dark:border-slate-800 shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'ai-interview')}>
                                       <Play className="mr-2 h-[18px] w-[18px]" />
                                       Send AI Interview
                                     </Button>
-                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'manual-interview')}>
+                                    <Button variant="outline" className="h-10 px-5 text-sm font-semibold bg-background border-slate-400 dark:border-slate-800 shadow-sm hover:bg-primary hover:text-primary-foreground transition-all duration-200" onClick={(e) => handleActionForJob(e, jobId, 'manual-interview')}>
                                       <MessageSquare className="mr-2 h-[18px] w-[18px]" />
                                       Manual Interview
                                     </Button>

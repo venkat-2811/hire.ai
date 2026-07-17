@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, Request, UploadFile, HTTPException, Form
 
 from app.api.v2.deps import require_user
 from app.auth.clerk import ClerkUser
@@ -2088,3 +2088,59 @@ async def generate_missing_expected_answers(
         await db.run(_update)
 
     return ok({"status": "success", "updated": updated, "questions": questions})
+
+@router.post("/{candidate_id}/send-email")
+async def send_email_to_candidate(
+    candidate_id: str,
+    job_id: str = Form(...),
+    subject: str = Form(...),
+    body: str = Form(...),
+    attachment: Optional[UploadFile] = File(None),
+    user: ClerkUser = Depends(require_user),
+):
+    """POST /api/v2/candidates/{candidate_id}/send-email"""
+    db = get_db_admin_service()
+    if not await verify_candidate_belongs_to_user(db, candidate_id, user.id):
+        return api_error(message="Candidate not found", status_code=404)
+
+    def _fetch_candidate():
+        return db.client.from_("candidates").select("email, full_name").eq("id", candidate_id).maybe_single().execute()
+        
+    cand_res = await db.run(_fetch_candidate)
+    cand = getattr(cand_res, "data", None)
+    if not cand or not cand.get("email"):
+        return api_error(message="Candidate email not found", status_code=400)
+        
+    def _fetch_profile():
+        return db.client.from_("profiles").select("company_name").eq("user_id", user.id).maybe_single().execute()
+        
+    prof_res = await db.run(_fetch_profile)
+    prof = getattr(prof_res, "data", None)
+    company_name = prof.get("company_name") if prof else None
+    from_name = f"Rekshift | {company_name}" if company_name else "Rekshift"
+
+    from app.services.email_service import get_email_service
+    email_service = get_email_service()
+    
+    html_body = f"<div style='white-space: pre-wrap;'>{body}</div>"
+    
+    if attachment:
+        file_bytes = await attachment.read()
+        await email_service.send_email_with_attachment(
+            to=cand["email"],
+            subject=subject,
+            html=html_body,
+            attachment_content=file_bytes,
+            attachment_filename=attachment.filename or "attachment",
+            attachment_content_type=attachment.content_type or "application/octet-stream",
+            from_name=from_name
+        )
+    else:
+        await email_service.send_email(
+            to=cand["email"],
+            subject=subject,
+            html=html_body,
+            from_name=from_name
+        )
+        
+    return ok({"message": "Email sent successfully"})

@@ -59,6 +59,7 @@ class EmailService:
         html: str,
         text: Optional[str] = None,
         reply_to: Optional[str] = None,
+        from_name: str = "Rekshift",
     ) -> dict:
         """Send an email using SMTP."""
         if not self.smtp_user or not self.smtp_password:
@@ -74,7 +75,7 @@ class EmailService:
                 raise RuntimeError(f"Invalid recipient email: {r}")
 
         msg = MIMEMultipart("alternative")
-        msg["From"] = formataddr(("Rekshift", self.from_email))
+        msg["From"] = formataddr((from_name, self.from_email))
         msg["To"] = ", ".join(recipients)
         msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
@@ -284,6 +285,7 @@ class EmailService:
         attachment_filename: str,
         attachment_content_type: str = "application/pdf",
         text: Optional[str] = None,
+        from_name: str = "Rekshift",
     ) -> dict:
         """Send an email with a single file attachment using SMTP."""
         if not self.smtp_user or not self.smtp_password:
@@ -299,7 +301,7 @@ class EmailService:
                 raise RuntimeError(f"Invalid recipient email: {r}")
 
         msg = MIMEMultipart("mixed")
-        msg["From"] = formataddr(("Rekshift", self.from_email))
+        msg["From"] = formataddr((from_name, self.from_email))
         msg["To"] = ", ".join(recipients)
         msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
