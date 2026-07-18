@@ -26,7 +26,7 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
-  { name: 'LinkedIn Talent', href: '/linkedin-talent', icon: Linkedin },
+  { name: 'LinkedIn Talent', href: '/linkedin-talent', icon: Linkedin, adminOnly: true },
   { name: 'Candidates', href: '/candidates', icon: Users },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Admin', href: '/admin', icon: Shield, adminOnly: true },
