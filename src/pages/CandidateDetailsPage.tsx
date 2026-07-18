@@ -33,6 +33,7 @@ import {
   Briefcase,
   Database,
   Target,
+  AlertCircle,
 } from 'lucide-react';
 import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
 import { useProfile } from '@/hooks/useProfile';
@@ -58,9 +59,9 @@ const asArray = <T,>(v: any): T[] => (Array.isArray(v) ? (v as T[]) : []);
 const getOrdinalSuffix = (day: number): string => {
   if (day > 3 && day < 21) return 'th';
   switch (day % 10) {
-    case 1:  return "st";
-    case 2:  return "nd";
-    case 3:  return "rd";
+    case 1: return "st";
+    case 2: return "nd";
+    case 3: return "rd";
     default: return "th";
   }
 };
@@ -103,7 +104,7 @@ const formatTime = (dateString: string | null | undefined): string => {
 
 const getAssessmentContent = (assessmentDetails: any): any => {
   if (!assessmentDetails) return {};
-  
+
   const pd = assessmentDetails?.proctoring_data;
   if (pd && typeof pd === 'object') {
     const ac = (pd as any)?.assessment_content;
@@ -177,11 +178,11 @@ export default function CandidateDetailsPage() {
 
   useEffect(() => {
     if (jobId) {
-      jobsApi.get(jobId).then(setJobData).catch(() => {});
+      jobsApi.get(jobId).then(setJobData).catch(() => { });
     }
   }, [jobId]);
 
-  
+
   const handleSaveManualInterview = async () => {
     if (!candidateId) return;
     setSavingManual(true);
@@ -207,7 +208,7 @@ export default function CandidateDetailsPage() {
 
   const pd = assessmentDetails?.proctoring_data;
   const assessmentConfig = (pd as any)?.assessment_config;
-  
+
   let mcqScore100 = 0;
   if (assessmentDetails) {
     const content = getAssessmentContent(assessmentDetails);
@@ -237,7 +238,7 @@ export default function CandidateDetailsPage() {
     dynamicTotalScore = totalSum / configuredCount;
   }
 
-  
+
   const [expandedMcq, setExpandedMcq] = useState<string[]>([]);
   const [expandedApex, setExpandedApex] = useState<string[]>([]);
   const [expandedSql, setExpandedSql] = useState<string[]>([]);
@@ -274,9 +275,9 @@ export default function CandidateDetailsPage() {
           if (res.updated) {
             candidatesApi.getInterviewDetails(candidateId, jobId).then(updatedInterview => {
               setInterviewDetails(updatedInterview);
-            }).catch(() => {});
+            }).catch(() => { });
           }
-        }).catch(() => {}).finally(() => setGeneratingAnswers(false));
+        }).catch(() => { }).finally(() => setGeneratingAnswers(false));
       }
     }
   }, [interviewDetails, candidateId, jobId, generatingAnswers]);
@@ -287,7 +288,7 @@ export default function CandidateDetailsPage() {
     const questions = asArray<any>(assessmentDetails.mcq_questions).length > 0
       ? asArray<any>(assessmentDetails.mcq_questions)
       : asArray<any>((content as any)?.mcq_questions);
-    
+
     if (expandedMcq.length === questions.length) {
       setExpandedMcq([]);
     } else {
@@ -299,10 +300,10 @@ export default function CandidateDetailsPage() {
     if (!assessmentDetails) return;
     const content = getAssessmentContent(assessmentDetails);
     const isSalesforce = jobData?.is_salesforce_job || jobData?.include_apex_assessment;
-    const challenges = isSalesforce 
+    const challenges = isSalesforce
       ? (asArray<any>((assessmentDetails as any).apex_blanks).length > 0 ? asArray<any>((assessmentDetails as any).apex_blanks) : asArray<any>((content as any)?.apex_blanks))
       : (asArray<any>(assessmentDetails.coding_challenges).length > 0 ? asArray<any>(assessmentDetails.coding_challenges) : asArray<any>((content as any)?.coding_challenges));
-    
+
     if (expandedApex.length === challenges.length) {
       setExpandedApex([]);
     } else {
@@ -316,7 +317,7 @@ export default function CandidateDetailsPage() {
     const sqlChallenges: any[] = pd?.assessment_content?.sql_challenges || [];
     const sqlSubs: any[] = pd?.sql_submissions || [];
     const displayList: any[] = sqlChallenges.length > 0 ? sqlChallenges : sqlSubs.map((s: any) => ({ id: s?.challenge_id, title: 'SQL Challenge', description: '' }));
-    
+
     if (expandedSql.length === displayList.length) {
       setExpandedSql([]);
     } else {
@@ -393,7 +394,7 @@ export default function CandidateDetailsPage() {
         };
         img.src = url;
       }
-      
+
       const interviewSessionId = (interviewDetails as any)?.session_id || (interviewDetails as any)?.id;
       if (interviewSessionId) {
         const url = `${supabase.storage.from('session-screenshots').getPublicUrl(`ai_interview/${interviewSessionId}/latest.jpg`).data.publicUrl}?t=${Date.now()}`;
@@ -579,7 +580,7 @@ export default function CandidateDetailsPage() {
   return (
     <DashboardLayout>
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
-        
+
         {/* 1. Sticky Header & Quick Actions */}
         <div className="bg-card text-card-foreground border rounded-xl shadow-sm p-5 sm:p-6 sticky top-0 z-20">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
@@ -610,7 +611,7 @@ export default function CandidateDetailsPage() {
                     </Badge>
                   )}
                 </div>
-                
+
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground mt-2">
                   {candidate.email && (
                     <div className="flex items-center gap-1.5">
@@ -645,7 +646,7 @@ export default function CandidateDetailsPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex flex-wrap sm:flex-nowrap gap-2 shrink-0">
               <Button variant="outline" onClick={() => setEditModalOpen(true)}>
                 <Pencil className="mr-2 h-4 w-4" />
@@ -669,11 +670,11 @@ export default function CandidateDetailsPage() {
               ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
             </CardContent>
           </Card>
-          
+
           <Card className="bg-card shadow-sm border-muted md:col-span-3 overflow-hidden relative group transition-all hover:shadow-md">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary/80 transition-all group-hover:bg-primary" />
             <CardContent className="p-5 flex flex-col h-full justify-between">
-              
+
               {/* Top Section: Main KPI */}
               <div className="flex items-start justify-between mb-4 pl-2">
                 <div className="flex flex-col">
@@ -685,10 +686,9 @@ export default function CandidateDetailsPage() {
                 <div className="flex flex-col items-end justify-center">
                   {assessmentDetails ? (
                     <div className="flex items-baseline gap-1.5">
-                      <span className={`text-6xl font-black tracking-tighter ${
-                        dynamicTotalScore >= 80 ? 'text-success' :
-                        dynamicTotalScore >= 50 ? 'text-warning' : 'text-destructive'
-                      }`}>
+                      <span className={`text-6xl font-black tracking-tighter ${dynamicTotalScore >= 80 ? 'text-success' :
+                          dynamicTotalScore >= 50 ? 'text-warning' : 'text-destructive'
+                        }`}>
                         {Math.round(dynamicTotalScore)}
                       </span>
                       <span className="text-lg font-medium text-muted-foreground/70">/ 100</span>
@@ -699,54 +699,54 @@ export default function CandidateDetailsPage() {
 
               {/* Bottom Section: Detailed Sub-Scores */}
               <div className={`grid gap-2 mt-auto pt-3 border-t border-border/60 ${configuredCount === 1 ? 'grid-cols-1' : configuredCount === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                
+
                 {/* MCQ Chip */}
                 {hasMcqConfigured && (
-                <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm" />
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">MCQ</p>
+                  <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm" />
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">MCQ</p>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      {assessmentDetails ? (
+                        <span className="text-xl font-bold text-foreground leading-none">{mcqScore100}</span>
+                      ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    {assessmentDetails ? (
-                      <span className="text-xl font-bold text-foreground leading-none">{mcqScore100}</span>
-                    ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
-                  </div>
-                </div>
                 )}
 
                 {/* Coding/Apex Chip */}
                 {hasCodingConfigured && (
-                <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-sm" />
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider truncate" title={jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}>
-                      {jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}
-                    </p>
+                  <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-sm" />
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider truncate" title={jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}>
+                        {jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}
+                      </p>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      {assessmentDetails?.coding_score != null ? (
+                        <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.coding_score)}</span>
+                      ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    {assessmentDetails?.coding_score != null ? (
-                      <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.coding_score)}</span>
-                    ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
-                  </div>
-                </div>
                 )}
 
                 {/* SQL Chip */}
                 {hasSqlConfigured && (
-                <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-sm" />
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">SQL</p>
+                  <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-sm" />
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">SQL</p>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      {assessmentDetails ? (
+                        <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.sql_score ?? 0)}</span>
+                      ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    {assessmentDetails ? (
-                      <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.sql_score ?? 0)}</span>
-                    ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
-                  </div>
-                </div>
                 )}
-                
+
               </div>
             </CardContent>
           </Card>
@@ -761,11 +761,11 @@ export default function CandidateDetailsPage() {
               ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
             </CardContent>
           </Card>
-          
+
           <Card className={
-            interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'hire' || interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'strong_hire' 
-              ? "bg-success/10 border-success/20 shadow-sm" 
-              : interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'maybe' 
+            interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'hire' || interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'strong_hire'
+              ? "bg-success/10 border-success/20 shadow-sm"
+              : interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'maybe'
                 ? "bg-warning/10 border-warning/20 shadow-sm"
                 : interviewDetails?.final_evaluation?.recommendation ? "bg-destructive/10 border-destructive/20 shadow-sm" : "bg-card shadow-sm border-muted"
           }>
@@ -800,7 +800,7 @@ export default function CandidateDetailsPage() {
           <TabsContent value="overview" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
-                
+
                 {candidate.resume_parsed_data && typeof candidate.resume_parsed_data === 'object' && (
                   <Card>
                     <CardHeader>
@@ -819,7 +819,7 @@ export default function CandidateDetailsPage() {
                           </div>
                         </div>
                       )}
-                      
+
                       {Array.isArray((candidate.resume_parsed_data as any).skills) && (
                         <div>
                           <div className="text-sm font-semibold mb-3">Key Skills</div>
@@ -1006,12 +1006,12 @@ export default function CandidateDetailsPage() {
                     </CardHeader>
                     <CardContent>
                       {(() => {
-                        const whatsGood = screening.detailed_analysis?.whats_good?.length 
-                          ? screening.detailed_analysis.whats_good 
+                        const whatsGood = screening.detailed_analysis?.whats_good?.length
+                          ? screening.detailed_analysis.whats_good
                           : (screening.reason_codes || []).filter((r: any) => r.type?.toLowerCase() === 'positive').map((r: any) => r.description);
 
-                        const whatLacks = screening.detailed_analysis?.what_lacks?.length 
-                          ? screening.detailed_analysis.what_lacks 
+                        const whatLacks = screening.detailed_analysis?.what_lacks?.length
+                          ? screening.detailed_analysis.what_lacks
                           : (screening.reason_codes || []).filter((r: any) => r.type?.toLowerCase() === 'negative').map((r: any) => r.description);
 
                         return (
@@ -1065,7 +1065,7 @@ export default function CandidateDetailsPage() {
                               </div>
                             </div>
                           )}
-                          
+
                           {Array.isArray((candidate.resume_parsed_data as any).skills) && (
                             <div>
                               <div className="text-sm font-semibold mb-3">Key Skills</div>
@@ -1158,10 +1158,10 @@ export default function CandidateDetailsPage() {
                         </div>
                       </CardHeader>
                       <CardContent className="p-0 flex-1">
-                        <iframe 
-                          src={candidate.resume_url} 
-                          className="w-full h-[700px] border-0" 
-                          title="Candidate Resume Document" 
+                        <iframe
+                          src={candidate.resume_url}
+                          className="w-full h-[700px] border-0"
+                          title="Candidate Resume Document"
                         />
                       </CardContent>
                     </Card>
@@ -1200,8 +1200,8 @@ export default function CandidateDetailsPage() {
                   </a>
                 </div>
                 <div className="w-full border rounded-xl overflow-hidden bg-muted/10 shadow-sm">
-                  <iframe 
-                    src={candidate.resume_url} 
+                  <iframe
+                    src={candidate.resume_url}
                     className="w-full h-[800px] border-0"
                     title="Candidate Resume"
                   />
@@ -1313,21 +1313,19 @@ export default function CandidateDetailsPage() {
                                 <AccordionContent className="pt-2 pb-4 border-t mt-2">
                                   <div className="space-y-4 mt-4">
                                     <div className="text-sm font-medium leading-relaxed">{safeRender(q?.question || q?.text || q?.question_text)}</div>
-                                    
+
                                     <div className="grid gap-2 mt-4">
                                       {Array.isArray(q?.options) ? q.options.map((opt: string, i: number) => {
                                         const isSelected = sub?.selected_index === i;
                                         const isCorrectOpt = sub?.correct_index === i;
-                                        
+
                                         return (
-                                          <div key={i} className={`p-3 rounded-md text-sm border flex items-center gap-3 ${
-                                            isCorrectOpt ? 'bg-success/10 border-success/30' :
-                                            isSelected && !isCorrectOpt ? 'bg-destructive/10 border-destructive/30' :
-                                            'bg-muted/10 border-muted'
-                                          }`}>
-                                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                                              isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
+                                          <div key={i} className={`p-3 rounded-md text-sm border flex items-center gap-3 ${isCorrectOpt ? 'bg-success/10 border-success/30' :
+                                              isSelected && !isCorrectOpt ? 'bg-destructive/10 border-destructive/30' :
+                                                'bg-muted/10 border-muted'
                                             }`}>
+                                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
+                                              }`}>
                                               {isSelected && <div className="w-1.5 h-1.5 bg-background rounded-full" />}
                                             </div>
                                             <span className="flex-1">{opt}</span>
@@ -1354,7 +1352,7 @@ export default function CandidateDetailsPage() {
                                         </div>
                                       )}
                                     </div>
-                                    
+
                                     <div className="flex gap-2 mt-4">
                                       <Badge variant="outline">{safeRender(q?.difficulty || sub?.difficulty || 'Medium')}</Badge>
                                       {q?.topic && <Badge variant="outline">{safeRender(q.topic)}</Badge>}
@@ -1432,11 +1430,11 @@ export default function CandidateDetailsPage() {
                       const content = getAssessmentContent(assessmentDetails);
                       const isSalesforce = jobData?.is_salesforce_job || jobData?.include_apex_assessment;
                       const pd = assessmentDetails?.proctoring_data as any;
-                      const challenges = isSalesforce 
+                      const challenges = isSalesforce
                         ? (asArray<any>((assessmentDetails as any).apex_blanks).length > 0 ? asArray<any>((assessmentDetails as any).apex_blanks) : asArray<any>((content as any)?.apex_blanks))
                         : (asArray<any>(assessmentDetails.coding_challenges).length > 0 ? asArray<any>(assessmentDetails.coding_challenges) : asArray<any>((content as any)?.coding_challenges));
-                        
-                      const subs = isSalesforce 
+
+                      const subs = isSalesforce
                         ? (asArray<any>((assessmentDetails as any).apex_blanks_results).length > 0 ? asArray<any>((assessmentDetails as any).apex_blanks_results) : asArray<any>(pd?.apex_blanks_results))
                         : asArray<any>(assessmentDetails.coding_submissions);
 
@@ -1459,7 +1457,7 @@ export default function CandidateDetailsPage() {
                             const sub = subMap.get(cid);
                             const attempted = !!sub;
                             const passRate = attempted && sub.total_tests > 0 ? (sub.passed_count / sub.total_tests) * 100 : 0;
-                            
+
                             return (
                               <AccordionItem value={`coding-${cid}`} key={cid} className="border rounded-lg bg-card shadow-sm overflow-hidden">
                                 <AccordionTrigger className="hover:no-underline px-5 py-4 bg-muted/10">
@@ -1524,7 +1522,7 @@ export default function CandidateDetailsPage() {
                                           </div>
                                         </div>
                                       )}
-                                      
+
                                       {attempted && sub?.feedback && (
                                         <div>
                                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Feedback</div>
@@ -1663,7 +1661,7 @@ export default function CandidateDetailsPage() {
                                       </div>
                                     </div>
                                   )}
-                                  
+
                                   {attempted ? (
                                     <div>
                                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Candidate's Query</div>
@@ -1689,7 +1687,7 @@ export default function CandidateDetailsPage() {
                                           </span>
                                         )}
                                       </div>
-                                      
+
                                       {(firstResult?.error || sub?.runtime_error) && (
                                         <div className="p-4 rounded-lg text-sm font-mono whitespace-pre-wrap bg-destructive/10 text-destructive border border-destructive/20 leading-relaxed">
                                           {safeRender(firstResult?.error || sub.runtime_error).replace(/Your query/g, "Candidate's query")}
@@ -1763,7 +1761,7 @@ export default function CandidateDetailsPage() {
                         </CardDescription>
                       </div>
                       <div className="flex items-center gap-2">
-                        
+
                         <Button variant="outline" size="sm" onClick={handleExpandAllInterview}>
                           {expandedInterview.length > 0 ? 'Collapse All' : 'Expand All'}
                         </Button>
@@ -1778,8 +1776,8 @@ export default function CandidateDetailsPage() {
                               : undefined;
                             const transcript = response
                               ? (typeof response.transcript === 'object'
-                                  ? JSON.stringify(response.transcript)
-                                  : String(response.transcript ?? ''))
+                                ? JSON.stringify(response.transcript)
+                                : String(response.transcript ?? ''))
                               : null;
                             const hasTranscript = transcript !== null && transcript.trim().length > 0;
                             const wasAttempted = response !== undefined;
@@ -1808,7 +1806,7 @@ export default function CandidateDetailsPage() {
                                     <div className="flex items-center justify-between">
                                       <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Candidate Response</h4>
                                       {typeof durSecs === 'number' && durSecs > 0 && (
-                                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3"/> {durSecs.toFixed(0)}s</span>
+                                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> {durSecs.toFixed(0)}s</span>
                                       )}
                                     </div>
                                     {hasTranscript ? (
@@ -1974,8 +1972,8 @@ export default function CandidateDetailsPage() {
                     {assessmentScreenshot && (
                       <div>
                         <h4 className="font-semibold text-sm mb-3">Technical Assessment</h4>
-                        <div 
-                          className="relative group rounded-lg overflow-hidden border cursor-pointer inline-block w-full" 
+                        <div
+                          className="relative group rounded-lg overflow-hidden border cursor-pointer inline-block w-full"
                           onClick={() => { setSelectedScreenshotUrl(assessmentScreenshot); setScreenshotDialogOpen(true); }}
                         >
                           <img src={assessmentScreenshot} alt="Assessment Evidence" className="w-full aspect-video object-cover group-hover:opacity-90 transition-opacity" />
@@ -1988,8 +1986,8 @@ export default function CandidateDetailsPage() {
                     {interviewScreenshot && (
                       <div>
                         <h4 className="font-semibold text-sm mb-3">AI Interview</h4>
-                        <div 
-                          className="relative group rounded-lg overflow-hidden border cursor-pointer inline-block w-full" 
+                        <div
+                          className="relative group rounded-lg overflow-hidden border cursor-pointer inline-block w-full"
                           onClick={() => { setSelectedScreenshotUrl(interviewScreenshot); setScreenshotDialogOpen(true); }}
                         >
                           <img src={interviewScreenshot} alt="Interview Evidence" className="w-full aspect-video object-cover group-hover:opacity-90 transition-opacity" />
@@ -2004,7 +2002,7 @@ export default function CandidateDetailsPage() {
               </Card>
             )}
           </TabsContent>
-          
+
         </Tabs>
       </div>
 
@@ -2043,11 +2041,11 @@ export default function CandidateDetailsPage() {
             </div>
             <div className="grid grid-cols-5 items-center gap-3">
               <Label htmlFor="subject" className="text-right text-sm">Subject</Label>
-              <Input 
-                id="subject" 
-                value={emailSubject} 
-                onChange={(e) => setEmailSubject(e.target.value)} 
-                className="col-span-4 h-9" 
+              <Input
+                id="subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                className="col-span-4 h-9"
                 placeholder="Subject"
               />
             </div>
@@ -2065,11 +2063,11 @@ export default function CandidateDetailsPage() {
             </div>
             <div className="grid grid-cols-5 items-center gap-3">
               <Label htmlFor="attachment" className="text-right text-sm">Attachment</Label>
-              <Input 
-                id="attachment" 
-                type="file" 
-                onChange={(e) => setEmailAttachment(e.target.files?.[0] || null)} 
-                className="col-span-4 h-9 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90" 
+              <Input
+                id="attachment"
+                type="file"
+                onChange={(e) => setEmailAttachment(e.target.files?.[0] || null)}
+                className="col-span-4 h-9 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
               />
             </div>
           </div>

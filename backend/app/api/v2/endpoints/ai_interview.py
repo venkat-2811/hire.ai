@@ -284,6 +284,25 @@ def _deduplicate_questions(questions: List[dict]) -> List[dict]:
     return unique
 
 
+# Regex: matches version lists like "8/11/17", "2.x/3.x", "3.8/3.10/3.11"
+_VERSION_LIST_RE = _re.compile(r'\b(\d+(?:\.\w+)?(?:/\d+(?:\.\w+)?){1,})', _re.IGNORECASE)
+
+
+def _strip_version_lists(text: str) -> str:
+    """Remove slash-separated version number lists from question text.
+
+    Examples cleaned up:
+      'Java 8/11/17'        -> 'Java'
+      'Spring Boot 2.x/3.x' -> 'Spring Boot'
+      'Python 3.8/3.10/3.11' -> 'Python'
+    """
+    # Remove the version list token (and the space before it if any)
+    cleaned = _VERSION_LIST_RE.sub('', text)
+    # Collapse any double-spaces left behind
+    cleaned = _re.sub(r'  +', ' ', cleaned)
+    return cleaned.strip()
+
+
 # ---------------------------------------------------------------------------
 #  Core question generation
 # ---------------------------------------------------------------------------
@@ -404,8 +423,27 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
     default_duration = _DIFFICULTY_DURATION.get(difficulty, 120)
     session_seed = uuid.uuid4().hex[:8]
 
-    # Request extra to allow dedup headroom
-    request_count = question_count + 4
+    # Request extra to allow dedup headroom — actual counts set inside the branch below
+    request_count = question_count + 4  # may be overridden below
+    # Pre-compute JD vs resume split (used both in prompt and in post-processing trim)
+    if question_count == 1:
+        _jd_count, _res_count = 1, 0
+    elif question_count == 2:
+        _jd_count, _res_count = 1, 1
+    elif question_count == 3:
+        _jd_count, _res_count = 2, 1
+    elif question_count == 4:
+        _jd_count, _res_count = 2, 2
+    elif question_count == 5:
+        _jd_count, _res_count = 3, 2
+    elif question_count == 6:
+        _jd_count, _res_count = 4, 2
+    elif question_count == 7:
+        _jd_count, _res_count = 4, 3
+    else:
+        import math
+        _jd_count = math.ceil(question_count * 0.6)
+        _res_count = question_count - _jd_count
 
     resume_context = _extract_resume_context(resume_data, job)
     role_hints = _get_role_technology_hints(role, jd_skills)
@@ -450,47 +488,82 @@ Instructions:
 - Do NOT pad with generic behavioral or unrelated questions.
 - {'Strictly limit questions to the focus areas. Only diverge if the JD or resume provides strong reason to do so.' if strict_focus else 'You may include a few resume-specific or JD-specific questions where they strongly complement the focus areas.'}"""
     else:
+        # Add headroom within each batch for dedup safety
+        # (_jd_count and _res_count already computed above)
+        _jd_req = _jd_count + 2 if _jd_count > 0 else 0
+        _res_req = _res_count + 2 if _res_count > 0 else 0
+        # Update total request count to match
+        request_count = _jd_req + _res_req
+
+
+        if _res_count == 0:
+            _dist_note = (
+                f"DISTRIBUTION: Generate exactly {_jd_req} JD-based questions (BATCH A). "
+                f"No resume-only questions are required."
+            )
+        else:
+            _dist_note = (
+                f"DISTRIBUTION: Generate exactly {_jd_req} JD-based questions first (BATCH A), "
+                f"then exactly {_res_req} Resume-based questions (BATCH B). "
+                f"BOTH BATCHES ARE MANDATORY. The final output MUST contain questions from both batches."
+            )
+
+        _batch_b_block = "" if _res_count == 0 else f"""
+BATCH B — RESUME-BASED QUESTIONS (Generate exactly {_res_req} questions)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+These questions MUST reference the candidate's ACTUAL resume content.
+Tag each question with: "source": "resume"
+
+Sub-types to use (pick the best fit for each slot):
+
+  RESUME-PROJECT DEEP DIVE:
+    Reference a specific project, tool, or technology from the candidate's resume.
+    Ask about real implementation choices, trade-offs, bugs, or architecture decisions.
+    GOOD: "In your [Project Name] project you used [Technology]. Describe a specific
+          technical challenge you hit and how you resolved it."
+    BAD:  Any question that does not name a specific resume item.
+
+  RESUME + JD OVERLAP (best opportunity):
+    When a candidate skill overlaps with a JD requirement, combine both.
+    GOOD: "Your resume shows experience with [Candidate Skill]. This role requires [JD Skill].
+          How would you apply your [Candidate Skill] background to satisfy this JD requirement?"
+"""
+
         question_requirements_block = f"""======================================================================
-QUESTION GENERATION REQUIREMENTS (STRICTLY FOLLOW)
+QUESTION GENERATION REQUIREMENTS — READ CAREFULLY AND FOLLOW EXACTLY
 ======================================================================
 
-You MUST generate questions in this distribution:
+{_dist_note}
 
-1. RESUME-PROJECT TECHNICAL QUESTIONS (40% — approximately {int(request_count * 0.4)} questions)
-   Directly reference specific projects, companies, tools, or technologies from the candidate's resume.
-   These must be deeply technical and implementation-focused.
-   
-   GOOD examples:
-   - "In your RAG-based chatbot project, what chunking strategy did you use? How did you optimize retrieval latency and handle cases where the retrieved context was irrelevant?"
-   - "You mentioned using FAISS for vector search. How did you handle index updates when new documents were added? Did you use IVF or HNSW, and why?"
-   - "At [Company], you worked on API optimization. What specific bottlenecks did you identify, and what measurable improvements did you achieve?"
-   - "Your resume shows experience with Kubernetes. Describe how you handled rolling deployments and what strategy you used for zero-downtime releases."
+You MUST return questions in TWO clearly separated batches in the JSON output.
+Batch A items come first, Batch B items come after. Do NOT mix them.
 
-2. JD SKILLS TECHNICAL QUESTIONS (30% — approximately {int(request_count * 0.3)} questions)
-   Based on must-have and good-to-have skills from the JD. Ask about implementation details,
-   architecture decisions, and real-world usage of these specific technologies.
-   
-   GOOD examples:
-   - "This role requires expertise in FastAPI. Describe how you structure a production FastAPI application — dependency injection, middleware, error handling, and async patterns you follow."
-   - "The JD mentions distributed systems. Explain how you would handle data consistency across microservices when network partitions occur."
-   - "Event-driven architecture is key for this role. Describe a system you built or worked on that used message queues — what technology did you use, how did you handle failures and ordering?"
+BATCH A — JD-BASED QUESTIONS (Generate exactly {_jd_req} questions)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+These questions must be grounded in the Job Description skills and requirements.
+Tag each question with: "source": "jd"
 
-3. TECHNICAL SCENARIO QUESTIONS (20% — approximately {int(request_count * 0.2)} questions)
-   Real-world technical problems the candidate would face in this specific role.
-   These should test problem-solving, debugging, and architectural thinking.
-   
-   GOOD examples:
-   - "Your production API starts returning 5xx errors at 2 AM with a 10x traffic spike. Walk me through your complete debugging and resolution process from alert to fix."
-   - "You need to migrate a 500GB PostgreSQL database to a new schema with zero downtime. What is your step-by-step approach?"
-   - "A machine learning model in production starts showing degraded accuracy over 3 weeks. How do you diagnose whether it is data drift, concept drift, or a pipeline issue?"
+Sub-types to use (distribute across the {_jd_req} slots):
 
-4. SKILL-GAP PROBING QUESTIONS (10% — approximately {int(request_count * 0.1)} questions)
-   For skills required by the JD but NOT found on the resume — test foundational understanding.
-   For skills that MATCH between resume and JD — go deeper than surface level.
-   
-   GOOD examples:
-   - "The role requires [Missing Skill]. What is your current understanding of it, and how would you approach getting production-ready with it?"
-   - "You have [Matched Skill] experience and this role uses it heavily. Describe the most complex production issue you debugged involving it."
+  JD SKILL DEEP DIVE (use for most slots):
+    Ask about must-have or good-to-have JD skills — implementation details,
+    architecture decisions, real-world usage, debugging, and trade-offs.
+    GOOD: "This role requires expertise in [JD Skill]. Describe how you have used it
+          in a production context — what design decisions did you make and why?"
+
+  TECHNICAL SCENARIO (use for 1–2 slots):
+    A real-world problem the candidate would face in this role.
+    GOOD: "Your [JD technology] service starts failing under load. Walk me through
+          your complete debugging and resolution process from alert to fix."
+{_batch_b_block}
+======================================================================
+CRITICAL OUTPUT RULES
+======================================================================
+1. Total questions to generate: {request_count} ({_jd_req} JD + {_res_req} Resume)
+2. BATCH B IS MANDATORY — if resume content exists, you MUST generate {_res_req} resume-based questions.
+3. Every resume-based question MUST name a specific project, company, tool, or technology from the candidate's resume data provided above.
+4. JD questions must NOT reference resume-specific content (they should be answerable by any qualified candidate).
+5. Resume questions MUST be personalized — a generic question that could apply to any candidate is WRONG.
 """
 
     prompt = f"""You are a senior technical interviewer with 15+ years of industry experience. Generate {request_count} highly technical, personalized interview questions for a {level} {title} candidate.
@@ -529,15 +602,18 @@ ABSOLUTE RULES (VIOLATIONS = REJECTED QUESTIONS)
 6. NO FILLER: No 'Tell me about yourself', no 'Why this role?', no generic HR questions.
 7. NATURAL LENGTH: Questions should be as long as needed to set proper context. A good technical question is typically 2-4 sentences.
 8. USE SESSION SEED: Vary topics and phrasing using seed {session_seed}. Each generation must produce different questions.
+9. NO VERSION LISTS: NEVER include raw version numbers or slash-separated version lists in questions. Write "Java" not "Java 8/11/17". Write "Spring Boot" not "Spring Boot 2.x/3.x". Write "Python" not "Python 3.8/3.10/3.11". If version-specific knowledge is genuinely needed, ask which version they have used — do NOT list versions yourself.
 
 ======================================================================
 OUTPUT FORMAT
 ======================================================================
-Return ONLY a JSON array of EXACTLY {request_count} objects:
+Return ONLY a JSON array of EXACTLY {request_count} objects.
+Batch A (JD) questions come first, Batch B (Resume) questions come last:
 [{{{{
-  "text": "<detailed technical question referencing specific resume/JD content>",
+  "text": "<detailed technical question>",
   "type": "technical",
-  "duration": {default_duration}
+  "duration": {default_duration},
+  "source": "jd"   (use "jd" for Batch A questions, "resume" for Batch B questions)
 }}}}]
 
 type must be one of: "technical", "situational", "behavioral" (use "behavioral" sparingly, max 1 question)
@@ -556,15 +632,23 @@ type must be one of: "technical", "situational", "behavioral" (use "behavioral" 
         # Semantic deduplication
         questions = _deduplicate_questions(questions)
 
-        # Trim to requested count
+        # Trim to requested count, respecting JD/resume split
         if len(questions) > question_count:
-            questions = questions[:question_count]
-        elif len(questions) < question_count:
+            # The LLM was told to output Batch A (JD) first, Batch B (Resume) last.
+            # Honour the split: take _jd_count from the front, _res_count from the back.
+            jd_qs = [q for q in questions if q.get("source") != "resume"][:_jd_count]
+            res_qs = [q for q in questions if q.get("source") == "resume"][:_res_count]
+            if len(jd_qs) < _jd_count:
+                # Fallback: fill remaining JD slots from unlabelled front
+                extra = [q for q in questions if q not in jd_qs and q not in res_qs]
+                jd_qs += extra[:_jd_count - len(jd_qs)]
+            questions = jd_qs + res_qs
+        if len(questions) < question_count:
             questions += get_fallback_questions(question_count - len(questions), role, difficulty)
 
         # Normalize fields
         for q in questions:
-            q["text"] = q["text"].strip()
+            q["text"] = _strip_version_lists(q["text"].strip())
             if not isinstance(q.get("duration"), int) or q["duration"] <= 0:
                 q["duration"] = default_duration
             if q.get("type") not in ("technical", "behavioral", "situational"):
