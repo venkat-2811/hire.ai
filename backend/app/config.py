@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     stripe_ind_scale_price_id: str = Field(default="", alias="STRIPE_IND_SCALE_PRICE_ID")
     stripe_ind_enterprise_price_id: str = Field(default="", alias="STRIPE_IND_ENTERPRISE_PRICE_ID")
 
+    # ── Unipile (LinkedIn Talent Discovery) ──────────────────────────────────
+    unipile_dsn: str = Field(default="", alias="UNIPILE_DSN")
+    unipile_api_key: str = Field(default="", alias="UNIPILE_API_KEY")
+    unipile_account_id: str = Field(default="", alias="UNIPILE_ACCOUNT_ID")
+
 
 def _format_settings_validation_error(exc: ValidationError) -> str:
     # Prefer environment variable names in messages (aliases)

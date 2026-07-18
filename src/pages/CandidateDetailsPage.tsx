@@ -33,6 +33,7 @@ import {
   Briefcase,
   Database,
   Target,
+  AlertCircle,
 } from 'lucide-react';
 import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
 import { useProfile } from '@/hooks/useProfile';
