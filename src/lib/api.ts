@@ -1969,3 +1969,172 @@ export const dsaProblemsApi = {
 
 export { APIError };
 
+// ─── LinkedIn Talent Discovery API ───────────────────────────────────────────
+export const linkedInTalentApi = {
+  getAccounts: () =>
+    request<{ connected: boolean; accounts: any[]; message?: string }>('/linkedin/accounts'),
+
+  generateFilters: (params: {
+    job_id: string;
+    title?: string;
+    description?: string;
+    must_have_skills?: string[];
+    good_to_have_skills?: string[];
+    min_experience_years?: number;
+    location?: string;
+  }) =>
+    request<{
+      keywords: string;
+      skills: string[];
+      job_titles: string[];
+      similar_roles: string[];
+      experience_min: number;
+      experience_max: number;
+      industry: string;
+      location: string;
+      seniority: string;
+      preferred_education: string;
+    }>('/linkedin/generate-filters', { method: 'POST', body: params }),
+
+  search: (params: {
+    job_id: string;
+    filters: Record<string, any>;
+    candidate_count: number;
+    title?: string;
+    description?: string;
+    must_have_skills?: string[];
+  }) =>
+    request<{
+      search_id?: string;
+      requested: number;
+      retrieved: number;
+      profiles: any[];
+    }>('/linkedin/search', {
+      method: 'POST',
+      body: params,
+      timeoutMs: 90_000, // profile enrichment runs concurrently but still needs ~15-30s
+    }),
+
+  getProfile: (params: { identifier: string; account_id?: string }) => {
+    const sp = new URLSearchParams({ identifier: params.identifier });
+    if (params.account_id) sp.set('account_id', params.account_id);
+    return request<any>(`/linkedin/profile?${sp.toString()}`, { method: 'POST', body: {} });
+  },
+
+  rankCandidates: (params: {
+    job_id: string;
+    title: string;
+    description: string;
+    must_have_skills?: string[];
+    good_to_have_skills?: string[];
+    min_experience_years?: number;
+    candidates: any[];
+  }) =>
+    request<{ ranked: any[] }>('/linkedin/rank-candidates', {
+      method: 'POST',
+      body: params,
+      timeoutMs: 60_000,
+    }),
+
+  generateEmail: (params: {
+    candidate: any;
+    job_title: string;
+    company_name: string;
+    job_description?: string;
+    recruiter_name?: string;
+  }) =>
+    request<{ subject: string; body: string }>('/linkedin/generate-email', {
+      method: 'POST',
+      body: params,
+    }),
+
+  saveCandidate: (params: {
+    job_id: string;
+    search_id?: string;
+    profile: any;
+    match_score?: number;
+    ai_summary?: string;
+  }) =>
+    request<{ id: string; created?: boolean; updated?: boolean }>('/linkedin/save-candidate', {
+      method: 'POST',
+      body: params,
+    }),
+
+  unsaveCandidate: (jobId: string, linkedinId: string) =>
+    request<{ deleted: boolean }>(`/linkedin/saved-candidates/${jobId}/${linkedinId}`, { method: 'DELETE' }),
+
+  updateCandidate: (
+    id: string,
+    data: { notes?: string; tags?: string[]; status?: string }
+  ) =>
+    request<{ updated: boolean }>(`/linkedin/candidate/${id}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  getSavedCandidates: (jobId: string) =>
+    request<{ candidates: any[] }>(`/linkedin/saved-candidates/${jobId}`, {
+      timeoutMs: 8_000,
+    }),
+
+  getSearchHistory: (jobId: string) =>
+    request<{ searches: any[] }>(`/linkedin/search-history/${jobId}`, {
+      timeoutMs: 8_000,
+    }),
+
+  sendMessage: (params: {
+    account_id: string;
+    provider_id: string;
+    message: string;
+  }) =>
+    request<{ sent: boolean; chat_id?: string }>('/linkedin/send-message', {
+      method: 'POST',
+      body: params,
+    }),
+
+  sendOutreachEmail: (params: {
+    to_email: string;
+    subject: string;
+    body: string;
+    candidate_name?: string;
+    job_title?: string;
+  }) =>
+    request<{ sent: boolean; to: string }>('/linkedin/send-outreach-email', {
+      method: 'POST',
+      body: params,
+    }),
+
+  atsScoreProfile: (params: {
+    job_id: string;
+    profile: any;
+  }) =>
+    request<{
+      skills_score: number;
+      experience_score: number;
+      education_score: number;
+      overall_score: number;
+      strengths: string[];
+      gaps: string[];
+      recommendation: string;
+      recommendation_reason: string;
+    }>('/linkedin/ats-score-profile', {
+      method: 'POST',
+      body: params,
+      timeoutMs: 40_000,
+    }),
+
+  addAsCandidate: (params: {
+    job_id: string;
+    profile: any;
+  }) =>
+    request<{
+      candidate_id: string;
+      job_application_id: string | null;
+      already_exists: boolean;
+      message: string;
+      placeholder_email?: string;
+    }>('/linkedin/add-as-candidate', {
+      method: 'POST',
+      body: params,
+    }),
+};

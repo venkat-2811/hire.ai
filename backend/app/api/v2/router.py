@@ -12,6 +12,7 @@ from app.api.v2.endpoints.dsa_problems import router as dsa_problems_router
 from app.api.v2.endpoints.interviews import router as interviews_router
 from app.api.v2.endpoints.job_status import router as job_status_router
 from app.api.v2.endpoints.jobs import router as jobs_router
+from app.api.v2.endpoints.linkedin_talent import router as linkedin_talent_router
 from app.api.v2.endpoints.profile import router as profile_router
 from app.api.v2.endpoints.screening import router as screening_router
 from app.api.v2.endpoints.subscription import router as subscription_router
@@ -39,3 +40,4 @@ api_router.include_router(interviews_router, tags=["interviews"])
 api_router.include_router(dsa_problems_router, tags=["dsa-problems"])
 api_router.include_router(clerk_webhooks_router, tags=["clerk-webhooks"])
 api_router.include_router(resume_optimization_router, tags=["resume-optimization"])
+api_router.include_router(linkedin_talent_router, tags=["linkedin-talent"])

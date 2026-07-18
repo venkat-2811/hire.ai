@@ -42,6 +42,8 @@ import AdminAllRecruitersPage from "./pages/admin/AdminAllRecruitersPage";
 import AdminRecruiterDetailPage from "./pages/admin/AdminRecruiterDetailPage";
 import AdminUsageHistoryPage from "./pages/admin/AdminUsageHistoryPage";
 import OfferAcceptancePage from "./pages/OfferAcceptancePage";
+import LinkedInTalentPage from "./pages/LinkedInTalentPage";
+import LinkedInJobTalentPage from "./pages/LinkedInJobTalentPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -125,6 +127,8 @@ const App = () => (
               <Route path="usage-history" element={<AdminUsageHistoryPage />} />
             </Route>
             <Route path="/offer-acceptance" element={<OfferAcceptancePage />} />
+            <Route path="/linkedin-talent" element={<LinkedInTalentPage />} />
+            <Route path="/linkedin-talent/:jobId" element={<LinkedInJobTalentPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
