@@ -170,7 +170,7 @@ export function CandidateProfileDrawer({
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto divide-y divide-border/30">
+        <div className="flex-1 overflow-y-auto scrollbar-thin divide-y divide-border/30">
           {/* About */}
           {candidate.summary && (
             <Section title="About" icon={Users}>

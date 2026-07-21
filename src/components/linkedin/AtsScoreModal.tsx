@@ -112,7 +112,7 @@ export function AtsScoreModal({ candidate, result, isLoading, onClose }: AtsScor
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-5">
             {isLoading ? (
               /* Loading skeleton */
               <div className="space-y-5">

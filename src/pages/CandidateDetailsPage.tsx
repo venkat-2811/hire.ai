@@ -37,15 +37,17 @@ import {
 } from 'lucide-react';
 import { useCandidate, useCandidateScreenings } from '@/hooks/useCandidates';
 import { useProfile } from '@/hooks/useProfile';
+import { useCandidateAnalytics } from '@/hooks/useAnalytics';
 import { candidatesApi, jobsApi, type AssessmentDetails, type InterviewDetails, type ManualInterviewDetails } from '@/lib/api';
 import { ScoreBadge } from '@/components/ui/score-badge';
 import { Award, Clock, CheckSquare, Activity, ChevronRight } from 'lucide-react';
 import { PDFExportService } from '@/lib/pdf-export';
-import { Download, Pencil } from 'lucide-react';
+import { Download, Pencil, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { EditCandidateModal } from '@/components/ui/EditCandidateModal';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '@/integrations/supabase/client';
+import { cn } from '@/lib/utils';
 import { ResumeOptimizationPanel } from '@/components/resume/ResumeOptimizationPanel';
 
 const safeRender = (val: any): string => {
@@ -131,6 +133,11 @@ export default function CandidateDetailsPage() {
   const [assessmentDetails, setAssessmentDetails] = useState<AssessmentDetails | null>(null);
   const [interviewDetails, setInterviewDetails] = useState<InterviewDetails | null>(null);
   const [manualInterviewDetails, setManualInterviewDetails] = useState<ManualInterviewDetails | null>(null);
+  
+  const { data: analytics } = useCandidateAnalytics(jobId ? { job_id: jobId } : undefined);
+  const candidateAnalytics = analytics?.find(a => a.candidate_id === candidateId && (jobId ? a.job_id === jobId : true));
+  const dynamicRecommendation = candidateAnalytics?.recommendation || interviewDetails?.final_evaluation?.recommendation;
+
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [savingManual, setSavingManual] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -661,88 +668,98 @@ export default function CandidateDetailsPage() {
         </div>
 
         {/* 2. Summary Dashboard */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-          <Card className="bg-card shadow-sm border-muted">
-            <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Resume Score</p>
-              {screening?.overall_score != null ? (
-                <ScoreBadge score={screening.overall_score} size="lg" />
-              ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4">
+          <Card className="bg-card shadow-sm border-muted lg:col-span-3 overflow-hidden relative group transition-all hover:shadow-md">
+            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 transition-all group-hover:bg-blue-500" />
+            <CardContent className="p-4 flex flex-col h-full">
+              <div className="flex flex-col mb-2.5 pl-1">
+                <h3 className="text-lg font-bold text-foreground tracking-tight">Resume Score</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 whitespace-nowrap">
+                  Overall screening performance
+                </p>
+              </div>
+              <div className="flex flex-col items-center justify-center flex-grow pb-1">
+                {screening?.overall_score != null ? (
+                  <span className={`text-5xl font-black tracking-tighter leading-none ${screening.overall_score >= 80 ? 'text-success' : screening.overall_score >= 50 ? 'text-warning' : 'text-destructive'}`}>
+                    {Math.round(screening.overall_score)}
+                  </span>
+                ) : <span className="text-3xl font-bold text-muted-foreground/30">-</span>}
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-card shadow-sm border-muted md:col-span-3 overflow-hidden relative group transition-all hover:shadow-md">
+          <Card className="bg-card shadow-sm border-muted lg:col-span-4 overflow-hidden relative group transition-all hover:shadow-md">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary/80 transition-all group-hover:bg-primary" />
-            <CardContent className="p-5 flex flex-col h-full justify-between">
+            <CardContent className="p-4 flex flex-col h-full justify-between">
 
               {/* Top Section: Main KPI */}
-              <div className="flex items-start justify-between mb-4 pl-2">
+              <div className="flex items-start justify-between mb-2.5 pl-1">
                 <div className="flex flex-col">
-                  <h3 className="text-base font-extrabold text-foreground tracking-tight">Assessment Score</h3>
+                  <h3 className="text-lg font-bold text-foreground tracking-tight">Assessment Score</h3>
                   <p className="text-[11px] text-muted-foreground mt-0.5 whitespace-nowrap">
                     Overall technical performance breakdown
                   </p>
                 </div>
                 <div className="flex flex-col items-end justify-center">
                   {assessmentDetails ? (
-                    <div className="flex items-baseline gap-1.5">
-                      <span className={`text-6xl font-black tracking-tighter ${dynamicTotalScore >= 80 ? 'text-success' :
+                    <div className="flex items-baseline gap-1">
+                      <span className={`text-4xl lg:text-5xl font-black tracking-tighter ${dynamicTotalScore >= 80 ? 'text-success' :
                           dynamicTotalScore >= 50 ? 'text-warning' : 'text-destructive'
                         }`}>
                         {Math.round(dynamicTotalScore)}
                       </span>
-                      <span className="text-lg font-medium text-muted-foreground/70">/ 100</span>
+                      <span className="text-xs font-medium text-muted-foreground/70">/ 100</span>
                     </div>
-                  ) : <span className="text-4xl font-bold text-muted-foreground/30">-</span>}
+                  ) : <span className="text-3xl font-bold text-muted-foreground/30">-</span>}
                 </div>
               </div>
 
               {/* Bottom Section: Detailed Sub-Scores */}
-              <div className={`grid gap-2 mt-auto pt-3 border-t border-border/60 ${configuredCount === 1 ? 'grid-cols-1' : configuredCount === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              <div className={`grid gap-2 mt-auto pt-2 border-t border-border/60 ${configuredCount === 1 ? 'grid-cols-1' : configuredCount === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
 
                 {/* MCQ Chip */}
                 {hasMcqConfigured && (
-                  <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm" />
+                  <div className="flex flex-col p-1.5 rounded bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                    <div className="flex items-center gap-1 mb-1">
+                      <div className="w-1 h-1 rounded-full bg-blue-500 shadow-sm" />
                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">MCQ</p>
                     </div>
                     <div className="flex items-baseline gap-1">
                       {assessmentDetails ? (
-                        <span className="text-xl font-bold text-foreground leading-none">{mcqScore100}</span>
-                      ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                        <span className="text-lg font-bold text-foreground leading-none">{mcqScore100}</span>
+                      ) : <span className="text-sm font-semibold text-muted-foreground/50 leading-none">-</span>}
                     </div>
                   </div>
                 )}
 
                 {/* Coding/Apex Chip */}
                 {hasCodingConfigured && (
-                  <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-sm" />
+                  <div className="flex flex-col p-1.5 rounded bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                    <div className="flex items-center gap-1 mb-1">
+                      <div className="w-1 h-1 rounded-full bg-purple-500 shadow-sm" />
                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider truncate" title={jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}>
                         {jobData?.is_salesforce_job || jobData?.include_apex_assessment ? 'Apex' : 'Coding'}
                       </p>
                     </div>
                     <div className="flex items-baseline gap-1">
                       {assessmentDetails?.coding_score != null ? (
-                        <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.coding_score)}</span>
-                      ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                        <span className="text-lg font-bold text-foreground leading-none">{Math.round(assessmentDetails.coding_score)}</span>
+                      ) : <span className="text-sm font-semibold text-muted-foreground/50 leading-none">-</span>}
                     </div>
                   </div>
                 )}
 
                 {/* SQL Chip */}
                 {hasSqlConfigured && (
-                  <div className="flex flex-col p-2 rounded-md bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-sm" />
+                  <div className="flex flex-col p-1.5 rounded bg-muted/30 border border-muted/50 hover:bg-muted/60 transition-colors">
+                    <div className="flex items-center gap-1 mb-1">
+                      <div className="w-1 h-1 rounded-full bg-amber-500 shadow-sm" />
                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">SQL</p>
                     </div>
                     <div className="flex items-baseline gap-1">
                       {assessmentDetails ? (
-                        <span className="text-xl font-bold text-foreground leading-none">{Math.round(assessmentDetails.sql_score ?? 0)}</span>
-                      ) : <span className="text-lg font-semibold text-muted-foreground/50 leading-none">-</span>}
+                        <span className="text-lg font-bold text-foreground leading-none">{Math.round(assessmentDetails.sql_score ?? 0)}</span>
+                      ) : <span className="text-sm font-semibold text-muted-foreground/50 leading-none">-</span>}
                     </div>
                   </div>
                 )}
@@ -751,31 +768,64 @@ export default function CandidateDetailsPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-card shadow-sm border-muted">
-            <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Interview Score</p>
-              {manualInterviewDetails?.manual_interview_score != null ? (
-                <ScoreBadge score={manualInterviewDetails.manual_interview_score} size="lg" />
-              ) : interviewDetails?.final_evaluation?.overall_score != null ? (
-                <ScoreBadge score={interviewDetails.final_evaluation.overall_score} size="lg" />
-              ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
+          <Card className="bg-card shadow-sm border-muted lg:col-span-3 overflow-hidden relative group transition-all hover:shadow-md">
+            <div className="absolute top-0 left-0 w-1 h-full bg-purple-500/80 transition-all group-hover:bg-purple-500" />
+            <CardContent className="p-4 flex flex-col h-full">
+              <div className="flex flex-col mb-2.5 pl-1">
+                <h3 className="text-lg font-bold text-foreground tracking-tight">Interview Score</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 whitespace-nowrap">
+                  AI or manual evaluation
+                </p>
+              </div>
+              <div className="flex flex-col items-center justify-center flex-grow pb-1">
+                {(manualInterviewDetails?.manual_interview_score != null || interviewDetails?.final_evaluation?.overall_score != null) ? (() => {
+                  const score = manualInterviewDetails?.manual_interview_score ?? interviewDetails?.final_evaluation?.overall_score ?? 0;
+                  return (
+                    <span className={`text-5xl font-black tracking-tighter leading-none ${score >= 80 ? 'text-success' : score >= 50 ? 'text-warning' : 'text-destructive'}`}>
+                      {Math.round(score)}
+                    </span>
+                  );
+                })() : <span className="text-3xl font-bold text-muted-foreground/30">-</span>}
+              </div>
             </CardContent>
           </Card>
 
-          <Card className={
-            interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'hire' || interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'strong_hire'
-              ? "bg-success/10 border-success/20 shadow-sm"
-              : interviewDetails?.final_evaluation?.recommendation?.toLowerCase() === 'maybe'
-                ? "bg-warning/10 border-warning/20 shadow-sm"
-                : interviewDetails?.final_evaluation?.recommendation ? "bg-destructive/10 border-destructive/20 shadow-sm" : "bg-card shadow-sm border-muted"
-          }>
-            <CardContent className="p-4 flex flex-col items-center justify-center text-center h-full">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Final Recommendation</p>
-              {interviewDetails?.final_evaluation?.recommendation ? (
-                <span className="text-sm font-bold uppercase tracking-wide">
-                  {interviewDetails.final_evaluation.recommendation.replace(/_/g, ' ')}
-                </span>
-              ) : <span className="text-xl font-bold text-muted-foreground">-</span>}
+          <Card className={cn(
+            "lg:col-span-2 shadow-sm overflow-hidden relative group transition-all hover:shadow-md",
+            dynamicRecommendation?.toLowerCase() === 'hire' || dynamicRecommendation?.toLowerCase() === 'strong_hire'
+              ? "bg-success/10 border-success/20"
+              : dynamicRecommendation?.toLowerCase() === 'maybe'
+                ? "bg-warning/10 border-warning/20"
+                : dynamicRecommendation ? "bg-destructive/10 border-destructive/20" : "bg-card border-muted"
+          )}>
+            <div className={cn("absolute top-0 left-0 w-1 h-full transition-all group-hover:w-1.5", 
+              dynamicRecommendation?.toLowerCase() === 'hire' || dynamicRecommendation?.toLowerCase() === 'strong_hire'
+                ? "bg-success/80 group-hover:bg-success"
+                : dynamicRecommendation?.toLowerCase() === 'maybe'
+                  ? "bg-warning/80 group-hover:bg-warning"
+                  : dynamicRecommendation ? "bg-destructive/80 group-hover:bg-destructive" : "bg-muted-foreground/20 group-hover:bg-muted-foreground/30"
+            )} />
+            <CardContent className="p-4 flex flex-col h-full">
+              <div className="flex flex-col mb-2.5 pl-1 text-left">
+                <h3 className="text-lg font-bold text-foreground tracking-tight">Recommendation</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5 whitespace-nowrap">
+                  Final evaluation result
+                </p>
+              </div>
+              <div className="flex flex-col items-center justify-center flex-grow pb-1">
+                {dynamicRecommendation ? (
+                  <span className={cn(
+                    "text-lg lg:text-xl font-extrabold uppercase tracking-wide text-center leading-none",
+                    dynamicRecommendation.toLowerCase() === 'hire' || dynamicRecommendation.toLowerCase() === 'strong_hire'
+                      ? "text-success"
+                      : dynamicRecommendation.toLowerCase() === 'maybe'
+                        ? "text-warning"
+                        : "text-destructive"
+                  )}>
+                    {dynamicRecommendation.replace(/_/g, ' ')}
+                  </span>
+                ) : <span className="text-3xl font-bold text-muted-foreground/30">-</span>}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -804,10 +854,10 @@ export default function CandidateDetailsPage() {
                 {candidate.resume_parsed_data && typeof candidate.resume_parsed_data === 'object' && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="flex justify-between items-center">
+                      <CardTitle className="flex items-center gap-3">
                         <span>Candidate Summary</span>
-                        <Button variant="outline" size="sm" onClick={() => setEmailModalOpen(true)}>
-                          <Mail className="mr-2 h-4 w-4" /> Send Email
+                        <Button variant="outline" size="sm" onClick={() => setEmailModalOpen(true)} className="h-8 shadow-sm">
+                          <Mail className="mr-2 h-3.5 w-3.5" /> Send Email
                         </Button>
                       </CardTitle>
                     </CardHeader>
@@ -2027,55 +2077,76 @@ export default function CandidateDetailsPage() {
       </Dialog>
 
       <Dialog open={emailModalOpen} onOpenChange={setEmailModalOpen}>
-        <DialogContent className="sm:max-w-[550px] p-5">
-          <DialogHeader className="pb-2">
-            <DialogTitle>New Message</DialogTitle>
-            <DialogDescription>
-              Send an email directly to {candidate?.full_name}.
+        <DialogContent className="sm:max-w-[460px] p-5">
+          <DialogHeader className="pb-3 border-b border-border/50">
+            <DialogTitle className="text-lg font-bold tracking-tight">Send Message</DialogTitle>
+            <DialogDescription className="text-xs">
+              Draft an email to <span className="font-semibold text-foreground">{candidate?.full_name}</span>.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 py-0">
-            <div className="grid grid-cols-5 items-center gap-3">
-              <Label className="text-right text-sm">To</Label>
-              <Input value={candidate?.email || ''} disabled className="col-span-4 h-9" />
+          <div className="grid gap-3 py-3">
+            <div className="grid gap-1">
+              <Label htmlFor="to" className="text-xs font-semibold text-foreground/80">To</Label>
+              <Input id="to" value={candidate?.email || ''} disabled className="h-8 text-xs bg-muted/30" />
             </div>
-            <div className="grid grid-cols-5 items-center gap-3">
-              <Label htmlFor="subject" className="text-right text-sm">Subject</Label>
+            <div className="grid gap-1">
+              <Label htmlFor="subject" className="text-xs font-semibold text-foreground/80">Subject</Label>
               <Input
                 id="subject"
                 value={emailSubject}
                 onChange={(e) => setEmailSubject(e.target.value)}
-                className="col-span-4 h-9"
-                placeholder="Subject"
+                className="h-8 text-xs"
+                placeholder="Interview next steps..."
               />
             </div>
-            <div className="grid grid-cols-5 gap-3">
-              <Label htmlFor="body" className="text-right text-sm mt-2">Message</Label>
-              <div className="col-span-4">
-                <textarea
-                  id="body"
-                  className="flex min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="Write your message here..."
-                  value={emailBody}
-                  onChange={(e) => setEmailBody(e.target.value)}
-                />
+            <div className="grid gap-1">
+              <Label htmlFor="body" className="text-xs font-semibold text-foreground/80">Message</Label>
+              <Textarea
+                id="body"
+                className="min-h-[90px] resize-none text-xs"
+                placeholder="Type your message here..."
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="attachment" className="text-xs font-semibold text-foreground/80">Attachment (Optional)</Label>
+              <div className="relative flex items-center justify-center w-full">
+                <Label
+                  htmlFor="attachment"
+                  className="flex items-center justify-between w-full h-9 px-3 border rounded-lg cursor-pointer bg-muted/30 hover:bg-muted/50 border-border transition-all"
+                >
+                  <div className="flex items-center gap-2 overflow-hidden mr-2">
+                    {emailAttachment ? (
+                      <>
+                        <FileText className="w-4 h-4 text-primary shrink-0" />
+                        <span className="text-xs font-medium text-foreground truncate max-w-[260px]">{emailAttachment.name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <span className="text-xs text-muted-foreground truncate">Click to upload (PDF, DOCX, Image)</span>
+                      </>
+                    )}
+                  </div>
+                  {emailAttachment && (
+                    <span className="text-[10px] font-bold text-primary shrink-0 hover:underline">Change</span>
+                  )}
+                  <Input
+                    id="attachment"
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => setEmailAttachment(e.target.files?.[0] || null)}
+                  />
+                </Label>
               </div>
             </div>
-            <div className="grid grid-cols-5 items-center gap-3">
-              <Label htmlFor="attachment" className="text-right text-sm">Attachment</Label>
-              <Input
-                id="attachment"
-                type="file"
-                onChange={(e) => setEmailAttachment(e.target.files?.[0] || null)}
-                className="col-span-4 h-9 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
-              />
-            </div>
           </div>
-          <DialogFooter className="pt-2">
-            <Button variant="outline" size="sm" onClick={() => setEmailModalOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={handleSendEmail} disabled={sendingEmail}>
-              {sendingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-              Send
+          <DialogFooter className="pt-3 border-t border-border/50">
+            <Button variant="ghost" size="sm" onClick={() => setEmailModalOpen(false)} className="h-8 text-xs">Cancel</Button>
+            <Button size="sm" onClick={handleSendEmail} disabled={sendingEmail} className="h-8 text-xs gap-1.5">
+              {sendingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+              Send Email
             </Button>
           </DialogFooter>
         </DialogContent>

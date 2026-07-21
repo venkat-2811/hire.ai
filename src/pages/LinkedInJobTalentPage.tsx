@@ -343,7 +343,7 @@ export default function LinkedInJobTalentPage() {
         <div className="flex flex-1 overflow-hidden min-h-0">
 
           {/* Col 1: JD */}
-          <div className="shrink-0 overflow-y-auto hidden lg:block bg-muted/5" style={{ width: jdWidth, minWidth: 180, maxWidth: 420 }}>
+          <div className="shrink-0 overflow-y-auto scrollbar-thin hidden lg:block bg-muted/5" style={{ width: jdWidth, minWidth: 180, maxWidth: 420 }}>
             <div className="p-4">
               <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/30">
                 <Briefcase className="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -356,7 +356,7 @@ export default function LinkedInJobTalentPage() {
           <ResizeDivider onDrag={(d) => setJdWidth(w => Math.min(420, Math.max(180, w + d)))} />
 
           {/* Col 2: Filters */}
-          <div className="shrink-0 overflow-y-auto hidden xl:block bg-muted/5" style={{ width: filterWidth, minWidth: 220, maxWidth: 400 }}>
+          <div className="shrink-0 overflow-y-auto scrollbar-thin hidden xl:block bg-muted/5" style={{ width: filterWidth, minWidth: 220, maxWidth: 400 }}>
             <div className="p-4">
               <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/30">
                 <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -405,7 +405,7 @@ export default function LinkedInJobTalentPage() {
               </div>
 
               {/* Results Content */}
-              <TabsContent value="results" className="flex-1 overflow-y-auto mt-0 data-[state=active]:flex data-[state=active]:flex-col">
+              <TabsContent value="results" className="flex-1 overflow-y-auto scrollbar-thin mt-0 data-[state=active]:flex data-[state=active]:flex-col">
                 <div className="p-4 space-y-3 flex-1">
                   {searchResult && !isSearching && (
                     <SearchSummaryBanner requested={searchResult.requested} retrieved={searchResult.retrieved} ranked={candidates.length > 0} />
@@ -486,7 +486,7 @@ export default function LinkedInJobTalentPage() {
               </TabsContent>
 
               {/* Saved Content */}
-              <TabsContent value="saved" className="flex-1 overflow-y-auto mt-0">
+              <TabsContent value="saved" className="flex-1 overflow-y-auto scrollbar-thin mt-0">
                 <div className="p-4">
                   {savedCandidates.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -511,7 +511,7 @@ export default function LinkedInJobTalentPage() {
               </TabsContent>
 
               {/* History Content */}
-              <TabsContent value="history" className="flex-1 overflow-y-auto mt-0">
+              <TabsContent value="history" className="flex-1 overflow-y-auto scrollbar-thin mt-0">
                 <div className="p-4">
                   <SearchHistoryPanel jobId={jobId!} onRerun={handleRerun} />
                 </div>

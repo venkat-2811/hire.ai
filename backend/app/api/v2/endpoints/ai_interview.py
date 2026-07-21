@@ -450,25 +450,108 @@ async def generate_interview_questions(openai, job: dict, resume_data: Optional[
 
     # ── Difficulty calibration ───────────────────────────────────────
     if difficulty == "easy":
-        diff_guidance = """DIFFICULTY: EASY (Junior/Fresher)
-- Ask about fundamental technical concepts and their application.
-- Probe into academic/personal projects — what they built, why, how.
-- Test understanding of tools and technologies listed on resume.
-- Keep questions implementation-focused but at an introductory depth.
-- Example: 'In your project [X], you used [Technology]. Explain how you set it up and what challenges you faced getting it to work.'"""
+        diff_guidance = """DIFFICULTY: EASY (Junior / Fresher Level)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COGNITIVE REGISTER: Knowledge recall and basic application.
+The candidate should be able to answer from textbook understanding or a hands-on project they personally built.
+
+WHAT TO ASK:
+- Definitions, core concepts, and why a technology or pattern exists.
+- "What does X do and why would you use it?" — not "how would you design X for scale."
+- Setup, configuration, and first-time usage of a specific tool or framework from the resume.
+- A small, isolated technical challenge they faced in a personal/academic project and how they fixed it.
+- Understanding of one specific data structure, algorithm, or design pattern at a conceptual level.
+
+WHAT NOT TO ASK (FORBIDDEN at this level):
+- Trade-off analysis between competing systems (e.g., "Compare Kafka vs RabbitMQ at scale")
+- System design or distributed architecture questions
+- Production incident handling, performance profiling, capacity planning
+- Leadership, mentoring, or cross-team technical decisions
+
+QUESTION FORM — use RECALL and EXPLAIN patterns:
+- "What is [concept] and when would you use it in a project like [their project]?"
+- "In your [project/assignment], you used [technology]. Walk me through how you set it up step by step."
+- "What problem does [pattern/tool] solve? Can you give a simple example from your experience?"
+
+EXPECTED ANSWER DEPTH:
+A strong Easy-level answer covers: what the technology/concept is, one concrete use case, and a basic implementation step or personal experience. 1–2 minutes is sufficient. No design decisions or optimization discussion is expected.
+
+EXAMPLE EASY QUESTION:
+BAD (too deep): "How would you design a caching layer for a distributed API system?"
+GOOD: "You used Redis in your college project. What is Redis used for, and how did you connect it to your application?"
+"""
     elif difficulty == "hard":
-        diff_guidance = """DIFFICULTY: HARD (Senior/Lead/Architect)
-- Ask about system design, architecture trade-offs, and production-scale challenges.
-- Probe into performance optimization, debugging complex distributed systems.
-- Test deep expertise: scalability decisions, failure modes, capacity planning.
-- Ask about technical leadership, mentoring, and cross-team decision-making.
-- Example: 'In your work at [Company], you built [System]. Walk me through how you designed it for scale — what were the critical architecture decisions, failure modes you planned for, and what would you redesign today?'"""
+        diff_guidance = """DIFFICULTY: HARD (Senior / Lead / Architect Level)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COGNITIVE REGISTER: Synthesis, architecture, and systemic trade-off reasoning.
+The candidate must demonstrate ownership of complex systems, cross-cutting design decisions, and production-scale battle scars. Surface-level answers are insufficient.
+
+WHAT TO ASK:
+- System design with real constraints: "Design X for Y million users — walk me through your database strategy, caching, failure modes, and scaling decisions."
+- Multi-factor trade-off analysis: consistency vs availability, latency vs throughput, build vs buy, monolith vs microservices — with real justification from their own systems.
+- Production incident ownership: root cause analysis, how they diagnosed a systemic failure, what guardrails they put in place afterwards.
+- Architecture evolution: how they migrated, refactored, or scaled an existing system under live traffic. What went wrong, what they would redo.
+- Technical leadership: how they drove alignment across teams, onboarded engineers, made unpopular but correct technical calls, or managed a technical debt backlog.
+- Deep internals: memory models, GC pressure, network protocol choices, replication lag, distributed consensus mechanisms — not just "I used Kafka," but why, how it was configured, and what failure scenarios were handled.
+
+WHAT NOT TO ASK (TOO SHALLOW at this level):
+- "What is X and how does it work?" — that is Easy/Medium territory
+- Basic debugging of a single service or component
+- Questions that a mid-level candidate could answer without production experience
+
+QUESTION FORM — use DESIGN, CRITIQUE, and EVOLVE patterns:
+- "Your [system from their resume] needed to support 10x traffic growth. Walk me through the architecture changes you made or would make — starting from bottleneck identification."
+- "You chose [technology] at [company]. What were the trade-offs you explicitly rejected and why? What would trigger you to revisit that decision?"
+- "A cascading failure took down your [system/service]. Walk me through your entire incident response — from first alert to post-mortem — and what systematic changes resulted."
+- "How did you ensure [JD skill — e.g., data consistency / zero downtime deployments] in your most recent production system?"
+
+EXPECTED ANSWER DEPTH:
+A strong Hard-level answer must include: the specific constraints that shaped the decision, at least two alternatives explicitly considered and rejected (with reasoning), failure modes that were anticipated, and measurable outcomes or lessons learned. A candidate who answers only at the "what I used" level fails this tier. 3–5 minutes of depth is expected.
+
+EXAMPLE HARD QUESTION:
+BAD (too shallow): "What is a microservices architecture and when would you use it?"
+GOOD: "In your role at [Company], you worked with a distributed backend. If that system started showing cascading failures under load — one service bringing down others — walk me through how you would diagnose the root cause, what architectural safeguards you would introduce, and how you would validate the fix in production without downtime."
+"""
     else:
-        diff_guidance = """DIFFICULTY: MEDIUM (Mid-Level/Experienced)
-- Ask about real implementation details, debugging, and trade-offs from actual experience.
-- Probe into specific technical decisions made in projects and their outcomes.
-- Test problem-solving with practical scenarios tied to the role.
-- Example: 'You used [Framework] in your [Project]. Describe a specific technical challenge you hit during implementation and how you resolved it.'"""
+        diff_guidance = """DIFFICULTY: MEDIUM (Mid-Level / Experienced Developer)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COGNITIVE REGISTER: Applied analysis and real implementation judgment.
+The candidate should be able to explain not just WHAT they did, but WHY they made specific decisions, what trade-offs they weighed, and what they would do differently. Rote recall is insufficient; concrete experience is required.
+
+WHAT TO ASK:
+- A specific technical decision they made in a real project: why they chose approach A over B, what the consequences were.
+- Debugging a real problem they actually encountered: what the symptom was, how they diagnosed it, and what the fix was.
+- A framework, library, or tool from their resume — but probing implementation depth, not just "have you used it?"
+- Trade-offs between two options they have actually faced: SQL vs NoSQL for a specific use case, REST vs GraphQL, synchronous vs async processing.
+- Testing, code quality, or API design decisions in a project they built.
+- A performance issue, data problem, or integration failure they resolved — with specific details.
+
+WHAT NOT TO ASK (TOO SHALLOW at this level):
+- Pure definition questions like "What is REST?" or "What is a database index?" — those are Easy-level
+- High-level system design for millions of users — that is Hard-level
+- Questions a fresher could answer from reading documentation
+
+WHAT NOT TO ASK (TOO DEEP at this level):
+- Distributed systems CAP theorem trade-offs at architect scope
+- Multi-team technical leadership or org-wide architecture decisions
+
+QUESTION FORM — use IMPLEMENT, DECIDE, and DEBUG patterns:
+- "In your [project], you used [technology]. Walk me through a specific technical decision you made — what alternatives did you consider and why did you pick this approach?"
+- "Describe a real bug or failure you hit in [project or technology area]. How did you isolate the root cause and what did the fix look like?"
+- "When you implemented [feature/module], what was the hardest part technically? What would you do differently today?"
+- "This role requires [JD skill]. Walk me through a real situation where you applied this — what was the context, what did you build, and what was the outcome?"
+
+EXPECTED ANSWER DEPTH:
+A strong Medium-level answer covers: the specific context (project/team/scale), the exact technical problem or decision point, at least one alternative they consciously ruled out, the solution they implemented, and either the outcome or a reflection on what they'd improve. 2–3 minutes of concrete, specific detail is expected.
+
+EXAMPLE MEDIUM QUESTION:
+BAD (too surface): "Have you worked with REST APIs? What are they?"
+ALSO BAD (too deep): "Design a globally distributed API gateway for 100M requests/day."
+GOOD: "In your [project or role], you built or consumed REST APIs. Walk me through one specific API design decision you made — for example, how you handled authentication, versioning, or error responses — and why you made that choice."
+"""
 
     # ── Question generation requirements block ───────────────────────────────
     if focus_areas and focus_areas.strip():

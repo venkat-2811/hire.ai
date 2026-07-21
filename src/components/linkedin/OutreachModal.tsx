@@ -139,7 +139,7 @@ export function OutreachModal({
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto scrollbar-thin px-5 py-4 space-y-4">
 
             {/* Recipient Email */}
             <div className="space-y-1.5">

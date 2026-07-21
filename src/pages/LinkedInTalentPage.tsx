@@ -23,21 +23,18 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
-function LinkedInConnectionBanner({ connected, message }: { connected: boolean; message?: string }) {
+function LinkedInConnectionBanner({ connected }: { connected: boolean }) {
   if (connected) return null;
   return (
-    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3 mb-6">
-      <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-      <div>
-        <p className="text-sm font-semibold text-amber-300">LinkedIn Account Not Connected</p>
-        <p className="text-xs text-amber-400/80 mt-0.5">
-          {message || 'Connect your LinkedIn account via Unipile to use LinkedIn Talent Discovery.'}
-        </p>
-        <p className="text-xs text-muted-foreground/60 mt-1">
-          Configure <code className="bg-muted/50 px-1 rounded">UNIPILE_DSN</code>,{' '}
-          <code className="bg-muted/50 px-1 rounded">UNIPILE_API_KEY</code>, and{' '}
-          <code className="bg-muted/50 px-1 rounded">UNIPILE_ACCOUNT_ID</code> in the backend .env.
-        </p>
+    <div className="shrink-0 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 flex items-center gap-2.5 shadow-sm">
+      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+      <div className="flex flex-col">
+        <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 leading-tight">
+          LinkedIn Account Not Connected
+        </span>
+        <span className="text-[10px] font-medium text-amber-600/90 dark:text-amber-400/80 leading-tight">
+          Work In Progress
+        </span>
       </div>
     </div>
   );
@@ -77,10 +74,10 @@ export default function LinkedInTalentPage() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="space-y-1"
+          className="flex flex-col sm:flex-row sm:items-start justify-between gap-4"
         >
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-[#0077B5]/15 border border-[#0077B5]/30">
+            <div className="p-2.5 rounded-xl bg-[#0077B5]/15 border border-[#0077B5]/30 shrink-0">
               <Linkedin className="h-6 w-6 text-[#0077B5]" />
             </div>
             <div>
@@ -92,12 +89,12 @@ export default function LinkedInTalentPage() {
               </p>
             </div>
           </div>
-        </motion.div>
 
-        {/* Connection Banner */}
-        {!accountsLoading && (
-          <LinkedInConnectionBanner connected={isConnected} message={connectionMessage} />
-        )}
+          {/* Connection Banner */}
+          {!accountsLoading && (
+            <LinkedInConnectionBanner connected={isConnected} />
+          )}
+        </motion.div>
 
         {/* Stats Row */}
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
