@@ -228,7 +228,37 @@ export interface CandidateCreatePayload {
   location?: string;
   vendorName?: string;
   mainSkillset?: string;
+  work_authorization?: string;
+  employment_type?: string;
 }
+
+export const WORK_AUTHORIZATION_OPTIONS = [
+  'US Citizen',
+  'Green Card',
+  'GC EAD',
+  'H4 EAD',
+  'H1B',
+  'H1B Transfer',
+  'OPT',
+  'STEM OPT',
+  'CPT',
+  'TN Visa',
+  'L1',
+  'L2 EAD',
+  'O1',
+  'E3',
+  'Canadian Citizen',
+  'Requires Sponsorship',
+  'Other',
+] as const;
+
+export const EMPLOYMENT_TYPE_OPTIONS = [
+  'Full Time',
+  'Contract',
+  'Contract to Hire',
+  'Part Time',
+  'Internship',
+] as const;
 
 export interface Profile {
   id: string;
@@ -362,6 +392,8 @@ export interface Candidate {
   location?: string;
   vendorName?: string;
   mainSkillset?: string;
+  work_authorization?: string | null;
+  employment_type?: string | null;
   created_at: string;
   updated_at: string;
 }

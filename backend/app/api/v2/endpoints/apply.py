@@ -58,6 +58,8 @@ async def submit_application(
     location: Optional[str] = Form(None),
     vendorName: Optional[str] = Form(None),
     mainSkillset: Optional[str] = Form(None),
+    work_authorization: Optional[str] = Form(None),
+    employment_type: Optional[str] = Form(None),
     consent_given: str = Form(...),
     resume: Optional[UploadFile] = File(None),
 ):
@@ -203,6 +205,8 @@ async def submit_application(
             "location": location,
             "vendorName": vendorName,
             "mainSkillset": mainSkillset,
+            "work_authorization": work_authorization,
+            "employment_type": employment_type,
             "consent_given": consent,
             "consent_timestamp": _utc_now_iso(),
             "updated_at": _utc_now_iso(),
@@ -235,6 +239,8 @@ async def submit_application(
                 ("location", location),
                 ("vendorName", vendorName),
                 ("mainSkillset", mainSkillset),
+                ("work_authorization", work_authorization),
+                ("employment_type", employment_type),
             ]:
                 if value and not existing_row.get(field):
                     safe_update[field] = value
@@ -281,6 +287,10 @@ async def submit_application(
             _overrides["vendorName"] = vendorName
         if mainSkillset:
             _overrides["mainSkillset"] = mainSkillset
+        if work_authorization:
+            _overrides["work_authorization"] = work_authorization
+        if employment_type:
+            _overrides["employment_type"] = employment_type
         if portfolio_url:
             _overrides["portfolio_url"] = portfolio_url
         if github_url:
@@ -355,9 +365,18 @@ async def submit_application(
 
         # Confirmation email (best-effort, async via queue)
         try:
+            company_name = "Our Company"
+            if job.get("end_customer") == "end_customer" and job.get("end_customer_name"):
+                company_name = job.get("end_customer_name")
+            elif recruiter_id:
+                prof_res = await db.select("profiles", columns="company_name", filters={"user_id": recruiter_id}, limit=1)
+                if prof_res and prof_res[0].get("company_name"):
+                    company_name = prof_res[0].get("company_name")
+
             html, text, subject = email_queue.build_application_received(
                 candidate_name=full_name,
                 job_title=str(job.get("title") or ""),
+                company_name=company_name
             )
             await email_queue.enqueue(
                 to_email=email,

@@ -3,7 +3,8 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from .enums import (
     RoleLevel, InterviewStatus, AssessmentType,
-    HireRecommendation, ReasonCodeType, SkillRelevance
+    HireRecommendation, ReasonCodeType, SkillRelevance,
+    WorkAuthorization, EmploymentType,
 )
 
 
@@ -100,6 +101,8 @@ class CandidateCreate(BaseModel):
     github_url: Optional[str] = None
     consent_given: bool = False
     job_id: Optional[str] = None
+    work_authorization: Optional[WorkAuthorization] = None
+    employment_type: Optional[EmploymentType] = None
 
 
 class CandidateUpdate(BaseModel):
@@ -108,6 +111,8 @@ class CandidateUpdate(BaseModel):
     phone: Optional[str] = None
     portfolio_url: Optional[str] = None
     github_url: Optional[str] = None
+    work_authorization: Optional[WorkAuthorization] = None
+    employment_type: Optional[EmploymentType] = None
 
 
 class Candidate(CandidateCreate, TimestampMixin):

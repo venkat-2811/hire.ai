@@ -219,6 +219,9 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
     if not full_name or not email:
         return api_error(message="full_name and email are required", status_code=400)
 
+    work_authorization = payload.get("work_authorization") or payload.get("workAuthorization")
+    employment_type = payload.get("employment_type") or payload.get("employmentType")
+
     job_id = payload.get("job_id") or payload.get("jobId")
     if job_id:
         job_id = str(job_id)
@@ -226,15 +229,18 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
         def _check_job():
             return (
                 db.client.from_("job_descriptions")
-                .select("id")
+                .select("id, is_deleted")
                 .eq("id", job_id)
                 .eq("created_by", user.id)
-                .maybe_single()
+                .limit(1)
                 .execute()
             )
 
         job_res = await db.run(_check_job)
-        if not isinstance(getattr(job_res, "data", None), dict):
+        job_data = getattr(job_res, "data", None) or []
+        logger.info(f"[create_candidate] job_id={job_id} job_check_result={job_data}")
+        if not isinstance(job_data, list) or not job_data or not isinstance(job_data[0], dict):
+            logger.warning(f"[create_candidate] Invalid job_id={job_id} for user={user.id}")
             return api_error(message="Invalid job_id", status_code=400)
 
     def _find_existing():
@@ -299,6 +305,8 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
             _merge_if_null("location", payload.get("location"))
             _merge_if_null("vendorName", payload.get("vendorName"))
             _merge_if_null("mainSkillset", payload.get("mainSkillset"))
+            _merge_if_null("work_authorization", payload.get("work_authorization") or payload.get("workAuthorization"))
+            _merge_if_null("employment_type", payload.get("employment_type") or payload.get("employmentType"))
 
             # Consent is always honoured for the candidate themselves (opt-in)
             if payload.get("consent_given") or payload.get("consentGiven"):
@@ -338,6 +346,8 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
                 "location": payload.get("location"),
                 "vendorName": payload.get("vendorName"),
                 "mainSkillset": payload.get("mainSkillset"),
+                "work_authorization": payload.get("work_authorization") or payload.get("workAuthorization"),
+                "employment_type": payload.get("employment_type") or payload.get("employmentType"),
             }
             def _insert():
                 return db.client.from_("candidates").insert(insert_row).execute()
@@ -413,6 +423,12 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
             _skillset = payload.get("mainSkillset")
             if _skillset:
                 _overrides["mainSkillset"] = _skillset
+            _work_auth = payload.get("work_authorization") or payload.get("workAuthorization")
+            if _work_auth:
+                _overrides["work_authorization"] = _work_auth
+            _emp_type = payload.get("employment_type") or payload.get("employmentType")
+            if _emp_type:
+                _overrides["employment_type"] = _emp_type
 
             if _overrides:
                 def _write_overrides(ov=_overrides):
@@ -744,7 +760,8 @@ async def update_candidate(
 ):
     """PATCH /api/v2/candidates/{candidate_id}
 
-    Editable fields: full_name, phone, portfolio_url, github_url, location, vendorName, mainSkillset.
+    Editable fields: full_name, phone, portfolio_url, github_url, location, vendorName, mainSkillset,
+    work_authorization, employment_type.
     Email is immutable after creation. Resume fields (resume_url, resume_text, resume_parsed_data)
     are intentionally excluded — immutable after submission.
     """
@@ -762,6 +779,7 @@ async def update_candidate(
         "full_name", "phone", "portfolio_url", "github_url",
         "location", "vendorName", "mainSkillset",
         "consent_given", "consent_timestamp",
+        "work_authorization", "employment_type",
     }
     update_data: Dict[str, Any] = {k: v for k, v in payload.items() if k in allowed}
     if not update_data:

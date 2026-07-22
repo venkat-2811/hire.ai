@@ -33,7 +33,8 @@ import { ROLE_CONFIG, LEVEL_CONFIG, type JobRole, type RoleLevel } from '@/types
 import { useCreateCandidate, useRunScreening, useUploadResume } from '@/hooks/useCandidates';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { useJobs } from '@/hooks/useJobs';
-import { apiUploadFile } from '@/lib/api';
+import { useRecruiterLocation } from '@/hooks/useRecruiterLocation';
+import { apiUploadFile, WORK_AUTHORIZATION_OPTIONS, EMPLOYMENT_TYPE_OPTIONS } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -47,6 +48,7 @@ type Step = 'upload' | 'details' | 'job' | 'consent' | 'processing';
 export default function NewCandidatePage() {
   const { user, loading } = useRequireAuth();
   const navigate = useNavigate();
+  const { isUsaOrCanada } = useRecruiterLocation();
 
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -63,6 +65,8 @@ export default function NewCandidatePage() {
   const [location, setLocation] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [mainSkillset, setMainSkillset] = useState('');
+  const [workAuthorization, setWorkAuthorization] = useState('');
+  const [employmentType, setEmploymentType] = useState('');
   const [selectedJob, setSelectedJob] = useState('');
   const [jobSearchQuery, setJobSearchQuery] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
@@ -203,7 +207,7 @@ export default function NewCandidatePage() {
   });
 
   const handleNext = () => {
-    if (currentStep === 'details' && (!fullName || !email)) {
+    if (currentStep === 'details' && (!fullName || !email || (isUsaOrCanada && (!workAuthorization || !employmentType)))) {
       toast.error('Please fill in required fields');
       return;
     }
@@ -251,6 +255,8 @@ export default function NewCandidatePage() {
         location: location || undefined,
         vendorName: vendorName || undefined,
         mainSkillset: mainSkillset || undefined,
+        work_authorization: workAuthorization || undefined,
+        employment_type: employmentType || undefined,
         consent_given: consentGiven,
         job_id: selectedJob,
       }, {
@@ -538,6 +544,37 @@ export default function NewCandidatePage() {
                     onChange={(e) => setVendorName(e.target.value)}
                   />
                 </div>
+
+                {isUsaOrCanada && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="workAuthorization">Work Authorization <span className="text-red-500">*</span></Label>
+                    <Select value={workAuthorization || undefined} onValueChange={setWorkAuthorization}>
+                      <SelectTrigger id="workAuthorization">
+                        <SelectValue placeholder="Select work authorization" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WORK_AUTHORIZATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="employmentType">Employment Type <span className="text-red-500">*</span></Label>
+                    <Select value={employmentType || undefined} onValueChange={setEmploymentType}>
+                      <SelectTrigger id="employmentType">
+                        <SelectValue placeholder="Select employment type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                )}
 
                 <div className="border-t pt-6 space-y-4">
                   <h3 className="font-medium">Optional Links</h3>

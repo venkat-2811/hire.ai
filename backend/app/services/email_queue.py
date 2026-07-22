@@ -356,16 +356,17 @@ class EmailQueueManager:
         
     # --- TEMPLATE HELPERS ----------------------------------------------------
     
-    def build_application_received(self, candidate_name: str, job_title: str) -> Tuple[str, Optional[str], str]:
-        subject = f"Application Received - {job_title}"
+    def build_application_received(self, candidate_name: str, job_title: str, company_name: str = "Our Company") -> Tuple[str, Optional[str], str]:
+        subject = f"Application Received – Thank You for Applying to {company_name}"
         html = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #1a1a2e;">Application Received</h2>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333333; line-height: 1.6;">
             <p>Dear {candidate_name},</p>
-            <p>Thank you for applying to the <strong>{job_title}</strong> position.</p>
-            <p>We have received your application and our team will review it shortly. 
-            We will contact you soon regarding the next steps in our hiring process.</p>
-            <p>Best regards,<br>The Hiring Team</p>
+            <p>Thank you for your interest in <strong>{company_name}</strong> and for applying for the <strong>{job_title}</strong> position.</p>
+            <p>We are pleased to confirm that we have successfully received your application. Our hiring team will carefully review your qualifications and experience to evaluate your fit for the role.</p>
+            <p>If your profile matches our current requirements, we will contact you regarding the next steps in the hiring process. We appreciate your patience while we complete our review.</p>
+            <p>Thank you for considering {company_name} as the next step in your career. We wish you the very best and look forward to the opportunity to connect with you.</p>
+            <br>
+            <p>Best regards,<br><br><strong>{company_name}</strong><br>Hiring Team</p>
         </div>
         """
         return html, None, subject

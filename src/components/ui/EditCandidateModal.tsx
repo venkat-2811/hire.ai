@@ -11,9 +11,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertTriangle, Lock, Mail } from 'lucide-react';
 import { toast } from 'sonner';
-import { candidatesApi } from '@/lib/api';
+import { candidatesApi, WORK_AUTHORIZATION_OPTIONS, EMPLOYMENT_TYPE_OPTIONS } from '@/lib/api';
 
 interface EditableCandidateFields {
   full_name: string;
@@ -21,6 +22,8 @@ interface EditableCandidateFields {
   location: string;
   portfolio_url: string;
   github_url: string;
+  work_authorization: string;
+  employment_type: string;
 }
 
 interface EditCandidateModalProps {
@@ -32,6 +35,8 @@ interface EditCandidateModalProps {
     location?: string | null;
     portfolio_url?: string | null;
     github_url?: string | null;
+    work_authorization?: string | null;
+    employment_type?: string | null;
     resume_parsed_data?: any;
     applied_at?: string | null;
   } | null;
@@ -50,6 +55,8 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
     location: '',
     portfolio_url: '',
     github_url: '',
+    work_authorization: '',
+    employment_type: '',
   });
 
   useEffect(() => {
@@ -60,6 +67,8 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
         location: candidate.location || '',
         portfolio_url: candidate.portfolio_url || '',
         github_url: candidate.github_url || '',
+        work_authorization: candidate.work_authorization || '',
+        employment_type: candidate.employment_type || '',
       };
       setFields(f);
       setStep('warning');
@@ -78,6 +87,10 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
       toast.error('Full name is required');
       return;
     }
+    if (!fields.work_authorization || fields.work_authorization === 'none' || !fields.employment_type || fields.employment_type === 'none') {
+      toast.error('Work Authorization and Employment Type are required');
+      return;
+    }
     setSaving(true);
     try {
       const payload: Record<string, string | null> = {
@@ -86,6 +99,8 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
         location: fields.location.trim() || null,
         portfolio_url: fields.portfolio_url.trim() || null,
         github_url: fields.github_url.trim() || null,
+        work_authorization: fields.work_authorization || null,
+        employment_type: fields.employment_type || null,
       };
 
       const updated = await candidatesApi.update(candidate.id, payload as any);
@@ -226,6 +241,43 @@ export function EditCandidateModal({ candidate, open, onOpenChange, onUpdated }:
                     onChange={(e) => setFields(f => ({ ...f, github_url: e.target.value }))}
                     placeholder="https://github.com/username"
                   />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ec-work-auth">Work Authorization <span className="text-red-500">*</span></Label>
+                    <Select
+                      value={fields.work_authorization || undefined}
+                      onValueChange={(v) => setFields(f => ({ ...f, work_authorization: v === "none" ? "" : v }))}
+                    >
+                      <SelectTrigger id="ec-work-auth">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none" className="text-muted-foreground italic">Not Specified</SelectItem>
+                        {WORK_AUTHORIZATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ec-emp-type">Employment Type <span className="text-red-500">*</span></Label>
+                    <Select
+                      value={fields.employment_type || undefined}
+                      onValueChange={(v) => setFields(f => ({ ...f, employment_type: v === "none" ? "" : v }))}
+                    >
+                      <SelectTrigger id="ec-emp-type">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none" className="text-muted-foreground italic">Not Specified</SelectItem>
+                        {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 

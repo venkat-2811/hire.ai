@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Query
 
@@ -9,6 +10,10 @@ from app.auth.clerk import ClerkUser
 from app.services.ai.factory import get_ai
 from app.services.db.supabase_service import get_db_admin_service
 from app.utils.responses import ok, api_error
+from app.services.ats_screening import get_ats_screening_service
+from app.models.schemas import ResumeData, JobDescription
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/screening")
 
@@ -49,58 +54,38 @@ async def run_screening(
     if not job:
         return api_error(message="Job not found", status_code=404)
 
-    resume_json = json.dumps(candidate.get("resume_parsed_data") or {})[:6000]
-    prompt = f"""
-Analyze this candidate's resume against the job requirements and provide ATS screening scores.
-
-Job: {job.get('title')} ({job.get('role')}, {job.get('level')})
-Required Skills: {', '.join(job.get('must_have_skills') or [])}
-Nice-to-have Skills: {', '.join(job.get('good_to_have_skills') or [])}
-Min Experience: {job.get('min_experience_years')} years
-
-Candidate Resume JSON:
-{resume_json}
-
-Return JSON:
-{{
-  \"overall_score\": 0-100,
-  \"skill_relevance_score\": 0-100,
-  \"experience_score\": 0-100,
-  \"education_score\": 0-100,
-  \"credibility_score\": 0-100,
-  \"shortlisted\": true/false,
-  \"shortlist_reason\": \"...\",
-  \"reason_codes\": [{{\"code\":\"SKILL_MATCH\",\"type\":\"positive\",\"description\":\"...\",\"impact\":10}}],
-  \"detailed_analysis\": {{
-    \"whats_good\": [
-      \"Highlight strengths and matching qualifications\",
-      \"Relevant skills, technologies, experience, projects, education, certifications aligned with JD\"
-    ],
-    \"what_lacks\": [
-      \"Highlight missing or weak areas relative to the JD\",
-      \"Missing skills, technologies, certifications, or experience requirements\"
-    ]
-  }}
-}}""".strip()
-
-    ai = get_ai()
     try:
-        screening_result = await ai.generate_json(prompt, temperature=0.1, max_tokens=1200, timeout_s=20)
-    except Exception:
+        screening_service = get_ats_screening_service()
+        
+        resume_model = ResumeData(**(candidate.get("resume_parsed_data") or {}))
+        job_model = JobDescription(
+            id=str(job.get("id")),
+            title=str(job.get("title")),
+            role=str(job.get("role") or "custom"),
+            level=job.get("level") or "mid",
+            description=str(job.get("description") or ""),
+            must_have_skills=job.get("must_have_skills") or [],
+            good_to_have_skills=job.get("good_to_have_skills") or [],
+            min_experience_years=job.get("min_experience_years") or 0,
+        )
+        
+        result = await screening_service.screen_candidate(resume_model, "", job_model)
+    except Exception as e:
+        logger.error(f"Failed to screen candidate {candidate_id}: {e}", exc_info=True)
         return api_error(message="Failed to run ATS screening. Please try again.", status_code=502)
 
     data_to_save = {
         "candidate_id": candidate_id,
         "job_id": job_id,
-        "overall_score": screening_result.get("overall_score"),
-        "skill_relevance_score": screening_result.get("skill_relevance_score"),
-        "experience_score": screening_result.get("experience_score"),
-        "education_score": screening_result.get("education_score"),
-        "credibility_score": screening_result.get("credibility_score"),
-        "shortlisted": bool(screening_result.get("shortlisted")),
-        "shortlist_reason": screening_result.get("shortlist_reason"),
-        "reason_codes": screening_result.get("reason_codes") or [],
-        "detailed_analysis": screening_result.get("detailed_analysis") or {},
+        "overall_score": result.overall_score,
+        "skill_relevance_score": result.skill_relevance_score,
+        "experience_score": result.experience_score,
+        "education_score": result.education_score,
+        "credibility_score": result.credibility_score,
+        "shortlisted": result.shortlisted,
+        "shortlist_reason": result.shortlist_reason,
+        "reason_codes": [rc.model_dump() for rc in result.reason_codes],
+        "detailed_analysis": result.detailed_analysis.model_dump() if result.detailed_analysis else {},
     }
 
     # Upsert-like behavior (match Node)

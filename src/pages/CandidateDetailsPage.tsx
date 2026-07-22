@@ -644,6 +644,18 @@ export default function CandidateDetailsPage() {
                       <span>{safeRender(candidate.mainSkillset)}</span>
                     </div>
                   )}
+                  {candidate.work_authorization && (
+                    <div className="flex items-center gap-1.5">
+                      <Shield className="h-4 w-4" />
+                      <span>{safeRender(candidate.work_authorization)}</span>
+                    </div>
+                  )}
+                  {candidate.employment_type && (
+                    <div className="flex items-center gap-1.5">
+                      <FileText className="h-4 w-4" />
+                      <span>{safeRender(candidate.employment_type)}</span>
+                    </div>
+                  )}
                   {candidate.applied_at && (
                     <div className="flex items-center gap-1.5">
                       <Calendar className="h-4 w-4" />
@@ -974,10 +986,26 @@ export default function CandidateDetailsPage() {
                     {(!candidate.portfolio_url && !candidate.github_url) && (
                       <div className="text-sm text-muted-foreground italic">No links provided</div>
                     )}
-                    {candidate.vendorName && (
+                    {typeof candidate.vendorName === 'string' && candidate.vendorName.trim() !== '' && !['null', 'undefined', 'none'].includes(candidate.vendorName.trim().toLowerCase()) && (
                       <div className="flex items-center gap-3 pt-2 border-t mt-2">
                         <User className="h-5 w-5 text-muted-foreground" />
                         <span className="text-muted-foreground text-sm">Vendor: <span className="font-medium text-foreground">{safeRender(candidate.vendorName)}</span></span>
+                      </div>
+                    )}
+                    {(candidate.work_authorization || candidate.employment_type) && (
+                      <div className="flex flex-col gap-2 pt-2 border-t mt-2">
+                        {candidate.work_authorization && (
+                          <div className="flex items-center gap-3">
+                            <Shield className="h-5 w-5 text-muted-foreground" />
+                            <span className="text-muted-foreground text-sm">Auth: <span className="font-medium text-foreground">{safeRender(candidate.work_authorization)}</span></span>
+                          </div>
+                        )}
+                        {candidate.employment_type && (
+                          <div className="flex items-center gap-3">
+                            <FileText className="h-5 w-5 text-muted-foreground" />
+                            <span className="text-muted-foreground text-sm">Type: <span className="font-medium text-foreground">{safeRender(candidate.employment_type)}</span></span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </CardContent>

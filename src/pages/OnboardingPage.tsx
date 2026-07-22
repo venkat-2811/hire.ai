@@ -224,6 +224,9 @@ export default function OnboardingPage() {
       if (!form.first_name.trim()) newErrors.first_name = 'First Name is required';
       if (!form.last_name.trim()) newErrors.last_name = 'Last Name is required';
     }
+    if (!form.country?.trim()) {
+      newErrors.country = 'Country is required';
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -406,13 +409,14 @@ export default function OnboardingPage() {
                       <Input id="industry" placeholder="SaaS, FinTech, Healthcare..." value={form.industry} onChange={(e) => onChange('industry', e.target.value)} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Country</Label>
+                      <Label className={errors.country ? "text-red-500" : ""}>Country *</Label>
                       <Select value={form.country} onValueChange={(v) => onChange('country', v)}>
-                        <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
+                        <SelectTrigger className={errors.country ? "border-red-500 focus:ring-red-500" : ""}><SelectValue placeholder="Select country" /></SelectTrigger>
                         <SelectContent>
                           {COUNTRY_OPTIONS.map((c) => (<SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>))}
                         </SelectContent>
                       </Select>
+                      {errors.country && <p className="text-xs text-red-500">{errors.country}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="hq">Headquarters (City / State)</Label>

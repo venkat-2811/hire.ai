@@ -410,12 +410,16 @@ export default function CandidatesPage() {
   useEffect(() => {
     if (!jobs || jobs.length === 0) return;
 
-    // Check if the currently selected job exists in the loaded jobs
-    const currentJobExists = jobs.some(j => j.id === selectedJobId);
+    // Only consider active (non-deleted, non-archived) jobs
+    const onlyActiveJobs = jobs.filter(j => j.is_active);
+    if (onlyActiveJobs.length === 0) return;
 
-    if (!selectedJobId || !currentJobExists) {
-      // Find the most recently created job
-      const latestJob = [...jobs].sort((a, b) => {
+    // Check if the currently selected job is still active
+    const currentJobStillActive = onlyActiveJobs.some(j => j.id === selectedJobId);
+
+    if (!selectedJobId || !currentJobStillActive) {
+      // Pick the most recently created active job
+      const latestJob = [...onlyActiveJobs].sort((a, b) => {
         const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
         const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
         return dateB - dateA;
@@ -426,7 +430,8 @@ export default function CandidatesPage() {
         setSelectedJobId(latestJob.id);
       }
     }
-  }, [jobs, selectedJobId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs]);
 
   // Group candidates by job
   const candidatesByJob = useMemo(() => {
@@ -981,7 +986,7 @@ export default function CandidatesPage() {
         </div>
 
         {/* Unified Search, Job, and Filters Toolbar */}
-        {activeTab === 'active' && allJobs.length > 0 && (
+        {activeTab === 'active' && activeJobs.length > 0 && (
 
           <div className="flex flex-col gap-4 mb-2">
             {/* Single Toolbar Row */}
@@ -1009,11 +1014,11 @@ export default function CandidatesPage() {
                   setSelectedIds(new Set());
                   setStartJobId(v);
                 }}>
-                  <SelectTrigger className="w-full md:w-[240px] font-medium border-slate-400 dark:border-slate-800 shadow-sm" disabled={jobsLoading || allJobs.length === 0}>
+                  <SelectTrigger className="w-full md:w-[240px] font-medium border-slate-400 dark:border-slate-800 shadow-sm" disabled={jobsLoading || activeJobs.length === 0}>
                     <SelectValue placeholder={jobsLoading ? 'Loading jobs...' : 'Select a job'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {allJobs.map((j) => (
+                    {activeJobs.map((j) => (
                       <SelectItem key={j.id} value={j.id}>
                         {j.title}
                       </SelectItem>
@@ -1112,7 +1117,7 @@ export default function CandidatesPage() {
         {/* Grouped Candidates by Job */}
         {activeTab === 'active' && (
           <div className="space-y-4">
-            {allJobs.length === 0 ? (
+            {activeJobs.length === 0 ? (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}

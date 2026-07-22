@@ -79,6 +79,10 @@ export default function ProfilePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.country?.trim()) {
+      toast.error('Country is required.');
+      return;
+    }
     updateProfile(formData);
   };
 
@@ -332,7 +336,7 @@ export default function ProfilePage() {
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="country" className="text-sm font-medium">Country</Label>
+                          <Label htmlFor="country" className="text-sm font-medium">Country <span className="text-destructive">*</span></Label>
                           <div className="relative">
                             <Globe2 className="absolute left-3 top-2.5 h-4 w-4 text-emerald-500/60" />
                             <Input

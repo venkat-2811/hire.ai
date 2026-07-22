@@ -55,6 +55,8 @@ create table if not exists public.candidates (
   phone text null,
   portfolio_url text null,
   github_url text null,
+  work_authorization text null,
+  employment_type text null,
 
   consent_given boolean not null default false,
   consent_timestamp timestamptz null,

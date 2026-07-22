@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import logoFull from '@/assets/LOGO_full.png';
 import {
   Briefcase,
@@ -29,12 +30,14 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { applyApi, type PublicJob } from '@/lib/api';
+import { applyApi, type PublicJob, WORK_AUTHORIZATION_OPTIONS, EMPLOYMENT_TYPE_OPTIONS } from '@/lib/api';
+import { useRecruiterLocation } from '@/hooks/useRecruiterLocation';
 
 export default function ApplyPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const { isSignedIn, isLoaded } = useAuth();
+  const { isUsaOrCanada } = useRecruiterLocation();
 
   const [job, setJob] = useState<PublicJob | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,6 +56,8 @@ export default function ApplyPage() {
   const [location, setLocation] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [mainSkillset, setMainSkillset] = useState('');
+  const [workAuthorization, setWorkAuthorization] = useState('');
+  const [employmentType, setEmploymentType] = useState('');
 
   // Fetch job details
   useEffect(() => {
@@ -104,6 +109,10 @@ export default function ApplyPage() {
       toast.error('Please upload your resume');
       return;
     }
+    if (isUsaOrCanada && (!workAuthorization || !employmentType)) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
 
     if (!consentGiven) {
       toast.error('Please agree to the terms to continue');
@@ -123,6 +132,8 @@ export default function ApplyPage() {
       if (location) formData.append('location', location);
       if (vendorName) formData.append('vendorName', vendorName);
       if (mainSkillset) formData.append('mainSkillset', mainSkillset);
+      if (workAuthorization) formData.append('work_authorization', workAuthorization);
+      if (employmentType) formData.append('employment_type', employmentType);
       formData.append('consent_given', String(consentGiven));
       formData.append('resume', resumeFile);
 
@@ -392,6 +403,37 @@ export default function ApplyPage() {
                     onChange={(e) => setVendorName(e.target.value)}
                   />
                 </div>
+
+                {isUsaOrCanada && (
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="workAuthorization">Work Authorization <span className="text-red-500">*</span></Label>
+                    <Select value={workAuthorization || undefined} onValueChange={setWorkAuthorization}>
+                      <SelectTrigger id="workAuthorization">
+                        <SelectValue placeholder="Select work authorization" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WORK_AUTHORIZATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="employmentType">Employment Type <span className="text-red-500">*</span></Label>
+                    <Select value={employmentType || undefined} onValueChange={setEmploymentType}>
+                      <SelectTrigger id="employmentType">
+                        <SelectValue placeholder="Select employment type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                )}
 
                 {/* Resume Upload */}
                 <div className="space-y-2">
