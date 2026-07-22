@@ -23,13 +23,14 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCompany } from "@/hooks/useCompany";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
   { name: 'LinkedIn Talent', href: '/linkedin-talent', icon: Linkedin, adminOnly: true },
   { name: 'Candidates', href: '/candidates', icon: Users },
-  { name: 'Company', href: '/company/dashboard', icon: Building2 },
+  { name: 'Company', href: '/company/dashboard', icon: Building2, companyOnly: true },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Admin', href: '/admin', icon: Shield, adminOnly: true },
   { name: 'Billing', href: '/billing', icon: Wallet },
@@ -42,6 +43,7 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
   const { signOut } = useAuth();
   const { data: profile } = useProfile();
   const { isAdmin } = useIsAdmin();
+  const companyContext = useCompany();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = async () => {
@@ -105,7 +107,12 @@ export function Sidebar({ isMobile, className }: { isMobile?: boolean; className
 
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-1">
-        {navigation.filter((item) => !item.adminOnly || isAdmin).map((item) => {
+        {navigation.filter((item) => {
+          if (item.adminOnly && !isAdmin) return false;
+          // @ts-ignore dynamic property
+          if (item.companyOnly && !companyContext.company) return false;
+          return true;
+        }).map((item) => {
           const isActive = location.pathname === item.href || location.pathname.startsWith(`${item.href}/`);
           return (
             <Link
