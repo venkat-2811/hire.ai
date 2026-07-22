@@ -1941,7 +1941,6 @@ export const adminApi = {
     );
   },
 
-  },
 
   usageHistory: () => request<UsageHistoryItem[]>('/admin/usage-history', { method: 'GET' }),
 
