@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Mail, Loader2, RotateCcw, Send, Copy, Check, AtSign } from 'lucide-react';
+import { X, Mail, Loader2, RotateCcw, Send, Copy, Check, AtSign, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,8 @@ interface OutreachModalProps {
   companyName: string;
   jobDescription?: string;
   recruiterName?: string;
+  /** Optional: full URL candidates can click to apply (e.g. https://app.rekshift.com/apply/{jobId}) */
+  jobApplyUrl?: string;
   linkedInAccountId?: string; // kept for backward compat, not used for email
   onClose: () => void;
   onMarkContacted?: (candidate: LinkedInCandidate) => void;
@@ -26,6 +28,7 @@ export function OutreachModal({
   companyName,
   jobDescription,
   recruiterName,
+  jobApplyUrl,
   onClose,
   onMarkContacted,
 }: OutreachModalProps) {
@@ -42,10 +45,11 @@ export function OutreachModal({
     ? [candidate.first_name, candidate.last_name].filter(Boolean).join(' ')
     : '';
 
-  // Auto-generate email on open
+  // Auto-generate email on open; pre-fill email if Unipile returned one
   useEffect(() => {
     if (!candidate) return;
-    setRecipientEmail('');
+    // Pre-populate recipient email if Unipile returned one for this profile
+    setRecipientEmail(candidate.email?.trim() || '');
     setEmailSent(false);
     setEmailSubject(`Opportunity for ${jobTitle} at ${companyName}`);
     handleGenerateEmail();
@@ -60,6 +64,7 @@ export function OutreachModal({
       company_name: companyName,
       job_description: jobDescription,
       recruiter_name: recruiterName,
+      job_apply_url: jobApplyUrl,
     });
     if (result) {
       setEmailSubject((result as any).subject || emailSubject);
@@ -91,6 +96,7 @@ export function OutreachModal({
         body: emailBody,
         candidate_name: name,
         job_title: jobTitle,
+        job_apply_url: jobApplyUrl,
       });
       setEmailSent(true);
       onMarkContacted?.(candidate!);
@@ -110,6 +116,8 @@ export function OutreachModal({
   };
 
   if (!candidate) return null;
+
+  const emailIsPreFilled = !!candidate.email?.trim();
 
   return (
     <>
@@ -146,6 +154,11 @@ export function OutreachModal({
               <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wide flex items-center gap-1.5">
                 <AtSign className="h-3 w-3" />
                 Recipient Email <span className="text-red-400">*</span>
+                {emailIsPreFilled && (
+                  <span className="ml-auto text-[10px] text-emerald-400 font-normal normal-case tracking-normal flex items-center gap-1">
+                    <Check className="h-3 w-3" /> Auto-filled from LinkedIn profile
+                  </span>
+                )}
               </Label>
               <Input
                 type="email"
@@ -154,15 +167,39 @@ export function OutreachModal({
                 onChange={(e) => setRecipientEmail(e.target.value)}
                 className={cn(
                   'text-sm',
-                  recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)
+                  emailIsPreFilled && !recipientEmail
+                    ? ''
+                    : recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)
                     ? 'border-red-500/50 focus-visible:ring-red-500/30'
+                    : recipientEmail
+                    ? 'border-emerald-500/50'
                     : ''
                 )}
               />
-              <p className="text-[11px] text-muted-foreground/70">
-                LinkedIn profiles don't include email addresses. Paste the candidate's email from LinkedIn or another source.
-              </p>
+              {!emailIsPreFilled && (
+                <p className="text-[11px] text-muted-foreground/70">
+                  Email not available on this profile. Paste the candidate's email from LinkedIn or another source.
+                </p>
+              )}
             </div>
+
+            {/* Apply Link Preview */}
+            {jobApplyUrl && (
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-[#0077B5]/5 border border-[#0077B5]/20">
+                <ExternalLink className="h-3.5 w-3.5 text-[#0077B5] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-muted-foreground font-medium">Apply link included in email</p>
+                  <a
+                    href={jobApplyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-[#0077B5] hover:underline truncate block"
+                  >
+                    {jobApplyUrl}
+                  </a>
+                </div>
+              </div>
+            )}
 
             {/* Subject */}
             <div className="space-y-1.5">

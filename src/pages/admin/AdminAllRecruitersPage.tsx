@@ -70,6 +70,7 @@ export default function AdminAllRecruitersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Recruiter</TableHead>
+                  <TableHead>Company</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead className="text-right">Jobs</TableHead>
                   <TableHead className="text-right">Candidates</TableHead>
@@ -81,7 +82,7 @@ export default function AdminAllRecruitersPage() {
               <TableBody>
                 {recruiters.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       {recruitersQuery.isLoading ? 'Loading recruiters...' : 'No recruiters found.'}
                     </TableCell>
                   </TableRow>
@@ -91,7 +92,12 @@ export default function AdminAllRecruitersPage() {
                       <TableCell>
                         <div className="font-medium text-sm">{r.full_name}</div>
                         <div className="text-xs text-muted-foreground">{r.email}</div>
-                        <div className="text-xs text-muted-foreground">{r.company_name}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm font-medium">{r.company_name || '—'}</div>
+                        <Badge variant="outline" className={`mt-1 text-[10px] ${r.company_name ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-muted text-muted-foreground'}`}>
+                          {r.company_name ? 'Company Member' : 'Independent'}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">

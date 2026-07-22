@@ -75,6 +75,9 @@ export default function AdminRecruiterDetailPage() {
             <div>
               <div className="text-sm text-muted-foreground mb-1">Company</div>
               <div className="font-medium">{d.company_name || 'N/A'}</div>
+              <Badge variant="outline" className={`mt-1.5 text-[10px] ${d.company_name ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-muted text-muted-foreground'}`}>
+                {d.company_name ? 'Company Member' : 'Independent'}
+              </Badge>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Joined</div>

@@ -1941,7 +1941,255 @@ export const adminApi = {
     );
   },
 
+  },
+
   usageHistory: () => request<UsageHistoryItem[]>('/admin/usage-history', { method: 'GET' }),
+
+  companies: (params?: { limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ companies: AdminCompany[]; total: number }>(`/admin/companies${q ? `?${q}` : ''}`, {});
+  },
+
+  getCompany: (id: string) =>
+    request<{ company: AdminCompany; members: CompanyMember[]; credits: CompanyCredits; subscription_history: SubscriptionHistoryEntry[] }>(`/admin/companies/${id}`, {}),
+};
+
+// ============== Company API ==============
+
+export interface CompanyPlan {
+  id: string;
+  name: string;
+  recruiter_seats: number;
+  credits_per_seat: number;
+  total_credits: number;
+  price_usd: number;
+  price_inr: number;
+  validity: string;
+  features: string[];
+  is_active: boolean;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  owner_user_id: string;
+  plan_id: string | null;
+  seats_total: number;
+  seats_used: number;
+  status: 'active' | 'suspended';
+  domain: string | null;
+  logo_url: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyMember {
+  id: string;
+  company_id: string;
+  user_id: string;
+  name?: string;
+  email?: string;
+  role: 'owner' | 'recruiter';
+  status: 'pending' | 'active' | 'rejected' | 'removed';
+  credits_allocated: number;
+  credits_consumed: number;
+  credits_remaining?: number;
+  candidates_added: number;
+  assessments_sent: number;
+  interviews_sent: number;
+  hires: number;
+  jobs_posted: number;
+  joined_at: string | null;
+  created_at: string;
+}
+
+export interface CompanyCredits {
+  company_id: string;
+  total_allocated: number;
+  total_consumed: number;
+  total_remaining?: number;
+}
+
+export interface ActivityEvent {
+  id: string;
+  company_id: string;
+  user_id: string;
+  recruiter_name?: string;
+  action_type: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  description: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  actor_id: string;
+  actor_role: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  company_id: string | null;
+  before_state: Record<string, unknown>;
+  after_state: Record<string, unknown>;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
+export interface SubscriptionHistoryEntry {
+  id: string;
+  company_id: string;
+  plan_id: string | null;
+  action: string;
+  seats_before: number | null;
+  seats_after: number | null;
+  credits_before: number | null;
+  credits_after: number | null;
+  price_paid_usd: number | null;
+  price_paid_inr: number | null;
+  currency: string;
+  activated_by: string | null;
+  notes: string | null;
+  created_at: string;
+  company_plans?: { name: string } | null;
+}
+
+export interface CompanyAnalytics {
+  summary: {
+    total_candidates: number;
+    total_assessments: number;
+    total_interviews: number;
+    total_hires: number;
+    total_jobs: number;
+    total_credits_consumed: number;
+    active_members: number;
+    seats_used: number;
+    seats_total: number;
+  };
+  per_recruiter: Array<{
+    user_id: string;
+    name: string;
+    credits_allocated: number;
+    credits_consumed: number;
+    credits_remaining: number;
+    candidates_added: number;
+    assessments_sent: number;
+    interviews_sent: number;
+    hires: number;
+    jobs_posted: number;
+  }>;
+  daily_activity: Array<{ date: string; count: number }>;
+  funnel: {
+    jobs_posted: number;
+    candidates_added: number;
+    assessments_sent: number;
+    interviews_sent: number;
+    hires: number;
+  };
+}
+
+export interface AdminCompany {
+  id: string;
+  name: string;
+  status: string;
+  owner_user_id: string;
+  owner_name: string;
+  owner_email: string;
+  plan_name: string | null;
+  recruiter_seats: number;
+  seats_total: number;
+  seats_used: number;
+  seats_available: number;
+  total_credits: number | null;
+  credits_consumed: number;
+  active_members: number;
+  pending_requests: number;
+  total_candidates: number;
+  total_assessments: number;
+  total_interviews: number;
+  total_hires: number;
+  created_at: string;
+}
+
+export const companyApi = {
+  plans: () =>
+    request<{ plans: CompanyPlan[] }>('/companies/plans'),
+
+  search: (name: string) =>
+    request<{ results: Array<{ id: string; name: string; status: string; seats_total: number; seats_used: number }> }>(
+      `/companies/search?name=${encodeURIComponent(name)}`
+    ),
+
+  create: (data: { name: string; plan_id: string; domain?: string; currency?: string; price_paid_usd?: number; price_paid_inr?: number }) =>
+    request<{ company: Company; plan: CompanyPlan }>('/companies', { method: 'POST', body: data }),
+
+  my: () =>
+    request<{
+      membership: CompanyMember | null;
+      company: Company | null;
+      status: 'active' | 'pending' | 'none';
+      role: 'owner' | 'recruiter' | null;
+      credits: { allocated: number; consumed: number; remaining: number };
+      company_credits: { total_allocated: number; total_consumed: number };
+    }>('/companies/my'),
+
+  get: (id: string) =>
+    request<{ company: Company; plan: CompanyPlan | null }>(`/companies/${id}`),
+
+  joinRequest: (data: { company_id: string }) =>
+    request<{ status: string; member_id: string; company_name: string }>('/companies/join-request', { method: 'POST', body: data }),
+
+  joinRequests: (id: string) =>
+    request<{ join_requests: Array<CompanyMember & { recruiter_name: string; recruiter_email: string }>; total: number }>(`/companies/${id}/join-requests`),
+
+  approve: (companyId: string, memberId: string) =>
+    request<{ ok: boolean; action: string; credits_allocated: number }>(`/companies/${companyId}/join-requests/${memberId}/approve`, { method: 'POST' }),
+
+  reject: (companyId: string, memberId: string) =>
+    request<{ ok: boolean; action: string }>(`/companies/${companyId}/join-requests/${memberId}/reject`, { method: 'POST' }),
+
+  members: (id: string) =>
+    request<{ members: CompanyMember[]; total: number }>(`/companies/${id}/members`),
+
+  memberStats: (companyId: string, userId: string) =>
+    request<{ member: CompanyMember; recent_activity: ActivityEvent[] }>(`/companies/${companyId}/members/${userId}/stats`),
+
+  removeMember: (companyId: string, userId: string) =>
+    request<{ ok: boolean }>(`/companies/${companyId}/members/${userId}`, { method: 'DELETE' }),
+
+  credits: (id: string) =>
+    request<CompanyCredits>(`/companies/${id}/credits`),
+
+  activityFeed: (id: string, params?: { limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.limit) sp.set('limit', String(params.limit));
+    if (params?.offset) sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ feed: ActivityEvent[]; total: number; offset: number; limit: number }>(`/companies/${id}/activity-feed${q ? `?${q}` : ''}`);
+  },
+
+  auditLogs: (id: string, params?: { limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.limit) sp.set('limit', String(params.limit));
+    if (params?.offset) sp.set('offset', String(params.offset));
+    const q = sp.toString();
+    return request<{ logs: AuditLog[]; offset: number; limit: number }>(`/companies/${id}/audit-logs${q ? `?${q}` : ''}`);
+  },
+
+  subscriptionHistory: (id: string) =>
+    request<{ history: SubscriptionHistoryEntry[] }>(`/companies/${id}/subscription-history`),
+
+  analytics: (id: string) =>
+    request<CompanyAnalytics>(`/companies/${id}/analytics`),
+
+  update: (id: string, data: { name?: string; domain?: string; logo_url?: string }) =>
+    request<{ company: Company }>(`/companies/${id}`, { method: 'PATCH', body: data }),
 };
 
 // ============== DSA Problems API ==============
@@ -2074,6 +2322,7 @@ export const linkedInTalentApi = {
     company_name: string;
     job_description?: string;
     recruiter_name?: string;
+    job_apply_url?: string;
   }) =>
     request<{ subject: string; body: string }>('/linkedin/generate-email', {
       method: 'POST',
@@ -2130,6 +2379,7 @@ export const linkedInTalentApi = {
     body: string;
     candidate_name?: string;
     job_title?: string;
+    job_apply_url?: string;
   }) =>
     request<{ sent: boolean; to: string }>('/linkedin/send-outreach-email', {
       method: 'POST',

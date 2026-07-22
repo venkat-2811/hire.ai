@@ -44,6 +44,10 @@ import AdminUsageHistoryPage from "./pages/admin/AdminUsageHistoryPage";
 import OfferAcceptancePage from "./pages/OfferAcceptancePage";
 import LinkedInTalentPage from "./pages/LinkedInTalentPage";
 import LinkedInJobTalentPage from "./pages/LinkedInJobTalentPage";
+import AdminCompaniesPage from "./pages/admin/AdminCompaniesPage";
+import CompanyOwnerDashboard from "./pages/company/CompanyOwnerDashboard";
+import CompanyPlansPage from "./pages/company/CompanyPlansPage";
+import EmailApprovalLandingPage from "./pages/company/EmailApprovalLandingPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -125,7 +129,12 @@ const App = () => (
               <Route path="people/recruiters" element={<AdminAllRecruitersPage />} />
               <Route path="people/recruiters/:id" element={<AdminRecruiterDetailPage />} />
               <Route path="usage-history" element={<AdminUsageHistoryPage />} />
+              <Route path="companies" element={<AdminCompaniesPage />} />
             </Route>
+            {/* Company Routes */}
+            <Route path="/company/dashboard" element={<CompanyOwnerDashboard />} />
+            <Route path="/company/plans" element={<CompanyPlansPage />} />
+            <Route path="/company/action" element={<EmailApprovalLandingPage />} />
             <Route path="/offer-acceptance" element={<OfferAcceptancePage />} />
             <Route path="/linkedin-talent" element={<LinkedInTalentPage />} />
             <Route path="/linkedin-talent/:jobId" element={<LinkedInJobTalentPage />} />

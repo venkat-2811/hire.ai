@@ -1491,3 +1491,140 @@ async def get_all_usage_history(user: ClerkUser = Depends(require_role("admin"))
         
     return ok(formatted)
 
+
+# ── Company Admin Endpoints ───────────────────────────────────────────────────
+
+@router.get("/companies")
+async def admin_list_companies(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _: ClerkUser = Depends(require_role("admin")),
+):
+    """Super Admin: list all companies with aggregate stats."""
+    db = get_db_admin_service()
+
+    def _companies():
+        return (
+            db.client.from_("companies")
+            .select("*, company_plans(name, recruiter_seats, credits_per_seat, total_credits)")
+            .order("created_at", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+
+    comp_res = await db.run(_companies)
+    companies = getattr(comp_res, "data", None) or []
+    if not isinstance(companies, list):
+        companies = []
+
+    enriched = []
+    for co in companies:
+        company_id = co.get("id")
+
+        # Member counts
+        def _members(_cid=company_id):
+            return db.client.from_("company_members").select("status, credits_allocated, credits_consumed, candidates_added, assessments_sent, interviews_sent, hires, jobs_posted").eq("company_id", _cid).execute()
+
+        m_res = await db.run(_members)
+        members = getattr(m_res, "data", None) or []
+        members = members if isinstance(members, list) else []
+        active_members = [m for m in members if m.get("status") == "active"]
+        pending_count = len([m for m in members if m.get("status") == "pending"])
+
+        total_candidates = sum(int(m.get("candidates_added") or 0) for m in active_members)
+        total_assessments = sum(int(m.get("assessments_sent") or 0) for m in active_members)
+        total_interviews = sum(int(m.get("interviews_sent") or 0) for m in active_members)
+        total_hires = sum(int(m.get("hires") or 0) for m in active_members)
+        total_consumed = sum(float(m.get("credits_consumed") or 0) for m in active_members)
+
+        # Owner profile
+        owner_profile = None
+        if co.get("owner_user_id"):
+            def _op(_uid=co["owner_user_id"]):
+                return db.client.from_("profiles").select("full_name, email").eq("user_id", _uid).maybe_single().execute()
+            op_res = await db.run(_op)
+            owner_profile = getattr(op_res, "data", None) or {}
+
+        plan = co.get("company_plans") or {}
+        enriched.append({
+            "id": company_id,
+            "name": co.get("name"),
+            "status": co.get("status"),
+            "owner_user_id": co.get("owner_user_id"),
+            "owner_name": _clean_text(owner_profile.get("full_name") if owner_profile else ""),
+            "owner_email": _clean_text(owner_profile.get("email") if owner_profile else ""),
+            "plan_name": plan.get("name"),
+            "recruiter_seats": plan.get("recruiter_seats", co.get("seats_total")),
+            "seats_total": co.get("seats_total"),
+            "seats_used": co.get("seats_used"),
+            "seats_available": max(0, (co.get("seats_total") or 0) - (co.get("seats_used") or 0)),
+            "total_credits": plan.get("total_credits"),
+            "credits_consumed": total_consumed,
+            "active_members": len(active_members),
+            "pending_requests": pending_count,
+            "total_candidates": total_candidates,
+            "total_assessments": total_assessments,
+            "total_interviews": total_interviews,
+            "total_hires": total_hires,
+            "created_at": co.get("created_at"),
+        })
+
+    return ok({"companies": enriched, "total": len(enriched), "offset": offset, "limit": limit})
+
+
+@router.get("/companies/{company_id}")
+async def admin_get_company(
+    company_id: str,
+    _: ClerkUser = Depends(require_role("admin")),
+):
+    """Super Admin: full company detail with member hierarchy."""
+    db = get_db_admin_service()
+
+    def _company():
+        return db.client.from_("companies").select("*, company_plans(*)").eq("id", company_id).maybe_single().execute()
+
+    co_res = await db.run(_company)
+    company = getattr(co_res, "data", None)
+    if not isinstance(company, dict):
+        from app.utils.responses import api_error
+        return api_error(message="Company not found", status_code=404)
+
+    def _members():
+        return db.client.from_("company_members").select("*").eq("company_id", company_id).order("joined_at").execute()
+
+    m_res = await db.run(_members)
+    members = getattr(m_res, "data", None) or []
+    members = members if isinstance(members, list) else []
+
+    # Enrich members with profiles
+    enriched_members = []
+    for m in members:
+        def _p(_uid=m["user_id"]):
+            return db.client.from_("profiles").select("full_name, email, company_name").eq("user_id", _uid).maybe_single().execute()
+        p_res = await db.run(_p)
+        profile = getattr(p_res, "data", None) or {}
+        enriched_members.append({
+            **m,
+            "name": _clean_text(profile.get("full_name")),
+            "email": _clean_text(profile.get("email")),
+            "credits_remaining": max(0, m.get("credits_allocated", 0) - float(m.get("credits_consumed", 0))),
+        })
+
+    def _credits():
+        return db.client.from_("company_credits").select("*").eq("company_id", company_id).maybe_single().execute()
+
+    cr_res = await db.run(_credits)
+    credits = getattr(cr_res, "data", None) or {}
+
+    def _sub_hist():
+        return db.client.from_("company_subscription_history").select("*, company_plans(name)").eq("company_id", company_id).order("created_at", desc=True).limit(20).execute()
+
+    sh_res = await db.run(_sub_hist)
+    sub_history = getattr(sh_res, "data", None) or []
+
+    return ok({
+        "company": company,
+        "members": enriched_members,
+        "credits": credits,
+        "subscription_history": sub_history if isinstance(sub_history, list) else [],
+    })

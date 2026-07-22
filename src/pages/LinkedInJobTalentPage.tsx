@@ -537,6 +537,7 @@ export default function LinkedInJobTalentPage() {
           companyName={job.end_customer_name || profile?.company_name || 'Our Company'}
           jobDescription={job.description}
           recruiterName={profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : undefined}
+          jobApplyUrl={`${window.location.origin}/apply/${job.id}`}
           onClose={() => setContactCandidate(null)}
           onMarkContacted={handleMarkContacted}
         />

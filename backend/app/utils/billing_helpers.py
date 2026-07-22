@@ -489,3 +489,133 @@ async def check_candidate_limit(db, recruiter_id: str) -> Optional[str]:
     if count >= plan_limit:
         return "You have reached your plan limit. Please choose a subscription plan to continue assessing additional candidates."
     return None
+
+
+# ── Company-Aware Credit Helpers ──────────────────────────────────────────────
+# These extend the existing individual plan logic.
+# If a user is an active company member, company seat credits take priority.
+
+async def _get_active_company_membership(db, user_id: str) -> Optional[Dict[str, Any]]:
+    """Return active company_members row for user, or None."""
+    def _f():
+        return (
+            db.client.from_("company_members")
+            .select("*, companies(id, name, status)")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .maybe_single()
+            .execute()
+        )
+    try:
+        res = await db.run(_f)
+        data = getattr(res, "data", None)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+async def get_effective_credit_limit(db, user_id: str) -> Optional[int]:
+    """
+    Returns the effective candidate credit limit for a user.
+    Priority: company seat allocation > individual plan limit.
+    Returns None for unlimited (enterprise plan with no company).
+    """
+    membership = await _get_active_company_membership(db, user_id)
+    if membership:
+        return int(membership.get("credits_allocated") or 0)
+    # Fall back to individual plan
+    def _f():
+        return db.client.from_("profiles").select("subscription_plan").eq("user_id", user_id).maybe_single().execute()
+    try:
+        res = await db.run(_f)
+        profile = getattr(res, "data", None) or {}
+        plan = _normalize_plan(profile.get("subscription_plan"))
+        plan_config = BILLING_PLAN_CONFIG.get(plan, BILLING_PLAN_CONFIG["free"])
+        return plan_config.get("candidates")  # None = unlimited (enterprise)
+    except Exception:
+        return BILLING_PLAN_CONFIG["free"]["candidates"]
+
+
+async def get_effective_credits_consumed(db, user_id: str) -> float:
+    """Return credits consumed for a user — from company seat or individual profile."""
+    membership = await _get_active_company_membership(db, user_id)
+    if membership:
+        return float(membership.get("credits_consumed") or 0)
+    return await get_candidate_count_after_deployment(db, user_id)
+
+
+async def consume_company_member_slot(
+    db,
+    user_id: str,
+    amount: float,
+    action_label: str,
+    candidate_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    activity_description: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Company-aware slot consumption.
+    If user is an active company member: deducts from company_members.credits_consumed
+    and company_credits.total_consumed, writes activity feed entry.
+    Otherwise: falls through to the standard individual _consume_slot.
+    Returns error string or None on success.
+    """
+    membership = await _get_active_company_membership(db, user_id)
+    if not membership:
+        # Individual plan — use existing logic
+        return await _consume_slot(db, user_id, amount, action_label, candidate_id, job_id)
+
+    company_id = membership.get("company_id") or (membership.get("companies") or {}).get("id")
+    member_id = membership.get("id")
+    credits_allocated = int(membership.get("credits_allocated") or 0)
+    credits_consumed = float(membership.get("credits_consumed") or 0)
+
+    if credits_consumed + amount > credits_allocated:
+        return "You have reached your company seat credit limit. Please ask your company owner to allocate more credits."
+
+    new_consumed = round(credits_consumed + amount, 2)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Update member credits_consumed
+    def _update_member(_nv=new_consumed, _mid=member_id):
+        return db.client.from_("company_members").update({"credits_consumed": _nv, "updated_at": now}).eq("id", _mid).execute()
+    await db.run(_update_member)
+
+    # Update company credit pool
+    if company_id:
+        def _update_company(_c=company_id, _a=amount):
+            return db.client.from_("company_credits").update({
+                "total_consumed": db.client.rpc("increment_company_credits_consumed", {"p_company_id": _c, "p_amount": _a}),
+                "updated_at": now,
+            }).eq("company_id", _c).execute()
+        # Direct increment approach — simpler with fetch + update
+        try:
+            def _fetch_pool(_c=company_id):
+                return db.client.from_("company_credits").select("total_consumed").eq("company_id", _c).maybe_single().execute()
+            pool_res = await db.run(_fetch_pool)
+            pool = getattr(pool_res, "data", None) or {}
+            new_pool_consumed = round(float(pool.get("total_consumed") or 0) + amount, 2)
+
+            def _update_pool(_c=company_id, _nv=new_pool_consumed):
+                return db.client.from_("company_credits").update({"total_consumed": _nv, "updated_at": now}).eq("company_id", _c).execute()
+            await db.run(_update_pool)
+        except Exception as exc:
+            logger.warning("[billing] company_credits pool update failed: %s", exc)
+
+    # Also log to billing_usage_history for consistency
+    def _log(_r=user_id, _c=candidate_id, _j=job_id, _a=action_label, _p=amount):
+        return db.client.from_("billing_usage_history").insert({
+            "recruiter_id": _r,
+            "candidate_id": _c,
+            "job_id": _j,
+            "action_type": _a,
+            "points_used": _p,
+        }).execute()
+    try:
+        await db.run(_log)
+    except Exception as exc:
+        logger.warning("[billing] usage_history log failed for company member: %s", exc)
+
+    logger.info("[billing] company_member %s +%.2f → %.2f (company=%s)", user_id, amount, new_consumed, company_id)
+    return None  # Success

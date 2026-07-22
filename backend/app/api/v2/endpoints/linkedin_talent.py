@@ -165,6 +165,52 @@ def _check_unipile_configured() -> bool:
     return bool(s.unipile_api_key and s.unipile_dsn)
 
 
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _extract_email_from_profile(profile: Dict[str, Any]) -> Optional[str]:
+    """Try to extract a real email address from a Unipile profile dict.
+
+    Unipile may expose email in several locations depending on API version:
+      - profile["email"]          – direct field on open / premium profiles
+      - profile["emails"][0]      – list of email objects {"address": "..."}
+      - profile["contact_info"]["emails"][0]["address"]
+      - profile["member_info"]["email"]
+    Returns None if no valid email is found.
+    """
+    # 1. Direct top-level field
+    direct = str(profile.get("email") or "").strip()
+    if direct and _EMAIL_RE.match(direct):
+        return direct
+
+    # 2. Emails list: [{"address": "...", ...}] or ["email@example.com", ...]
+    for entry in (profile.get("emails") or []):
+        if isinstance(entry, dict):
+            addr = str(entry.get("address") or "").strip()
+        else:
+            addr = str(entry).strip()
+        if addr and _EMAIL_RE.match(addr):
+            return addr
+
+    # 3. contact_info.emails
+    contact = profile.get("contact_info") or {}
+    for entry in (contact.get("emails") or []):
+        if isinstance(entry, dict):
+            addr = str(entry.get("address") or "").strip()
+        else:
+            addr = str(entry).strip()
+        if addr and _EMAIL_RE.match(addr):
+            return addr
+
+    # 4. member_info.email
+    member = profile.get("member_info") or {}
+    addr = str(member.get("email") or "").strip()
+    if addr and _EMAIL_RE.match(addr):
+        return addr
+
+    return None
+
+
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
 class GenerateFiltersRequest(BaseModel):
@@ -238,6 +284,7 @@ class GenerateEmailRequest(BaseModel):
     company_name: str
     job_description: Optional[str] = None
     recruiter_name: Optional[str] = None
+    job_apply_url: Optional[str] = None
 
 
 class SaveCandidateRequest(BaseModel):
@@ -476,6 +523,10 @@ async def search_linkedin_candidates(
                         full.setdefault("headline", raw.get("headline", ""))
                         full.setdefault("location", raw.get("location", ""))
                         full.setdefault("public_profile_url", raw.get("public_profile_url", ""))
+                        # Extract email if Unipile returns one (open / premium profiles)
+                        email = _extract_email_from_profile(full)
+                        if email:
+                            full["email"] = email
                         return full
                     else:
                         # Fallback to search-result data with normalized keys.
@@ -683,6 +734,16 @@ async def generate_outreach_email(
 
     recruiter_name = payload.recruiter_name or "The Hiring Team"
 
+    apply_url = (payload.job_apply_url or "").strip()
+    apply_instruction = (
+        f"\n7. Include a direct apply link at the end: {apply_url}"
+        if apply_url else ""
+    )
+    apply_note = (
+        f"\n- Apply Link: {apply_url} (include this in the email so the candidate can apply directly)"
+        if apply_url else ""
+    )
+
     prompt = f"""Write a professional, personalized LinkedIn/email outreach message to recruit this candidate.
 
 CANDIDATE:
@@ -694,7 +755,7 @@ CANDIDATE:
 OPPORTUNITY:
 - Job Title: {payload.job_title}
 - Company: {payload.company_name}
-- Description excerpt: {(payload.job_description or '')[:500]}
+- Description excerpt: {(payload.job_description or '')[:500]}{apply_note}
 
 RECRUITER: {recruiter_name}
 
@@ -703,10 +764,10 @@ Write a professional outreach email. Structure:
 2. Why YOU noticed THEM specifically (reference their specific background)
 3. Brief company introduction (1 sentence)
 4. The opportunity (2-3 sentences)
-5. Clear call-to-action (suggest a 15-min call)
+5. Clear call-to-action (suggest a 15-min call){apply_instruction}
 6. Professional sign-off
 
-Tone: Professional but warm. NOT generic. NOT salesy. Under 200 words.
+Tone: Professional but warm. NOT generic. NOT salesy. Under 220 words.
 
 Return JSON with:
 {{
@@ -960,6 +1021,7 @@ class SendOutreachEmailRequest(BaseModel):
     body: str
     candidate_name: Optional[str] = None
     job_title: Optional[str] = None
+    job_apply_url: Optional[str] = None
 
 
 @router.post("/send-outreach-email")
@@ -977,6 +1039,24 @@ async def send_outreach_email(
 
     # Build HTML body from plain text
     html_body = payload.body.replace("\n", "<br>").replace("  ", "&nbsp;&nbsp;")
+
+    apply_url = (payload.job_apply_url or "").strip()
+    apply_section = ""
+    if apply_url and re.match(r"https?://", apply_url):
+        apply_section = f"""
+        <div style="margin-top: 28px; text-align: center;">
+            <a href="{apply_url}"
+               style="display: inline-block; padding: 14px 32px; background: #0077B5;
+                      color: #ffffff; text-decoration: none; border-radius: 8px;
+                      font-family: Arial, sans-serif; font-size: 15px; font-weight: 600;
+                      letter-spacing: 0.3px;">
+                Apply for this Position &rarr;
+            </a>
+            <p style="margin-top: 10px; font-size: 12px; color: #9ca3af;">
+                Or copy this link: <a href="{apply_url}" style="color: #0077B5;">{apply_url}</a>
+            </p>
+        </div>"""
+
     html_content = f"""
     <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto;
                 padding: 32px 24px; color: #1a1a2e;">
@@ -986,6 +1066,7 @@ async def send_outreach_email(
         <div style="font-size: 15px; line-height: 1.7; color: #333;">
             {html_body}
         </div>
+        {apply_section}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb;
                     font-size: 12px; color: #9ca3af;">
             This email was sent via Rekshift on behalf of your recruiter.

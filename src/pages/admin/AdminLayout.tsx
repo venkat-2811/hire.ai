@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useRequireAuth } from '@/hooks/useAuth';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
-import { Loader2, ShieldAlert, Activity, CreditCard, Users, ListFilter } from 'lucide-react';
+import { Loader2, ShieldAlert, Activity, CreditCard, Users, ListFilter, Building2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function AdminLayout() {
@@ -54,7 +54,7 @@ export default function AdminLayout() {
 
         {/* Navigation */}
         <Tabs value={activeTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="operational" asChild>
               <Link to="/admin/operational" className="gap-2">
                 <Activity className="h-4 w-4" />
@@ -77,6 +77,12 @@ export default function AdminLayout() {
               <Link to="/admin/usage-history" className="gap-2">
                 <ListFilter className="h-4 w-4" />
                 Usage History
+              </Link>
+            </TabsTrigger>
+            <TabsTrigger value="companies" asChild>
+              <Link to="/admin/companies" className="gap-2">
+                <Building2 className="h-4 w-4" />
+                Companies
               </Link>
             </TabsTrigger>
           </TabsList>

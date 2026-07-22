@@ -13,6 +13,7 @@ import {
   BarChart3,
   Shield,
   Linkedin,
+  Building2,
 } from "lucide-react";
 import logoFull from "@/assets/LOGO_full.png";
 import logoIcon from "@/assets/logo.png";
@@ -28,6 +29,7 @@ const navigation = [
   { name: 'Jobs', href: '/jobs', icon: Briefcase },
   { name: 'LinkedIn Talent', href: '/linkedin-talent', icon: Linkedin, adminOnly: true },
   { name: 'Candidates', href: '/candidates', icon: Users },
+  { name: 'Company', href: '/company/dashboard', icon: Building2 },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Admin', href: '/admin', icon: Shield, adminOnly: true },
   { name: 'Billing', href: '/billing', icon: Wallet },

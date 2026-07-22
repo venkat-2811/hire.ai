@@ -30,6 +30,7 @@ export interface LinkedInCandidate {
   location?: string;
   profile_picture_url?: string;
   profile_picture_url_large?: string;
+  email?: string;              // populated when Unipile returns it (open/premium profiles)
   summary?: string;
   work_experience?: WorkExperience[];
   education?: Education[];
@@ -189,6 +190,7 @@ export function useGenerateEmail() {
       company_name: string;
       job_description?: string;
       recruiter_name?: string;
+      job_apply_url?: string;
     }) => linkedInTalentApi.generateEmail(params),
     onError: (e: Error) => toast.error(e.message || 'Failed to generate email'),
   });
@@ -299,6 +301,7 @@ export function useSendOutreachEmail() {
       body: string;
       candidate_name?: string;
       job_title?: string;
+      job_apply_url?: string;
     }) => linkedInTalentApi.sendOutreachEmail(params),
     onSuccess: () => toast.success('Email sent successfully!'),
     onError: (e: Error) => toast.error(e.message || 'Failed to send email'),

@@ -11,12 +11,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  ShieldCheck, RefreshCw, Phone, Users, Zap, Activity
+  ShieldCheck, RefreshCw, Phone, Users, Zap, Activity, Building2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import { useProfile } from '@/hooks/useProfile';
+import { useCompany } from '@/hooks/useCompany';
 import {
   PRODUCTION_PLANS,
   formatPrice,
@@ -74,6 +75,7 @@ export default function BillingPage() {
   const [cancelConfirmText, setCancelConfirmText] = useState('');
 
   const profileQuery = useProfile();
+  const companyContext = useCompany();
 
   const usageQuery = useQuery({
     queryKey: ['billing-usage'],
@@ -272,7 +274,7 @@ export default function BillingPage() {
     }
   };
 
-  if (usageQuery.isLoading || busy === 'verifying' || geoLoading) {
+  if (usageQuery.isLoading || busy === 'verifying' || geoLoading || companyContext.isLoading) {
     return (
       <DashboardLayout>
         <div className="min-h-[80vh] flex flex-col items-center justify-center gap-5">
@@ -283,6 +285,41 @@ export default function BillingPage() {
           <p className="text-sm text-muted-foreground font-medium animate-pulse tracking-wide">
             {geoLoading ? 'Detecting your region for secure pricing...' : 'Syncing subscription securely...'}
           </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (companyContext.company) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 lg:p-8 space-y-6 max-w-[1400px] mx-auto pb-24">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-border/50 pb-6">
+            <div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Billing &amp; Subscriptions</h1>
+              <p className="text-sm text-muted-foreground mt-2 max-w-xl leading-relaxed">
+                Manage your active plans, monitor usage limits, and view secure payment transactions.
+              </p>
+            </div>
+          </div>
+          <Card className="border-indigo-500/30 bg-indigo-500/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-indigo-500">
+                <Building2 className="h-5 w-5" />
+                Company Account Active
+              </CardTitle>
+              <CardDescription>
+                Your account is currently managed by <strong>{companyContext.company.name}</strong>. 
+                Your billing and credits are handled centrally through the company plan.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-3">
+                <Button onClick={() => navigate('/company/dashboard')}>Go to Company Dashboard</Button>
+                <Button variant="outline" onClick={() => navigate('/company/plans')}>View Company Plans</Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </DashboardLayout>
     );

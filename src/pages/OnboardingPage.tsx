@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import { formatPrice, getPlansForCurrency, type Currency, type PlanId } from '@/lib/pricing';
+import { JoinCompanySection } from '@/components/company/JoinCompanySection';
 
 const COMPANY_SIZES = ['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'];
 
@@ -356,7 +357,17 @@ export default function OnboardingPage() {
             >
               <div className="mb-6">
                 <h1 className="text-2xl lg:text-3xl font-bold">Company Setup</h1>
-                <p className="text-muted-foreground mt-1">Tell us a bit about your company so we can personalize hiring workflows.</p>
+                <p className="text-muted-foreground mt-1">Join your team or tell us about your company to personalize hiring workflows.</p>
+              </div>
+
+              <div className="mb-8">
+                <JoinCompanySection onContinue={() => setStep(2)} />
+              </div>
+              
+              <div className="flex items-center gap-4 mb-8">
+                <div className="h-px bg-border flex-1" />
+                <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest">Or create your own workspace</span>
+                <div className="h-px bg-border flex-1" />
               </div>
 
               <Card>

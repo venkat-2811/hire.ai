@@ -209,6 +209,21 @@ const PricingPage = () => {
             {/* Auto-detected pricing loaded in background */}
           </motion.div>
 
+          {/* Individual vs Company Toggle */}
+          <div className="flex justify-center mb-10">
+            <div className="bg-muted p-1.5 rounded-full flex items-center gap-1 border shadow-sm">
+              <Button variant="secondary" className="rounded-full bg-background shadow-sm h-10 px-8 text-sm font-semibold hover:bg-background">
+                Individual Plans
+              </Button>
+              <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 h-10 px-8 text-sm font-medium transition-colors" asChild>
+                <Link to="/company/plans">
+                  Company Plans
+                  <span className="ml-2 px-1.5 py-0.5 rounded-md bg-purple-500 text-white text-[10px] uppercase font-bold tracking-wider">New</span>
+                </Link>
+              </Button>
+            </div>
+          </div>
+
           {/* Loading skeleton while geo-detecting */}
           {geoLoading && manualCurrency === null ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-5 mb-16">
