@@ -517,7 +517,9 @@ export default function BillingPage() {
         )}
 
         {/* 1. Active Plan & Limits Overview */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+        {!companyContext.isMember && (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
 
           {/* Active Plan Premium Card */}
           <SpotlightCard className="lg:col-span-2 overflow-hidden p-0 border-border/60 shadow-md relative bg-card transition-all group" spotlightColor="rgba(237, 154, 0, 0.15)">
@@ -694,9 +696,11 @@ export default function BillingPage() {
             </div>
           </SpotlightCard>
         </div>
+        )}
 
         {/* 2. Upgrade / Plan Selection Section */}
-        <div className="pt-6">
+        {!companyContext.isMember && (
+          <div className="pt-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-5 mb-8">
             <div>
               <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
@@ -862,8 +866,10 @@ export default function BillingPage() {
             </p>
           </div>
         </div>
+        )}
 
         {/* 2.5 Usage History */}
+        {!companyContext.isMember && (
         <div className="pt-6">
           <Card className="border border-border/60 shadow-md bg-card rounded-2xl overflow-hidden">
             <CardHeader className="border-b border-border/50 pb-5 pt-6 px-6 bg-muted/20">
@@ -927,6 +933,7 @@ export default function BillingPage() {
         </div>
 
         {/* 3. Invoice History */}
+        {!companyContext.isMember && (
         <div className="pt-6">
           <Card className="border border-border/60 shadow-md bg-card rounded-2xl overflow-hidden">
             <CardHeader className="border-b border-border/50 pb-5 pt-6 px-6 bg-muted/20">
@@ -994,6 +1001,8 @@ export default function BillingPage() {
             </CardContent>
           </Card>
         </div>
+          </>
+        )}
 
         {/* Company / Team Plans Section — visible to ALL users */}
         <CompanyPlansSection isCompanyMember={!!companyContext.company} companyName={companyContext.company?.name} navigate={navigate} />

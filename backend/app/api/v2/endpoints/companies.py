@@ -693,6 +693,22 @@ async def invite_recruiter(
     if not email:
         return api_error(message="Email is required")
 
+    # Check if the user is already a member
+    def _find_profile():
+        return db.client.from_("profiles").select("user_id").eq("email", email).maybe_single().execute()
+    try:
+        prof_res = await db.run(_find_profile)
+        prof_data = getattr(prof_res, "data", None)
+        if prof_data and prof_data.get("user_id"):
+            target_user_id = prof_data["user_id"]
+            def _check_membership():
+                return db.client.from_("company_members").select("id").eq("company_id", company_id).eq("user_id", target_user_id).eq("status", "active").maybe_single().execute()
+            mem_res = await db.run(_check_membership)
+            if getattr(mem_res, "data", None):
+                return api_error(message="Recruiter Already Exists", status_code=400)
+    except Exception as e:
+        logger.warning(f"Error checking existing membership: {e}")
+
     settings = get_settings()
     app_url = getattr(settings, "frontend_url", "https://app.rekshift.com").rstrip("/")
     signup_url = f"{app_url}/onboarding?company={urlencode({'name': company['name']})}"
@@ -703,7 +719,8 @@ async def invite_recruiter(
     )
     
     try:
-        await EmailService.send_email(email, subject, html, text)
+        email_service = EmailService()
+        await email_service.send_email(email, subject, html, text)
         await _write_activity(db, company_id=company_id, user_id=user.id,
                               action_type="recruiter_invited",
                               description=f"Invited {email} to join the company",

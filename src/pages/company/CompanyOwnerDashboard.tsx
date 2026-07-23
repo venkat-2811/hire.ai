@@ -263,7 +263,7 @@ export default function CompanyOwnerDashboard() {
     );
   }
 
-  if (!company || !isOwner) {
+  if (!company || (!isOwner && !membership)) {
     return (
       <DashboardLayout>
         <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -344,29 +344,35 @@ export default function CompanyOwnerDashboard() {
         </div>
 
         {/* Main Tabs */}
-        <Tabs defaultValue="members" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-none lg:flex">
-            <TabsTrigger value="members" className="gap-1.5">
-              <Users className="h-3.5 w-3.5" />
-              Members
-              {pendingRequests.length > 0 && (
-                <span className="ml-1 h-4 w-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {pendingRequests.length}
-                </span>
-              )}
-            </TabsTrigger>
+        <Tabs defaultValue={isOwner ? "members" : "activity"} className="space-y-4">
+          <TabsList className="mb-4">
+            {isOwner && (
+              <TabsTrigger value="members" className="gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Members
+                {pendingRequests.length > 0 && (
+                  <span className="ml-1 h-4 w-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {pendingRequests.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            )}
             <TabsTrigger value="activity" className="gap-1.5">
               <Activity className="h-3.5 w-3.5" />
               Activity Feed
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="gap-1.5">
-              <BarChart3 className="h-3.5 w-3.5" />
-              Analytics
-            </TabsTrigger>
-            <TabsTrigger value="audit" className="gap-1.5">
-              <Shield className="h-3.5 w-3.5" />
-              Audit Logs
-            </TabsTrigger>
+            {isOwner && (
+              <>
+                <TabsTrigger value="analytics" className="gap-1.5">
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Analytics
+                </TabsTrigger>
+                <TabsTrigger value="audit" className="gap-1.5">
+                  <Shield className="h-3.5 w-3.5" />
+                  Audit Logs
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
 
           {/* ── Members Tab ───────────────────────────────────────── */}
