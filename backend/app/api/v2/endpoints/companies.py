@@ -726,8 +726,8 @@ async def invite_recruiter(
                               description=f"Invited {email} to join the company",
                               metadata={"invited_email": email})
         await write_audit_log(db, actor_id=user.id, action="member.invite", actor_role="owner",
-                              company_id=company_id, target_id=email,
-                              details={"email": email})
+                              company_id=company_id, target_id=email, target_type="email_invite",
+                              after_state={"email": email}, request=request)
     except Exception as exc:
         logger.error(f"Failed to send invite email to {email}: {exc}")
         return api_error(message="Failed to send email invite", status_code=500)
