@@ -136,7 +136,10 @@ def _resolve_name(profile: Optional[Dict]) -> str:
 def _resolve_email(profile: Optional[Dict]) -> str:
     if not profile:
         return ""
-    return str(profile.get("email") or profile.get("organization_email") or "").strip()
+    email = str(profile.get("email") or "").strip()
+    if email and email.lower() != "unknown":
+        return email
+    return str(profile.get("organization_email") or "").strip()
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
