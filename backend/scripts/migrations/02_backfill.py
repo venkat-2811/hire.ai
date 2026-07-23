@@ -68,39 +68,39 @@ try:
 except Exception as e:
     print(f"  ✗ Company baseline failed: {e}")
 
-# ── 3. Backfill company_id on jobs ─────────────────────────────────────────────
-print("\n[3] Backfilling company_id on jobs...")
+# ── 3. Backfill company_id on job_descriptions ────────────────────────────────────
+print("\n[3] Backfilling company_id on job_descriptions...")
 try:
     # Get all active company members
     members = client.from_('company_members').select('user_id, company_id').eq('status', 'active').execute()
     uid_to_company = {m['user_id']: m['company_id'] for m in (members.data or [])}
     
-    # Get all jobs without company_id that were created by company members
-    jobs = client.from_('job_descriptions').select('id, recruiter_id').is_('company_id', 'null').execute()
+    # Get all job_descriptions without company_id created by company members
+    # Uses the correct column name 'created_by'
+    jobs = client.from_('job_descriptions').select('id, created_by').is_('company_id', 'null').execute()
     updated = 0
     for j in (jobs.data or []):
-        rid = j.get('recruiter_id')
+        rid = j.get('created_by')
         if rid and rid in uid_to_company:
             client.from_('job_descriptions').update({'company_id': uid_to_company[rid]}).eq('id', j['id']).execute()
             updated += 1
-    print(f"  ✓ Backfilled {updated} jobs with company_id")
+    print(f"  ✓ Backfilled {updated} job_descriptions with company_id")
 except Exception as e:
     print(f"  ✗ Jobs backfill failed: {e}")
 
-# ── 4. Backfill company_id on candidates ──────────────────────────────────────
+# ── 4. Backfill company_id on candidates ──────────────────────────────────────────────
 print("\n[4] Backfilling company_id on candidates...")
 try:
-    # candidates are linked to recruiters via job_candidates table
-    jc = client.from_('job_candidates').select('candidate_id, recruiter_id').execute()
+    # candidates.user_id = the recruiter who created them
+    cands = client.from_('candidates').select('id, user_id').is_('company_id', 'null').execute()
     updated = 0
-    for row in (jc.data or []):
-        rid = row.get('recruiter_id')
-        cand_id = row.get('candidate_id')
-        if rid and cand_id and rid in uid_to_company:
-            client.from_('candidates').update({'company_id': uid_to_company[rid]}).eq('id', cand_id).is_('company_id', 'null').execute()
+    for c in (cands.data or []):
+        uid = c.get('user_id')
+        if uid and uid in uid_to_company:
+            client.from_('candidates').update({'company_id': uid_to_company[uid]}).eq('id', c['id']).execute()
             updated += 1
     print(f"  ✓ Backfilled {updated} candidate records with company_id")
 except Exception as e:
-    print(f"  ✗ Candidates backfill failed (may not have job_candidates table): {e}")
+    print(f"  ✗ Candidates backfill failed: {e}")
 
 print("\n=== Migration complete ===")
