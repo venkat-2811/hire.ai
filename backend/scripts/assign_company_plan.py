@@ -118,7 +118,6 @@ async def assign(email: str, plan_name: str) -> None:
                 .update({
                     "plan_id": plan_id,
                     "seats_total": seats,
-                    "total_credits": total_credits,
                     "status": "active",
                 })
                 .eq("id", company_id)
@@ -140,8 +139,6 @@ async def assign(email: str, plan_name: str) -> None:
                     "plan_id": plan_id,
                     "seats_total": seats,
                     "seats_used": 1,
-                    "total_credits": total_credits,
-                    "credits_consumed": 0,
                     "status": "active",
                 })
                 .execute()
