@@ -1,130 +1,194 @@
 """
-Assigns the 5 Recruiter Plan to user: 22h51a73c6@cmrcet.ac.in (or specified email).
-Run: python -m scripts.assign_company_plan
+assign_company_plan.py
+──────────────────────
+Manually assigns a company plan to a user identified by email.
+
+Usage:
+    python scripts/assign_company_plan.py \
+        --email 22h51a73c6@cmrcet.ac.in \
+        --plan "5 Recruiter Plan"
+
+What it does:
+  1. Looks up the user in public.profiles by email/organization_email
+  2. Looks up the plan in public.company_plans by name
+  3. Creates a company row owned by that user (or reuses an existing one)
+  4. Upserts a company_members row for the owner with credits allocated
 """
-import sys
-import os
 
-# Add backend directory to sys.path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import argparse
 import asyncio
+import os
+import sys
+import uuid
+from pathlib import Path
+
+# ── Make sure backend packages are importable ─────────────────────────────────
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from app.services.db.supabase_service import get_db_admin_service
 
-async def assign_plan(email: str, plan_name: str = "5 Recruiter Plan", company_name: str = "CMRCET Recruiting"):
-    db = get_db_admin_service()
-    email_clean = email.strip().lower()
 
-    # 1. Find profile
+# ── Core logic ────────────────────────────────────────────────────────────────
+
+async def assign(email: str, plan_name: str) -> None:
+    db = get_db_admin_service()
+
+    # 1. Find the profile by email
+    print(f"\n🔍 Looking up profile for: {email}")
     def _find_profile():
-        return db.client.from_("profiles").select("*").or_(f"email.ilike.{email_clean},organization_email.ilike.{email_clean}").execute()
+        return (
+            db.client.from_("profiles")
+            .select("*")
+            .or_(f"email.eq.{email},organization_email.eq.{email}")
+            .limit(1)
+            .execute()
+        )
 
     res = await db.run(_find_profile)
     profiles = getattr(res, "data", []) or []
 
     if not profiles:
-        print(f"❌ ERROR: No profile found matching email '{email}' in Supabase profiles table.")
-        print("Please ask the user to log in / sign up at least once so their profile row is created.")
+        print(f"❌ ERROR: No profile found for '{email}'.")
+        print("   Make sure the user has logged in at least once so their profile row exists.")
         return
 
     profile = profiles[0]
     user_id = profile["user_id"]
-    user_display = profile.get("first_name") or profile.get("email") or user_id
-    print(f"✅ Found Profile: user_id={user_id}, identifier={user_display}")
+    user_display = profile.get("full_name") or profile.get("first_name") or profile.get("email") or user_id
+    print(f"✅ Found Profile: user_id={user_id}, name={user_display}")
 
-    # 2. Find 5 Recruiter Plan
+    # 2. Find the plan
+    print(f"\n🔍 Looking up plan: '{plan_name}'")
     def _find_plan():
-        return db.client.from_("company_plans").select("*").eq("name", plan_name).single().execute()
+        return (
+            db.client.from_("company_plans")
+            .select("*")
+            .eq("name", plan_name)
+            .limit(1)
+            .execute()
+        )
 
     plan_res = await db.run(_find_plan)
-    plan = getattr(plan_res, "data", None)
-    if not plan:
-        print(f"❌ ERROR: Plan '{plan_name}' not found in public.company_plans.")
+    plans = getattr(plan_res, "data", []) or []
+
+    if not plans:
+        # List available plans to help the caller
+        def _list_plans():
+            return db.client.from_("company_plans").select("name, recruiter_seats, total_credits").execute()
+        all_plans_res = await db.run(_list_plans)
+        all_plans = getattr(all_plans_res, "data", []) or []
+        print(f"❌ ERROR: Plan '{plan_name}' not found in company_plans.")
+        if all_plans:
+            print("   Available plans:")
+            for p in all_plans:
+                print(f"     • {p['name']}  ({p['recruiter_seats']} seats, {p['total_credits']} credits)")
         return
 
+    plan = plans[0]
     plan_id = plan["id"]
     seats = plan["recruiter_seats"]
+    credits_per_seat = plan.get("credits_per_seat", 100)
     total_credits = plan["total_credits"]
-    print(f"✅ Found Plan: {plan['name']} (ID: {plan_id}, Seats: {seats}, Credits: {total_credits})")
+    print(f"✅ Found Plan: {plan['name']} (id={plan_id}, seats={seats}, total_credits={total_credits})")
 
-    # 3. Create or Update Company
+    # 3. Find or create company
+    print(f"\n🏢 Checking for existing company owned by this user...")
     def _check_company():
-        return db.client.from_("companies").select("*").eq("owner_user_id", user_id).maybe_single().execute()
+        return (
+            db.client.from_("companies")
+            .select("*")
+            .eq("owner_user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
 
-    existing_co = await db.run(_check_company)
-    co_data = getattr(existing_co, "data", None)
+    co_res = await db.run(_check_company)
+    co_data = getattr(co_res, "data", None)
 
-    if co_data:
+    if co_data and isinstance(co_data, dict):
         company_id = co_data["id"]
-        print(f"ℹ️ Company already exists for owner: {company_id}. Updating plan...")
-        def _upd_co():
-            return db.client.from_("companies").update({
-                "plan_id": plan_id,
-                "seats_total": seats,
-                "status": "active"
-            }).eq("id", company_id).execute()
-        await db.run(_upd_co)
+        print(f"✅ Existing company found: '{co_data['name']}' (id={company_id})")
+        # Update plan & seats
+        def _update_company():
+            return (
+                db.client.from_("companies")
+                .update({
+                    "plan_id": plan_id,
+                    "seats_total": seats,
+                    "total_credits": total_credits,
+                    "status": "active",
+                })
+                .eq("id", company_id)
+                .execute()
+            )
+        await db.run(_update_company)
+        print(f"   ↳ Updated company plan to '{plan['name']}'")
     else:
-        print(f"⚙️ Creating new company '{company_name}'...")
-        def _ins_co():
-            return db.client.from_("companies").insert({
-                "name": company_name,
-                "owner_user_id": user_id,
-                "plan_id": plan_id,
-                "seats_total": seats,
-                "seats_used": 1,
-                "status": "active"
-            }).execute()
-        co_res = await db.run(_ins_co)
-        company_id = co_res.data[0]["id"]
-        print(f"✅ Created Company ID: {company_id}")
+        company_id = str(uuid.uuid4())
+        company_name = f"{user_display}'s Company"
+        print(f"✨ Creating new company: '{company_name}'")
+        def _create_company():
+            return (
+                db.client.from_("companies")
+                .insert({
+                    "id": company_id,
+                    "name": company_name,
+                    "owner_user_id": user_id,
+                    "plan_id": plan_id,
+                    "seats_total": seats,
+                    "seats_used": 1,
+                    "total_credits": total_credits,
+                    "credits_consumed": 0,
+                    "status": "active",
+                })
+                .execute()
+            )
+        await db.run(_create_company)
+        print(f"✅ Company created (id={company_id})")
 
-    # 4. Create or Update Company Member (Owner)
-    def _ins_mem():
-        return db.client.from_("company_members").upsert({
-            "company_id": company_id,
-            "user_id": user_id,
-            "role": "owner",
-            "status": "active",
-            "credits_allocated": total_credits,
-            "credits_consumed": 0,
-        }, on_conflict="company_id,user_id").execute()
-    await db.run(_ins_mem)
+    # 4. Upsert company_members row for the owner
+    print(f"\n👤 Upserting membership for owner...")
+    def _upsert_member():
+        return (
+            db.client.from_("company_members")
+            .upsert({
+                "company_id": company_id,
+                "user_id": user_id,
+                "role": "owner",
+                "status": "active",
+                "credits_allocated": total_credits,
+                "credits_consumed": 0,
+            }, on_conflict="company_id,user_id")
+            .execute()
+        )
+    await db.run(_upsert_member)
+    print(f"✅ Membership upserted (role=owner, credits_allocated={total_credits})")
 
-    # 5. Create or Update Company Credits
-    def _ins_cred():
-        return db.client.from_("company_credits").upsert({
-            "company_id": company_id,
-            "total_allocated": total_credits,
-            "total_consumed": 0
-        }, on_conflict="company_id").execute()
-    await db.run(_ins_cred)
+    # 5. Update profile to mark onboarding complete (optional quality-of-life)
+    def _update_profile():
+        return (
+            db.client.from_("profiles")
+            .update({"onboarding_completed": True})
+            .eq("user_id", user_id)
+            .execute()
+        )
+    await db.run(_update_profile)
 
-    # 6. Log Subscription History
-    def _ins_sub():
-        return db.client.from_("company_subscription_history").insert({
-            "company_id": company_id,
-            "plan_id": plan_id,
-            "action": "activated",
-            "seats_after": seats,
-            "credits_after": total_credits,
-            "currency": "USD",
-            "activated_by": "admin_script",
-            "notes": f"Manually provisioned {plan_name}"
-        }).execute()
-    await db.run(_ins_sub)
+    print(f"\n🎉 Done! '{email}' is now the owner of a company on the '{plan['name']}'.")
+    print(f"   Company ID : {company_id}")
+    print(f"   Plan       : {plan['name']}  ({seats} seats, {total_credits} credits)")
+    print(f"   User ID    : {user_id}")
 
-    # 7. Update user profile onboarding status
-    def _upd_profile():
-        return db.client.from_("profiles").update({
-            "company_name": company_name,
-            "organization_email": email_clean,
-            "onboarding_completed": True
-        }).eq("user_id", user_id).execute()
-    await db.run(_upd_profile)
 
-    print(f"\n🎉 SUCCESS! Provisioned '{plan_name}' ({seats} seats, {total_credits} credits) for {email_clean}.")
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    email = sys.argv[1] if len(sys.argv) > 1 else "22h51a73c6@cmrcet.ac.in"
-    asyncio.run(assign_plan(email))
+    parser = argparse.ArgumentParser(description="Assign a company plan to a user by email.")
+    parser.add_argument("--email", required=True, help="User email address")
+    parser.add_argument("--plan", default="5 Recruiter Plan", help="Company plan name (default: '5 Recruiter Plan')")
+    args = parser.parse_args()
+
+    asyncio.run(assign(args.email, args.plan))
