@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { billingApi, subscriptionApi, type BillingInvoice, type BillingPlanId } from '@/lib/api';
+import { billingApi, subscriptionApi, companyApi, type BillingInvoice, type BillingPlanId, type CompanyPlan } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, Wallet, Receipt, AlertTriangle, Check,
-  ShieldCheck, RefreshCw, Phone, Users, Zap, Activity, Building2
+  ShieldCheck, RefreshCw, Phone, Users, Zap, Activity, Building2, Crown, Mail, CreditCard, ArrowRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -60,6 +60,150 @@ function getVisiblePlans(): PlanDetail[] {
 }
 
 const VISIBLE_PLANS = getVisiblePlans();
+
+// ── Company Plans Sub-Section ─────────────────────────────────────────────────
+const COMPANY_PLAN_COLORS = [
+  { border: 'border-indigo-500/30', bg: 'bg-indigo-500/5', accent: 'text-indigo-400', btn: 'bg-indigo-600 hover:bg-indigo-500' },
+  { border: 'border-violet-500/30', bg: 'bg-violet-500/5', accent: 'text-violet-400', btn: 'bg-violet-600 hover:bg-violet-500', popular: true },
+  { border: 'border-purple-500/30', bg: 'bg-purple-500/5', accent: 'text-purple-400', btn: 'bg-purple-700 hover:bg-purple-600' },
+  { border: 'border-pink-500/30', bg: 'bg-pink-500/5', accent: 'text-pink-400', btn: 'bg-pink-700 hover:bg-pink-600' },
+];
+
+function CompanyPlansSection({
+  isCompanyMember,
+  companyName,
+  navigate,
+}: {
+  isCompanyMember: boolean;
+  companyName?: string;
+  navigate: (path: string) => void;
+}) {
+  const { currency, isIndia } = useCountryDetection({ profileCountry: null, explicitCountry: null });
+
+  const plansQuery = useQuery({
+    queryKey: ['company-plans'],
+    queryFn: () => companyApi.plans(),
+    staleTime: 300_000,
+  });
+
+  const plans = (plansQuery.data?.plans ?? []) as CompanyPlan[];
+
+  return (
+    <div className="pt-6">
+      <div className="mb-6 border-b border-border/50 pb-5">
+        <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-indigo-400" /> Team &amp; Company Plans
+        </h2>
+        <p className="text-sm text-muted-foreground mt-2 font-medium">
+          {isCompanyMember
+            ? `Your account is part of <strong>${companyName}</strong>. Below are the available company-tier plans.`
+            : 'Recruiting with a team? Company plans include multiple recruiter seats with pooled credits, email-based seat approvals, and a shared analytics dashboard.'}
+        </p>
+      </div>
+
+      {isCompanyMember && (
+        <Card className="border-indigo-500/30 bg-indigo-500/5 mb-6">
+          <CardContent className="flex items-center justify-between gap-4 pt-4 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-indigo-500/15 flex items-center justify-center">
+                <Building2 className="h-4 w-4 text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-indigo-500">Company Billing Active</p>
+                <p className="text-xs text-muted-foreground">Your credits and billing are managed by <strong>{companyName}</strong>.</p>
+              </div>
+            </div>
+            <Button size="sm" onClick={() => navigate('/company/dashboard')} className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2">
+              Company Dashboard <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Feature highlights */}
+      <div className="grid grid-cols-3 gap-4 text-center mb-6">
+        {[
+          { icon: <Users className="h-5 w-5" />, label: 'Recruiter Seats', desc: 'Each recruiter gets their own login and credit pool' },
+          { icon: <CreditCard className="h-5 w-5" />, label: 'Credit Allocation', desc: '100 credits per seat, allocated on join approval' },
+          { icon: <Mail className="h-5 w-5" />, label: 'Email Approvals', desc: 'One-click approve/reject directly from email inbox' },
+        ].map(f => (
+          <div key={f.label} className="space-y-2">
+            <div className="h-10 w-10 rounded-xl bg-muted/40 flex items-center justify-center mx-auto text-indigo-400">{f.icon}</div>
+            <div className="text-sm font-semibold">{f.label}</div>
+            <div className="text-xs text-muted-foreground">{f.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      {plansQuery.isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="h-64 rounded-2xl bg-muted/40 animate-pulse border border-border/30" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {plans.map((plan, idx) => {
+            const style = COMPANY_PLAN_COLORS[idx % COMPANY_PLAN_COLORS.length];
+            const price = isIndia ? plan.price_inr : plan.price_usd;
+            const features = Array.isArray(plan.features) ? plan.features : [];
+            return (
+              <Card key={plan.id} className={`relative overflow-hidden border ${style.border} ${style.bg} transition-all hover:scale-[1.01] hover:shadow-lg flex flex-col`}>
+                {style.popular && (
+                  <div className="absolute top-3 right-3">
+                    <Badge className="bg-violet-600 text-white text-xs"><Crown className="h-2.5 w-2.5 mr-1" />Popular</Badge>
+                  </div>
+                )}
+                <CardHeader className="pb-3">
+                  <CardTitle className={`text-base font-extrabold ${style.accent}`}>{plan.name}</CardTitle>
+                  <div className="flex items-end gap-2 mt-1">
+                    <span className="text-2xl font-black">
+                      {price > 0 ? formatPrice(price, currency) : 'Custom'}
+                    </span>
+                    {price > 0 && <span className="text-muted-foreground text-sm mb-1">/ {plan.validity}</span>}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 flex-1 flex flex-col justify-between">
+                  <div>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div className="bg-background/40 rounded-lg p-2 text-center">
+                        <div className={`text-lg font-extrabold ${style.accent}`}>{plan.recruiter_seats}</div>
+                        <div className="text-xs text-muted-foreground">Seats</div>
+                      </div>
+                      <div className="bg-background/40 rounded-lg p-2 text-center">
+                        <div className={`text-lg font-extrabold ${style.accent}`}>{plan.total_credits}</div>
+                        <div className="text-xs text-muted-foreground">Credits</div>
+                      </div>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {features.map((f, fi) => (
+                        <li key={fi} className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Check className={`h-3.5 w-3.5 flex-shrink-0 ${style.accent}`} />{f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <Button
+                    className={`w-full text-white font-bold mt-3 ${style.btn}`}
+                    onClick={() => {
+                      const subject = encodeURIComponent(`[Rekshift] Company Plan Enquiry — ${plan.name}`);
+                      const body = encodeURIComponent(`Hi Rekshift Team,\n\nI'm interested in the ${plan.name} (${plan.recruiter_seats} seats, ${plan.total_credits} credits).\n\nPlease get in touch.\n\nThanks`);
+                      window.open(`mailto:admin@rekshift.com?subject=${subject}&body=${body}`, '_blank');
+                    }}
+                  >
+                    Contact Sales
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-center text-xs text-muted-foreground mt-4">
+        All company plans are provisioned by our team within 24 hours. <Link to="/contact" className="text-primary underline underline-offset-2">Contact us</Link> to get started.
+      </p>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -285,41 +429,6 @@ export default function BillingPage() {
           <p className="text-sm text-muted-foreground font-medium animate-pulse tracking-wide">
             {geoLoading ? 'Detecting your region for secure pricing...' : 'Syncing subscription securely...'}
           </p>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  if (companyContext.company) {
-    return (
-      <DashboardLayout>
-        <div className="p-6 lg:p-8 space-y-6 max-w-[1400px] mx-auto pb-24">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-border/50 pb-6">
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Billing &amp; Subscriptions</h1>
-              <p className="text-sm text-muted-foreground mt-2 max-w-xl leading-relaxed">
-                Manage your active plans, monitor usage limits, and view secure payment transactions.
-              </p>
-            </div>
-          </div>
-          <Card className="border-indigo-500/30 bg-indigo-500/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-indigo-500">
-                <Building2 className="h-5 w-5" />
-                Company Account Active
-              </CardTitle>
-              <CardDescription>
-                Your account is currently managed by <strong>{companyContext.company.name}</strong>. 
-                Your billing and credits are handled centrally through the company plan.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-3">
-                <Button onClick={() => navigate('/company/dashboard')}>Go to Company Dashboard</Button>
-                <Button variant="outline" onClick={() => navigate('/company/plans')}>View Company Plans</Button>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </DashboardLayout>
     );
@@ -800,6 +909,10 @@ export default function BillingPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Company / Team Plans Section — visible to ALL users */}
+        <CompanyPlansSection isCompanyMember={!!companyContext.company} companyName={companyContext.company?.name} navigate={navigate} />
+
       </div>
 
       {/* Cancellation Modal */}
