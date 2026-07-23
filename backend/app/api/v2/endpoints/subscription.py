@@ -26,6 +26,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/subscription")
 
+# ── Company Guard ─────────────────────────────────────────────────────────────
+
+async def _assert_no_company_membership(db, user_id: str, action: str):
+    """Raises HTTPException 403 if user is an active company member."""
+    from fastapi import HTTPException
+    def _check():
+        return db.client.from_("company_members").select("id").eq("user_id", user_id).eq("status", "active").maybe_single().execute()
+    try:
+        res = await db.run(_check)
+        membership = getattr(res, "data", None)
+        if membership and isinstance(membership, dict):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Action '{action}' is not available for company members. Your billing is managed by your company."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[subscription] company-membership check failed (non-blocking): %s", e)
+
 def _get_stripe_key() -> str:
     settings = get_settings()
     return str(settings.stripe_secret_key or os.environ.get("STRIPE_SECRET_KEY", "") or "").strip()
@@ -464,13 +484,9 @@ async def verify_payment(payload: Dict[str, Any], user: ClerkUser = Depends(requ
 
 @router.post("/cancel")
 async def cancel_subscription(user: ClerkUser = Depends(require_user)):
-    """POST /api/v2/subscription/cancel
-    
-    Sets cancel_at_period_end so the subscription continues until billing cycle end.
-    The plan is NOT reverted to free immediately — the user retains full access
-    until the billing_cycle_end date. The Stripe webhook handles the final downgrade.
-    """
+    """POST /api/v2/subscription/cancel"""
     db = get_db_admin_service()
+    await _assert_no_company_membership(db, user.id, "cancel")
 
     def _fetch():
         return db.client.from_("profiles").select(
@@ -539,12 +555,9 @@ async def cancel_subscription(user: ClerkUser = Depends(require_user)):
 
 @router.post("/reactivate")
 async def reactivate_subscription(user: ClerkUser = Depends(require_user)):
-    """POST /api/v2/subscription/reactivate
-    
-    Reactivates a subscription that was previously scheduled for cancellation
-    (status = cancel_at_period_end).
-    """
+    """POST /api/v2/subscription/reactivate"""
     db = get_db_admin_service()
+    await _assert_no_company_membership(db, user.id, "reactivate")
 
     def _fetch():
         return db.client.from_("profiles").select(

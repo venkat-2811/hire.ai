@@ -29,6 +29,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/billing")
 
+# ── Company Guard ─────────────────────────────────────────────────────────────
+
+async def _assert_no_company_membership(db, user_id: str, action: str) -> None:
+    """Raises HTTPException 403 if user is an active company member.
+    Company members must not purchase individual subscriptions.
+    """
+    def _check():
+        return db.client.from_("company_members").select("id, company_id").eq("user_id", user_id).eq("status", "active").maybe_single().execute()
+    try:
+        res = await db.run(_check)
+        membership = getattr(res, "data", None)
+        if membership and isinstance(membership, dict):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Action '{action}' is not available for company members. Your billing is managed by your company."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[billing] company-membership check failed (non-blocking): %s", e)
+
+
 # ── Stripe helpers ────────────────────────────────────────────────────────────
 
 def _get_stripe_key() -> str:
@@ -539,7 +561,13 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
     currency = str(payload.get("currency") or "USD").upper()
     country = str(payload.get("country") or "US").upper()
 
+    db = get_db_admin_service()
+
+    # ── RBAC: Block company members from individual billing ────────────────────
+    await _assert_no_company_membership(db, user.id, "subscribe")
+
     # Normalize currency from country if not explicitly provided
+
     expected_currency = "INR" if country == "IN" else "USD"
     if currency not in ("USD", "INR") or currency != expected_currency:
         logger.warning(f"[billing.subscribe] Currency mismatch or invalid: user requested {currency} for country {country}. Forcing to {expected_currency}.")
@@ -603,12 +631,13 @@ async def billing_subscribe(payload: Dict[str, Any], request: Request, user: Cle
 
 @router.post("/verify-session")
 async def billing_verify_session(payload: Dict[str, Any], user: ClerkUser = Depends(require_user)):
-    """POST /api/v2/billing/verify-session
+    """POST /api/v2/billing/verify-session"""
+    db = get_db_admin_service()
+    # ── RBAC: Block company members from individual billing ────────────────────
+    await _assert_no_company_membership(db, user.id, "verify-session")
 
-    Verifies checkout session directly from Stripe for instantaneous UI updates.
-    Also handles idempotency — safe to call multiple times.
-    """
     session_id = str(payload.get("session_id") or "").strip()
+
     plan = _normalize_plan(payload.get("plan"))
     if not session_id:
         return api_error(message="session_id is required", status_code=400)

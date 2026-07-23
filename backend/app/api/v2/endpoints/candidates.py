@@ -278,8 +278,11 @@ async def create_candidate(payload: Dict[str, Any], user: ClerkUser = Depends(re
 
     # ATOMIC QUOTA CHECK AND CONSUMPTION FOR NEW CANDIDATES
     if is_new_for_recruiter:
-        from app.utils.billing_helpers import consume_candidate_slot
-        err_msg = await consume_candidate_slot(db, user.id, candidate_id_to_bill, job_id)
+        from app.utils.billing_helpers import consume_company_member_slot
+        err_msg = await consume_company_member_slot(
+            db, user.id, 0.50, "candidate added",
+            candidate_id=candidate_id_to_bill, job_id=job_id
+        )
         if err_msg:
             return api_error(message=err_msg, status_code=403)
 

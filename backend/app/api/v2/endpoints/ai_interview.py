@@ -906,8 +906,9 @@ async def invite_ai_interviews(
 
             # Fractional billing: bill +0.25 for interview invite.
             try:
-                from app.utils.billing_helpers import consume_interview_slot as _consume_interview
-                await _consume_interview(db, user.id, cid, body.job_id)
+                from app.utils.billing_helpers import consume_company_member_slot as _consume_interview
+                await _consume_interview(db, user.id, 0.50, "interview sent",
+                    candidate_id=cid, job_id=body.job_id)
             except Exception as _bill_exc:
                 logger.warning("[ai_interview.invite] billing interview slot failed session=%s: %s", session_id, _bill_exc)
 
