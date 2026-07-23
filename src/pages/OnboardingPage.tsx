@@ -111,7 +111,7 @@ export default function OnboardingPage() {
   const initial = useMemo(() => ({
     first_name: profile?.first_name ?? user?.firstName ?? '',
     last_name: profile?.last_name ?? user?.lastName ?? '',
-    organization_email: profile?.organization_email ?? '',
+    organization_email: profile?.organization_email ?? user?.primaryEmailAddress?.emailAddress ?? '',
     company_name: profile?.company_name ?? '',
     company_website: profile?.company_website ?? '',
     company_size: profile?.company_size ?? '',
@@ -361,7 +361,24 @@ export default function OnboardingPage() {
               </div>
 
               <div className="mb-8">
-                <JoinCompanySection onContinue={() => setStep(2)} />
+                <JoinCompanySection
+                  onContinue={() => setStep(2)}
+                  onJoinedCompany={() => {
+                    // User has joined a company — their billing is company-managed.
+                    // Save the profile (step 1 data) and redirect to dashboard.
+                    updateProfile.mutate(
+                      {
+                        organization_email: form.organization_email.trim() || null,
+                        company_name: form.company_name.trim() || null,
+                        first_name: form.first_name.trim() || null,
+                        last_name: form.last_name.trim() || null,
+                        country: form.country || null,
+                        onboarding_completed: true,
+                      } as Record<string, unknown>,
+                      { onSuccess: () => navigate('/dashboard', { replace: true }) },
+                    );
+                  }}
+                />
               </div>
               
               <div className="flex items-center gap-4 mb-8">
@@ -394,7 +411,22 @@ export default function OnboardingPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="orgEmail" className={errors.organization_email ? "text-red-500" : ""}>Organization Email *</Label>
-                      <Input id="orgEmail" className={errors.organization_email ? "border-red-500 focus-visible:ring-red-500" : ""} type="email" placeholder="you@company.com" value={form.organization_email} onChange={(e) => onChange('organization_email', e.target.value)} />
+                      <Input
+                        id="orgEmail"
+                        className={`${errors.organization_email ? "border-red-500 focus-visible:ring-red-500" : ""} ${user?.primaryEmailAddress?.emailAddress ? "bg-muted/50 cursor-not-allowed opacity-80" : ""}`}
+                        type="email"
+                        placeholder="you@company.com"
+                        value={form.organization_email}
+                        onChange={(e) => onChange('organization_email', e.target.value)}
+                        readOnly={!!user?.primaryEmailAddress?.emailAddress}
+                        disabled={!!user?.primaryEmailAddress?.emailAddress}
+                      />
+                      {user?.primaryEmailAddress?.emailAddress && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                          Locked to your account email
+                        </p>
+                      )}
                       {errors.organization_email && <p className="text-xs text-red-500">{errors.organization_email}</p>}
                     </div>
                     <div className="space-y-2">

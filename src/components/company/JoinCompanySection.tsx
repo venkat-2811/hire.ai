@@ -1,25 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { companyApi } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Building2, Search, Loader2, ArrowRight, CheckCircle, Clock } from 'lucide-react';
+import { Building2, Search, Loader2, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
-export function JoinCompanySection({ onContinue }: { onContinue: () => void }) {
+interface JoinCompanySectionProps {
+  onContinue: () => void;
+  onJoinedCompany?: () => void; // called when a join request is successfully sent — skip plan selection
+}
+
+export function JoinCompanySection({ onContinue, onJoinedCompany }: JoinCompanySectionProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
   const [requestPending, setRequestPending] = useState<{ companyName: string } | null>(null);
 
-  // Debounce search
-  import('react').then(React => {
-    React.useEffect(() => {
-      const timer = setTimeout(() => setDebouncedTerm(searchTerm), 500);
-      return () => clearTimeout(timer);
-    }, [searchTerm]);
-  });
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedTerm(searchTerm), 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   const searchQuery = useQuery({
     queryKey: ['company-search', debouncedTerm],
@@ -52,12 +53,20 @@ export function JoinCompanySection({ onContinue }: { onContinue: () => void }) {
               You will receive an email once it is approved.
             </p>
           </div>
-          <div className="text-xs text-muted-foreground">
-            Want to start immediately with your own plan?
+          <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2">
+            Since your billing will be handled by the company, you don't need to pick an individual plan.
+            You can continue to the dashboard and your account will be fully set up once the owner approves your request.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            {onJoinedCompany && (
+              <Button onClick={onJoinedCompany} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+                Go to Dashboard
+              </Button>
+            )}
+            <Button variant="outline" onClick={onContinue}>
+              Pick an Individual Plan Instead
+            </Button>
           </div>
-          <Button variant="outline" onClick={onContinue}>
-            Continue Independently
-          </Button>
         </CardContent>
       </Card>
     );
@@ -71,7 +80,7 @@ export function JoinCompanySection({ onContinue }: { onContinue: () => void }) {
           Join an Existing Company
         </CardTitle>
         <CardDescription className="text-xs">
-          If your company already uses Rekshift, search for them here to request a seat.
+          If your company already uses Rekshift, search for them here to request a seat. Your billing will be managed by the company — no individual plan needed.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
