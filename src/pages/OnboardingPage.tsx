@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,10 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown, TrendingUp, Globe } from 'lucide-react';
+import { Loader2, ArrowRight, Check, Sparkles, Zap, Crown, TrendingUp, Globe, Building2, Users, CreditCard } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUser } from '@clerk/clerk-react';
-import { subscriptionApi } from '@/lib/api';
+import { subscriptionApi, companyApi, type CompanyPlan } from '@/lib/api';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
@@ -102,6 +102,7 @@ export default function OnboardingPage() {
   const updateProfile = useUpdateProfile();
   const queryClient = useQueryClient();
   const [step, setStep] = useState(1); // 1 = company setup, 2 = plan selection
+  const [planCategory, setPlanCategory] = useState<'individual' | 'company'>('individual');
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [processingPlan, setProcessingPlan] = useState(false);
   const { user } = useUser();
@@ -142,6 +143,14 @@ export default function OnboardingPage() {
       };
     });
   }, [detectedCurrency]);
+
+  const companyPlansQuery = useQuery({
+    queryKey: ['company-plans'],
+    queryFn: () => companyApi.plans(),
+    enabled: step === 2,
+  });
+
+  const companyPlans = (companyPlansQuery.data?.plans ?? []) as CompanyPlan[];
 
   useEffect(() => { setForm(initial); }, [initial]);
 
@@ -510,14 +519,117 @@ export default function OnboardingPage() {
             >
               <div className="mb-4 lg:mb-5 text-center">
                 <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight">Choose Your Plan</h1>
-                <p className="text-muted-foreground mt-1.5 text-sm lg:text-base max-w-xl mx-auto">Select an onboard plan to active candidate assessment capacities.</p>
+                <p className="text-muted-foreground mt-1.5 text-sm lg:text-base max-w-xl mx-auto">Select an individual or team plan to activate candidate assessment capacities.</p>
                 <div className="flex items-center justify-center gap-1.5 mt-3 text-xs text-muted-foreground font-semibold bg-muted/50 w-fit mx-auto px-3 py-1 rounded-full border border-border/50 shadow-sm">
                   <Globe className="h-3.5 w-3.5" />
                   <span>Currency Auto-Detected: <span className="text-primary font-bold">{detectedCurrency}</span></span>
                 </div>
               </div>
 
-              {geoLoading ? (
+              {/* Segmented Control: Individual vs Company Plans */}
+              <div className="flex justify-center mb-8">
+                <div className="bg-muted/80 p-1.5 rounded-2xl flex items-center gap-1 border border-border/60 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setPlanCategory('individual')}
+                    className={`rounded-xl px-6 py-2 text-xs font-bold transition-all ${
+                      planCategory === 'individual'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Individual Plans
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlanCategory('company')}
+                    className={`rounded-xl px-6 py-2 text-xs font-bold transition-all flex items-center gap-2 ${
+                      planCategory === 'company'
+                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5" />
+                    Company &amp; Team Plans (5-20 Seats)
+                    <Badge className="bg-purple-500 text-white text-[9px] uppercase font-extrabold border-none px-1.5 py-0">New</Badge>
+                  </button>
+                </div>
+              </div>
+
+              {planCategory === 'company' ? (
+                /* Company Plans Display */
+                companyPlansQuery.isLoading ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    {[...Array(4)].map((_, i) => (
+                      <div key={i} className="min-h-[360px] rounded-[24px] bg-muted/30 animate-pulse border border-border/30" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    {companyPlans.map((plan, idx) => {
+                      const isIndia = detectedCurrency === 'INR';
+                      const price = isIndia ? plan.price_inr : plan.price_usd;
+                      const features = Array.isArray(plan.features) ? plan.features : [];
+
+                      return (
+                        <div
+                          key={plan.id}
+                          className="flex flex-col rounded-[24px] border border-indigo-500/30 bg-indigo-500/5 p-6 transition-all hover:shadow-xl hover:border-indigo-500/60 relative"
+                        >
+                          {idx === 1 && (
+                            <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet-600 text-white text-[10px] uppercase tracking-wider font-bold py-0.5 px-3 rounded-full border-none shadow-md">
+                              Popular Team Plan
+                            </Badge>
+                          )}
+                          <div className="text-center mb-4">
+                            <div className="h-10 w-10 rounded-xl bg-indigo-500/15 flex items-center justify-center mx-auto text-indigo-400 mb-3">
+                              <Building2 className="h-5 w-5" />
+                            </div>
+                            <h3 className="text-lg font-extrabold text-foreground">{plan.name}</h3>
+                            <div className="mt-2 flex items-baseline justify-center gap-1">
+                              <span className="text-3xl font-black">{price > 0 ? formatPrice(price, detectedCurrency) : 'Custom'}</span>
+                              {price > 0 && <span className="text-xs text-muted-foreground font-medium">/ {plan.validity}</span>}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 mb-4 bg-background/50 p-2.5 rounded-xl text-center border border-border/40">
+                            <div>
+                              <div className="text-lg font-bold text-indigo-400">{plan.recruiter_seats}</div>
+                              <div className="text-[10px] text-muted-foreground font-medium uppercase">Seats</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-bold text-indigo-400">{plan.total_credits}</div>
+                              <div className="text-[10px] text-muted-foreground font-medium uppercase">Total Credits</div>
+                            </div>
+                          </div>
+
+                          <ul className="space-y-2 mb-6 flex-1 text-xs text-muted-foreground">
+                            {features.map((f, fi) => (
+                              <li key={fi} className="flex items-center gap-2">
+                                <Check className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                                <span>{f}</span>
+                              </li>
+                            ))}
+                          </ul>
+
+                          <Button
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl h-10 shadow-md"
+                            onClick={() => {
+                              const subject = encodeURIComponent(`[Rekshift] Company Plan Enquiry — ${plan.name}`);
+                              const body = encodeURIComponent(
+                                `Hi Rekshift Team,\n\nI'm interested in signing up for the ${plan.name} (${plan.recruiter_seats} seats, ${plan.total_credits} credits).\n\nMy email: ${user?.primaryEmailAddress?.emailAddress ?? ''}\n\nPlease help set up our team account.\n\nThanks`
+                              );
+                              window.open(`mailto:admin@rekshift.com?subject=${subject}&body=${body}`, '_blank');
+                            }}
+                          >
+                            Contact Sales
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : geoLoading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-5 items-stretch h-full">
                   {onboardingPlans.map((plan) => (
                     <div key={plan.id} className="min-h-[420px] rounded-[24px] bg-muted/30 animate-pulse" />

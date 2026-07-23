@@ -209,6 +209,7 @@ function CompanyPlansSection({
 
 export default function BillingPage() {
   const [busy, setBusy] = useState<string | null>(null);
+  const [planTab, setPlanTab] = useState<'individual' | 'company'>('individual');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -644,20 +645,52 @@ export default function BillingPage() {
 
         {/* 2. Upgrade / Plan Selection Section */}
         <div className="pt-6">
-          <div className="mb-8 border-b border-border/50 pb-5">
-            <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-              <Zap className="h-5 w-5 text-primary" /> Subscription Tiers
-            </h2>
-            <p className="text-sm text-muted-foreground mt-2 font-medium">
-              Upgrade or modify your plan securely via Stripe Checkout.
-              {geoLoading
-                ? ' Detecting location...'
-                : ` Displaying ${activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing based on your region.`
-              }
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-5 mb-8">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <Zap className="h-5 w-5 text-primary" /> Subscription Tiers
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1 font-medium">
+                Choose an individual tier or an account-based team plan.
+                {geoLoading
+                  ? ' Detecting location...'
+                  : ` Displaying ${activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing.`
+                }
+              </p>
+            </div>
+
+            {/* Segmented control toggle */}
+            <div className="bg-muted/80 p-1.5 rounded-2xl flex items-center gap-1 border border-border/60 shadow-sm self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setPlanTab('individual')}
+                className={`rounded-xl px-5 py-2 text-xs font-bold transition-all ${
+                  planTab === 'individual'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Individual Plans
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanTab('company')}
+                className={`rounded-xl px-5 py-2 text-xs font-bold transition-all flex items-center gap-2 ${
+                  planTab === 'company'
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Building2 className="h-3.5 w-3.5" />
+                Company &amp; Team Plans
+                <Badge className="bg-purple-500 text-white text-[9px] uppercase font-extrabold border-none px-1.5 py-0">5-20 Seats</Badge>
+              </button>
+            </div>
           </div>
 
-          {geoLoading ? (
+          {planTab === 'company' ? (
+            <CompanyPlansSection isCompanyMember={!!companyContext.company} companyName={companyContext.company?.name} navigate={navigate} />
+          ) : geoLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="h-96 rounded-2xl bg-muted/40 animate-pulse border border-border/30" />
