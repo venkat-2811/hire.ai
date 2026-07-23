@@ -218,9 +218,13 @@ async def create_company(
         "metadata": payload.get("metadata") or {},
     }
     def _create_company():
-        return db.client.from_("companies").insert(company_row).select("*").execute()
+        return db.client.from_("companies").insert(company_row).execute()
     company_res = await db.run(_create_company)
-    company_data_list = getattr(company_res, "data", None)
+    # Fetch the newly created company
+    def _fetch_company():
+        return db.client.from_("companies").select("*").eq("owner_user_id", user.id).order("created_at", desc=True).limit(1).execute()
+    fetch_res = await db.run(_fetch_company)
+    company_data_list = getattr(fetch_res, "data", None)
     if not isinstance(company_data_list, list) or not company_data_list:
         return api_error(message="Failed to create company — name may already be taken", status_code=409)
     company = company_data_list[0]
@@ -356,19 +360,21 @@ async def join_request(
 
     now = datetime.now(timezone.utc).isoformat()
 
-    # Insert pending membership
+    # Insert pending membership (no .select() chain — not supported on this postgrest-py version)
     def _insert():
         return db.client.from_("company_members").insert({
             "company_id": company_id,
             "user_id": user.id,
             "role": "recruiter",
             "status": "pending",
-        }).select("*").execute()
-    ins_res = await db.run(_insert)
-    member_list = getattr(ins_res, "data", None)
-    if not isinstance(member_list, list) or not member_list:
+        }).execute()
+    await db.run(_insert)
+
+    # Fetch the newly inserted member row
+    fresh = await _get_member(db, company_id, user.id)
+    if not fresh:
         return api_error(message="Failed to submit join request", status_code=500)
-    member = member_list[0]
+    member = fresh
     member_id = member["id"]
 
     # Load profiles
