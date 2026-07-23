@@ -216,3 +216,40 @@ def rejection_email(
         f"--- Rekshift Team"
     )
     return subject, _base_wrapper(content, preheader=preheader), text
+
+
+# ── Template 4: Invite Recruiter to Company ──────────────────────────────────
+
+def invite_recruiter_email(
+    *,
+    company_name: str,
+    signup_url: str,
+) -> tuple[str, str, str]:
+    subject = f"[Rekshift] You've been invited to join {company_name}"
+    preheader = f"You have been invited to join {company_name} on Rekshift."
+
+    content = f"""
+<h2 style="margin:0 0 8px;font-size:22px;font-weight:800;">You're Invited! 💌</h2>
+<p style="color:#6b7280;margin:0 0 24px;font-size:15px;">You have been invited to join <strong>{company_name}</strong> on Rekshift.</p>
+
+<div class="notice" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:20px 0;font-size:14px;color:#166534;">
+  To accept this invitation, please sign up or log in, and search for <strong>{company_name}</strong> during onboarding or from your dashboard to request to join.
+</div>
+
+<div style="text-align:center;margin:28px 0;">
+  <a href="{signup_url}" style="background:{ACCENT_COLOR};color:#ffffff;display:inline-block;padding:14px 40px;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none;">Sign Up / Log In →</a>
+</div>
+
+<p style="font-size:12px;color:#9ca3af;text-align:center;">
+  If you believe this was sent in error, you can safely ignore this email.
+</p>
+"""
+    text = (
+        f"Hi,\n\n"
+        f"You have been invited to join {company_name} on Rekshift.\n\n"
+        f"Please sign up or log in, and search for {company_name} to request to join.\n\n"
+        f"Sign Up / Log In: {signup_url}\n\n"
+        f"--- Rekshift Team"
+    )
+    return subject, _base_wrapper(content, preheader=preheader), text
+

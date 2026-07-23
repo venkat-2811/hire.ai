@@ -26,6 +26,7 @@ from app.utils.email_templates import (
     approval_confirmation_email,
     join_request_email,
     rejection_email,
+    invite_recruiter_email,
 )
 from app.utils.responses import api_error, ok
 
@@ -645,6 +646,50 @@ async def email_action_handler(
     if not result.get("ok"):
         return api_error(message=result.get("error", "Action failed"))
     return ok({**result, "redirect": "/company/dashboard"})
+
+
+@router.post("/{company_id}/invite")
+async def invite_recruiter(
+    company_id: str,
+    payload: Dict[str, Any],
+    request: Request,
+    user: ClerkUser = Depends(require_user),
+):
+    """Owner: Send an email invitation to a recruiter."""
+    db = get_db_admin_service()
+    company = await _get_company(db, company_id)
+    if not company:
+        return api_error(message="Company not found", status_code=404)
+    if company["owner_user_id"] != user.id:
+        return api_error(message="Access denied", status_code=403)
+    
+    email = str(payload.get("email") or "").strip()
+    if not email:
+        return api_error(message="Email is required")
+
+    settings = get_settings()
+    app_url = getattr(settings, "frontend_url", "https://app.rekshift.com").rstrip("/")
+    signup_url = f"{app_url}/onboarding?company={urlencode({'name': company['name']})}"
+
+    subject, html, text = invite_recruiter_email(
+        company_name=company["name"],
+        signup_url=signup_url,
+    )
+    
+    try:
+        await EmailService.send_email(email, subject, html, text)
+        await _write_activity(db, company_id=company_id, user_id=user.id,
+                              action_type="recruiter_invited",
+                              description=f"Invited {email} to join the company",
+                              metadata={"invited_email": email})
+        await write_audit_log(db, actor_id=user.id, action="member.invite", actor_role="owner",
+                              company_id=company_id, target_id=email,
+                              details={"email": email})
+    except Exception as exc:
+        logger.error(f"Failed to send invite email to {email}: {exc}")
+        return api_error(message="Failed to send email invite", status_code=500)
+
+    return ok({"action": "invited", "email": email})
 
 
 @router.get("/{company_id}/members")

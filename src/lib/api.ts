@@ -2156,6 +2156,9 @@ export const companyApi = {
   members: (id: string) =>
     request<{ members: CompanyMember[]; total: number }>(`/companies/${id}/members`),
 
+  inviteRecruiter: (companyId: string, email: string) =>
+    request<{ action: string; email: string }>(`/companies/${companyId}/invite`, { method: 'POST', body: { email } }),
+
   memberStats: (companyId: string, userId: string) =>
     request<{ member: CompanyMember; recent_activity: ActivityEvent[] }>(`/companies/${companyId}/members/${userId}/stats`),
 

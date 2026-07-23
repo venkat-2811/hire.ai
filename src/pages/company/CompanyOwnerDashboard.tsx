@@ -8,6 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   Users, CreditCard, TrendingUp, BarChart3, Activity, Shield,
   CheckCircle, XCircle, Trash2, ChevronDown, ChevronUp,
@@ -177,6 +179,9 @@ export default function CompanyOwnerDashboard() {
   const qc = useQueryClient();
   const { company, role, isOwner, credits, companyCredits, isLoading: companyLoading } = useCompany();
   const companyId = company?.id ?? null;
+  
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
 
   const analyticsQuery = useCompanyAnalytics(companyId);
   const feedQuery = useActivityFeed(companyId, { limit: 60 });
@@ -236,6 +241,16 @@ export default function CompanyOwnerDashboard() {
       qc.invalidateQueries({ queryKey: ['company-my'] });
     },
     onError: (e: any) => toast.error(e?.message ?? 'Failed to remove'),
+  });
+
+  const inviteMutation = useMutation({
+    mutationFn: ({ email }: { email: string }) => companyApi.inviteRecruiter(companyId!, email),
+    onSuccess: () => {
+      toast.success(`Invite sent to ${inviteEmail}`);
+      setIsInviteModalOpen(false);
+      setInviteEmail('');
+    },
+    onError: (e: any) => toast.error(e?.message ?? 'Failed to send invite'),
   });
 
   if (companyLoading) {
@@ -407,11 +422,57 @@ export default function CompanyOwnerDashboard() {
 
             {/* Members Table */}
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Recruiter Hierarchy</CardTitle>
-                <CardDescription className="text-xs">
-                  Click any row to expand and see recent activity. Remove members to reclaim their seat.
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div>
+                  <CardTitle className="text-base">Recruiter Hierarchy</CardTitle>
+                  <CardDescription className="text-xs">
+                    Click any row to expand and see recent activity. Remove members to reclaim their seat.
+                  </CardDescription>
+                </div>
+                <Dialog open={isInviteModalOpen} onOpenChange={setIsInviteModalOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="bg-indigo-600 hover:bg-indigo-500 text-white">
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Invite Recruiter
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                      <DialogTitle>Invite a Recruiter</DialogTitle>
+                      <DialogDescription>
+                        Send an email invitation to join {company.name}. They will need to sign up for an account if they don't have one.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <label htmlFor="email" className="text-sm font-medium">Email address</label>
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="recruiter@example.com"
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setIsInviteModalOpen(false)}
+                        disabled={inviteMutation.isPending}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => inviteMutation.mutate({ email: inviteEmail })}
+                        disabled={!inviteEmail || inviteMutation.isPending}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white"
+                      >
+                        {inviteMutation.isPending ? 'Sending...' : 'Send Invite'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent className="p-0">
                 {membersQuery.isLoading ? (
