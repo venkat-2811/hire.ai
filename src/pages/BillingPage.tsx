@@ -464,6 +464,58 @@ export default function BillingPage() {
           </div>
         </div>
 
+        {/* Company Member Credits Card — shown when user is an active company member */}
+        {companyContext.isMember && companyContext.company && (
+          <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-transparent p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center flex-shrink-0">
+                <Building2 className="h-6 w-6 text-indigo-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="text-lg font-extrabold text-foreground">{companyContext.company.name}</h2>
+                  <Badge className="bg-indigo-500/15 text-indigo-400 border-indigo-500/30 text-xs capitalize">
+                    {companyContext.role}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">Your billing &amp; credits are managed by this company. No individual subscription required.</p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-black text-indigo-400">{companyContext.credits.allocated}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Allocated</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-black text-rose-400">{companyContext.credits.consumed.toFixed(1)}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Consumed</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-black text-emerald-400">{companyContext.credits.remaining.toFixed(1)}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Remaining</div>
+                  </div>
+                </div>
+                {/* Credits progress bar */}
+                <div className="mt-3 w-48">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all"
+                      style={{ width: `${companyContext.credits.allocated > 0 ? Math.min(100, (companyContext.credits.consumed / companyContext.credits.allocated) * 100) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            {companyContext.isOwner && (
+              <Button
+                className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2 flex-shrink-0"
+                onClick={() => navigate('/company/dashboard')}
+              >
+                <Building2 className="h-4 w-4" />
+                Company Dashboard
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* 1. Active Plan & Limits Overview */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
 

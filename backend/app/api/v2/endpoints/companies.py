@@ -400,6 +400,7 @@ async def join_request(
     # Send email to owner
     if owner_email:
         try:
+            logger.info("[join_request] sending join request email to owner %s", owner_email)
             subject, html, text = join_request_email(
                 owner_name=owner_name,
                 recruiter_name=recruiter_name,
@@ -411,8 +412,11 @@ async def join_request(
             )
             email_svc = EmailService()
             await email_svc.send_email(owner_email, subject, html, text=text)
+            logger.info("[join_request] join request email sent to owner %s", owner_email)
         except Exception as exc:
             logger.error("[join_request] email failed to owner %s: %s", owner_email, exc)
+    else:
+        logger.warning("[join_request] owner email is empty for company %s, owner_user_id=%s", company_id, company['owner_user_id'])
 
     await write_audit_log(db, actor_id=user.id, action="member.request", actor_role="recruiter",
                           target_type="member", target_id=member_id, company_id=company_id,
@@ -538,12 +542,25 @@ async def _perform_approval_action(
                     company_name=company["name"],
                     credits_allocated=credits_per_seat,
                     seat_number=company["seats_used"] + 1,
-                    dashboard_url=f"{base_url}/company/dashboard",
+                    dashboard_url=f"{base_url}/dashboard",
                 )
                 email_svc = EmailService()
                 await email_svc.send_email(recruiter_email, subject, html, text=text)
+                logger.info("[approve] approval email sent to recruiter %s", recruiter_email)
             except Exception as exc:
                 logger.error("[approve] email to recruiter failed: %s", exc)
+
+        # ── Mark recruiter's profile as onboarding complete so they reach dashboard ──
+        try:
+            def _unlock_profile():
+                return db.client.from_("profiles").update({
+                    "onboarding_completed": True,
+                    "company_name": company["name"],
+                }).eq("user_id", member["user_id"]).execute()
+            await db.run(_unlock_profile)
+            logger.info("[approve] recruiter profile unlocked for user %s", member["user_id"])
+        except Exception as exc:
+            logger.error("[approve] failed to update recruiter profile: %s", exc)
 
         return {"ok": True, "action": "approved", "company_name": company["name"],
                 "credits_allocated": credits_per_seat, "recruiter_name": recruiter_name}

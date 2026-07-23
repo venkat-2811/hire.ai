@@ -3,9 +3,9 @@ import { Sidebar } from "./Sidebar";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useProfile, useUpdateProfile } from "@/hooks/useProfile";
 import { useQuery } from "@tanstack/react-query";
-import { billingApi } from "@/lib/api";
+import { billingApi, companyApi } from "@/lib/api";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu, Globe2 } from "lucide-react";
+import { Menu, Globe2, Clock, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,17 @@ export function DashboardLayout({ children, fitContent = false }: DashboardLayou
     staleTime: 60_000,
     refetchInterval: 120_000,
   });
+
+  // Check company membership status to let pending members through
+  const { data: companyData, isLoading: companyLoading } = useQuery({
+    queryKey: ['company-my'],
+    queryFn: () => companyApi.my(),
+    retry: false,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    enabled: !profileLoading,
+  });
+
   const { mutate: updateProfile, isPending: isSavingCountry } = useUpdateProfile();
   const [countryInput, setCountryInput] = useState('');
   const [countrySaved, setCountrySaved] = useState(false);
@@ -43,12 +54,22 @@ export function DashboardLayout({ children, fitContent = false }: DashboardLayou
     });
   };
 
+  const companyStatus = companyData?.status ?? 'none';
+  const isPendingCompanyMember = companyStatus === 'pending';
+  const companyName = companyData?.membership?.companies?.name ?? companyData?.company?.name ?? '';
+
   useEffect(() => {
     if (location.pathname === '/onboarding') return;
+    if (profileLoading || companyLoading) return; // Wait for both to load
+
+    // If user has a pending OR active company membership, they pass through (no onboarding redirect)
+    if (isPendingCompanyMember) return;
+    if (companyStatus === 'active') return;
+
     if (profile && (profile.onboarding_completed === false || !profile.company_name?.trim())) {
       navigate('/onboarding', { replace: true });
     }
-  }, [location.pathname, navigate, profile]);
+  }, [location.pathname, navigate, profile, profileLoading, companyLoading, isPendingCompanyMember, companyStatus]);
 
   const rootClassName = fitContent ? "flex" : "flex h-screen overflow-hidden";
   const mainClassName = fitContent ? "flex-1 bg-background" : "flex-1 overflow-auto bg-background";
@@ -86,7 +107,21 @@ export function DashboardLayout({ children, fitContent = false }: DashboardLayou
         </header>
         
         <main className={mainClassName}>
-          {billingUsage && (billingUsage.status === 'paused' || billingUsage.status === 'overdue' || billingUsage.candidates_count >= billingUsage.candidates_limit) && location.pathname !== '/billing' && (
+          {/* Pending company member banner — shown on all pages when awaiting approval */}
+          {isPendingCompanyMember && (
+            <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <Clock className="h-4 w-4 text-amber-400 flex-shrink-0" />
+                <p className="text-sm text-amber-300">
+                  <strong>Access Pending:</strong> You've requested to join{companyName ? ` ${companyName}` : ' a company'}. 
+                  {' '}Please wait for the company owner to approve your request before you can use features.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Plan limit banner */}
+          {!isPendingCompanyMember && billingUsage && (billingUsage.status === 'paused' || billingUsage.status === 'overdue' || billingUsage.candidates_count >= billingUsage.candidates_limit) && location.pathname !== '/billing' && (
             <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 flex items-center justify-between gap-3">
               <p className="text-sm text-destructive">
                 You have reached your plan limit. Please choose a subscription plan to continue assessing additional candidates.
@@ -96,7 +131,33 @@ export function DashboardLayout({ children, fitContent = false }: DashboardLayou
               </Button>
             </div>
           )}
-          {children}
+
+          {/* Pending company member — block all content with an overlay message */}
+          {isPendingCompanyMember ? (
+            <div className="flex flex-col items-center justify-center min-h-[70vh] gap-6 p-8">
+              <div className="h-20 w-20 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center">
+                <Building2 className="h-10 w-10 text-amber-400" />
+              </div>
+              <div className="text-center max-w-md">
+                <h2 className="text-2xl font-bold mb-2">Awaiting Company Approval</h2>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  Your request to join{companyName ? <> <strong className="text-foreground">{companyName}</strong></> : ' a company'} is pending.
+                  {' '}The company owner has been notified and will approve or reject your request.
+                  Once approved, you'll have full access to all features with your allocated credits.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  variant="outline"
+                  className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                  onClick={() => window.location.reload()}
+                >
+                  <Clock className="h-4 w-4 mr-2" />
+                  Check Approval Status
+                </Button>
+              </div>
+            </div>
+          ) : children}
 
           {/* Blocking modal: country is required */}
           <Dialog open={needsCountry}>

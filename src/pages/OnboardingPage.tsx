@@ -14,6 +14,7 @@ import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUser } from '@clerk/clerk-react';
 import { subscriptionApi, companyApi, type CompanyPlan } from '@/lib/api';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import { formatPrice, getPlansForCurrency, type Currency, type PlanId } from '@/lib/pricing';
@@ -154,11 +155,27 @@ export default function OnboardingPage() {
 
   useEffect(() => { setForm(initial); }, [initial]);
 
+  // Check if user has an active or pending company membership — skip onboarding if so
+  const companyMyQuery = useQuery({
+    queryKey: ['company-my'],
+    queryFn: () => companyApi.my(),
+    retry: false,
+    staleTime: 30_000,
+    enabled: !isLoading,
+  });
+  const companyStatus = companyMyQuery.data?.status ?? 'none';
+
   useEffect(() => {
+    // Active company member — profile will have company_name and onboarding_completed, redirect away
     if (profile?.onboarding_completed && profile?.company_name?.trim()) {
       navigate('/dashboard', { replace: true });
+      return;
     }
-  }, [profile?.onboarding_completed, profile?.company_name, navigate]);
+    // Pending company member — redirect to dashboard (DashboardLayout will show the pending state)
+    if (!companyMyQuery.isLoading && companyStatus === 'pending') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [profile?.onboarding_completed, profile?.company_name, companyStatus, companyMyQuery.isLoading, navigate]);
 
   const verifyingRef = useRef(false);
 
@@ -373,19 +390,9 @@ export default function OnboardingPage() {
                 <JoinCompanySection
                   onContinue={() => setStep(2)}
                   onJoinedCompany={() => {
-                    // User has joined a company — their billing is company-managed.
-                    // Save the profile (step 1 data) and redirect to dashboard.
-                    updateProfile.mutate(
-                      {
-                        organization_email: form.organization_email.trim() || null,
-                        company_name: form.company_name.trim() || null,
-                        first_name: form.first_name.trim() || null,
-                        last_name: form.last_name.trim() || null,
-                        country: form.country || null,
-                        onboarding_completed: true,
-                      } as Record<string, unknown>,
-                      { onSuccess: () => navigate('/dashboard', { replace: true }) },
-                    );
+                    // User has sent a join request — billing will be company-managed.
+                    // Navigate directly to dashboard; DashboardLayout shows pending state.
+                    navigate('/dashboard', { replace: true });
                   }}
                 />
               </div>
