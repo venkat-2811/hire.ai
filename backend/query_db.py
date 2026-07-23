@@ -1,6 +1,13 @@
-import sqlite3
+import asyncio
+from dotenv import load_dotenv
+load_dotenv('.env')
+from app.services.db.supabase_service import get_db_admin_service
 
-conn = sqlite3.connect('local_db.sqlite3')
-cur = conn.cursor()
-cur.execute("SELECT user_id, subscription_plan FROM profiles WHERE user_id IN ('user_39pzPSlCnNtQdxV5H9ByKm9Ofsk', 'user_3DvWIyhFOmEDopxWyYKMl6jfn0z')")
-print(cur.fetchall())
+async def main():
+    db = get_db_admin_service()
+    res = await db.run(lambda: db.client.from_('companies').select('*').execute())
+    for co in getattr(res, "data", []):
+        print(f"Company: '{co['name']}' (ID: {co['id']})")
+
+if __name__ == "__main__":
+    asyncio.run(main())
