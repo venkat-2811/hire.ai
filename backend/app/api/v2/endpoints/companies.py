@@ -392,7 +392,7 @@ async def join_request(
     # Build token URLs
     settings = get_settings()
     secret = _get_token_secret()
-    base_url = str(getattr(settings, "app_base_url", None) or "https://app.rekshift.com").rstrip("/")
+    base_url = str(settings.frontend_url).rstrip("/")
 
     approve_token = _make_action_token(company_id, member_id, "approve", secret)
     reject_token = _make_action_token(company_id, member_id, "reject", secret)
@@ -475,7 +475,7 @@ async def _perform_approval_action(
 
     now = datetime.now(timezone.utc).isoformat()
     settings = get_settings()
-    base_url = str(getattr(settings, "app_base_url", None) or "https://app.rekshift.com").rstrip("/")
+    base_url = str(settings.frontend_url).rstrip("/")
 
     recruiter_profile = await _get_profile(db, member["user_id"])
     recruiter_name = _resolve_name(recruiter_profile)
@@ -710,7 +710,7 @@ async def invite_recruiter(
         logger.warning(f"Error checking existing membership: {e}")
 
     settings = get_settings()
-    app_url = getattr(settings, "frontend_url", "https://app.rekshift.com").rstrip("/")
+    app_url = str(settings.frontend_url).rstrip("/")
     signup_url = f"{app_url}/onboarding?company={urlencode({'name': company['name']})}"
 
     subject, html, text = invite_recruiter_email(
