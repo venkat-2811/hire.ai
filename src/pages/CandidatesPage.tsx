@@ -214,6 +214,7 @@ export default function CandidatesPage() {
   // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState<{ id: string; jobId: string } | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
 
   // Edit Candidate State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -590,6 +591,22 @@ export default function CandidatesPage() {
     } else if (action === 'reject') {
       setRejectDialogOpen(true);
     }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    if (!selectedJobId) {
+      toast.error('Please select a job first');
+      return;
+    }
+
+    const candidateIds = Array.from(selectedIds).map(id => id.split('_')[0]);
+    bulkDeleteCandidates.mutate({ candidateIds, jobId: selectedJobId }, {
+      onSuccess: () => {
+        setBulkDeleteDialogOpen(false);
+        setSelectedIds(new Set());
+      }
+    });
   };
 
   const handleBulkAssessment = () => {
@@ -1319,6 +1336,14 @@ export default function CandidatesPage() {
                                     <Button variant="outline" className="h-10 px-4 text-sm font-medium bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20 hover:text-destructive shadow-sm" onClick={(e) => handleActionForJob(e, jobId, 'reject')}>
                                       <ThumbsDown className="mr-2 h-[18px] w-[18px]" />
                                       Reject
+                                    </Button>
+                                    <Button 
+                                      variant="outline" 
+                                      size="icon"
+                                      className="h-10 w-10 text-destructive bg-destructive/10 border-destructive/20 hover:bg-destructive hover:text-destructive-foreground shadow-sm" 
+                                      onClick={(e) => { e.stopPropagation(); setBulkDeleteDialogOpen(true); }}
+                                    >
+                                      <Trash2 className="h-[18px] w-[18px]" />
                                     </Button>
                                     {/* 
                                     <Button variant="ghost" className="h-9 px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" onClick={(e) => { 
@@ -2282,6 +2307,71 @@ export default function CandidatesPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+          <AlertDialogContent className="sm:max-w-[700px]">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Permanently Delete Selected Candidates?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-4 text-sm text-muted-foreground mt-2">
+                  <p>This action <strong className="text-foreground">cannot be undone</strong>. You are about to permanently delete the following <strong>{selectedIds.size}</strong> candidate(s).</p>
+                  
+                  <div className="border rounded-md overflow-hidden bg-background">
+                    <div className="max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
+                          <TableRow>
+                            <TableHead>Candidate</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>AI Result</TableHead>
+                            <TableHead>Applied</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(() => {
+                            if (!selectedJobId || !candidatesByJob[selectedJobId]) return null;
+                            const selectedCandidates = candidatesByJob[selectedJobId].filter(c => selectedIds.has(`${c.id}_${selectedJobId}`));
+                            return selectedCandidates.map((candidate) => {
+                              const ca = analytics?.find(a => a.candidate_id === candidate.id && a.job_id === selectedJobId);
+                              return (
+                                <TableRow key={candidate.id}>
+                                  <TableCell className="font-medium">{candidate.full_name}</TableCell>
+                                  <TableCell className="text-muted-foreground">{candidate.email}</TableCell>
+                                  <TableCell>{getRecommendationBadge(ca?.recommendation)}</TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {candidate.applied_at
+                                      ? new Date(candidate.applied_at).toLocaleDateString()
+                                      : new Date(candidate.created_at).toLocaleDateString()}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            });
+                          })()}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                  <p className="text-destructive font-medium">Are you sure you want to proceed?</p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={bulkDeleteCandidates.isPending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleBulkDelete();
+                }}
+                disabled={bulkDeleteCandidates.isPending}
+              >
+                {bulkDeleteCandidates.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Confirm Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
       </div>
     </DashboardLayout>

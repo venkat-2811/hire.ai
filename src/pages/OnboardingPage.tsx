@@ -14,7 +14,6 @@ import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useUser } from '@clerk/clerk-react';
 import { subscriptionApi, companyApi, type CompanyPlan } from '@/lib/api';
 import { toast } from 'sonner';
-import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import { formatPrice, getPlansForCurrency, type Currency, type PlanId } from '@/lib/pricing';
