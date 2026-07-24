@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Loader2, Building2, CheckCircle2, XCircle } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
-import { api } from '@/lib/api';
+import { apiRequest } from '@/lib/api';
 import { toast } from 'sonner';
 
 export default function InviteAcceptPage() {
@@ -44,7 +44,10 @@ export default function InviteAcceptPage() {
 
   const acceptInvite = async (inviteToken: string) => {
     try {
-      const res = await api.post('/companies/accept-invite', { token: inviteToken });
+      const res = await apiRequest<any>('/companies/accept-invite', { 
+        method: 'POST', 
+        body: { token: inviteToken } 
+      });
       
       if (res.action === 'already_active' || res.action === 'activated' || res.action === 'joined') {
         setStatus('success');
