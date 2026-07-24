@@ -471,7 +471,8 @@ export default function BillingPage() {
           const displayRemaining = Math.max(0, displayAllocated - displayConsumed);
           const pct = displayAllocated > 0 ? Math.min(100, (displayConsumed / displayAllocated) * 100) : 0;
           const label = 'My Seat Credits';
-          const sublabel = 'Your personal allocation from the company pool';
+          const totalPool = companyContext.companyCredits.total_allocated;
+          const sublabel = `Your personal allocation (${displayAllocated} of ${totalPool} company pool)`;
 
           return (
             <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-transparent p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
