@@ -718,40 +718,12 @@ export default function BillingPage() {
                 <Zap className="h-5 w-5 text-primary" /> Subscription Tiers
               </h2>
               <p className="text-sm text-muted-foreground mt-1 font-medium">
-                Choose an individual tier or an account-based team plan.
+                Choose an individual tier.
                 {geoLoading
                   ? ' Detecting location...'
                   : ` Displaying ${activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing.`
                 }
               </p>
-            </div>
-
-            {/* Segmented control toggle */}
-            <div className="bg-muted/80 p-1.5 rounded-2xl flex items-center gap-1 border border-border/60 shadow-sm self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setPlanTab('individual')}
-                className={`rounded-xl px-5 py-2 text-xs font-bold transition-all ${
-                  planTab === 'individual'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Individual Plans
-              </button>
-              <button
-                type="button"
-                onClick={() => setPlanTab('company')}
-                className={`rounded-xl px-5 py-2 text-xs font-bold transition-all flex items-center gap-2 ${
-                  planTab === 'company'
-                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Building2 className="h-3.5 w-3.5" />
-                Company &amp; Team Plans
-                <Badge className="bg-purple-500 text-white text-[9px] uppercase font-extrabold border-none px-1.5 py-0">5-20 Seats</Badge>
-              </button>
             </div>
           </div>
 
