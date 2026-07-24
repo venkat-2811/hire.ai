@@ -1,17 +1,20 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+/**
+ * CompanyPlansPage.tsx — Public page, no auth required.
+ * Accessible from the landing page /pricing → "Company Plans".
+ * Shows all company plan tiers with pricing in the user's detected currency.
+ * The Contact Sales button prefills email if logged in.
+ */
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building2, Users, CreditCard, Check, Mail, Crown } from 'lucide-react';
+import { Building2, Users, CreditCard, Check, Mail, Crown, ArrowLeft } from 'lucide-react';
 import { companyApi, type CompanyPlan } from '@/lib/api';
 import { useUser } from '@clerk/clerk-react';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import { formatPrice, type Currency } from '@/lib/pricing';
-import { toast } from 'sonner';
 
 const PLAN_COLORS = [
   { border: 'border-indigo-500/30', bg: 'bg-indigo-500/5', accent: 'text-indigo-400', btn: 'bg-indigo-600 hover:bg-indigo-500' },
@@ -23,38 +26,67 @@ const PLAN_COLORS = [
 export default function CompanyPlansPage() {
   const navigate = useNavigate();
   const { user } = useUser();
-  const { currency: detectedCurrency, isIndia } = useCountryDetection();
+  const { currency: detectedCurrency, isIndia } = useCountryDetection({ profileCountry: null, explicitCountry: null });
   const currency: Currency = detectedCurrency;
 
   const plansQuery = useQuery({
-    queryKey: ['company-plans'],
+    queryKey: ['company-plans-public'],
     queryFn: () => companyApi.plans(),
     staleTime: 300_000,
+    retry: false,
   });
 
-  const plans = plansQuery.data?.plans ?? [];
+  const plans = (plansQuery.data?.plans ?? []) as CompanyPlan[];
 
   return (
-    <DashboardLayout>
-      <div className="p-6 lg:p-8 max-w-5xl mx-auto space-y-8">
+    <div className="min-h-screen bg-background">
+      {/* Top nav bar */}
+      <div className="border-b border-border/40 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+          <button
+            onClick={() => navigate('/pricing')}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Pricing
+          </button>
+          <div className="flex items-center gap-3">
+            {user ? (
+              <Button size="sm" onClick={() => navigate('/company/dashboard')}>
+                My Dashboard
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => navigate('/auth')}>
+                Sign In
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="max-w-5xl mx-auto px-6 py-12 space-y-10">
 
         {/* Header */}
-        <div className="text-center space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium mb-2">
+        <div className="text-center space-y-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium">
             <Building2 className="h-3.5 w-3.5" />
             Company Plans
           </div>
-          <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight">
+          <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight">
             Hire Together, At Scale
           </h1>
-          <p className="text-muted-foreground max-w-xl mx-auto text-sm lg:text-base">
+          <p className="text-muted-foreground max-w-xl mx-auto">
             One company plan, multiple recruiter seats. Each seat gets its own credit allocation.
             Built for teams who recruit together.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Showing {isIndia ? 'India (INR ₹)' : 'International (USD $)'} pricing based on your location.
           </p>
         </div>
 
         {/* Feature highlights */}
-        <div className="grid grid-cols-3 gap-4 text-center">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
           {[
             { icon: <Users className="h-5 w-5" />, label: 'Recruiter Seats', desc: 'Each recruiter gets their own login and credit pool' },
             { icon: <CreditCard className="h-5 w-5" />, label: 'Credit Allocation', desc: '100 credits per seat, allocated on join approval' },
@@ -141,10 +173,10 @@ export default function CompanyPlansPage() {
           </div>
         )}
 
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-center text-xs text-muted-foreground pb-8">
           All plans are manually provisioned by our team. Contact us and we'll get you set up within 24 hours.
         </p>
       </div>
-    </DashboardLayout>
+    </div>
   );
 }

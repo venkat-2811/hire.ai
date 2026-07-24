@@ -1,122 +1,181 @@
+/**
+ * InviteAcceptPage.tsx
+ * Route: /join?token=...
+ *
+ * Handles the recruiter invite flow:
+ * 1. Validates the token (calls GET /companies/accept-invite)
+ * 2. If user is NOT signed in → shows a branded "You've been invited" screen with Sign In / Sign Up buttons
+ * 3. If user IS signed in → auto-calls POST /companies/accept-invite and redirects to /company/dashboard
+ */
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useUser, useAuth } from '@clerk/clerk-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useUser, SignInButton, SignUpButton } from '@clerk/clerk-react';
+import { Building2, CheckCircle, Loader2, XCircle, LogIn, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Loader2, Building2, CheckCircle2, XCircle } from 'lucide-react';
-import Navbar from '@/components/layout/Navbar';
-import { apiRequest } from '@/lib/api';
+import { companyApi } from '@/lib/api';
 import { toast } from 'sonner';
+
+type Phase = 'loading' | 'unauthenticated' | 'activating' | 'success' | 'error';
 
 export default function InviteAcceptPage() {
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
   const navigate = useNavigate();
-  const { isLoaded: userLoaded, isSignedIn, user } = useUser();
-  const { isLoaded: authLoaded } = useAuth();
-  
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('Processing your invitation...');
-  const [companyId, setCompanyId] = useState<string | null>(null);
+  const { isLoaded, isSignedIn } = useUser();
 
-  // Initial check - save token if not signed in
+  const token = searchParams.get('token') ?? '';
+
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [companyName, setCompanyName] = useState('');
+  const [invitedEmail, setInvitedEmail] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Step 1 — validate token (always, no auth required)
   useEffect(() => {
     if (!token) {
-      setStatus('error');
-      setMessage('Invalid or missing invitation link.');
+      setErrorMsg('No invite token found in the link. Please use the full link from your email.');
+      setPhase('error');
       return;
     }
 
-    if (!userLoaded || !authLoaded) return;
+    companyApi.acceptInviteInfo(token)
+      .then((data) => {
+        setCompanyName(data.company_name);
+        setInvitedEmail(data.invited_email);
+        // Don't advance phase yet — wait for auth state
+      })
+      .catch((err) => {
+        setErrorMsg(err?.message ?? 'This invite link is invalid or has expired.');
+        setPhase('error');
+      });
+  }, [token]);
+
+  // Step 2 — once auth state known and token info loaded
+  useEffect(() => {
+    if (!companyName) return; // token not validated yet
+    if (!isLoaded) return;    // clerk not ready
 
     if (!isSignedIn) {
-      // User is not signed in. Save token so we can redirect them back here after sign up
-      sessionStorage.setItem('pending_invite_token', token);
-      
-      // Redirect to sign-up, passing this URL as redirect
-      navigate(`/sign-up?redirect_url=${encodeURIComponent(`/accept-invite?token=${token}`)}`);
+      setPhase('unauthenticated');
       return;
     }
 
-    // User is signed in! Let's accept the invite
-    acceptInvite(token);
-  }, [token, userLoaded, authLoaded, isSignedIn, navigate]);
-
-  const acceptInvite = async (inviteToken: string) => {
-    try {
-      const res = await apiRequest<any>('/companies/accept-invite', { 
-        method: 'POST', 
-        body: { token: inviteToken } 
+    // Signed in → activate
+    setPhase('activating');
+    companyApi.activateInvite(token)
+      .then((data) => {
+        setPhase('success');
+        toast.success(`You've joined ${data.company_name}! ${data.credits_allocated} credits allocated.`);
+        setTimeout(() => navigate('/company/dashboard', { replace: true }), 1800);
+      })
+      .catch((err) => {
+        setErrorMsg(err?.message ?? 'Failed to activate invite. Please try again or contact support.');
+        setPhase('error');
       });
-      
-      if (res.action === 'already_active' || res.action === 'activated' || res.action === 'joined') {
-        setStatus('success');
-        setCompanyId(res.company_id);
-        setMessage('You have successfully joined the company!');
-        sessionStorage.removeItem('pending_invite_token');
-        
-        // Auto redirect after a brief delay
-        setTimeout(() => {
-          navigate('/company/dashboard');
-        }, 2000);
-      } else {
-        setStatus('error');
-        setMessage(res.error || 'Failed to accept invitation.');
-      }
-    } catch (err: any) {
-      setStatus('error');
-      setMessage(err.message || 'An error occurred while accepting the invitation.');
-      toast.error('Invitation Failed', { description: err.message });
-    }
-  };
+  }, [companyName, isLoaded, isSignedIn, token, navigate]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <div className="pt-32 pb-20 px-4 flex items-center justify-center">
-        <Card className="w-full max-w-md shadow-lg border-primary/20 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-purple-500" />
-          <CardHeader className="text-center pt-8">
-            <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              <Building2 className="h-6 w-6 text-primary" />
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-sm font-medium mb-4">
+            <Building2 className="h-4 w-4" />
+            Company Invite
+          </div>
+          <h1 className="text-2xl font-extrabold tracking-tight">
+            {companyName ? `You're invited to join ${companyName}` : 'Checking invite…'}
+          </h1>
+          {invitedEmail && (
+            <p className="text-muted-foreground text-sm mt-2">
+              Sent to <span className="font-semibold text-foreground">{invitedEmail}</span>
+            </p>
+          )}
+        </div>
+
+        {/* State cards */}
+        <div className="rounded-2xl border border-border/60 bg-card shadow-xl p-8 space-y-6">
+
+          {/* Loading / Validating */}
+          {(phase === 'loading') && (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <Loader2 className="h-10 w-10 animate-spin text-indigo-400" />
+              <p className="text-sm text-muted-foreground">Validating your invite link…</p>
             </div>
-            <CardTitle className="text-2xl font-bold">Company Invitation</CardTitle>
-            <CardDescription>
-              {status === 'loading' ? 'Setting up your recruiter account...' : 'Invitation Status'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center justify-center text-center pb-8">
-            {status === 'loading' && (
-              <div className="flex flex-col items-center gap-4 text-muted-foreground mt-4">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p>{message}</p>
+          )}
+
+          {/* Not signed in */}
+          {phase === 'unauthenticated' && (
+            <div className="space-y-5">
+              <div className="text-center space-y-1">
+                <Building2 className="h-12 w-12 mx-auto text-indigo-400 mb-2" />
+                <h2 className="text-lg font-bold">{companyName} wants you on their team</h2>
+                <p className="text-sm text-muted-foreground">
+                  Sign in or create an account to accept this invitation and get started right away.
+                  <br />Your seat and credits will be activated automatically.
+                </p>
               </div>
-            )}
-            
-            {status === 'success' && (
-              <div className="flex flex-col items-center gap-4 mt-4">
-                <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-2" />
-                <h3 className="text-xl font-semibold text-emerald-600">Invitation Accepted!</h3>
-                <p className="text-muted-foreground text-sm max-w-[250px]">{message}</p>
-                <p className="text-xs text-muted-foreground mt-2 animate-pulse">Redirecting to your dashboard...</p>
-                <Button className="mt-4 w-full" onClick={() => navigate('/company/dashboard')}>
-                  Go to Dashboard Now
-                </Button>
+
+              <div className="grid grid-cols-2 gap-3">
+                <SignInButton
+                  mode="redirect"
+                  redirectUrl={`/join?token=${encodeURIComponent(token)}`}
+                >
+                  <Button variant="outline" className="w-full gap-2">
+                    <LogIn className="h-4 w-4" />
+                    Sign In
+                  </Button>
+                </SignInButton>
+
+                <SignUpButton
+                  mode="redirect"
+                  redirectUrl={`/join?token=${encodeURIComponent(token)}`}
+                >
+                  <Button className="w-full gap-2 bg-indigo-600 hover:bg-indigo-500 text-white">
+                    <UserPlus className="h-4 w-4" />
+                    Sign Up
+                  </Button>
+                </SignUpButton>
               </div>
-            )}
-            
-            {status === 'error' && (
-              <div className="flex flex-col items-center gap-4 mt-4">
-                <XCircle className="h-16 w-16 text-destructive mb-2" />
-                <h3 className="text-xl font-semibold text-destructive">Error</h3>
-                <p className="text-muted-foreground text-sm">{message}</p>
-                <Button variant="outline" className="mt-4 w-full" onClick={() => navigate('/dashboard')}>
-                  Return Home
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+
+              <p className="text-center text-xs text-muted-foreground">
+                This invite link is valid for 7 days.
+              </p>
+            </div>
+          )}
+
+          {/* Activating */}
+          {phase === 'activating' && (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <Loader2 className="h-10 w-10 animate-spin text-indigo-400" />
+              <p className="text-sm text-muted-foreground">
+                Activating your membership at <strong>{companyName}</strong>…
+              </p>
+            </div>
+          )}
+
+          {/* Success */}
+          {phase === 'success' && (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <CheckCircle className="h-14 w-14 text-emerald-400" />
+              <h2 className="text-lg font-bold text-emerald-400">You're in!</h2>
+              <p className="text-sm text-muted-foreground">
+                Welcome to <strong>{companyName}</strong>. Redirecting you to your dashboard…
+              </p>
+            </div>
+          )}
+
+          {/* Error */}
+          {phase === 'error' && (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <XCircle className="h-12 w-12 text-red-400" />
+              <h2 className="text-lg font-bold text-destructive">Invite Failed</h2>
+              <p className="text-sm text-muted-foreground">{errorMsg}</p>
+              <Button variant="outline" onClick={() => navigate('/')}>Go to Homepage</Button>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );

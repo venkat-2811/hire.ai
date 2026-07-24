@@ -136,7 +136,8 @@ const App = () => (
             <Route path="/company/dashboard" element={<CompanyOwnerDashboard />} />
             <Route path="/company/plans" element={<CompanyPlansPage />} />
             <Route path="/company/action" element={<EmailApprovalLandingPage />} />
-            <Route path="/accept-invite" element={<InviteAcceptPage />} />
+            {/* Invite accept — public, no auth wrapper */}
+            <Route path="/join" element={<InviteAcceptPage />} />
             <Route path="/offer-acceptance" element={<OfferAcceptancePage />} />
             <Route path="/linkedin-talent" element={<LinkedInTalentPage />} />
             <Route path="/linkedin-talent/:jobId" element={<LinkedInJobTalentPage />} />

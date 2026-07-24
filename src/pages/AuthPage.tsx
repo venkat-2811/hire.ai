@@ -18,10 +18,9 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (!loading && isSignedIn) {
-      const redirectUrl = new URLSearchParams(location.search).get('redirect_url');
-      navigate(redirectUrl || '/dashboard');
+      navigate('/dashboard');
     }
-  }, [isSignedIn, loading, navigate, location.search]);
+  }, [isSignedIn, loading, navigate]);
 
   useEffect(() => {
     if (location.pathname === '/auth') {
@@ -142,14 +141,14 @@ export default function AuthPage() {
                 routing="path"
                 path="/sign-up"
                 signInUrl="/sign-in"
-                fallbackRedirectUrl={new URLSearchParams(location.search).get('redirect_url') || "/dashboard"}
+                fallbackRedirectUrl="/dashboard"
               />
             ) : (
               <SignIn
                 routing="path"
                 path="/sign-in"
                 signUpUrl="/sign-up"
-                fallbackRedirectUrl={new URLSearchParams(location.search).get('redirect_url') || "/dashboard"}
+                fallbackRedirectUrl="/dashboard"
               />
             )}
           </div>

@@ -2,12 +2,9 @@ import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Check, Phone, Building2, Globe } from 'lucide-react';
+import { Check, Phone } from 'lucide-react';
 import Footer from '@/components/layout/Footer';
 import Navbar from '@/components/layout/Navbar';
-import { useQuery } from '@tanstack/react-query';
-import { companyApi } from '@/lib/api';
 import { useCountryDetection } from '@/hooks/useCountryDetection';
 import {
   PRODUCTION_PLANS,
@@ -37,15 +34,6 @@ function getPlanComparisonRows(currency: Currency) {
 const PricingPage = () => {
   const [isFirstVisit, setIsFirstVisit] = useState(true);
   const [manualCurrency, setManualCurrency] = useState<Currency | null>(null);
-  const [planCategory, setPlanCategory] = useState<'individual' | 'company'>('individual');
-
-  const companyPlansQuery = useQuery({
-    queryKey: ['company-plans-public'],
-    queryFn: () => companyApi.plans(),
-    staleTime: 300_000,
-  });
-
-  const companyPlans = companyPlansQuery.data?.plans ?? [];
 
   useEffect(() => {
     const visited = sessionStorage.getItem('rekshift_visited_pricing');
@@ -206,56 +194,57 @@ const PricingPage = () => {
             initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="text-center mb-12"
+            className="text-center mb-10"
           >
             <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4">Simple, Transparent Pricing</h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-4">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
               Choose the perfect plan for your hiring needs. All plans include our core AI-powered assessment features.
             </p>
-            {!geoLoading && (
-              <p className="text-sm text-muted-foreground">
-                Showing {activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing for your location.
-              </p>
-            )}
 
-            <div className="flex items-center justify-center gap-1.5 mt-4 mb-2 text-xs text-muted-foreground font-semibold bg-muted/50 w-fit mx-auto px-3 py-1.5 rounded-full border border-border/50 shadow-sm">
-              <Globe className="h-4 w-4" />
-              <span>Currency: </span>
-              <button 
-                onClick={() => setManualCurrency('USD')}
-                className={`px-2 py-0.5 rounded-md transition-colors ${activeCurrency === 'USD' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted-foreground/10'}`}
-              >
-                USD ($)
-              </button>
-              <button 
-                onClick={() => setManualCurrency('INR')}
-                className={`px-2 py-0.5 rounded-md transition-colors ${activeCurrency === 'INR' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted-foreground/10'}`}
-              >
-                INR (₹)
-              </button>
-            </div>
-            
-            {/* Auto-detected pricing loaded in background */}
+            {/* Currency Switcher */}
+            {!geoLoading && (
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="text-xs text-muted-foreground mr-1">Pricing in:</span>
+                <div className="flex rounded-full border border-border bg-muted p-1 gap-1">
+                  <button
+                    onClick={() => setManualCurrency('INR')}
+                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      activeCurrency === 'INR'
+                        ? 'bg-background shadow text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    🇮🇳 India (₹ INR)
+                  </button>
+                  <button
+                    onClick={() => setManualCurrency('USD')}
+                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      activeCurrency === 'USD'
+                        ? 'bg-background shadow text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    🇺🇸 International ($ USD)
+                  </button>
+                </div>
+              </div>
+            )}
+            {geoLoading && (
+              <div className="h-8 w-60 mx-auto rounded-full bg-muted animate-pulse mb-2" />
+            )}
           </motion.div>
 
           {/* Individual vs Company Toggle */}
           <div className="flex justify-center mb-10">
             <div className="bg-muted p-1.5 rounded-full flex items-center gap-1 border shadow-sm">
-              <Button 
-                variant="ghost" 
-                onClick={() => setPlanCategory('individual')}
-                className={`rounded-full h-10 px-8 text-sm font-semibold transition-colors ${planCategory === 'individual' ? 'bg-background shadow-sm hover:bg-background text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'}`}
-              >
+              <Button variant="secondary" className="rounded-full bg-background shadow-sm h-10 px-8 text-sm font-semibold hover:bg-background">
                 Individual Plans
               </Button>
-              <Button 
-                variant="ghost" 
-                onClick={() => setPlanCategory('company')}
-                className={`rounded-full h-10 px-8 text-sm font-semibold transition-colors flex items-center gap-2 ${planCategory === 'company' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md hover:bg-indigo-700 text-white' : 'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10'}`}
-              >
-                <Building2 className="h-4 w-4" />
-                Company Plans
-                <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[10px] uppercase font-bold tracking-wider ${planCategory === 'company' ? 'bg-white/20' : 'bg-purple-500 text-white'}`}>New</span>
+              <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 h-10 px-8 text-sm font-medium transition-colors" asChild>
+                <Link to="/company/plans">
+                  Company Plans
+                  <span className="ml-2 px-1.5 py-0.5 rounded-md bg-purple-500 text-white text-[10px] uppercase font-bold tracking-wider">New</span>
+                </Link>
               </Button>
             </div>
           </div>
@@ -267,79 +256,13 @@ const PricingPage = () => {
                 <div key={i} className="h-96 rounded-3xl bg-muted/30 animate-pulse" />
               ))}
             </div>
-          ) : planCategory === 'individual' ? (
+          ) : (
             <>
               {/* Production Pricing Cards */}
               <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-5 mb-16">
                 {productionPlans.map((plan, i) => renderPlanCard(plan, i))}
               </div>
-            </>
-          ) : (
-            <>
-              {/* Company Pricing Cards */}
-              {companyPlansQuery.isLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-16">
-                  {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-96 rounded-3xl bg-muted/30 animate-pulse border border-border/30" />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-16">
-                  {companyPlans.map((plan, idx) => {
-                    const price = activeCurrency === 'INR' ? plan.price_inr : plan.price_usd;
-                    const features = Array.isArray(plan.features) ? plan.features : [];
-                    return (
-                      <div
-                        key={plan.id}
-                        className="flex flex-col rounded-[24px] border border-indigo-500/30 bg-indigo-500/5 p-6 transition-all hover:shadow-xl hover:border-indigo-500/60 relative"
-                      >
-                        {idx === 1 && (
-                          <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet-600 text-white text-[10px] uppercase tracking-wider font-bold py-0.5 px-3 rounded-full border-none shadow-md">
-                            Popular Team Plan
-                          </Badge>
-                        )}
-                        <div className="text-center mb-4 mt-2">
-                          <div className="h-10 w-10 rounded-xl bg-indigo-500/15 flex items-center justify-center mx-auto text-indigo-400 mb-3">
-                            <Building2 className="h-5 w-5" />
-                          </div>
-                          <h3 className="text-xl font-extrabold text-foreground">{plan.name}</h3>
-                          <div className="mt-3 flex items-baseline justify-center gap-1">
-                            <span className="text-3xl font-black">{price > 0 ? formatPrice(price, activeCurrency) : 'Custom'}</span>
-                            {price > 0 && <span className="text-xs text-muted-foreground font-medium">/ {plan.validity}</span>}
-                          </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-2 mb-6 bg-background/50 p-3 rounded-xl text-center border border-border/40">
-                          <div>
-                            <div className="text-xl font-bold text-indigo-400">{plan.recruiter_seats}</div>
-                            <div className="text-[10px] text-muted-foreground font-medium uppercase mt-0.5">Seats</div>
-                          </div>
-                          <div>
-                            <div className="text-xl font-bold text-indigo-400">{plan.total_credits}</div>
-                            <div className="text-[10px] text-muted-foreground font-medium uppercase mt-0.5">Total Credits</div>
-                          </div>
-                        </div>
-
-                        <ul className="space-y-3 mb-8 flex-1 text-sm text-muted-foreground">
-                          {features.map((f, fi) => (
-                            <li key={fi} className="flex items-start gap-3">
-                              <Check className="h-4 w-4 text-indigo-400 shrink-0 mt-0.5" />
-                              <span>{f}</span>
-                            </li>
-                          ))}
-                        </ul>
-
-                        <Button
-                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl h-11 shadow-md"
-                          asChild
-                        >
-                          <Link to="/sign-up?type=company">Get Started</Link>
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </>
           )}
 

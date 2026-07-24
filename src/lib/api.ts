@@ -2159,6 +2159,12 @@ export const companyApi = {
   inviteRecruiter: (companyId: string, email: string) =>
     request<{ action: string; email: string }>(`/companies/${companyId}/invite`, { method: 'POST', body: { email } }),
 
+  acceptInviteInfo: (token: string) =>
+    request<{ company_id: string; company_name: string; invited_email: string; valid: boolean }>(`/companies/accept-invite?token=${encodeURIComponent(token)}`),
+
+  activateInvite: (token: string) =>
+    request<{ action: string; company_name: string; credits_allocated: number; redirect: string }>('/companies/accept-invite', { method: 'POST', body: { token } }),
+
   memberStats: (companyId: string, userId: string) =>
     request<{ member: CompanyMember; recent_activity: ActivityEvent[] }>(`/companies/${companyId}/members/${userId}/stats`),
 

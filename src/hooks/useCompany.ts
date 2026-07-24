@@ -9,8 +9,8 @@ export function useCompany() {
     queryKey: ['company-my'],
     queryFn: () => companyApi.my(),
     retry: false,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 15_000,
+    refetchInterval: 15_000,
   });
 
   const data = query.data;

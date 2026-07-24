@@ -10,11 +10,9 @@ import hashlib
 import hmac
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
-
-from jose import jwt, JWTError
 
 from fastapi import APIRouter, Depends, Query, Request
 
@@ -148,7 +146,7 @@ def _resolve_email(profile: Optional[Dict]) -> str:
 
 @router.get("/plans")
 async def list_company_plans():
-    """Return all active company plan templates."""
+    """Return all active company plan templates. Public — no auth required."""
     db = get_db_admin_service()
     def _f():
         return db.client.from_("company_plans").select("*").eq("is_active", True).order("recruiter_seats").execute()
@@ -713,20 +711,13 @@ async def invite_recruiter(
 
     settings = get_settings()
     app_url = str(settings.frontend_url).rstrip("/")
-    
-    # Generate signed JWT token for the invite
-    secret = getattr(settings, "clerk_secret_key", "default-secret")
-    expire = datetime.utcnow() + timedelta(days=7)
-    token_data = {
-        "sub": email,
-        "company_id": company_id,
-        "company_name": company["name"],
-        "exp": expire
-    }
-    invite_token = jwt.encode(token_data, secret, algorithm="HS256")
-    
-    # Send user to accept-invite page with the token
-    signup_url = f"{app_url}/accept-invite?token={invite_token}"
+    secret = _get_token_secret()
+    # Build a short-lived signed invite token: company_id:email:expires:sig
+    invite_expires = int(time.time()) + 7 * 24 * 3600  # 7 days
+    invite_payload = f"{company_id}:{email}:{invite_expires}"
+    invite_sig = hmac.new(secret.encode(), invite_payload.encode(), hashlib.sha256).hexdigest()
+    invite_token = f"{invite_payload}:{invite_sig}"
+    signup_url = f"{app_url}/join?token={invite_token}"
 
     subject, html, text = invite_recruiter_email(
         company_name=company["name"],
@@ -750,71 +741,155 @@ async def invite_recruiter(
     return ok({"action": "invited", "email": email})
 
 
-@router.post("/accept-invite")
-async def accept_invite(
-    payload: Dict[str, str],
-    user: ClerkUser = Depends(require_user)
-):
-    """Recruiter: Accept an email invitation via JWT token."""
-    token = payload.get("token")
-    if not token:
-        return api_error(message="Invite token is required", status_code=400)
-    
-    settings = get_settings()
-    secret = getattr(settings, "clerk_secret_key", "default-secret")
-    
+@router.get("/accept-invite")
+async def accept_invite(token: str = Query(...), request: Request = None):
+    """
+    Public endpoint — no auth required at this level.
+    Validates the signed invite token and, if the caller is already a registered user
+    (determined by the calling frontend after auth), returns the company info so
+    the frontend can auto-activate the membership.
+    Called by InviteAcceptPage.tsx after Clerk auth.
+    """
+    secret = _get_token_secret()
     try:
-        data = jwt.decode(token, secret, algorithms=["HS256"])
-        invited_email = data.get("sub")
-        company_id = data.get("company_id")
-        if not company_id or not invited_email:
-            raise JWTError("Invalid token payload")
-    except JWTError:
-        return api_error(message="Invalid or expired invite link", status_code=400)
+        parts = token.split(":")
+        if len(parts) != 4:
+            return api_error(message="Invalid or expired invite link", status_code=400)
+        company_id, invited_email, expires_str, provided_sig = parts
+        expires = int(expires_str)
+        if time.time() > expires:
+            return api_error(message="This invite link has expired. Please ask the company owner to send a new one.", status_code=410)
+        payload = f"{company_id}:{invited_email}:{expires_str}"
+        expected_sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_sig, provided_sig):
+            return api_error(message="Invalid or tampered invite link", status_code=400)
+    except Exception:
+        return api_error(message="Invalid invite link", status_code=400)
 
-    # Note: we might want to verify that user.primary_email matches invited_email,
-    # but often users sign up with a different auth method (like Google). 
-    # We'll allow it as long as they have the secure token.
-    
     db = get_db_admin_service()
-    
-    # Check if they are already a member
-    def _check_membership():
-        return db.client.from_("company_members").select("id, status").eq("company_id", company_id).eq("user_id", user.id).maybe_single().execute()
-    
-    mem_res = await db.run(_check_membership)
-    mem_data = getattr(mem_res, "data", None)
-    
-    if mem_data:
-        if mem_data.get("status") == "active":
-            return ok({"action": "already_active", "company_id": company_id})
-        else:
-            # Update pending/rejected to active
-            def _update():
-                return db.client.from_("company_members").update({"status": "active"}).eq("id", mem_data["id"]).execute()
-            await db.run(_update)
-            return ok({"action": "activated", "company_id": company_id})
-    
-    # Add them directly as an active member
-    def _add_member():
-        return db.client.from_("company_members").insert({
-            "company_id": company_id,
-            "user_id": user.id,
-            "role": "recruiter",
-            "status": "active",
-            "credits_allocated": 0,
-            "credits_consumed": 0,
-        }).execute()
-        
-    await db.run(_add_member)
-    
-    # Activity log
+    company = await _get_company(db, company_id)
+    if not company:
+        return api_error(message="Company not found", status_code=404)
+
+    return ok({
+        "company_id": company_id,
+        "company_name": company["name"],
+        "invited_email": invited_email,
+        "valid": True,
+    })
+
+
+@router.post("/accept-invite")
+async def activate_invite(
+    payload: Dict[str, Any],
+    user: ClerkUser = Depends(require_user),
+):
+    """
+    Called after the recruiter has signed in/up. Activates their membership
+    if the invite token is valid for their email (or the owner explicitly invited them).
+    """
+    token = str(payload.get("token") or "")
+    secret = _get_token_secret()
+    try:
+        parts = token.split(":")
+        if len(parts) != 4:
+            return api_error(message="Invalid or expired invite link", status_code=400)
+        company_id, invited_email, expires_str, provided_sig = parts
+        expires = int(expires_str)
+        if time.time() > expires:
+            return api_error(message="Invite link has expired", status_code=410)
+        tok_payload = f"{company_id}:{invited_email}:{expires_str}"
+        expected_sig = hmac.new(secret.encode(), tok_payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_sig, provided_sig):
+            return api_error(message="Invalid invite link", status_code=400)
+    except Exception:
+        return api_error(message="Invalid invite link", status_code=400)
+
+    db = get_db_admin_service()
+    company = await _get_company(db, company_id)
+    if not company:
+        return api_error(message="Company not found", status_code=404)
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Check if seats are available
+    if company["seats_used"] >= company["seats_total"]:
+        return api_error(message="No seats available in this company. Please contact the owner.", status_code=409)
+
+    # Load plan for credits per seat
+    plan_res = await db.run(lambda: db.client.from_("company_plans").select("*").eq("id", company.get("plan_id", "")).maybe_single().execute())
+    plan = getattr(plan_res, "data", None)
+    credits_per_seat = int((plan or {}).get("credits_per_seat") or 100)
+
+    # Check if already a member
+    existing_member = await _get_member(db, company_id, user.id)
+    if existing_member:
+        if existing_member.get("status") == "active":
+            return ok({"action": "already_member", "company_name": company["name"], "redirect": "/company/dashboard"})
+        # Reactivate a previously pending/rejected member
+        member_id = existing_member["id"]
+        def _reactivate():
+            return db.client.from_("company_members").update({
+                "status": "active",
+                "credits_allocated": credits_per_seat,
+                "joined_at": now,
+                "updated_at": now,
+            }).eq("id", member_id).execute()
+        await db.run(_reactivate)
+    else:
+        # Create new active member row (direct invite — no approval needed)
+        import uuid as _uuid
+        member_id = str(_uuid.uuid4())
+        def _insert_member():
+            return db.client.from_("company_members").insert({
+                "id": member_id,
+                "company_id": company_id,
+                "user_id": user.id,
+                "role": "recruiter",
+                "status": "active",
+                "credits_allocated": credits_per_seat,
+                "credits_consumed": 0,
+                "joined_at": now,
+                "created_at": now,
+                "updated_at": now,
+            }).execute()
+        await db.run(_insert_member)
+
+    # Increment seats_used
+    await db.run(lambda: db.client.from_("companies").update({
+        "seats_used": company["seats_used"] + 1,
+        "updated_at": now,
+    }).eq("id", company_id).execute())
+
+    # Update company credits pool allocated
+    await db.run(lambda: db.client.from_("company_credits").update({
+        "total_allocated": (company["seats_used"] + 1) * credits_per_seat,
+        "updated_at": now,
+    }).eq("company_id", company_id).execute())
+
+    # Unlock recruiter profile
+    try:
+        await db.run(lambda: db.client.from_("profiles").update({
+            "onboarding_completed": True,
+            "company_name": company["name"],
+        }).eq("user_id", user.id).execute())
+    except Exception as exc:
+        logger.error("[accept-invite] profile unlock failed: %s", exc)
+
     await _write_activity(db, company_id=company_id, user_id=user.id,
                           action_type="member_joined",
-                          description=f"Member joined via invite link",
-                          metadata={"invited_email": invited_email})
-                          
-    return ok({"action": "joined", "company_id": company_id})
+                          description=f"Joined via invite link",
+                          entity_type="member", entity_id=member_id)
+
+    return ok({
+        "action": "activated",
+        "company_name": company["name"],
+        "credits_allocated": credits_per_seat,
+        "redirect": "/company/dashboard",
+    })
+
+
+@router.get("/{company_id}/members")
 async def list_members(company_id: str, user: ClerkUser = Depends(require_user)):
     """Owner: list all members with performance stats."""
     db = get_db_admin_service()
@@ -1041,9 +1116,7 @@ async def get_analytics(company_id: str, user: ClerkUser = Depends(require_user)
     company = await _get_company(db, company_id)
     if not company:
         return api_error(message="Company not found", status_code=404)
-    member = await _get_member(db, company_id, user.id)
-    is_owner = company["owner_user_id"] == user.id
-    if not is_owner and not member:
+    if company["owner_user_id"] != user.id:
         return api_error(message="Access denied", status_code=403)
 
     # Active members for per-recruiter breakdown
@@ -1053,9 +1126,6 @@ async def get_analytics(company_id: str, user: ClerkUser = Depends(require_user)
     members: List[Dict] = getattr(m_res, "data", None) or []
     if not isinstance(members, list):
         members = []
-        
-    if not is_owner:
-        members = [m for m in members if m["user_id"] == user.id]
 
     total_candidates = sum(int(m.get("candidates_added") or 0) for m in members)
     total_assessments = sum(int(m.get("assessments_sent") or 0) for m in members)

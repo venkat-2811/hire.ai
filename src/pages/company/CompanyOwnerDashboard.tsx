@@ -327,14 +327,14 @@ export default function CompanyOwnerDashboard() {
             sub={`${Math.round(seatPct)}% occupied`}
           />
           <KpiCard
-            label="Credits Used" 
-            value={isOwner 
-              ? `${(companyCredits.total_consumed || 0).toFixed(0)}/${(companyCredits.total_allocated || 0)}`
-              : `${(credits.consumed || 0).toFixed(0)}/${(credits.allocated || 0)}`}
+            label={isOwner ? 'Total Credits Used' : 'My Credits Used'}
+            value={isOwner
+              ? `${companyCredits.total_consumed.toFixed(0)}/${companyCredits.total_allocated}`
+              : `${credits.consumed.toFixed(0)}/${credits.allocated}`}
             icon={<CreditCard className="h-4 w-4" />} color="text-violet-400"
-            sub={`${Math.round(isOwner 
-              ? ((companyCredits.total_allocated || 0) > 0 ? ((companyCredits.total_consumed || 0) / (companyCredits.total_allocated || 1)) * 100 : 0)
-              : ((credits.allocated || 0) > 0 ? ((credits.consumed || 0) / (credits.allocated || 1)) * 100 : 0))}% consumed`}
+            sub={isOwner
+              ? `${Math.round(creditPct)}% consumed company-wide`
+              : `${credits.allocated > 0 ? Math.round((credits.consumed / credits.allocated) * 100) : 0}% of your seat`}
           />
           <KpiCard
             label="Candidates" value={summary?.total_candidates ?? 0}
