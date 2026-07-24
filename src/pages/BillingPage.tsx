@@ -1012,8 +1012,8 @@ export default function BillingPage() {
 
         </>)}
 
-        {/* Company / Team Plans Section — visible to ALL users */}
-        <CompanyPlansSection isCompanyMember={!!companyContext.company} companyName={companyContext.company?.name} navigate={navigate} />
+        {/* Company / Team Plans Section hidden by request */}
+        {/* <CompanyPlansSection isCompanyMember={!!companyContext.company} companyName={companyContext.company?.name} navigate={navigate} /> */}
 
       </div>
 
