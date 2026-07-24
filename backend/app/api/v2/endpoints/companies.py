@@ -292,8 +292,39 @@ async def get_my_company(user: ClerkUser = Depends(require_user)):
         return ok({"membership": None, "status": "none"})
 
     company = membership.get("companies") or {}
-    credits_res = await db.run(lambda: db.client.from_("company_credits").select("*").eq("company_id", company.get("id", "")).maybe_single().execute())
+    company_id = company.get("id", "")
+    
+    # Try to fetch from company_credits table
+    credits_res = await db.run(lambda: db.client.from_("company_credits").select("*").eq("company_id", company_id).maybe_single().execute())
     credits = getattr(credits_res, "data", None) or {}
+
+    total_alloc = credits.get("total_allocated", 0)
+    total_cons = float(credits.get("total_consumed", 0))
+
+    # Fallback for legacy companies created before the company_credits table existed
+    if total_alloc == 0:
+        members_res = await db.run(lambda: db.client.from_("company_members").select("credits_allocated, credits_consumed").eq("company_id", company_id).execute())
+        members_data = getattr(members_res, "data", [])
+        if members_data:
+            total_alloc = sum(m.get("credits_allocated", 0) for m in members_data)
+            total_cons = sum(float(m.get("credits_consumed", 0)) for m in members_data)
+            
+            # Auto-repair the DB for legacy companies
+            now = datetime.now(timezone.utc).isoformat()
+            async def _repair_pool():
+                def _do_upsert():
+                    return db.client.from_("company_credits").upsert({
+                        "company_id": company_id,
+                        "total_allocated": total_alloc,
+                        "total_consumed": total_cons,
+                        "updated_at": now
+                    }).execute()
+                try:
+                    await db.run(_do_upsert)
+                except Exception:
+                    pass
+            # Fire and forget repair
+            asyncio.create_task(_repair_pool())
 
     return ok({
         "membership": membership,
@@ -306,8 +337,8 @@ async def get_my_company(user: ClerkUser = Depends(require_user)):
             "remaining": max(0, membership.get("credits_allocated", 0) - float(membership.get("credits_consumed", 0))),
         },
         "company_credits": {
-            "total_allocated": credits.get("total_allocated", 0),
-            "total_consumed": float(credits.get("total_consumed", 0)),
+            "total_allocated": total_alloc,
+            "total_consumed": total_cons,
         },
     })
 
