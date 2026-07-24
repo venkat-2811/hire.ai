@@ -529,35 +529,7 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              {/* Segmented Control: Individual vs Company Plans */}
-              <div className="flex justify-center mb-8">
-                <div className="bg-muted/80 p-1.5 rounded-2xl flex items-center gap-1 border border-border/60 shadow-sm">
-                  <button
-                    type="button"
-                    onClick={() => setPlanCategory('individual')}
-                    className={`rounded-xl px-6 py-2 text-xs font-bold transition-all ${
-                      planCategory === 'individual'
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    Individual Plans
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPlanCategory('company')}
-                    className={`rounded-xl px-6 py-2 text-xs font-bold transition-all flex items-center gap-2 ${
-                      planCategory === 'company'
-                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Building2 className="h-3.5 w-3.5" />
-                    Company &amp; Team Plans (5-20 Seats)
-                    <Badge className="bg-purple-500 text-white text-[9px] uppercase font-extrabold border-none px-1.5 py-0">New</Badge>
-                  </button>
-                </div>
-              </div>
+              {/* Segmented Control: Individual vs Company Plans (Hidden) */}
 
               {planCategory === 'company' ? (
                 /* Company Plans Display */
