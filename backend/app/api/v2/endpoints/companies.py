@@ -876,17 +876,28 @@ async def get_activity_feed(
     company = await _get_company(db, company_id)
     if not company:
         return api_error(message="Company not found", status_code=404)
-    if company["owner_user_id"] != user.id:
-        return api_error(message="Access denied", status_code=403)
+
+    is_owner = company["owner_user_id"] == user.id
+
+    # Non-owners must be an active member of this company
+    if not is_owner:
+        member = await _get_member(db, company_id, user.id)
+        if not member or member.get("status") != "active":
+            return api_error(message="Access denied", status_code=403)
+
     def _f():
-        return (
+        q = (
             db.client.from_("company_activity_feed")
             .select("*")
             .eq("company_id", company_id)
             .order("created_at", desc=True)
             .range(offset, offset + limit - 1)
-            .execute()
         )
+        # Recruiters only see their own activity
+        if not is_owner:
+            q = q.eq("user_id", user.id)
+        return q.execute()
+
     res = await db.run(_f)
     feed = getattr(res, "data", None) or []
 

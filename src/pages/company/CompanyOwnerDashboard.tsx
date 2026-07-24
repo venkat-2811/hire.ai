@@ -304,7 +304,9 @@ export default function CompanyOwnerDashboard() {
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              Company Owner Dashboard · {company.seats_used} of {company.seats_total} seats used
+              {isOwner
+                ? `Company Owner Dashboard · ${company.seats_used} of ${company.seats_total} seats used`
+                : `My Workspace · ${company.name}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
