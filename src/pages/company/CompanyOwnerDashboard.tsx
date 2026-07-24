@@ -177,7 +177,7 @@ function MemberRow({ member, companyId, onRemove }: { member: CompanyMember; com
 export default function CompanyOwnerDashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { company, role, isOwner, credits, companyCredits, isLoading: companyLoading } = useCompany();
+  const { company, role, isOwner, isMember, credits, companyCredits, isLoading: companyLoading } = useCompany();
   const companyId = company?.id ?? null;
   
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -263,7 +263,7 @@ export default function CompanyOwnerDashboard() {
     );
   }
 
-  if (!company || (!isOwner && !membership)) {
+  if (!company || (!isOwner && !isMember)) {
     return (
       <DashboardLayout>
         <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] gap-4">
