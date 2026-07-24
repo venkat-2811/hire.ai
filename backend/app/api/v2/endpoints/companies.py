@@ -10,9 +10,11 @@ import hashlib
 import hmac
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
+
+from jose import jwt, JWTError
 
 from fastapi import APIRouter, Depends, Query, Request
 
@@ -145,7 +147,7 @@ def _resolve_email(profile: Optional[Dict]) -> str:
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/plans")
-async def list_company_plans(_: ClerkUser = Depends(require_user)):
+async def list_company_plans():
     """Return all active company plan templates."""
     db = get_db_admin_service()
     def _f():
@@ -711,7 +713,20 @@ async def invite_recruiter(
 
     settings = get_settings()
     app_url = str(settings.frontend_url).rstrip("/")
-    signup_url = f"{app_url}/onboarding?company={urlencode({'name': company['name']})}"
+    
+    # Generate signed JWT token for the invite
+    secret = getattr(settings, "clerk_secret_key", "default-secret")
+    expire = datetime.utcnow() + timedelta(days=7)
+    token_data = {
+        "sub": email,
+        "company_id": company_id,
+        "company_name": company["name"],
+        "exp": expire
+    }
+    invite_token = jwt.encode(token_data, secret, algorithm="HS256")
+    
+    # Send user to accept-invite page with the token
+    signup_url = f"{app_url}/accept-invite?token={invite_token}"
 
     subject, html, text = invite_recruiter_email(
         company_name=company["name"],
@@ -735,7 +750,71 @@ async def invite_recruiter(
     return ok({"action": "invited", "email": email})
 
 
-@router.get("/{company_id}/members")
+@router.post("/accept-invite")
+async def accept_invite(
+    payload: Dict[str, str],
+    user: ClerkUser = Depends(require_user)
+):
+    """Recruiter: Accept an email invitation via JWT token."""
+    token = payload.get("token")
+    if not token:
+        return api_error(message="Invite token is required", status_code=400)
+    
+    settings = get_settings()
+    secret = getattr(settings, "clerk_secret_key", "default-secret")
+    
+    try:
+        data = jwt.decode(token, secret, algorithms=["HS256"])
+        invited_email = data.get("sub")
+        company_id = data.get("company_id")
+        if not company_id or not invited_email:
+            raise JWTError("Invalid token payload")
+    except JWTError:
+        return api_error(message="Invalid or expired invite link", status_code=400)
+
+    # Note: we might want to verify that user.primary_email matches invited_email,
+    # but often users sign up with a different auth method (like Google). 
+    # We'll allow it as long as they have the secure token.
+    
+    db = get_db_admin_service()
+    
+    # Check if they are already a member
+    def _check_membership():
+        return db.client.from_("company_members").select("id, status").eq("company_id", company_id).eq("user_id", user.id).maybe_single().execute()
+    
+    mem_res = await db.run(_check_membership)
+    mem_data = getattr(mem_res, "data", None)
+    
+    if mem_data:
+        if mem_data.get("status") == "active":
+            return ok({"action": "already_active", "company_id": company_id})
+        else:
+            # Update pending/rejected to active
+            def _update():
+                return db.client.from_("company_members").update({"status": "active"}).eq("id", mem_data["id"]).execute()
+            await db.run(_update)
+            return ok({"action": "activated", "company_id": company_id})
+    
+    # Add them directly as an active member
+    def _add_member():
+        return db.client.from_("company_members").insert({
+            "company_id": company_id,
+            "user_id": user.id,
+            "role": "recruiter",
+            "status": "active",
+            "credits_allocated": 0,
+            "credits_consumed": 0,
+        }).execute()
+        
+    await db.run(_add_member)
+    
+    # Activity log
+    await _write_activity(db, company_id=company_id, user_id=user.id,
+                          action_type="member_joined",
+                          description=f"Member joined via invite link",
+                          metadata={"invited_email": invited_email})
+                          
+    return ok({"action": "joined", "company_id": company_id})
 async def list_members(company_id: str, user: ClerkUser = Depends(require_user)):
     """Owner: list all members with performance stats."""
     db = get_db_admin_service()
@@ -962,7 +1041,9 @@ async def get_analytics(company_id: str, user: ClerkUser = Depends(require_user)
     company = await _get_company(db, company_id)
     if not company:
         return api_error(message="Company not found", status_code=404)
-    if company["owner_user_id"] != user.id:
+    member = await _get_member(db, company_id, user.id)
+    is_owner = company["owner_user_id"] == user.id
+    if not is_owner and not member:
         return api_error(message="Access denied", status_code=403)
 
     # Active members for per-recruiter breakdown
@@ -972,6 +1053,9 @@ async def get_analytics(company_id: str, user: ClerkUser = Depends(require_user)
     members: List[Dict] = getattr(m_res, "data", None) or []
     if not isinstance(members, list):
         members = []
+        
+    if not is_owner:
+        members = [m for m in members if m["user_id"] == user.id]
 
     total_candidates = sum(int(m.get("candidates_added") or 0) for m in members)
     total_assessments = sum(int(m.get("assessments_sent") or 0) for m in members)

@@ -481,15 +481,25 @@ export default function BillingPage() {
                 <p className="text-xs text-muted-foreground mb-3">Your billing &amp; credits are managed by this company. No individual subscription required.</p>
                 <div className="flex flex-wrap gap-4">
                   <div className="text-center">
-                    <div className="text-2xl font-black text-indigo-400">{companyContext.credits.allocated}</div>
+                    <div className="text-2xl font-black text-indigo-400">
+                      {companyContext.isOwner ? companyContext.companyCredits.total_allocated : companyContext.credits.allocated}
+                    </div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Allocated</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-black text-rose-400">{companyContext.credits.consumed.toFixed(1)}</div>
+                    <div className="text-2xl font-black text-rose-400">
+                      {companyContext.isOwner 
+                        ? companyContext.companyCredits.total_consumed.toFixed(1) 
+                        : companyContext.credits.consumed.toFixed(1)}
+                    </div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Consumed</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-black text-emerald-400">{companyContext.credits.remaining.toFixed(1)}</div>
+                    <div className="text-2xl font-black text-emerald-400">
+                      {companyContext.isOwner 
+                        ? (companyContext.companyCredits.total_allocated - companyContext.companyCredits.total_consumed).toFixed(1)
+                        : companyContext.credits.remaining.toFixed(1)}
+                    </div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Remaining</div>
                   </div>
                 </div>
@@ -498,7 +508,11 @@ export default function BillingPage() {
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all"
-                      style={{ width: `${companyContext.credits.allocated > 0 ? Math.min(100, (companyContext.credits.consumed / companyContext.credits.allocated) * 100) : 0}%` }}
+                      style={{ 
+                        width: `${companyContext.isOwner 
+                          ? (companyContext.companyCredits.total_allocated > 0 ? Math.min(100, (companyContext.companyCredits.total_consumed / companyContext.companyCredits.total_allocated) * 100) : 0)
+                          : (companyContext.credits.allocated > 0 ? Math.min(100, (companyContext.credits.consumed / companyContext.credits.allocated) * 100) : 0)}%` 
+                      }}
                     />
                   </div>
                 </div>

@@ -23,7 +23,7 @@ const PLAN_COLORS = [
 export default function CompanyPlansPage() {
   const navigate = useNavigate();
   const { user } = useUser();
-  const { currency: detectedCurrency, isIndia } = useCountryDetection({ profileCountry: null, explicitCountry: null });
+  const { currency: detectedCurrency, isIndia } = useCountryDetection();
   const currency: Currency = detectedCurrency;
 
   const plansQuery = useQuery({

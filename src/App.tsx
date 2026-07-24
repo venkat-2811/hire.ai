@@ -48,6 +48,7 @@ import AdminCompaniesPage from "./pages/admin/AdminCompaniesPage";
 import CompanyOwnerDashboard from "./pages/company/CompanyOwnerDashboard";
 import CompanyPlansPage from "./pages/company/CompanyPlansPage";
 import EmailApprovalLandingPage from "./pages/company/EmailApprovalLandingPage";
+import InviteAcceptPage from "./pages/company/InviteAcceptPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -135,6 +136,7 @@ const App = () => (
             <Route path="/company/dashboard" element={<CompanyOwnerDashboard />} />
             <Route path="/company/plans" element={<CompanyPlansPage />} />
             <Route path="/company/action" element={<EmailApprovalLandingPage />} />
+            <Route path="/accept-invite" element={<InviteAcceptPage />} />
             <Route path="/offer-acceptance" element={<OfferAcceptancePage />} />
             <Route path="/linkedin-talent" element={<LinkedInTalentPage />} />
             <Route path="/linkedin-talent/:jobId" element={<LinkedInJobTalentPage />} />
