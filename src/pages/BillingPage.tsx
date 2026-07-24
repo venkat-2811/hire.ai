@@ -466,19 +466,12 @@ export default function BillingPage() {
 
         {/* Company Member Credits Card — shown when user is an active company member */}
         {companyContext.isMember && companyContext.company && (() => {
-          // Owners see company-wide totals; recruiters see their personal seat allocation
-          const displayAllocated = companyContext.isOwner
-            ? companyContext.companyCredits.total_allocated
-            : companyContext.credits.allocated;
-          const displayConsumed = companyContext.isOwner
-            ? companyContext.companyCredits.total_consumed
-            : companyContext.credits.consumed;
+          const displayAllocated = companyContext.credits.allocated;
+          const displayConsumed = companyContext.credits.consumed;
           const displayRemaining = Math.max(0, displayAllocated - displayConsumed);
           const pct = displayAllocated > 0 ? Math.min(100, (displayConsumed / displayAllocated) * 100) : 0;
-          const label = companyContext.isOwner ? 'Company-Wide Credits' : 'My Seat Credits';
-          const sublabel = companyContext.isOwner
-            ? 'Total across all recruiter seats'
-            : 'Your personal allocation from the company pool';
+          const label = 'My Seat Credits';
+          const sublabel = 'Your personal allocation from the company pool';
 
           return (
             <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-transparent p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
