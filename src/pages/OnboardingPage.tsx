@@ -128,10 +128,7 @@ export default function OnboardingPage() {
   const [form, setForm] = useState(initial);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { country, currency: detectedCurrency, isLoading: geoLoading, isIndia } = useCountryDetection({
-    explicitCountry: form.country,
-    profileCountry: profile?.country,
-  });
+  const { country, currency: detectedCurrency, isLoading: geoLoading, isIndia } = useCountryDetection();
 
   const onboardingPlans = useMemo(() => {
     return getPlansForCurrency(detectedCurrency).map((plan) => {

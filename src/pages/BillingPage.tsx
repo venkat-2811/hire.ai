@@ -78,7 +78,7 @@ function CompanyPlansSection({
   companyName?: string;
   navigate: (path: string) => void;
 }) {
-  const { currency, isIndia } = useCountryDetection({ profileCountry: null, explicitCountry: null });
+  const { currency, isIndia } = useCountryDetection();
 
   const plansQuery = useQuery({
     queryKey: ['company-plans'],
@@ -241,12 +241,8 @@ export default function BillingPage() {
   const usage = usageQuery.data;
   const profile = profileQuery.data;
 
-  // Geo-based currency detection with priority:
-  // billing country > stored profile country > geolocation fallback.
-  const { country, currency, isLoading: geoLoading } = useCountryDetection({
-    billingCountry: usage?.country ?? null,
-    profileCountry: profile?.country ?? null,
-  });
+  // Geo-based currency detection with priority: geolocation.
+  const { country, currency, isLoading: geoLoading } = useCountryDetection();
   const invoices = (invoicesQuery.data || []) as BillingInvoice[];
   const usageHistory = usageHistoryQuery.data || [];
 

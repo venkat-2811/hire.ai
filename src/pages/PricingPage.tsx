@@ -33,7 +33,6 @@ function getPlanComparisonRows(currency: Currency) {
 
 const PricingPage = () => {
   const [isFirstVisit, setIsFirstVisit] = useState(true);
-  const [manualCurrency, setManualCurrency] = useState<Currency | null>(null);
 
   useEffect(() => {
     const visited = sessionStorage.getItem('rekshift_visited_pricing');
@@ -47,8 +46,7 @@ const PricingPage = () => {
   // Geo-based country + currency detection (no-flicker strategy)
   const { currency: detectedCurrency, isLoading: geoLoading } = useCountryDetection();
 
-  // Allow manual override via toggle; fall back to detected currency
-  const activeCurrency: Currency = manualCurrency ?? detectedCurrency;
+  const activeCurrency: Currency = detectedCurrency;
 
   const productionPlans = PRODUCTION_PLANS;
 
@@ -201,34 +199,6 @@ const PricingPage = () => {
               Choose the perfect plan for your hiring needs. All plans include our core AI-powered assessment features.
             </p>
 
-            {/* Currency Switcher */}
-            {!geoLoading && (
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <span className="text-xs text-muted-foreground mr-1">Pricing in:</span>
-                <div className="flex rounded-full border border-border bg-muted p-1 gap-1">
-                  <button
-                    onClick={() => setManualCurrency('INR')}
-                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                      activeCurrency === 'INR'
-                        ? 'bg-background shadow text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    🇮🇳 India (₹ INR)
-                  </button>
-                  <button
-                    onClick={() => setManualCurrency('USD')}
-                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                      activeCurrency === 'USD'
-                        ? 'bg-background shadow text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    🇺🇸 International ($ USD)
-                  </button>
-                </div>
-              </div>
-            )}
             {geoLoading && (
               <div className="h-8 w-60 mx-auto rounded-full bg-muted animate-pulse mb-2" />
             )}
@@ -237,7 +207,7 @@ const PricingPage = () => {
           {/* Individual vs Company Toggle hidden by request */}
 
           {/* Loading skeleton while geo-detecting */}
-          {geoLoading && manualCurrency === null ? (
+          {geoLoading ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-5 mb-16">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="h-96 rounded-3xl bg-muted/30 animate-pulse" />
@@ -254,7 +224,7 @@ const PricingPage = () => {
           )}
 
           {/* Plan Comparison Table */}
-          {!geoLoading || manualCurrency !== null ? (
+          {!geoLoading ? (
             <motion.div
               initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
               animate={{ opacity: 1, y: 0 }}

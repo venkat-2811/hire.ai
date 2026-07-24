@@ -29,12 +29,6 @@ export interface CountryDetectionResult {
   isLoading: boolean;
 }
 
-export interface CountryDetectionOptions {
-  explicitCountry?: string | null;
-  billingCountry?: string | null;
-  profileCountry?: string | null;
-}
-
 // Read synchronously from storage to avoid any flicker on re-renders
 function getStoredCountry(): { country: string; source: string } | null {
   return getCachedCountry();
@@ -45,29 +39,14 @@ function getStoredCountry(): { country: string; source: string } | null {
  *
  * Priority order:
  * 1. Cached result from sessionStorage/localStorage (synchronous, instant)
- * 2. User profile country (if provided as `profileCountry` argument)
- * 3. Async IP geolocation via ipapi.co
- * 4. Timezone-based fallback
- *
- * @param options - Optional country sources with explicit > billing > profile priority
+ * 2. Async IP geolocation via ipapi.co
+ * 3. Timezone-based fallback
  */
-export function useCountryDetection(options?: CountryDetectionOptions): CountryDetectionResult {
+export function useCountryDetection(): CountryDetectionResult {
   // Synchronously resolve initial state to prevent flicker
   const storedCountry = getStoredCountry();
 
-  const explicitCountry = options?.explicitCountry || null;
-  const billingCountry = options?.billingCountry || null;
-  const profileCountry = options?.profileCountry || null;
-
   const resolveInitial = (): { country: string; isLoading: boolean; source: string } => {
-    const resolved = resolvePricingCountry({
-      explicitCountry,
-      billingCountry,
-      profileCountry,
-    });
-    if (resolved && resolved.length === 2 && (explicitCountry || billingCountry || profileCountry)) {
-      return { country: resolved, isLoading: false, source: 'priority' };
-    }
     // Cached country — instant, no loading state needed
     if (storedCountry && storedCountry.country.length === 2) {
       return { country: storedCountry.country.toUpperCase(), isLoading: false, source: storedCountry.source };
@@ -82,18 +61,6 @@ export function useCountryDetection(options?: CountryDetectionOptions): CountryD
   const detectionRan = useRef(false);
 
   useEffect(() => {
-    const resolved = resolvePricingCountry({
-      explicitCountry,
-      billingCountry,
-      profileCountry,
-    });
-    if (resolved && resolved.length === 2 && (explicitCountry || billingCountry || profileCountry)) {
-      const code = resolved.toUpperCase();
-      setCountry(code);
-      setIsLoading(false);
-      return;
-    }
-
     // Already resolved synchronously from cache — skip async
     if (!initial.isLoading) return;
 
@@ -125,7 +92,7 @@ export function useCountryDetection(options?: CountryDetectionOptions): CountryD
       cancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [explicitCountry, billingCountry, profileCountry]);
+  }, []);
 
   return {
     country,
