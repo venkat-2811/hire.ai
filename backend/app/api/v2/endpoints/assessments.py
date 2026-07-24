@@ -586,12 +586,13 @@ async def invite_assessments(
     # Fractional billing: bill +0.50 per candidate for assessment send.
     # We fire-and-forget in a best-effort manner; a billing failure does NOT
     # block the invite flow — the sessions are already created.
-    from app.utils.billing_helpers import consume_assessment_slot as _consume_assessment
+    from app.utils.billing_helpers import consume_company_member_slot as _consume_assessment
     import asyncio as _asyncio
     async def _bill_assessments():
         for meta in session_meta:
             try:
-                await _consume_assessment(db, user.id, meta["candidate_id"], job["id"])
+                await _consume_assessment(db, user.id, 0.50, "assessment sent",
+                    candidate_id=meta["candidate_id"], job_id=job["id"])
             except Exception as _exc:
                 logger.warning("[assessments.invite] billing assessment slot failed: %s", _exc)
     _bill_task = _asyncio.create_task(_bill_assessments())
@@ -2833,10 +2834,11 @@ async def send_assessment_single(
     )
 
     # Fractional billing: bill +0.50 for assessment send (single candidate).
-    from app.utils.billing_helpers import consume_assessment_slot as _consume_assessment_s
+    from app.utils.billing_helpers import consume_company_member_slot as _consume_assessment_s
     async def _bill_single_assessment():
         try:
-            await _consume_assessment_s(db, user.id, candidate_id, body.job_id)
+            await _consume_assessment_s(db, user.id, 0.50, "assessment sent",
+                candidate_id=candidate_id, job_id=body.job_id)
         except Exception as _exc:
             logger.warning("[assessments.invite_single] billing assessment slot failed: %s", _exc)
     _bill_task_s = asyncio.create_task(_bill_single_assessment())

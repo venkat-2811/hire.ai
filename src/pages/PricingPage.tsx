@@ -194,19 +194,44 @@ const PricingPage = () => {
             initial={isFirstVisit ? { opacity: 0, y: 20 } : false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="text-center mb-12"
+            className="text-center mb-10"
           >
             <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4">Simple, Transparent Pricing</h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-4">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
               Choose the perfect plan for your hiring needs. All plans include our core AI-powered assessment features.
             </p>
-            {!geoLoading && (
-              <p className="text-sm text-muted-foreground">
-                Showing {activeCurrency === 'INR' ? 'India (INR ₹)' : 'International (USD $)'} pricing for your location.
-              </p>
-            )}
 
-            {/* Auto-detected pricing loaded in background */}
+            {/* Currency Switcher */}
+            {!geoLoading && (
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="text-xs text-muted-foreground mr-1">Pricing in:</span>
+                <div className="flex rounded-full border border-border bg-muted p-1 gap-1">
+                  <button
+                    onClick={() => setManualCurrency('INR')}
+                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      activeCurrency === 'INR'
+                        ? 'bg-background shadow text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    🇮🇳 India (₹ INR)
+                  </button>
+                  <button
+                    onClick={() => setManualCurrency('USD')}
+                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      activeCurrency === 'USD'
+                        ? 'bg-background shadow text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    🇺🇸 International ($ USD)
+                  </button>
+                </div>
+              </div>
+            )}
+            {geoLoading && (
+              <div className="h-8 w-60 mx-auto rounded-full bg-muted animate-pulse mb-2" />
+            )}
           </motion.div>
 
           {/* Individual vs Company Toggle */}

@@ -177,7 +177,7 @@ function MemberRow({ member, companyId, onRemove }: { member: CompanyMember; com
 export default function CompanyOwnerDashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { company, role, isOwner, credits, companyCredits, isLoading: companyLoading } = useCompany();
+  const { company, role, isOwner, isMember, credits, companyCredits, isLoading: companyLoading } = useCompany();
   const companyId = company?.id ?? null;
   
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -263,7 +263,7 @@ export default function CompanyOwnerDashboard() {
     );
   }
 
-  if (!company || !isOwner) {
+  if (!company || (!isOwner && !isMember)) {
     return (
       <DashboardLayout>
         <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -304,7 +304,9 @@ export default function CompanyOwnerDashboard() {
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              Company Owner Dashboard · {company.seats_used} of {company.seats_total} seats used
+              {isOwner
+                ? `Company Owner Dashboard · ${company.seats_used} of ${company.seats_total} seats used`
+                : `My Workspace · ${company.name}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -325,9 +327,14 @@ export default function CompanyOwnerDashboard() {
             sub={`${Math.round(seatPct)}% occupied`}
           />
           <KpiCard
-            label="Credits Used" value={`${companyCredits.total_consumed.toFixed(0)}/${companyCredits.total_allocated}`}
+            label={isOwner ? 'Total Credits Used' : 'My Credits Used'}
+            value={isOwner
+              ? `${companyCredits.total_consumed.toFixed(0)}/${companyCredits.total_allocated}`
+              : `${credits.consumed.toFixed(0)}/${credits.allocated}`}
             icon={<CreditCard className="h-4 w-4" />} color="text-violet-400"
-            sub={`${Math.round(creditPct)}% consumed`}
+            sub={isOwner
+              ? `${Math.round(creditPct)}% consumed company-wide`
+              : `${credits.allocated > 0 ? Math.round((credits.consumed / credits.allocated) * 100) : 0}% of your seat`}
           />
           <KpiCard
             label="Candidates" value={summary?.total_candidates ?? 0}
@@ -344,29 +351,35 @@ export default function CompanyOwnerDashboard() {
         </div>
 
         {/* Main Tabs */}
-        <Tabs defaultValue="members" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-none lg:flex">
-            <TabsTrigger value="members" className="gap-1.5">
-              <Users className="h-3.5 w-3.5" />
-              Members
-              {pendingRequests.length > 0 && (
-                <span className="ml-1 h-4 w-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {pendingRequests.length}
-                </span>
-              )}
-            </TabsTrigger>
+        <Tabs defaultValue={isOwner ? "members" : "activity"} className="space-y-4">
+          <TabsList className="mb-4">
+            {isOwner && (
+              <TabsTrigger value="members" className="gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Members
+                {pendingRequests.length > 0 && (
+                  <span className="ml-1 h-4 w-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {pendingRequests.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            )}
             <TabsTrigger value="activity" className="gap-1.5">
               <Activity className="h-3.5 w-3.5" />
               Activity Feed
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="gap-1.5">
-              <BarChart3 className="h-3.5 w-3.5" />
-              Analytics
-            </TabsTrigger>
-            <TabsTrigger value="audit" className="gap-1.5">
-              <Shield className="h-3.5 w-3.5" />
-              Audit Logs
-            </TabsTrigger>
+            {isOwner && (
+              <>
+                <TabsTrigger value="analytics" className="gap-1.5">
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Analytics
+                </TabsTrigger>
+                <TabsTrigger value="audit" className="gap-1.5">
+                  <Shield className="h-3.5 w-3.5" />
+                  Audit Logs
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
 
           {/* ── Members Tab ───────────────────────────────────────── */}

@@ -577,9 +577,26 @@ async def consume_company_member_slot(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
-    # Update member credits_consumed
-    def _update_member(_nv=new_consumed, _mid=member_id):
-        return db.client.from_("company_members").update({"credits_consumed": _nv, "updated_at": now}).eq("id", _mid).execute()
+    counter_col = None
+    action_norm = action_label.lower()
+    if action_norm in ("candidate added", "candidate_added"):
+        counter_col = "candidates_added"
+    elif action_norm in ("assessment sent", "assessment_sent"):
+        counter_col = "assessments_sent"
+    elif action_norm in ("interview sent", "interview_sent"):
+        counter_col = "interviews_sent"
+    elif action_norm in ("job posted", "job_posted"):
+        counter_col = "jobs_posted"
+    elif action_norm in ("hire marked", "hire_marked"):
+        counter_col = "hires"
+
+    update_dict = {"credits_consumed": new_consumed, "updated_at": now}
+    if counter_col:
+        update_dict[counter_col] = int(membership.get(counter_col) or 0) + 1
+
+    # Update member credits_consumed and counter
+    def _update_member(_mid=member_id, _ud=update_dict):
+        return db.client.from_("company_members").update(_ud).eq("id", _mid).execute()
     await db.run(_update_member)
 
     # Update company credit pool
@@ -616,6 +633,30 @@ async def consume_company_member_slot(
         await db.run(_log)
     except Exception as exc:
         logger.warning("[billing] usage_history log failed for company member: %s", exc)
+
+    if company_id and action_norm in ("candidate added", "candidate_added", "assessment sent", "assessment_sent", "interview sent", "interview_sent", "job posted", "job_posted", "hire marked", "hire_marked"):
+        feed_action = action_norm.replace(" ", "_")
+        desc = activity_description
+        if not desc:
+            if feed_action == "candidate_added": desc = "Added a new candidate"
+            elif feed_action == "assessment_sent": desc = "Sent an assessment"
+            elif feed_action == "interview_sent": desc = "Sent an AI interview"
+            elif feed_action == "job_posted": desc = "Posted a new job"
+            elif feed_action == "hire_marked": desc = "Marked a candidate as hired"
+            else: desc = f"Performed {action_label}"
+            
+        def _log_activity():
+            return db.client.from_("company_activity_feed").insert({
+                "company_id": company_id,
+                "user_id": user_id,
+                "action_type": feed_action,
+                "description": desc,
+                "metadata": {"job_id": job_id, "candidate_id": candidate_id}
+            }).execute()
+        try:
+            await db.run(_log_activity)
+        except Exception as exc:
+            logger.warning("[billing] activity feed log failed: %s", exc)
 
     logger.info("[billing] company_member %s +%.2f → %.2f (company=%s)", user_id, amount, new_consumed, company_id)
     return None  # Success
