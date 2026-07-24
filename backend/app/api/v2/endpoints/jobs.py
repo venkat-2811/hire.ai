@@ -175,6 +175,10 @@ async def create_job(payload: Dict[str, Any], user: ClerkUser = Depends(require_
             
     await db.run(_update_profile)
 
+    # Track job posting for company analytics (0 credits but increments jobs_posted counter)
+    from app.utils.billing_helpers import consume_company_member_slot
+    await consume_company_member_slot(db, user.id, 0.0, "job posted", job_id=row["id"])
+
     return ok(row, status_code=201)
 
 
