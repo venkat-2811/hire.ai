@@ -270,9 +270,8 @@ export default function CompanyOwnerDashboard() {
           <Building2 className="h-12 w-12 text-muted-foreground" />
           <h2 className="text-xl font-bold">No Company Found</h2>
           <p className="text-muted-foreground text-sm text-center max-w-sm">
-            You don't own a company yet. Create one through the Company Plans page.
+            You don't own a company yet.
           </p>
-          <Button onClick={() => navigate('/company/plans')}>View Company Plans</Button>
         </div>
       </DashboardLayout>
     );
